@@ -1,8 +1,17 @@
-// Migration helper to ensure all database tables exist with correct schema
-import { db } from './db';
+import pkg from 'pg';
+const { Pool } = pkg;
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from "../shared/schema";
 import { sql } from 'drizzle-orm';
 
 export async function ensureDatabaseSchema(): Promise<void> {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  const pool = new Pool({ 
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+  const db = drizzle(pool, { schema });
+  
   try {
     console.log('🔄 [MIGRATION] Ensuring all database tables exist...');
     
