@@ -446,27 +446,32 @@ export default function Home() {
     if (isConverting || convertMutation.isPending) return;
     
     setIsConverting(true);
-    console.log('💱 Convert started, showing AdsGram ad first...');
+    console.log('💱 Convert started, showing Monetag ad first...');
     
     try {
-      // Then show Monetag rewarded ad
-      console.log('🎬 Proceeding with Monetag rewarded...');
+      // Show Monetag rewarded ad first
       const monetagResult = await showMonetagRewardedAd();
       
-      if (monetagResult.unavailable) {
-        // If Monetag unavailable, proceed
-        console.log('⚠️ Monetag unavailable, proceeding with convert');
-        convertMutation.mutate({ amount, convertTo: selectedConvertType });
-        return;
-      }
-      
-      if (!monetagResult.success) {
+      if (!monetagResult.unavailable && !monetagResult.success) {
         showNotification("Please watch the ad to convert.", "error");
         setIsConverting(false);
         return;
       }
       
-      console.log('✅ Ad watched, converting');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Show AdsGram int-20373 for convert
+      const adsgramSuccess = await window.Adsgram.init({ blockId: "int-20373" }).show()
+        .then(() => true)
+        .catch(() => false);
+
+      if (!adsgramSuccess) {
+        showNotification("Please watch the ad to convert.", "error");
+        setIsConverting(false);
+        return;
+      }
+
+      console.log('✅ Ads watched, converting');
       convertMutation.mutate({ amount, convertTo: selectedConvertType });
       
     } catch (error) {
@@ -483,21 +488,26 @@ export default function Home() {
     setIsClaimingStreak(true);
     
     try {
-      // Then show Monetag rewarded ad
+      // Show Monetag rewarded ad first
       const monetagResult = await showMonetagRewardedAd();
       
-      if (monetagResult.unavailable) {
-        // If Monetag unavailable, proceed
-        claimStreakMutation.mutate();
-        return;
-      }
-      
-      if (!monetagResult.success) {
+      if (!monetagResult.unavailable && !monetagResult.success) {
         showNotification("Please watch the ad completely to claim your bonus.", "error");
         setIsClaimingStreak(false);
         return;
       }
       
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Show AdsGram int-20372 for Claim Bonus
+      const adsgramSuccess = await showAdsgramAd();
+      
+      if (!adsgramSuccess) {
+        showNotification("Please watch the ad completely to claim your bonus.", "error");
+        setIsClaimingStreak(false);
+        return;
+      }
+
       claimStreakMutation.mutate();
     } catch (error) {
       console.error('Streak claim failed:', error);
@@ -524,27 +534,31 @@ export default function Home() {
     if (isApplyingPromo || redeemPromoMutation.isPending) return;
     
     setIsApplyingPromo(true);
-    console.log('🎫 Promo code claim started, showing AdsGram ad first...');
+    console.log('🎫 Promo code claim started, showing Monetag ad first...');
     
     try {
-      // Then show Monetag rewarded ad
-      console.log('🎬 Proceeding with Monetag rewarded...');
+      // Show Monetag rewarded ad first
       const monetagResult = await showMonetagRewardedAd();
       
-      if (monetagResult.unavailable) {
-        // If Monetag unavailable, proceed
-        console.log('⚠️ Monetag unavailable, proceeding with promo claim');
-        redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
-        return;
-      }
-      
-      if (!monetagResult.success) {
+      if (!monetagResult.unavailable && !monetagResult.success) {
         showNotification("Please watch the ad to claim your promo code.", "error");
         setIsApplyingPromo(false);
         return;
       }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      console.log('✅ Ad watched, claiming promo code');
+      // Then show AdsGram ad
+      console.log('🎬 Proceeding with AdsGram...');
+      const adsgramSuccess = await showAdsgramAd();
+      
+      if (!adsgramSuccess) {
+        showNotification("Both ads must be watched to claim promo.", "error");
+        setIsApplyingPromo(false);
+        return;
+      }
+      
+      console.log('✅ Ads watched, claiming promo code');
       redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
     } catch (error) {
       console.error('Promo claim error:', error);
