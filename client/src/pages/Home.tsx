@@ -557,54 +557,6 @@ export default function Home() {
     setBoosterPopupOpen(true);
   };
 
-  const handleWatchExtraAd = async () => {
-    if (isTaskPending) return;
-    
-    showNotification("Ad sequence starting...", "info");
-    
-    try {
-      // 1. Show Monetag
-      const monetagResult = await showMonetagRewardedAd();
-      if (!monetagResult.success && !monetagResult.unavailable) {
-        throw new Error("Please watch the Monetag ad completely.");
-      }
-      
-      // Small delay between ads
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // 2. Show GigaPub
-      console.log('🎬 Attempting GigaPub ad...');
-      if (typeof (window as any).showGiga === 'function') {
-        console.log('✅ Calling window.showGiga()');
-        (window as any).showGiga();
-        // Give some time for the ad to at least start showing
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      } else {
-        console.error("❌ GigaPub not available. Please refresh or check your ad blocker.");
-        throw new Error("GigaPub ad service not ready. Please refresh.");
-      }
-      
-      // 3. Reward
-      const response = await apiRequest("POST", "/api/ads/extra-watch");
-      if (!response.ok) {
-        const error = await response.json();
-        throw error;
-      }
-      const data = await response.json();
-      
-      queryClient.setQueryData(["/api/auth/user"], (old: any) => ({
-        ...old,
-        balance: data.newBalance,
-        extraAdsWatchedToday: data.extraAdsWatchedToday
-      }));
-      
-      showNotification(`You received ${data.rewardPAD} PAD for Extra Earn!`, "success");
-    } catch (error: any) {
-      console.error('Extra earn error:', error);
-      showNotification(error.message || "Extra Earn ad failed", "error");
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -917,46 +869,6 @@ export default function Home() {
 
         <div className="mt-3">
           <AdWatchingSection user={user as User} />
-        </div>
-
-        <div className="mt-3 px-0">
-          <div className="bg-[#0d0d0d] rounded-xl border border-[#1a1a1a] p-3 mb-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
-                  <Rocket className="w-7 h-7 text-[#4cd3ff] drop-shadow-[0_0_8px_rgba(76,211,255,0.4)]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-white leading-tight">Extra Rewards</h3>
-                  <div className="flex items-center gap-3 mt-2">
-                    <div className="flex items-center gap-1.5">
-                      <DiamondIcon size={12} />
-                      <span className="text-xs font-semibold text-[#4cd3ff]">{appSettings?.rewardPerAd || '2'} PAD</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center">
-                <button
-                  onClick={handleWatchExtraAd}
-                  disabled={(user as any)?.extraAdsWatchedToday >= 100 || isTaskPending}
-                  className="btn-primary px-4 py-2 flex items-center gap-2 w-fit justify-center text-sm disabled:opacity-50"
-                >
-                  {isTaskPending ? (
-                    <>
-                      <Clock size={14} className="animate-spin" />
-                      <span className="font-semibold">Loading...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play size={14} className="group-hover:scale-110 transition-transform" />
-                      <span className="font-semibold">{(user as any)?.extraAdsWatchedToday || 0}/100</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="mt-3 px-0">
