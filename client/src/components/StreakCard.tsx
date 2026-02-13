@@ -156,25 +156,24 @@ export default function StreakCard({ user }: StreakCardProps) {
     setIsClaiming(true);
     
     try {
-      // Show AdsGram int-20373 first
-      const adsgramSuccess = await showAdsgramAd();
+      // Then show Monetag rewarded ad first
+      const monetagResult = await showMonetagRewardedAd();
       
-      if (!adsgramSuccess) {
+      if (monetagResult.unavailable) {
+        // If Monetag unavailable, proceed with just AdsGram
+        showNotification("Monetag ad not available, showing AdsGram...", "info");
+      } else if (!monetagResult.success) {
         showNotification("Please watch the ad completely to claim your bonus.", "error");
         setIsClaiming(false);
         return;
       }
       
-      // Then show Monetag rewarded ad
-      const monetagResult = await showMonetagRewardedAd();
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Show AdsGram int-20372 after Monetag
+      const adsgramSuccess = await showAdsgramAd();
       
-      if (monetagResult.unavailable) {
-        // If Monetag unavailable, proceed with just AdsGram
-        claimStreakMutation.mutate();
-        return;
-      }
-      
-      if (!monetagResult.success) {
+      if (!adsgramSuccess) {
         showNotification("Please watch the ad completely to claim your bonus.", "error");
         setIsClaiming(false);
         return;

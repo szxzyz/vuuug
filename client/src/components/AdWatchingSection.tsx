@@ -98,7 +98,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     return new Promise(async (resolve) => {
       if (window.Adsgram) {
         try {
-          await window.Adsgram.init({ blockId: "20372" }).show();
+          await window.Adsgram.init({ blockId: "int-20373" }).show();
           resolve(true);
         } catch (error) {
           console.error('Adsgram ad error:', error);
@@ -138,8 +138,19 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         showNotification("Ad failed. Please try again.", "error");
         return;
       }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // STEP 2: Show Adsgram ad
+      setCurrentAdStep('adsgram');
+      const adsgramSuccess = await showAdsgramAd();
+
+      if (!adsgramSuccess) {
+        showNotification("Please complete the ad to earn reward.", "error");
+        return;
+      }
       
-      // STEP 3: Grant reward after Monetag complete successfully
+      // STEP 3: Grant reward after both complete successfully
       setCurrentAdStep('verifying');
       
       if (!sessionRewardedRef.current) {
