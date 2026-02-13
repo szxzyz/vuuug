@@ -366,7 +366,7 @@ export default function Home() {
     return new Promise(async (resolve) => {
       if (window.Adsgram) {
         try {
-          await window.Adsgram.init({ blockId: "int-20373" }).show();
+          await window.Adsgram.init({ blockId: "20372" }).show();
           resolve(true);
         } catch (error) {
           console.error('Adsgram ad error:', error);
@@ -781,15 +781,15 @@ export default function Home() {
             <img 
               src={photoUrl} 
               alt="Profile" 
-              className={`w-24 h-24 rounded-full border-4 border-[#4cd3ff] shadow-[0_0_20px_rgba(76,211,255,0.5)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              className={`w-32 h-32 rounded-full shadow-[0_0_20px_rgba(76,211,255,0.3)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
               onClick={() => isAdmin && setLocation("/admin")}
             />
           ) : (
             <div 
-              className={`w-24 h-24 rounded-full bg-gradient-to-br from-[#4cd3ff] to-[#b8b8b8] flex items-center justify-center border-4 border-[#4cd3ff] shadow-[0_0_20px_rgba(76,211,255,0.5)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              className={`w-32 h-32 rounded-full bg-gradient-to-br from-[#4cd3ff] to-[#b8b8b8] flex items-center justify-center shadow-[0_0_20px_rgba(76,211,255,0.3)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
               onClick={() => isAdmin && setLocation("/admin")}
             >
-              <span className="text-black font-bold text-3xl">
+              <span className="text-black font-bold text-4xl">
                 {displayName.charAt(0).toUpperCase()}
               </span>
             </div>
