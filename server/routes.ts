@@ -334,38 +334,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
   
-  app.post("/api/ads/extra-watch", authenticateTelegram, async (req: any, res) => {
-    try {
-      const user = req.user?.user;
-      if (!user) return res.status(401).json({ message: "Not authenticated" });
-
-      const canWatch = await storage.canWatchExtraAd(user.id);
-      if (!canWatch) {
-        return res.status(429).json({ message: "Daily extra earn limit reached (250 ads/day)" });
-      }
-
-      await storage.incrementExtraAdsWatched(user.id);
-      const rewardAmount = "2";
-      await storage.addEarning({
-        userId: user.id,
-        amount: rewardAmount,
-        source: "extra_earn",
-        description: "Extra earn ad reward",
-      });
-
-      const updatedUser = await storage.getUser(user.id);
-      res.json({
-        success: true,
-        newBalance: updatedUser?.balance,
-        extraAdsWatchedToday: updatedUser?.extraAdsWatchedToday,
-        rewardPAD: rewardAmount,
-      });
-    } catch (error) {
-      console.error("Extra earn ad reward error:", error);
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
-
   // Simple test route to verify routing works
   app.get('/api/test', (req: any, res) => {
     console.log('✅ Test route called!');
