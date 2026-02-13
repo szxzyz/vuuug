@@ -28,7 +28,6 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const navItems = [
-    { href: "/create-task", icon: Plus, label: "ADD TASK" },
     { href: "/affiliates", icon: HeartHandshake, label: "INVITE" },
     { href: "/withdraw", icon: CircleDollarSign, label: "PAYOUT" },
   ];
