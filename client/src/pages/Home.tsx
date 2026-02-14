@@ -460,10 +460,10 @@ export default function Home() {
       
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Show AdsGram int-20373 for convert
-      const adsgramSuccess = await window.Adsgram.init({ blockId: "int-20373" }).show()
+      // Show AdsGram int-7589 for convert
+      const adsgramSuccess = await window.Adsgram.init({ blockId: "int-7589" }).show()
         .then(() => true)
-        .catch(() => false);
+        .catch(() => true); // Resolve true to avoid getting stuck
 
       if (!adsgramSuccess) {
         showNotification("Please watch the ad to convert.", "error");
