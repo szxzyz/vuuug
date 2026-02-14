@@ -41,7 +41,7 @@ export default function Layout({ children }: LayoutProps) {
     <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
       {!showSeasonEnd && <Header />}
       
-      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '90px', paddingTop: '56px' }}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '100px', paddingTop: '100px' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location}
@@ -60,64 +60,62 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {!showSeasonEnd && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-[#1A1A1A] pb-[env(safe-area-inset-bottom,12px)]">
-          <div className="max-w-md mx-auto px-4">
-            <div className="flex justify-around items-center py-2.5 pb-3">
-              {/* WATCH with Profile Photo */}
-              <Link href="/">
-                <button
-                  className={`flex flex-col items-center justify-center min-w-[60px] min-h-[52px] transition-all ${
-                    isHomeActive 
-                      ? "text-[#007BFF]" 
-                      : "text-[#AAAAAA] hover:text-[#FFFFFF]"
-                  }`}
-                >
-                  {userPhotoUrl ? (
-                    <img 
-                      src={userPhotoUrl} 
-                      alt="Profile" 
-                      className={`w-7 h-7 rounded-full object-cover transition-all mb-[8px] ${
-                        isHomeActive ? "ring-2 ring-[#007BFF]" : ""
-                      }`}
-                    />
-                  ) : (
-                    <div className={`w-7 h-7 rounded-full bg-[#2a2a2a] flex items-center justify-center mb-[8px] ${
-                      isHomeActive ? "ring-2 ring-[#007BFF]" : ""
-                    }`}>
-                      <User className="w-4 h-4" />
-                    </div>
-                  )}
-                  <span className={`text-[11px] font-medium ${isHomeActive ? 'font-semibold' : ''}`}>
-                    EARN
-                  </span>
-                </button>
-              </Link>
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-48px)] max-w-md h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl border border-white/5">
+          <div className="flex justify-around items-center h-full px-4">
+            {/* WATCH with Profile Photo */}
+            <Link href="/">
+              <button
+                className={`flex flex-col items-center justify-center min-w-[64px] transition-all duration-300 ${
+                  isHomeActive 
+                    ? "text-white scale-105" 
+                    : "text-[#6E6E73] hover:text-white/80"
+                }`}
+              >
+                {userPhotoUrl ? (
+                  <img 
+                    src={userPhotoUrl} 
+                    alt="Profile" 
+                    className={`w-6 h-6 rounded-full object-cover transition-all mb-1 ${
+                      isHomeActive ? "ring-2 ring-white" : ""
+                    }`}
+                  />
+                ) : (
+                  <div className={`w-6 h-6 rounded-full bg-[#2a2a2a] flex items-center justify-center mb-1 ${
+                    isHomeActive ? "ring-2 ring-white" : ""
+                  }`}>
+                    <User className="w-4 h-4" />
+                  </div>
+                )}
+                <span className={`text-[10px] font-semibold tracking-wide uppercase ${isHomeActive ? 'opacity-100' : 'opacity-70'}`}>
+                  EARN
+                </span>
+              </button>
+            </Link>
 
-              {navItems.map((item) => {
-                const isActive = location === item.href;
-                const Icon = item.icon;
-                
-                return (
-                  <Link key={item.href} href={item.href}>
-                    <button
-                      className={`flex flex-col items-center justify-center min-w-[60px] min-h-[52px] transition-all ${
-                        isActive 
-                          ? "text-[#007BFF]" 
-                          : "text-[#AAAAAA] hover:text-[#FFFFFF]"
-                      }`}
-                    >
-                      <Icon 
-                        className="w-7 h-7 transition-all mb-[8px]"
-                        strokeWidth={isActive ? 2.5 : 2}
-                      />
-                      <span className={`text-[11px] font-medium ${isActive ? 'font-semibold' : ''}`}>
-                        {item.label}
-                      </span>
-                    </button>
-                  </Link>
-                );
-              })}
-            </div>
+            {navItems.map((item) => {
+              const isActive = location === item.href;
+              const Icon = item.icon;
+              
+              return (
+                <Link key={item.href} href={item.href}>
+                  <button
+                    className={`flex flex-col items-center justify-center min-w-[64px] transition-all duration-300 ${
+                      isActive 
+                        ? "text-white scale-105" 
+                        : "text-[#6E6E73] hover:text-white/80"
+                    }`}
+                  >
+                    <Icon 
+                      className="w-6 h-6 mb-1 transition-all"
+                      strokeWidth={isActive ? 2.5 : 2}
+                    />
+                    <span className={`text-[10px] font-semibold tracking-wide uppercase ${isActive ? 'opacity-100' : 'opacity-70'}`}>
+                      {item.label}
+                    </span>
+                  </button>
+                </Link>
+              );
+            })}
           </div>
         </nav>
       )}
