@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
+import Header from "@/components/Header";
 import AdWatchingSection from "@/components/AdWatchingSection";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import React from "react";
@@ -11,7 +12,7 @@ import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, 
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getTelegramInitData } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -789,99 +790,106 @@ export default function Home() {
 
   return (
     <Layout>
-      <main className="max-w-md mx-auto px-4 pt-[14px]">
-        <div className="flex flex-col items-center mb-3">
-          {photoUrl ? (
-            <img 
-              src={photoUrl} 
-              alt="Profile" 
-              className={`w-32 h-32 rounded-full shadow-[0_0_20px_rgba(76,211,255,0.3)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-              onClick={() => isAdmin && setLocation("/admin")}
-            />
-          ) : (
-            <div 
-              className={`w-32 h-32 rounded-full bg-gradient-to-br from-[#4cd3ff] to-[#b8b8b8] flex items-center justify-center shadow-[0_0_20px_rgba(76,211,255,0.3)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-              onClick={() => isAdmin && setLocation("/admin")}
+      <Header />
+      <main className="max-w-md mx-auto px-4 pt-24 pb-20 bg-white">
+        {/* Profile Section Container */}
+        <div className="bg-[#FFFFFF] rounded-[24px] p-4 shadow-sm border border-[#E5E5EA] mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="space-y-0.5">
+              <h1 className="text-[#1C1C1E] text-[17px] font-bold tracking-tight">Your Profile</h1>
+              <div className="flex items-center gap-1.5 opacity-90">
+                <span className="text-[#8E8E93] text-[12px] font-medium">{(user as User)?.telegramUsername || (user as User)?.username || 'szxzyz'}</span>
+                <span className="text-[#D1D1D6] text-[12px]">|</span>
+                <span className="text-[#8E8E93] text-[12px] font-medium">ID: {(user as User)?.telegramId || '6653616672'}</span>
+              </div>
+            </div>
+            <Button
+              className="bg-[#D4F26A] hover:bg-[#C5E459] text-[#1C1C1E] font-bold rounded-[14px] px-4 h-9 text-[13px] shadow-sm border-none"
+              onClick={() => window.open('https://t.me/PaidAdzSupport', '_blank')}
             >
-              <span className="text-black font-bold text-4xl">
-                {displayName.charAt(0).toUpperCase()}
-              </span>
+              Support
+            </Button>
+          </div>
+
+          <div className="bg-[#F2F2F7] rounded-[20px] p-3.5 flex items-center gap-4 border border-[#E5E5EA]/40">
+            <div className="relative flex-shrink-0">
+              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-[#D4F26A] p-[2.5px] bg-white">
+                <img
+                  src={photoUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=szxzyz"}
+                  alt="Profile"
+                  className="w-full h-full rounded-full object-cover bg-black"
+                />
+              </div>
             </div>
-          )}
-          
-          {userRank && (
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-[#4cd3ff]/20 to-[#b8b8b8]/20 border border-[#4cd3ff]/30 -mt-2">
-              <Award className="w-3 h-3 text-[#4cd3ff]" />
-              <span className="text-[10px] font-bold text-[#4cd3ff]">#{userRank}</span>
+
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center justify-between bg-white rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
+                <span className="text-[#3A3A3C] text-[10px] font-bold tracking-tight uppercase">STATUS</span>
+                <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
+                  <span className="text-[#D4F26A] font-bold text-[11px]">Free</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between bg-white rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
+                <span className="text-[#3A3A3C] text-[10px] font-bold tracking-tight uppercase">BLOCKCHAINS</span>
+                <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
+                  <span className="text-[#D4F26A] font-bold text-[11px]">TON</span>
+                </div>
+              </div>
             </div>
-          )}
-          
-          <h1 className="text-lg font-bold text-white mt-1">{displayName}</h1>
-          <p className="text-xs text-gray-400 -mt-0.5">UID: {userUID}</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            <Button
+              onClick={handleConvertClick}
+              className="h-[52px] bg-[#D4F26A] hover:bg-[#C5E459] text-[#1C1C1E] font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter"
+            >
+              CONVERT
+            </Button>
+            <Button
+              onClick={() => setPromoPopupOpen(true)}
+              className="h-[52px] bg-[#D4F26A] hover:bg-[#C5E459] text-[#1C1C1E] font-black text-[10px] leading-[1.1] rounded-[18px] flex flex-col items-center justify-center shadow-sm tracking-tighter"
+            >
+              <span className="block">ENTER</span>
+              <span className="block">PROMOCODE</span>
+            </Button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mt-2">
-          <Button
-            onClick={handleConvertClick}
-            disabled={isConverting || convertMutation.isPending}
-            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-[#4cd3ff]/30 hover:border-[#4cd3ff] hover:bg-[#4cd3ff]/10 transition-all rounded-full flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
-          >
-            {isConverting || convertMutation.isPending ? (
-              <>
-                <Clock className="w-4 h-4 text-[#4cd3ff] animate-spin" />
-                <span className="text-white font-medium text-xs">Converting...</span>
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 text-[#4cd3ff]" />
-                <span className="text-white font-medium text-xs">Convert</span>
-              </>
-            )}
-          </Button>
-
+        <div className="space-y-2.5">
           <Button
             onClick={handleClaimStreak}
-            disabled={isClaimingStreak || !canClaimStreak}
-            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-[#4cd3ff]/30 hover:border-[#4cd3ff] hover:bg-[#4cd3ff]/10 transition-all rounded-full flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+            disabled={isClaimingStreak || hasClaimed}
+            className="w-full h-12 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-[20px] flex items-center justify-center gap-2 shadow-sm"
           >
             {isClaimingStreak ? (
               <>
-                <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
-                <span className="text-white font-medium text-xs">Claiming...</span>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-[13px]">Claiming...</span>
               </>
             ) : canClaimStreak ? (
               <>
-                <Flame className="w-4 h-4 text-[#4cd3ff]" />
-                <span className="text-white font-medium text-xs">Claim Bonus</span>
+                <Flame className="w-4 h-4 text-white" />
+                <span className="text-[13px]">Claim Bonus</span>
               </>
             ) : (
               <>
-                <Flame className="w-4 h-4 text-[#4cd3ff] opacity-50" />
-                <span className="text-white font-medium text-xs opacity-70">{timeUntilNextClaim}</span>
+                <Flame className="w-4 h-4 text-white opacity-50" />
+                <span className="text-[13px] opacity-70">{timeUntilNextClaim}</span>
               </>
             )}
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 mt-2">
-          <Button
-            onClick={() => setPromoPopupOpen(true)}
-            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/10 transition-all rounded-full flex items-center justify-center gap-2 shadow-lg"
-          >
-            <Gift className="w-4 h-4 text-purple-400" />
-            <span className="text-white font-medium text-xs">Promo</span>
           </Button>
 
           <Button
             onClick={handleBoosterClick}
-            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 transition-all rounded-full flex items-center justify-center gap-2 shadow-lg"
+            className="w-full h-12 bg-[#FFFFFF] border border-[#E5E5EA] text-[#1C1C1E] font-bold rounded-[20px] flex items-center justify-center gap-2 shadow-sm"
           >
-            <CalendarCheck className="w-4 h-4 text-orange-400" />
-            <span className="text-white font-medium text-xs">Daily Task</span>
+            <CalendarCheck className="w-4 h-4 text-purple-600" />
+            <span className="text-[13px]">Daily Tasks</span>
           </Button>
         </div>
 
-        <div className="mt-3">
+        <div className="mt-4">
           <AdWatchingSection user={user as User} />
         </div>
 
