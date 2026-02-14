@@ -791,29 +791,12 @@ export default function Home() {
   return (
     <Layout>
       <Header />
-      <main className="max-w-md mx-auto px-4 pt-4 pb-20 bg-black text-white">
+      <main className="max-w-md mx-auto px-4 pt-1 pb-4 bg-black text-white">
         {/* Profile Section Container */}
         <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm border border-white/5 mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="space-y-0.5">
-              <h1 className="text-white text-[17px] font-bold tracking-tight">Your Profile</h1>
-              <div className="flex items-center gap-1.5 opacity-90">
-                <span className="text-[#8E8E93] text-[12px] font-medium">{(user as User)?.telegramUsername || (user as User)?.username || 'szxzyz'}</span>
-                <span className="text-[#D1D1D6] text-[12px]">|</span>
-                <span className="text-[#8E8E93] text-[12px] font-medium">ID: {(user as User)?.telegramId || '6653616672'}</span>
-              </div>
-            </div>
-            <Button
-              className="bg-[#D4F26A] hover:bg-[#C5E459] text-[#1C1C1E] font-bold rounded-[14px] px-4 h-9 text-[13px] shadow-sm border-none"
-              onClick={() => window.open('https://t.me/PaidAdzSupport', '_blank')}
-            >
-              Support
-            </Button>
-          </div>
-
           <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4 border border-white/5">
             <div className="relative flex-shrink-0">
-              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-[#D4F26A] p-[2.5px] bg-[#0D0D0D]">
+              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-purple-500 p-[2.5px] bg-[#0D0D0D]">
                 <img
                   src={photoUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=szxzyz"}
                   alt="Profile"
@@ -824,31 +807,31 @@ export default function Home() {
 
             <div className="flex-1 space-y-2">
               <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
-                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">STATUS</span>
+                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">Name</span>
                 <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
-                  <span className="text-[#D4F26A] font-bold text-[11px]">Free</span>
+                  <span className="text-purple-400 font-bold text-[11px]">{displayName}</span>
                 </div>
               </div>
 
               <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
-                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">BLOCKCHAINS</span>
+                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">I'd</span>
                 <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
-                  <span className="text-[#D4F26A] font-bold text-[11px]">TON</span>
+                  <span className="text-purple-400 font-bold text-[11px]">{(user as User)?.telegramId || '6653616672'}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mt-4">
+          <div className="grid grid-cols-2 gap-3 mt-4">
             <Button
               onClick={handleConvertClick}
-              className="h-[52px] bg-[#D4F26A] hover:bg-[#C5E459] text-[#1C1C1E] font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter"
+              className="h-[52px] bg-purple-600 hover:bg-purple-700 text-white font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter"
             >
               CONVERT
             </Button>
             <Button
               onClick={() => setPromoPopupOpen(true)}
-              className="h-[52px] bg-[#D4F26A] hover:bg-[#C5E459] text-[#1C1C1E] font-black text-[10px] leading-[1.1] rounded-[18px] flex flex-col items-center justify-center shadow-sm tracking-tighter"
+              className="h-[52px] bg-purple-600 hover:bg-purple-700 text-white font-black text-[10px] leading-[1.1] rounded-[18px] flex flex-col items-center justify-center shadow-sm tracking-tighter"
             >
               <span className="block">ENTER</span>
               <span className="block">PROMOCODE</span>
