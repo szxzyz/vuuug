@@ -47,8 +47,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       return response.json();
     },
     onSuccess: async (data) => {
-      const rewardAmount = data?.rewardPAD || appSettings?.rewardPerAd || 2;
-      showNotification(`+${rewardAmount} PAD earned!`, "success");
+      // Reward already shown optimistically for speed
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
@@ -164,6 +163,9 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           adsWatchedToday: (old?.adsWatchedToday || 0) + 1
         }));
         
+        // Instant notification for better UX
+        showNotification(`+${rewardAmount} PAD earned!`, "success");
+        
         // Sync with backend - single reward call
         watchAdMutation.mutate('monetag');
       }
@@ -171,6 +173,8 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       // Always reset state on completion or error
       setCurrentAdStep('idle');
       setIsShowingAds(false);
+      // Ensure data is fresh
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     }
   };
 
