@@ -41,7 +41,7 @@ export default function Layout({ children }: LayoutProps) {
     <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
       {!showSeasonEnd && <Header />}
       
-      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '140px', paddingTop: '84px' }}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '90px', paddingTop: '56px' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location}
@@ -62,7 +62,7 @@ export default function Layout({ children }: LayoutProps) {
       {!showSeasonEnd && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-[#1A1A1A] pb-[env(safe-area-inset-bottom,12px)]">
           <div className="max-w-md mx-auto px-4">
-            <div className="flex justify-around items-center py-3 pb-12">
+            <div className="flex justify-around items-center py-2.5 pb-3">
               {/* WATCH with Profile Photo */}
               <Link href="/">
                 <button

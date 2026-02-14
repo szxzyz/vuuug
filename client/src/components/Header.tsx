@@ -32,25 +32,25 @@ export default function Header() {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-black border-b border-[#1A1A1A] pt-[env(safe-area-inset-top,8px)]">
-      <div className="max-w-md mx-auto px-4 py-5 flex items-center justify-between">
+      <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 bg-[#1A1A1A] px-3 h-12 rounded-xl min-w-[90px] border border-[#333] shadow-lg">
-            <DiamondIcon size={20} withGlow />
-            <span className="text-sm text-white font-bold truncate">
+          <div className="flex items-center gap-2 bg-[#1A1A1A] px-3 h-8 rounded-lg min-w-[80px] max-w-[110px]">
+            <DiamondIcon size={16} withGlow />
+            <span className="text-sm text-white font-semibold truncate">
               {formatBalance(padBalance)}
             </span>
           </div>
           
-          <div className="flex items-center gap-2 bg-[#1A1A1A] px-3 h-12 rounded-xl min-w-[80px] border border-[#333] shadow-lg">
-            <Bug className="w-6 h-6 text-green-400 flex-shrink-0" />
-            <span className="text-sm text-white font-bold truncate">
+          <div className="flex items-center gap-2 bg-[#1A1A1A] px-3 h-8 rounded-lg min-w-[70px] max-w-[100px]">
+            <Bug className="w-4 h-4 text-green-400 flex-shrink-0" />
+            <span className="text-sm text-white font-semibold truncate">
               {formatBalance(bugBalance)}
             </span>
           </div>
 
-          <div className="flex items-center gap-3 bg-[#1A1A1A] px-4 h-12 rounded-xl min-w-[100px] border border-[#333] shadow-lg">
-            <span className="text-green-400 font-bold text-lg">$</span>
-            <span className="text-sm text-white font-bold">
+          <div className="flex items-center gap-2 bg-[#1A1A1A] px-5 h-8 rounded-lg min-w-[80px]">
+            <span className="text-green-400 font-semibold text-sm">$</span>
+            <span className="text-sm text-white font-semibold">
               {usdBalance.toFixed(3)}
             </span>
           </div>
