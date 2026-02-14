@@ -366,7 +366,7 @@ export default function Home() {
     return new Promise(async (resolve) => {
       if (window.Adsgram) {
         try {
-          await window.Adsgram.init({ blockId: "20372" }).show();
+          await window.Adsgram.init({ blockId: "int-20373" }).show();
           resolve(true);
         } catch (error) {
           console.error('Adsgram ad error:', error);
@@ -499,7 +499,7 @@ export default function Home() {
       
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Show AdsGram int-20372 for Claim Bonus
+      // Show AdsGram 20372 for Claim Bonus
       const adsgramSuccess = await showAdsgramAd();
       
       if (!adsgramSuccess) {
