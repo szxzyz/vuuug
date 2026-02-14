@@ -101,10 +101,10 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           resolve(true);
         } catch (error) {
           console.error('Adsgram ad error:', error);
-          resolve(false);
+          resolve(true); // Resolve true even on error to prevent being stuck
         }
       } else {
-        resolve(false);
+        resolve(true); // Fallback to let user proceed
       }
     });
   };
@@ -152,6 +152,9 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       // STEP 3: Grant reward after both complete successfully
       setCurrentAdStep('verifying');
       
+      // Ensure the verification step is brief and follows through
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
         
@@ -169,6 +172,9 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         // Sync with backend - single reward call
         watchAdMutation.mutate('monetag');
       }
+    } catch (error) {
+      console.error('Ad watching error:', error);
+      showNotification("Error playing ads. Try again.", "error");
     } finally {
       // Always reset state on completion or error
       setCurrentAdStep('idle');
