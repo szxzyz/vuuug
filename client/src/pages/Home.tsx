@@ -791,12 +791,12 @@ export default function Home() {
   return (
     <Layout>
       <Header />
-      <main className="max-w-md mx-auto px-4 pt-24 pb-20 bg-white">
+      <main className="max-w-md mx-auto px-4 pt-4 pb-20 bg-black text-white">
         {/* Profile Section Container */}
-        <div className="bg-[#FFFFFF] rounded-[24px] p-4 shadow-sm border border-[#E5E5EA] mb-4">
+        <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm border border-white/5 mb-4">
           <div className="flex items-center justify-between mb-4">
             <div className="space-y-0.5">
-              <h1 className="text-[#1C1C1E] text-[17px] font-bold tracking-tight">Your Profile</h1>
+              <h1 className="text-white text-[17px] font-bold tracking-tight">Your Profile</h1>
               <div className="flex items-center gap-1.5 opacity-90">
                 <span className="text-[#8E8E93] text-[12px] font-medium">{(user as User)?.telegramUsername || (user as User)?.username || 'szxzyz'}</span>
                 <span className="text-[#D1D1D6] text-[12px]">|</span>
@@ -811,9 +811,9 @@ export default function Home() {
             </Button>
           </div>
 
-          <div className="bg-[#F2F2F7] rounded-[20px] p-3.5 flex items-center gap-4 border border-[#E5E5EA]/40">
+          <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4 border border-white/5">
             <div className="relative flex-shrink-0">
-              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-[#D4F26A] p-[2.5px] bg-white">
+              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-[#D4F26A] p-[2.5px] bg-[#0D0D0D]">
                 <img
                   src={photoUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=szxzyz"}
                   alt="Profile"
@@ -823,15 +823,15 @@ export default function Home() {
             </div>
 
             <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between bg-white rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
-                <span className="text-[#3A3A3C] text-[10px] font-bold tracking-tight uppercase">STATUS</span>
+              <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
+                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">STATUS</span>
                 <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
                   <span className="text-[#D4F26A] font-bold text-[11px]">Free</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-white rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
-                <span className="text-[#3A3A3C] text-[10px] font-bold tracking-tight uppercase">BLOCKCHAINS</span>
+              <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
+                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">BLOCKCHAINS</span>
                 <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
                   <span className="text-[#D4F26A] font-bold text-[11px]">TON</span>
                 </div>
