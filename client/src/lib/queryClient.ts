@@ -40,38 +40,16 @@ const getTelegramInitData = (): string | null => {
       const initData = window.Telegram.WebApp.initData;
       if (initData && initData.trim() !== '') {
         console.log('✅ Found Telegram WebApp initData:', initData.substring(0, 50) + '...');
-        console.log('🔐 Telegram WebApp Info:', {
-          version: (window.Telegram.WebApp as any).version,
-          platform: (window.Telegram.WebApp as any).platform,
-          ready: typeof window.Telegram.WebApp.ready === 'function'
-        });
         return initData;
       }
     }
     
-    // In production, if no valid initData found, log environment info for debugging
-    if (window.Telegram?.WebApp) {
-      console.warn('⚠️ Telegram WebApp detected but initData is empty - this may require opening in official Telegram app');
-      console.log('🔍 WebApp state:', {
-        hasInitData: !!window.Telegram.WebApp.initData,
-        initDataLength: window.Telegram.WebApp.initData?.length || 0,
-        version: (window.Telegram.WebApp as any).version,
-        ready: typeof window.Telegram.WebApp.ready === 'function'
-      });
-    } else {
-      console.log('❌ No Telegram WebApp object found - please open this app inside Telegram');
-      console.log('🔍 Environment info:', {
-        userAgent: navigator.userAgent,
-        hasTelegram: !!window.Telegram,
-        location: window.location.href
-      });
-    }
-    
-    // No valid data found in production
-    console.log('❌ Production environment: Valid Telegram WebApp authentication required');
+    return null;
   }
   return null;
 };
+
+export { getTelegramInitData };
 
 export async function apiRequest(
   method: string,
