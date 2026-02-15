@@ -446,9 +446,9 @@ export default function Withdraw() {
         <div className="flex gap-3 mb-4">
           <Button
             type="button"
-            className={`flex-1 h-11 rounded-xl font-bold text-sm shadow-md transition-all border-0 ${
+            className={`flex-1 h-11 rounded-xl font-semibold text-sm shadow-md transition-all border-0 ${
               activeTab === 'withdraw'
-                ? "bg-[#7A63F1] text-white shadow-[#7A63F1]/30" 
+                ? "bg-[#007BFF] text-white shadow-[#007BFF]/30" 
                 : "bg-[#1a1a1a] text-gray-400 hover:bg-[#252525] hover:text-white"
             }`}
             onClick={() => setActiveTab('withdraw')}
@@ -458,9 +458,9 @@ export default function Withdraw() {
           </Button>
           <Button
             type="button"
-            className={`flex-1 h-11 rounded-xl font-bold text-sm shadow-md transition-all border-0 ${
+            className={`flex-1 h-11 rounded-xl font-semibold text-sm shadow-md transition-all border-0 ${
               activeTab === 'wallet-setup'
-                ? "bg-[#7A63F1] text-white shadow-[#7A63F1]/30" 
+                ? "bg-[#007BFF] text-white shadow-[#007BFF]/30" 
                 : "bg-[#1a1a1a] text-gray-400 hover:bg-[#252525] hover:text-white"
             }`}
             onClick={() => setActiveTab('wallet-setup')}
@@ -476,7 +476,7 @@ export default function Withdraw() {
               <Card className="bg-[#111111] border-[#2a2a2a] overflow-hidden">
                 <CardContent className="p-6 flex items-center justify-center">
                   <div className="flex items-center gap-3">
-                    <Loader2 className="w-5 h-5 text-[#7A63F1] animate-spin" />
+                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
                     <span className="text-gray-400 text-sm">Checking requirements...</span>
                   </div>
                 </CardContent>
@@ -501,14 +501,14 @@ export default function Withdraw() {
                     onClick={() => setSelectedMethod(system.id)}
                     className={`w-full flex items-center space-x-2 p-3 rounded-lg border-2 transition-all ${
                       selectedMethod === system.id
-                        ? 'border-[#7A63F1] bg-[#7A63F1]/10'
-                        : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#7A63F1]/50'
+                        ? 'border-[#4cd3ff] bg-[#4cd3ff]/10'
+                        : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#4cd3ff]/50'
                     }`}
                   >
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      selectedMethod === system.id ? 'border-[#7A63F1] bg-[#7A63F1]' : 'border-[#aaa]'
+                      selectedMethod === system.id ? 'border-[#4cd3ff] bg-[#4cd3ff]' : 'border-[#aaa]'
                     }`}>
-                      {selectedMethod === system.id && <Check className="w-3 h-3 text-white" />}
+                      {selectedMethod === system.id && <Check className="w-3 h-3 text-black" />}
                     </div>
                     <div className="flex-1 flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center">
@@ -539,15 +539,15 @@ export default function Withdraw() {
                         disabled={isDisabled}
                         className={`relative p-2 rounded-lg border transition-all text-center ${
                           isSelected
-                            ? 'border-[#7A63F1] bg-[#7A63F1]/10 ring-1 ring-[#7A63F1]/50'
+                            ? 'border-[#4cd3ff] bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]/50'
                             : isDisabled
                               ? 'border-[#2a2a2a] bg-[#0d0d0d] opacity-40 cursor-not-allowed'
-                              : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#7A63F1]/50'
+                              : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#4cd3ff]/50'
                         }`}
                       >
                         {isSelected && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#7A63F1] rounded-full flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-white" />
+                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#4cd3ff] rounded-full flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 text-black" />
                           </div>
                         )}
                         <div className="text-sm font-bold text-white">${pkg.usd.toFixed(2)}</div>
@@ -565,15 +565,15 @@ export default function Withdraw() {
                   disabled={usdBalance <= 0}
                   className={`relative w-full p-2 rounded-lg border transition-all text-center ${
                     selectedPackage === 'FULL'
-                      ? 'border-[#7A63F1] bg-[#7A63F1]/10 ring-1 ring-[#7A63F1]/50'
+                      ? 'border-[#4cd3ff] bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]/50'
                       : usdBalance <= 0
                         ? 'border-[#2a2a2a] bg-[#0d0d0d] opacity-40 cursor-not-allowed'
-                        : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#7A63F1]/50'
+                        : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#4cd3ff]/50'
                   }`}
                 >
                   {selectedPackage === 'FULL' && (
-                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#7A63F1] rounded-full flex items-center justify-center">
-                      <Check className="w-2.5 h-2.5 text-white" />
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#4cd3ff] rounded-full flex items-center justify-center">
+                      <Check className="w-2.5 h-2.5 text-black" />
                     </div>
                   )}
                   <div className="text-sm font-bold text-white">FULL BALANCE</div>
@@ -637,7 +637,7 @@ export default function Withdraw() {
                   !hasWatchedEnoughAds ||
                   !hasEnoughBug
                 }
-                className="w-full bg-[#7A63F1] hover:bg-[#6ddeff] text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {withdrawMutation.isPending ? (
                   <>
@@ -651,7 +651,7 @@ export default function Withdraw() {
             )}
 
             <div className="mt-6 pt-4 border-t border-[#2a2a2a]">
-              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-[#4cd3ff]" />
                 Wallet Activity
               </h3>
@@ -704,10 +704,10 @@ export default function Withdraw() {
             <div className="space-y-2">
               <div className="space-y-2">
                 <button
-                  className="w-full flex items-center space-x-2 p-3 rounded-lg border-2 transition-all border-[#7A63F1] bg-[#7A63F1]/10"
+                  className="w-full flex items-center space-x-2 p-3 rounded-lg border-2 transition-all border-[#4cd3ff] bg-[#4cd3ff]/10"
                 >
-                  <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center border-[#7A63F1] bg-[#7A63F1]">
-                    <Check className="w-3 h-3 text-white" />
+                  <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center border-[#4cd3ff] bg-[#4cd3ff]">
+                    <Check className="w-3 h-3 text-black" />
                   </div>
                   <div className="flex-1 flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center">
@@ -734,7 +734,7 @@ export default function Withdraw() {
                     type="text"
                     value={tonWalletId}
                     disabled={true}
-                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#7A63F1] transition-colors rounded-lg h-11 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="space-y-2">
@@ -744,20 +744,20 @@ export default function Withdraw() {
                     placeholder="Enter TON wallet address (UQ... or EQ...)"
                     value={newTonWalletId}
                     onChange={(e) => setNewTonWalletId(e.target.value)}
-                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#7A63F1] transition-colors rounded-lg h-11"
+                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11"
                   />
                 </div>
-                <div className="flex items-start gap-2 p-3 bg-[#7A63F1]/10 rounded-lg border border-[#7A63F1]/30">
+                <div className="flex items-start gap-2 p-3 bg-[#4cd3ff]/10 rounded-lg border border-[#4cd3ff]/30">
                   <Info className="w-4 h-4 text-[#4cd3ff] mt-0.5 flex-shrink-0" />
                   <div className="text-xs text-[#c0c0c0]">
-                    Fee: <span className="text-[#4cd3ff] font-bold">{walletChangeFee} PAD</span> will be deducted
+                    Fee: <span className="text-[#4cd3ff] font-semibold">{walletChangeFee} PAD</span> will be deducted
                   </div>
                 </div>
               </>
             ) : (
               <>
                 <p className="text-xs text-[#c0c0c0]">
-                  Set up your <span className="text-[#4cd3ff] font-bold">TON Network</span> wallet for withdrawals
+                  Set up your <span className="text-[#4cd3ff] font-semibold">TON Network</span> wallet for withdrawals
                 </p>
                 <div className="space-y-2">
                   <Input
@@ -765,7 +765,7 @@ export default function Withdraw() {
                     placeholder="Enter TON wallet address (UQ... or EQ...)"
                     value={tonWalletId}
                     onChange={(e) => setTonWalletId(e.target.value)}
-                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#7A63F1] transition-colors rounded-lg h-11"
+                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11"
                   />
                   <p className="text-xs text-red-500 font-medium flex items-center gap-1">
                     <Info className="w-3 h-3" />
@@ -795,13 +795,13 @@ export default function Withdraw() {
                   <Button
                     variant="outline"
                     onClick={() => setIsChangingTonWallet(true)}
-                    className="flex-1 bg-transparent border-[#7A63F1]/50 text-[#4cd3ff] hover:bg-[#7A63F1]/10"
+                    className="flex-1 bg-transparent border-[#4cd3ff]/50 text-[#4cd3ff] hover:bg-[#4cd3ff]/10"
                   >
                     Change Wallet
                   </Button>
                   <Button
                     onClick={() => setActiveTab('withdraw')}
-                    className="flex-1 bg-[#7A63F1] hover:bg-[#6ddeff] text-white font-bold"
+                    className="flex-1 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold"
                   >
                     Done
                   </Button>
@@ -821,7 +821,7 @@ export default function Withdraw() {
                   <Button
                     onClick={handleChangeTonWallet}
                     disabled={changeTonWalletMutation.isPending}
-                    className="flex-1 bg-[#7A63F1] hover:bg-[#6ddeff] text-white font-bold"
+                    className="flex-1 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold"
                   >
                     {changeTonWalletMutation.isPending ? "Processing..." : `Pay ${walletChangeFee} PAD & Confirm`}
                   </Button>
@@ -838,7 +838,7 @@ export default function Withdraw() {
                   <Button
                     onClick={handleSaveTonWallet}
                     disabled={saveTonWalletMutation.isPending}
-                    className="flex-1 bg-[#7A63F1] hover:bg-[#6ddeff] text-white font-bold"
+                    className="flex-1 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold"
                   >
                     {saveTonWalletMutation.isPending ? "Saving..." : "Save TON Wallet"}
                   </Button>

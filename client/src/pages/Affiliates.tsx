@@ -182,20 +182,20 @@ export default function Affiliates() {
             
             <div className="grid grid-cols-2 gap-3">
               <Button
-                className="h-12 bg-[#7A63F1] hover:bg-[#6A53E1] text-white rounded-xl font-bold"
+                className="h-12 btn-primary"
                 onClick={copyReferralLink}
                 disabled={!referralLink}
               >
-                <Copy className="w-4 h-4 mr-2 text-white" />
+                <Copy className="w-4 h-4 mr-2" />
                 Copy
               </Button>
               
               <Button
-                className="h-12 bg-[#7A63F1] hover:bg-[#6A53E1] text-white rounded-xl font-bold"
+                className="h-12 btn-primary"
                 onClick={shareReferralLink}
                 disabled={!referralLink || isSharing}
               >
-                {isSharing ? <Loader2 className="w-4 h-4 mr-2 animate-spin text-white" /> : <Share2 className="w-4 h-4 mr-2 text-white" />}
+                {isSharing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Share2 className="w-4 h-4 mr-2" />}
                 {isSharing ? 'Sending...' : 'Share'}
               </Button>
             </div>

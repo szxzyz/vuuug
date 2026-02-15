@@ -795,15 +795,8 @@ export default function Home() {
         {/* Profile Section Container */}
         <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm border border-white/5 mb-4">
           <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4 border border-white/5">
-            <div 
-              className="relative flex-shrink-0 cursor-pointer"
-              onClick={() => {
-                if (isAdmin) {
-                  setLocation("/admin");
-                }
-              }}
-            >
-              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-[#7A63F1] p-[2.5px] bg-[#0D0D0D]">
+            <div className="relative flex-shrink-0">
+              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-purple-500 p-[2.5px] bg-[#0D0D0D]">
                 <img
                   src={photoUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=szxzyz"}
                   alt="Profile"
@@ -986,7 +979,7 @@ export default function Home() {
           <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a] relative">
             <div className="flex items-center justify-center gap-2 mb-6">
               <CalendarCheck className="w-5 h-5 text-[#4cd3ff]" />
-              <h2 className="text-lg font-bold text-white tracking-tight">Daily Tasks</h2>
+              <h2 className="text-lg font-bold text-white">Daily Tasks</h2>
             </div>
             
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
@@ -1017,7 +1010,7 @@ export default function Home() {
                     <Button
                       onClick={handleShareWithFriends}
                       disabled={!referralLink}
-                      className="h-8 w-16 text-xs font-bold rounded-lg bg-[#7A63F1] hover:bg-[#6A53E1] text-white"
+                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
                     >
                       Share
                     </Button>
@@ -1058,7 +1051,7 @@ export default function Home() {
                   ) : (
                     <Button
                       onClick={handleDailyCheckin}
-                      className="h-8 w-16 text-xs font-bold rounded-lg bg-[#7A63F1] hover:bg-[#6A53E1] text-white"
+                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
                     >
                       Go
                     </Button>
@@ -1099,7 +1092,7 @@ export default function Home() {
                   ) : (
                     <Button
                       onClick={handleCheckForUpdates}
-                      className="h-8 w-16 text-xs font-bold rounded-lg bg-[#7A63F1] hover:bg-[#6A53E1] text-white"
+                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
                     >
                       Go
                     </Button>
