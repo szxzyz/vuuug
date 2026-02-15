@@ -791,12 +791,15 @@ export default function Home() {
   return (
     <Layout>
       <Header />
-      <main className="max-w-md mx-auto px-4 pt-1 pb-4 bg-black text-white">
+      <main className="max-w-md mx-auto px-4 pt-1 pb-1 bg-black text-white">
         {/* Profile Section Container */}
         <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm border border-white/5 mb-4">
           <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4 border border-white/5">
             <div className="relative flex-shrink-0">
-              <div className="w-[78px] h-[78px] rounded-full border-[1px] border-purple-500 p-[2.5px] bg-[#0D0D0D]">
+              <div 
+                className={`w-[78px] h-[78px] rounded-full border-[1px] ${isAdmin ? 'border-blue-500 cursor-pointer hover:scale-105 transition-transform' : 'border-blue-500'} p-[2.5px] bg-[#0D0D0D]`}
+                onClick={() => isAdmin && setLocation('/admin')}
+              >
                 <img
                   src={photoUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=szxzyz"}
                   alt="Profile"
@@ -809,14 +812,14 @@ export default function Home() {
               <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
                 <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">Name</span>
                 <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
-                  <span className="text-purple-400 font-bold text-[11px]">{displayName}</span>
+                  <span className="text-gray-400 font-bold text-[11px]">{displayName}</span>
                 </div>
               </div>
 
               <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
                 <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">I'd</span>
                 <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
-                  <span className="text-purple-400 font-bold text-[11px]">{(user as User)?.telegramId || '6653616672'}</span>
+                  <span className="text-gray-400 font-bold text-[11px]">{(user as User)?.telegramId || '6653616672'}</span>
                 </div>
               </div>
             </div>
@@ -825,30 +828,36 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3 mt-4">
             <Button
               onClick={handleConvertClick}
-              className="h-[52px] bg-purple-600 hover:bg-purple-700 text-white font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter"
+              className="h-[52px] bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF] font-sans font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter flex items-center justify-center gap-2"
             >
-              CONVERT
+              <RefreshCw className="w-4 h-4" />
+              <span>CONVERT</span>
             </Button>
             <Button
               onClick={() => setPromoPopupOpen(true)}
-              className="h-[52px] bg-purple-600 hover:bg-purple-700 text-white font-black text-[10px] leading-[1.1] rounded-[18px] flex flex-col items-center justify-center shadow-sm tracking-tighter"
+              className="h-[52px] bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF] font-sans font-black text-[10px] leading-[1.1] rounded-[18px] flex flex-col items-center justify-center shadow-sm tracking-tighter"
             >
-              <span className="block">ENTER</span>
-              <span className="block">PROMOCODE</span>
+              <div className="flex items-center gap-1.5">
+                <Gift className="w-3 h-3" />
+                <div className="flex flex-col items-center">
+                  <span className="block">ENTER</span>
+                  <span className="block">PROMOCODE</span>
+                </div>
+              </div>
             </Button>
             
             <Button
               onClick={handleClaimStreak}
               disabled={isClaimingStreak || hasClaimed}
-              className={`h-[52px] text-white font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter transition-all flex items-center justify-center gap-2 ${
-                hasClaimed ? "bg-[#1a1a1a] text-gray-500 cursor-not-allowed opacity-80" : "bg-purple-600 hover:bg-purple-700"
+              className={`h-[52px] font-sans font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter transition-all flex items-center justify-center gap-2 ${
+                hasClaimed ? "bg-[#1a1a1a] text-gray-500 cursor-not-allowed opacity-80" : "bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF]"
               }`}
             >
               {isClaimingStreak ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : canClaimStreak ? (
                 <>
-                  <Flame className="w-4 h-4 text-white" />
+                  <Flame className="w-4 h-4" />
                   <span>CLAIM BONUS</span>
                 </>
               ) : (
@@ -861,9 +870,9 @@ export default function Home() {
 
             <Button
               onClick={() => setLocation("/tasks")}
-              className="h-[52px] bg-[#FFFFFF] border border-[#E5E5EA] text-[#1C1C1E] font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter flex items-center justify-center gap-2"
+              className="h-[52px] bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF] font-sans font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter flex items-center justify-center gap-2"
             >
-              <CalendarCheck className="w-4 h-4 text-purple-600" />
+              <CalendarCheck className="w-4 h-4" />
               <span>DAILY TASKS</span>
             </Button>
           </div>
