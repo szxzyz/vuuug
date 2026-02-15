@@ -592,7 +592,7 @@ export default function Home() {
   const balanceUSD = parseFloat((user as User)?.usdBalance || "0");
   const balanceBUG = parseFloat((user as User)?.bugBalance || "0");
   
-  const userUID = (user as User)?.referralCode || "00000";
+  const userUID = (user as User)?.telegramId || (user as User)?.referralCode || "00000";
 
   const photoUrl = typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.photo_url;
   
@@ -836,41 +836,39 @@ export default function Home() {
               <span className="block">ENTER</span>
               <span className="block">PROMOCODE</span>
             </Button>
+            
+            <Button
+              onClick={handleClaimStreak}
+              disabled={isClaimingStreak || hasClaimed}
+              className={`h-[52px] text-white font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter transition-all flex items-center justify-center gap-2 ${
+                hasClaimed ? "bg-[#1a1a1a] text-gray-500 cursor-not-allowed opacity-80" : "bg-purple-600 hover:bg-purple-700"
+              }`}
+            >
+              {isClaimingStreak ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : canClaimStreak ? (
+                <>
+                  <Flame className="w-4 h-4 text-white" />
+                  <span>CLAIM BONUS</span>
+                </>
+              ) : (
+                <div className="flex flex-col items-center leading-none">
+                  <span className="text-[10px] opacity-60 uppercase font-black">NEXT CLAIM</span>
+                  <span className="text-[13px] font-black">{timeUntilNextClaim}</span>
+                </div>
+              )}
+            </Button>
+
+            <Button
+              onClick={() => setLocation("/tasks")}
+              className="h-[52px] bg-[#FFFFFF] border border-[#E5E5EA] text-[#1C1C1E] font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter flex items-center justify-center gap-2"
+            >
+              <CalendarCheck className="w-4 h-4 text-purple-600" />
+              <span>DAILY TASKS</span>
+            </Button>
           </div>
         </div>
 
-        <div className="space-y-2.5">
-          <Button
-            onClick={handleClaimStreak}
-            disabled={isClaimingStreak || hasClaimed}
-            className="w-full h-12 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-[20px] flex items-center justify-center gap-2 shadow-sm"
-          >
-            {isClaimingStreak ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-[13px]">Claiming...</span>
-              </>
-            ) : canClaimStreak ? (
-              <>
-                <Flame className="w-4 h-4 text-white" />
-                <span className="text-[13px]">Claim Bonus</span>
-              </>
-            ) : (
-              <>
-                <Flame className="w-4 h-4 text-white opacity-50" />
-                <span className="text-[13px] opacity-70">{timeUntilNextClaim}</span>
-              </>
-            )}
-          </Button>
-
-          <Button
-            onClick={handleBoosterClick}
-            className="w-full h-12 bg-[#FFFFFF] border border-[#E5E5EA] text-[#1C1C1E] font-bold rounded-[20px] flex items-center justify-center gap-2 shadow-sm"
-          >
-            <CalendarCheck className="w-4 h-4 text-purple-600" />
-            <span className="text-[13px]">Daily Tasks</span>
-          </Button>
-        </div>
 
         <div className="mt-4">
           <AdWatchingSection user={user as User} />
