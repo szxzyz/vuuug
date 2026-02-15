@@ -199,7 +199,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           <button
             onClick={handleStartEarning}
             disabled={isShowingAds || adsWatchedToday >= dailyLimit}
-            className="bg-[#7A63F1] hover:bg-[#6A53E1] text-white px-6 py-3 flex items-center gap-2 min-w-[160px] justify-center text-base disabled:opacity-50 rounded-xl transition-all shadow-lg"
+            className="btn-primary px-6 py-3 flex items-center gap-2 min-w-[160px] justify-center text-base disabled:opacity-50"
             data-testid="button-watch-ad"
           >
             {isShowingAds ? (
@@ -209,7 +209,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                 ) : (
                   <Clock size={16} className="animate-spin" />
                 )}
-                <span className="text-sm font-bold tracking-tight">
+                <span className="text-sm font-semibold">
                   {currentAdStep === 'monetag' ? 'Monetag...' : 
                    currentAdStep === 'adsgram' ? 'AdGram...' :
                    currentAdStep === 'verifying' ? 'Verifying...' : 'Loading...'}
@@ -218,7 +218,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
             ) : (
               <>
                 <Play size={16} className="group-hover:scale-110 transition-transform" />
-                <span className="text-sm font-bold tracking-tight">Start Earning</span>
+                <span className="text-sm font-semibold">Start Earning</span>
               </>
             )}
           </button>
