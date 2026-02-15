@@ -38,10 +38,10 @@ export default function Layout({ children }: LayoutProps) {
   const isHomeActive = location === "/";
 
   return (
-    <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
+    <div className="h-screen w-full flex flex-col overflow-hidden bg-black">
       {!showSeasonEnd && <Header />}
       
-      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '100px', paddingTop: '100px' }}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '80px', paddingTop: '60px' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location}
@@ -65,6 +65,7 @@ export default function Layout({ children }: LayoutProps) {
             {/* WATCH with Profile Photo */}
             <Link href="/">
               <button
+                onClick={() => isHomeActive && isAdmin && setLocation("/admin")}
                 className={`flex flex-col items-center justify-center min-w-[64px] transition-all duration-300 ${
                   isHomeActive 
                     ? "text-white scale-105" 
