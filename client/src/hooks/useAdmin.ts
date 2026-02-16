@@ -8,7 +8,7 @@ export function useAdmin() {
   const telegramId = (user as any)?.telegram_id || (user as any)?.telegramId;
   const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'development';
   
-  const isAdmin = telegramId === "6653616672" || 
+  const isAdmin = telegramId === (import.meta.env.VITE_ADMIN_TELEGRAM_ID || "6653616672") || 
                   (telegramId === "123456789" && isDevelopment);
   
   console.log('🔍 Admin check:', { telegramId, isDevelopment, isAdmin, user: !!user });
