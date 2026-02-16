@@ -809,17 +809,17 @@ export default function Home() {
             </div>
 
             <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
-                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">Name</span>
-                <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
+              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 border border-[#2a2a2a] shadow-sm">
+                <span className="text-gray-500 text-[10px] font-bold tracking-tight uppercase">Name</span>
+                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[65px] text-center border border-[#353535]">
                   <span className="text-gray-400 font-bold text-[11px]">{displayName}</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-[#0D0D0D] rounded-[14px] px-3 py-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.01)]">
-                <span className="text-[#8E8E93] text-[10px] font-bold tracking-tight uppercase">I'd</span>
-                <div className="bg-[#1C1C1E] rounded-full px-3 py-1 min-w-[65px] text-center">
-                  <span className="text-gray-400 font-bold text-[11px]">{(user as User)?.telegramId || '6653616672'}</span>
+              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 border border-[#2a2a2a] shadow-sm">
+                <span className="text-gray-500 text-[10px] font-bold tracking-tight uppercase">Telegram ID</span>
+                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[80px] text-center border border-[#353535]">
+                  <span className="text-blue-400 font-mono text-[12px] font-bold">{user?.telegram_id || (user as any)?.telegramId || "---"}</span>
                 </div>
               </div>
             </div>
@@ -828,33 +828,34 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3 mt-4">
             <Button
               onClick={handleConvertClick}
-              className="h-[52px] bg-black hover:bg-zinc-900 text-[#FFFFFF] font-sans font-semibold text-sm rounded-[18px] shadow-sm flex items-center justify-center gap-2"
+              className="h-[52px] bg-[#252525] hover:bg-[#333333] text-white font-sans font-semibold text-sm rounded-[18px] border border-[#444444] flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-5 h-5 text-blue-400" />
               <span>Convert</span>
             </Button>
+            
             <Button
               onClick={() => setPromoPopupOpen(true)}
-              className="h-[52px] bg-black hover:bg-zinc-900 text-[#FFFFFF] font-sans font-semibold text-sm rounded-[18px] flex flex-col items-center justify-center shadow-sm"
+              className="h-[52px] bg-[#252525] hover:bg-[#333333] text-white font-sans font-semibold text-sm rounded-[18px] border border-[#444444] flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
             >
-              <div className="flex items-center gap-1.5">
-                <Gift className="w-3 h-3" />
-                <span>Promo</span>
-              </div>
+              <Ticket className="w-5 h-5 text-purple-400" />
+              <span>Promo</span>
             </Button>
             
             <Button
               onClick={handleClaimStreak}
               disabled={isClaimingStreak || hasClaimed}
-              className={`h-[52px] font-sans font-semibold text-sm rounded-[18px] shadow-sm transition-all flex items-center justify-center gap-2 ${
-                hasClaimed ? "bg-[#1a1a1a] text-gray-500 cursor-not-allowed opacity-80" : "bg-black hover:bg-zinc-900 text-[#FFFFFF]"
+              className={`h-[52px] font-sans font-semibold text-sm rounded-[18px] transition-all flex items-center justify-center gap-2 shadow-lg ${
+                hasClaimed 
+                  ? "bg-[#1a1a1a] text-gray-500 border border-[#2a2a2a] opacity-60" 
+                  : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white border border-blue-500/20"
               }`}
             >
               {isClaimingStreak ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : canClaimStreak ? (
                 <>
-                  <Flame className="w-4 h-4" />
+                  <Gift className="w-5 h-5 text-white animate-bounce" />
                   <span>Claim Bonus</span>
                 </>
               ) : (
@@ -866,10 +867,10 @@ export default function Home() {
             </Button>
 
             <Button
-              onClick={() => setLocation("/tasks")}
-              className="h-[52px] bg-black hover:bg-zinc-900 text-[#FFFFFF] font-sans font-semibold text-sm rounded-[18px] shadow-sm flex items-center justify-center gap-2"
+              onClick={() => setBoosterPopupOpen(true)}
+              className="h-[52px] bg-[#252525] hover:bg-[#333333] text-white font-sans font-semibold text-sm rounded-[18px] border border-[#444444] flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
             >
-              <CalendarCheck className="w-4 h-4" />
+              <CalendarCheck className="w-5 h-5 text-[#4cd3ff]" />
               <span>Daily Task</span>
             </Button>
           </div>
@@ -882,12 +883,12 @@ export default function Home() {
 
         <div className="mt-3 px-0">
           <div className="bg-[#0d0d0d] rounded-xl border border-[#1a1a1a] p-3">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-lg bg-[#4cd3ff]/20 flex items-center justify-center">
-                <ListChecks className="w-3.5 h-3.5 text-[#4cd3ff]" />
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                  <ListChecks className="w-4 h-4 text-blue-400" />
+                </div>
+                <span className="text-base font-bold text-white tracking-tight">Active Tasks</span>
               </div>
-              <span className="text-sm font-semibold text-white">Tasks</span>
-            </div>
             
             <div className="flex flex-col gap-2">
               <AnimatePresence mode="popLayout">
@@ -983,9 +984,9 @@ export default function Home() {
       {boosterPopupOpen && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4">
           <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a] relative">
-            <div className="flex items-center justify-center gap-2 mb-6">
-              <CalendarCheck className="w-5 h-5 text-[#4cd3ff]" />
-              <h2 className="text-lg font-bold text-white">Daily Tasks</h2>
+            <div className="flex items-center justify-center gap-3 mb-6">
+              <CalendarCheck className="w-6 h-6 text-blue-400" />
+              <h2 className="text-xl font-bold text-white tracking-tight">Daily Missions</h2>
             </div>
             
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
@@ -1016,7 +1017,7 @@ export default function Home() {
                     <Button
                       onClick={handleShareWithFriends}
                       disabled={!referralLink}
-                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
+                      className="h-8 w-20 text-xs font-bold rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-sm"
                     >
                       Share
                     </Button>
@@ -1057,7 +1058,7 @@ export default function Home() {
                   ) : (
                     <Button
                       onClick={handleDailyCheckin}
-                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
+                      className="h-8 w-20 text-xs font-bold rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-sm"
                     >
                       Go
                     </Button>
