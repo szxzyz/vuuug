@@ -7219,7 +7219,7 @@ ${walletAddress}
       const user = await storage.getUser(userId);
       
       // Check if user is admin
-      const isAdmin = user?.telegram_id === "6653616672" || (user?.telegram_id === "123456789" && process.env.NODE_ENV === 'development');
+      const isAdmin = user?.telegram_id === (process.env.TELEGRAM_ADMIN_ID || "6653616672") || (user?.telegram_id === "123456789" && process.env.NODE_ENV === 'development');
       if (!isAdmin) {
         return res.status(403).json({ message: 'Unauthorized: Admin access required' });
       }
