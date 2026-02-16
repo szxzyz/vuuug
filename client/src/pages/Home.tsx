@@ -8,7 +8,7 @@ import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
-import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Bug, DollarSign, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap } from "lucide-react";
+import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Bug, DollarSign, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks } from "lucide-react";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
@@ -791,7 +791,7 @@ export default function Home() {
   return (
     <Layout>
       <Header />
-      <main className="max-w-md mx-auto px-4 pt-1 pb-1 bg-black text-white">
+      <main className="max-w-md mx-auto px-4 pt-1 bg-black text-white">
         {/* Profile Section Container */}
         <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm border border-white/5 mb-4">
           <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4 border border-white/5">
@@ -828,29 +828,26 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3 mt-4">
             <Button
               onClick={handleConvertClick}
-              className="h-[52px] bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF] font-sans font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter flex items-center justify-center gap-2"
+              className="h-[52px] bg-black hover:bg-zinc-900 text-[#FFFFFF] font-sans font-semibold text-sm rounded-[18px] shadow-sm flex items-center justify-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />
-              <span>CONVERT</span>
+              <span>Convert</span>
             </Button>
             <Button
               onClick={() => setPromoPopupOpen(true)}
-              className="h-[52px] bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF] font-sans font-black text-[10px] leading-[1.1] rounded-[18px] flex flex-col items-center justify-center shadow-sm tracking-tighter"
+              className="h-[52px] bg-black hover:bg-zinc-900 text-[#FFFFFF] font-sans font-semibold text-sm rounded-[18px] flex flex-col items-center justify-center shadow-sm"
             >
               <div className="flex items-center gap-1.5">
                 <Gift className="w-3 h-3" />
-                <div className="flex flex-col items-center">
-                  <span className="block">ENTER</span>
-                  <span className="block">PROMOCODE</span>
-                </div>
+                <span>Promo</span>
               </div>
             </Button>
             
             <Button
               onClick={handleClaimStreak}
               disabled={isClaimingStreak || hasClaimed}
-              className={`h-[52px] font-sans font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter transition-all flex items-center justify-center gap-2 ${
-                hasClaimed ? "bg-[#1a1a1a] text-gray-500 cursor-not-allowed opacity-80" : "bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF]"
+              className={`h-[52px] font-sans font-semibold text-sm rounded-[18px] shadow-sm transition-all flex items-center justify-center gap-2 ${
+                hasClaimed ? "bg-[#1a1a1a] text-gray-500 cursor-not-allowed opacity-80" : "bg-black hover:bg-zinc-900 text-[#FFFFFF]"
               }`}
             >
               {isClaimingStreak ? (
@@ -858,22 +855,22 @@ export default function Home() {
               ) : canClaimStreak ? (
                 <>
                   <Flame className="w-4 h-4" />
-                  <span>CLAIM BONUS</span>
+                  <span>Claim Bonus</span>
                 </>
               ) : (
                 <div className="flex flex-col items-center leading-none">
-                  <span className="text-[10px] opacity-60 uppercase font-black">NEXT CLAIM</span>
-                  <span className="text-[13px] font-black">{timeUntilNextClaim}</span>
+                  <span className="text-[10px] opacity-60 uppercase font-semibold">NEXT CLAIM</span>
+                  <span className="text-[13px] font-semibold">{timeUntilNextClaim}</span>
                 </div>
               )}
             </Button>
 
             <Button
               onClick={() => setLocation("/tasks")}
-              className="h-[52px] bg-[#007BFF] hover:bg-[#0056b3] text-[#FFFFFF] font-sans font-black text-[15px] rounded-[18px] shadow-sm tracking-tighter flex items-center justify-center gap-2"
+              className="h-[52px] bg-black hover:bg-zinc-900 text-[#FFFFFF] font-sans font-semibold text-sm rounded-[18px] shadow-sm flex items-center justify-center gap-2"
             >
               <CalendarCheck className="w-4 h-4" />
-              <span>DAILY TASKS</span>
+              <span>Daily Task</span>
             </Button>
           </div>
         </div>
@@ -887,7 +884,7 @@ export default function Home() {
           <div className="bg-[#0d0d0d] rounded-xl border border-[#1a1a1a] p-3">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-6 h-6 rounded-lg bg-[#4cd3ff]/20 flex items-center justify-center">
-                <Flame className="w-3.5 h-3.5 text-[#4cd3ff]" />
+                <ListChecks className="w-3.5 h-3.5 text-[#4cd3ff]" />
               </div>
               <span className="text-sm font-semibold text-white">Tasks</span>
             </div>
@@ -1129,7 +1126,7 @@ export default function Home() {
           <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a]">
             <div className="flex items-center justify-center gap-2 mb-4">
               <Gift className="w-5 h-5 text-[#4cd3ff]" />
-              <h2 className="text-lg font-bold text-white">Enter Promo Code</h2>
+              <h2 className="text-lg font-bold text-white">Promo</h2>
             </div>
             
             <Input
