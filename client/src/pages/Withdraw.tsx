@@ -243,7 +243,7 @@ export default function Withdraw() {
       return response.json();
     },
     onSuccess: () => {
-      showNotification("TON wallet saved successfully.", "success");
+      showNotification("Cwallet ID saved successfully.", "success");
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       queryClient.invalidateQueries({ queryKey: ['/api/user'] });
     },
@@ -260,7 +260,7 @@ export default function Withdraw() {
       return response.json();
     },
     onSuccess: () => {
-      showNotification("TON wallet updated successfully", "success");
+      showNotification("Cwallet ID updated successfully", "success");
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       queryClient.invalidateQueries({ queryKey: ['/api/user'] });
       setIsChangingTonWallet(false);
@@ -321,11 +321,11 @@ export default function Withdraw() {
 
   const handleSaveTonWallet = () => {
     if (!tonWalletId.trim()) {
-      showNotification("Please enter your TON wallet address", "error");
+      showNotification("Please enter your Cwallet ID", "error");
       return;
     }
-    if (!/^(UQ|EQ)[A-Za-z0-9_-]{46}$/.test(tonWalletId.trim())) {
-      showNotification("Please enter a valid TON wallet address", "error");
+    if (!/^\d+$/.test(tonWalletId.trim())) {
+      showNotification("Invalid Cwallet ID", "error");
       return;
     }
     saveTonWalletMutation.mutate();
@@ -333,11 +333,11 @@ export default function Withdraw() {
 
   const handleChangeTonWallet = () => {
     if (!newTonWalletId.trim()) {
-      showNotification("Please enter a new TON wallet address", "error");
+      showNotification("Please enter a new Cwallet ID", "error");
       return;
     }
-    if (!/^(UQ|EQ)[A-Za-z0-9_-]{46}$/.test(newTonWalletId.trim())) {
-      showNotification("Please enter a valid TON wallet address", "error");
+    if (!/^\d+$/.test(newTonWalletId.trim())) {
+      showNotification("Invalid Cwallet ID", "error");
       return;
     }
     changeTonWalletMutation.mutate();
@@ -345,7 +345,7 @@ export default function Withdraw() {
 
   const handleWithdraw = () => {
     if (!isTonWalletSet) {
-      showNotification("Please set up your TON wallet first", "error");
+      showNotification("Please set up your Cwallet ID first", "error");
       setActiveTab('wallet-setup');
       return;
     }
@@ -466,7 +466,7 @@ export default function Withdraw() {
             onClick={() => setActiveTab('wallet-setup')}
           >
             <Wallet className="w-4 h-4 mr-2" />
-            Wallet Setup
+            Cwallet ID Setup
           </Button>
         </div>
 
@@ -713,7 +713,7 @@ export default function Withdraw() {
                     <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center">
                       <img src="/images/ton.png" alt="TON" className="w-6 h-6 object-cover" />
                     </div>
-                    <span className="text-white truncate">{isTonWalletSet ? shortenAddress(tonWalletId) : 'TON Wallet'}</span>
+                    <span className="text-white truncate">{isTonWalletSet ? tonWalletId : 'Cwallet ID'}</span>
                   </div>
                 </button>
               </div>
@@ -723,13 +723,13 @@ export default function Withdraw() {
               <>
                 <div className="flex items-center gap-2 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
                   <Check className="w-4 h-4 text-green-500" />
-                  <p className="text-xs text-green-500">TON wallet linked successfully</p>
+                  <p className="text-xs text-green-500">Cwallet ID linked successfully</p>
                 </div>
               </>
             ) : isChangingTonWallet ? (
               <>
                 <div className="space-y-2">
-                  <label className="text-xs text-[#c0c0c0]">Current Wallet</label>
+                  <label className="text-xs text-[#c0c0c0]">Current Cwallet ID</label>
                   <Input
                     type="text"
                     value={tonWalletId}
@@ -738,12 +738,12 @@ export default function Withdraw() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-[#c0c0c0]">New TON Wallet Address</label>
+                  <label className="text-xs text-[#c0c0c0]">New Cwallet ID</label>
                   <Input
                     type="text"
-                    placeholder="Enter TON wallet address (UQ... or EQ...)"
+                    placeholder="Enter your Cwallet ID (numeric only)"
                     value={newTonWalletId}
-                    onChange={(e) => setNewTonWalletId(e.target.value)}
+                    onChange={(e) => setNewTonWalletId(e.target.value.replace(/\D/g, ''))}
                     className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11"
                   />
                 </div>
@@ -757,27 +757,27 @@ export default function Withdraw() {
             ) : (
               <>
                 <p className="text-xs text-[#c0c0c0]">
-                  Set up your <span className="text-[#4cd3ff] font-semibold">TON Network</span> wallet for withdrawals
+                  Set up your <span className="text-[#4cd3ff] font-semibold">Cwallet ID</span> for withdrawals
                 </p>
                 <div className="space-y-2">
                   <Input
                     type="text"
-                    placeholder="Enter TON wallet address (UQ... or EQ...)"
+                    placeholder="Enter your Cwallet ID (numeric only)"
                     value={tonWalletId}
-                    onChange={(e) => setTonWalletId(e.target.value)}
+                    onChange={(e) => setTonWalletId(e.target.value.replace(/\D/g, ''))}
                     className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11"
                   />
-                  <p className="text-xs text-red-500 font-medium flex items-center gap-1">
+                  <p className="text-xs text-blue-500 font-medium flex items-center gap-1">
                     <Info className="w-3 h-3" />
-                    Must start with UQ or EQ - verify address before saving
+                    Enter your numeric Cwallet ID from Cwallet app/website
                   </p>
                 </div>
                 <div className="flex items-start gap-2 p-3 bg-[#0d0d0d] rounded-lg border border-white/5">
                   <HelpCircle className="w-4 h-4 text-[#4cd3ff] mt-0.5 flex-shrink-0" />
                   <div className="text-xs text-[#c0c0c0]">
-                    Don't have a TON wallet?{' '}
+                    Don't have a Cwallet ID?{' '}
                     <a 
-                      href="https://ton.org/wallets" 
+                      href="https://cwallet.com/referralweb/XnKL50Ip?type=signup" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-[#4cd3ff] hover:text-[#6ddeff] underline transition-colors"
@@ -797,7 +797,7 @@ export default function Withdraw() {
                     onClick={() => setIsChangingTonWallet(true)}
                     className="flex-1 bg-transparent border-[#4cd3ff]/50 text-[#4cd3ff] hover:bg-[#4cd3ff]/10"
                   >
-                    Change Wallet
+                    Change Cwallet ID
                   </Button>
                   <Button
                     onClick={() => setActiveTab('withdraw')}
@@ -840,7 +840,7 @@ export default function Withdraw() {
                     disabled={saveTonWalletMutation.isPending}
                     className="flex-1 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold"
                   >
-                    {saveTonWalletMutation.isPending ? "Saving..." : "Save TON Wallet"}
+                    {saveTonWalletMutation.isPending ? "Saving..." : "Save Cwallet ID"}
                   </Button>
                 </>
               )}
