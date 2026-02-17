@@ -317,7 +317,7 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
 🗣 User: <a href="tg://user?id=${userTelegramId}">${escapeHtml(userName)}</a>
 🆔 User ID: ${userTelegramId}
 💳 Username: ${userTelegramUsername}
-🌐 Address:
+🆔 Cwallet ID:
 <code>${walletAddress}</code>
 💸 Amount: ${netAmount.toFixed(5)} USD
 🛂 Fee: ${feeAmount.toFixed(5)} (${feePercent}%)

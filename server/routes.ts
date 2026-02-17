@@ -4046,16 +4046,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!cwalletId || !cwalletId.trim()) {
         return res.status(400).json({
           success: false,
-          message: 'Please enter a valid TON wallet address'
+          message: 'Please enter a valid Cwallet ID'
         });
       }
       
-      // Validate TON wallet address (must start with UQ or EQ)
-      if (!/^(UQ|EQ)[A-Za-z0-9_-]{46}$/.test(cwalletId.trim())) {
-        console.log('🚫 Invalid TON wallet address format');
+      // Validate Cwallet ID (numeric only)
+      if (!/^\d+$/.test(cwalletId.trim())) {
+        console.log('🚫 Invalid Cwallet ID format');
         return res.status(400).json({
           success: false,
-          message: 'Please enter a valid TON wallet address'
+          message: 'Please enter a valid Cwallet ID (numeric only)'
         });
       }
       
@@ -4086,10 +4086,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(1);
         
         if (walletInUse) {
-          console.log('🚫 TON wallet address already linked to another account');
+          console.log('🚫 Cwallet ID already linked to another account');
           return res.status(400).json({
             success: false,
-            message: 'This TON wallet address is already linked to another account.'
+            message: 'This Cwallet ID is already linked to another account.'
           });
         }
       }
@@ -4178,10 +4178,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(1);
         
         if (walletInUse) {
-          console.log('🚫 TON wallet address already linked to another account');
+          console.log('🚫 Cwallet ID already linked to another account');
           return res.status(400).json({
             success: false,
-            message: 'This TON wallet address is already linked to another account.'
+            message: 'This Cwallet ID is already linked to another account.'
           });
         }
       }
@@ -4190,7 +4190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await db
         .update(users)
         .set({
-          cwalletId: walletId.trim(),
+          cwalletId: cwalletId.trim(),
           updatedAt: new Date()
         })
         .where(eq(users.id, userId));
@@ -4199,7 +4199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         success: true,
-        message: 'Wallet saved successfully'
+        message: 'Cwallet ID saved successfully'
       });
       
     } catch (error) {
@@ -4231,16 +4231,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!newWalletId || !newWalletId.trim()) {
         return res.status(400).json({
           success: false,
-          message: 'Please enter a valid TON wallet address'
+          message: 'Please enter a valid Cwallet ID'
         });
       }
       
-      // Validate TON wallet address (must start with UQ or EQ)
-      if (!/^(UQ|EQ)[A-Za-z0-9_-]{46}$/.test(newWalletId.trim())) {
-        console.log('🚫 Invalid TON wallet address format');
+      // Validate Cwallet ID (numeric only)
+      if (!/^\d+$/.test(newWalletId.trim())) {
+        console.log('🚫 Invalid Cwallet ID format');
         return res.status(400).json({
           success: false,
-          message: 'Please enter a valid TON wallet address'
+          message: 'Please enter a valid Cwallet ID (numeric only)'
         });
       }
       
@@ -4262,36 +4262,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
             telegramId: users.telegram_id
           })
           .from(users)
-          .where(eq(users.id, userId));
+          .where(eq(users.id, userId))
+          .for('update');
         
         if (!user) {
           throw new Error('User not found');
         }
         
-        // Check if user has an existing wallet
-        if (!user.cwalletId) {
-          throw new Error('No wallet set. Please set up your wallet first.');
-        }
-        
-        // Check if new wallet is same as current
+        // Validation check: ensure it's a different wallet
         if (user.cwalletId === newWalletId.trim()) {
-          throw new Error('New wallet ID is the same as current wallet');
+          throw new Error('New Cwallet ID must be different from the current one');
         }
-        
+
         // Check wallet uniqueness
-        const [walletInUse] = await tx
+        const [uniqueWalletCheck] = await tx
           .select({ id: users.id })
           .from(users)
           .where(and(
             eq(users.cwalletId, newWalletId.trim()),
             sql`${users.id} != ${userId}`
           ))
-          .limit(1);
+          .limit(1)
+          .for('update');
         
-        if (walletInUse) {
-          throw new Error('This TON wallet address is already linked to another account');
+        if (uniqueWalletCheck) {
+          throw new Error('This Cwallet ID is already linked to another account');
         }
-        
+
         const currentBalance = parseFloat(user.balance || '0');
         const currentBalancePad = Math.floor(currentBalance * 10000000);
         
@@ -4319,7 +4316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           amount: feeInTon.toFixed(8),
           type: 'deduction',
           source: 'wallet_change_fee',
-          description: `Fee for changing wallet ID (${feeInPad} PAD)`,
+          description: `Fee for changing Cwallet ID (${feeInPad} PAD)`,
           metadata: { oldWallet: user.cwalletId, newWallet: newWalletId.trim(), feePad: feeInPad }
         });
         
