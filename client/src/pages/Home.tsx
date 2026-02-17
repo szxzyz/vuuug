@@ -839,19 +839,7 @@ export default function Home() {
             <Button
               onClick={handleClaimStreak}
               disabled={isClaimingStreak || hasClaimed}
-              className={`h-[52px] font-sans font-semibold text-sm rounded-[18px] transition-all flex items-center justify-center gap-2 shadow-lg ${
-                hasClaimed 
-                  ? "bg-[#1a1a1a] text-gray-500 border border-[#2a2a2a] opacity-60" 
-                  : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white border border-blue-500/20"
-              }`}
-            >
-              {isClaimingStreak ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : canClaimStreak ? (
-            <Button
-              onClick={handleClaimStreak}
-              disabled={isClaimingStreak || hasClaimed}
-              className={`h-[52px] ${hasClaimed ? 'bg-[#1C1C1E] border-white/5 opacity-50' : 'bg-[#4cd3ff] hover:bg-[#6ddeff]'} text-white font-sans font-bold text-sm rounded-[18px] border border-white/10 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg flex-1`}
+              className={`h-[56px] w-full ${hasClaimed ? 'bg-[#1C1C1E] border-white/5 opacity-50' : 'bg-[#4cd3ff] hover:bg-[#6ddeff]'} text-white font-sans font-bold text-lg rounded-[20px] border border-white/10 flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-blue-500/10`}
             >
               {isClaimingStreak ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -1171,19 +1159,19 @@ export default function Home() {
             initial={{ opacity: 0, y: 100, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 100, scale: 0.95 }}
-            className="relative w-full max-w-md bg-[#1C1C1E] border border-white/10 rounded-[32px] overflow-hidden shadow-2xl"
+            className="relative w-full max-w-sm bg-[#1C1C1E] border border-white/10 rounded-[32px] overflow-hidden shadow-2xl"
           >
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <RefreshCw className="w-5 h-5 text-blue-400" />
                   Convert PAD
                 </h3>
                 <button
                   onClick={() => setConvertPopupOpen(false)}
-                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 transition-colors"
                 >
-                  <X className="w-5 h-5 text-white/60" />
+                  <X className="w-5 h-5 text-white" />
                 </button>
               </div>
 
