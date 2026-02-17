@@ -447,10 +447,8 @@ export default function Home() {
     if (isConverting || convertMutation.isPending) return;
     
     setIsConverting(true);
-    console.log('💱 Convert started, showing Monetag ad first...');
     
     try {
-      // Show Monetag rewarded ad first
       const monetagResult = await showMonetagRewardedAd();
       
       if (!monetagResult.unavailable && !monetagResult.success) {
@@ -461,10 +459,9 @@ export default function Home() {
       
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Show AdsGram int-7589 for convert
       const adsgramSuccess = await window.Adsgram.init({ blockId: "int-7589" }).show()
         .then(() => true)
-        .catch(() => true); // Resolve true to avoid getting stuck
+        .catch(() => true);
 
       if (!adsgramSuccess) {
         showNotification("Please watch the ad to convert.", "error");
@@ -472,7 +469,6 @@ export default function Home() {
         return;
       }
 
-      console.log('✅ Ads watched, converting');
       convertMutation.mutate({ amount, convertTo: selectedConvertType });
       
     } catch (error) {
@@ -489,7 +485,6 @@ export default function Home() {
     setIsClaimingStreak(true);
     
     try {
-      // Show Monetag rewarded ad first
       const monetagResult = await showMonetagRewardedAd();
       
       if (!monetagResult.unavailable && !monetagResult.success) {
@@ -500,7 +495,6 @@ export default function Home() {
       
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Show AdsGram 20372 for Claim Bonus
       const adsgramSuccess = await showAdsgramAd();
       
       if (!adsgramSuccess) {
@@ -854,24 +848,24 @@ export default function Home() {
               {isClaimingStreak ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : canClaimStreak ? (
-                <>
+            <Button
+              onClick={handleClaimStreak}
+              disabled={isClaimingStreak || hasClaimed}
+              className={`h-[52px] ${hasClaimed ? 'bg-[#1C1C1E] border-white/5 opacity-50' : 'bg-[#4cd3ff] hover:bg-[#6ddeff]'} text-white font-sans font-bold text-sm rounded-[18px] border border-white/10 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg flex-1`}
+            >
+              {isClaimingStreak ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : canClaimStreak ? (
+                <div className="flex items-center gap-2">
                   <Gift className="w-5 h-5 text-white animate-bounce" />
                   <span>Claim Bonus</span>
-                </>
+                </div>
               ) : (
                 <div className="flex flex-col items-center leading-none">
                   <span className="text-[10px] opacity-60 uppercase font-semibold">NEXT CLAIM</span>
                   <span className="text-[13px] font-semibold">{timeUntilNextClaim}</span>
                 </div>
               )}
-            </Button>
-
-            <Button
-              onClick={() => setBoosterPopupOpen(true)}
-              className="h-[52px] bg-[#252525] hover:bg-[#333333] text-white font-sans font-semibold text-sm rounded-[18px] border border-[#444444] flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
-            >
-              <CalendarCheck className="w-5 h-5 text-[#4cd3ff]" />
-              <span>Daily Task</span>
             </Button>
           </div>
         </div>
@@ -1165,95 +1159,107 @@ export default function Home() {
       )}
 
       {convertPopupOpen && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4">
-          <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a]">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <RefreshCw className="w-5 h-5 text-[#4cd3ff]" />
-              <h2 className="text-lg font-bold text-white">Convert PAD</h2>
-            </div>
-            <div className="flex items-center justify-center gap-1.5 mb-4">
-              <DiamondIcon size={14} />
-              <p className="text-gray-400 text-sm">
-                Available: {balancePAD.toLocaleString()} PAD
-              </p>
-            </div>
-            
-            <div className="space-y-2 mb-4">
-              <Input
-                type="number"
-                placeholder="Enter amount"
-                value={convertAmount}
-                onChange={(e) => setConvertAmount(e.target.value)}
-                className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white placeholder:text-gray-500 px-4 py-3 h-12 focus:border-[#4cd3ff] focus:ring-0 mb-3"
-              />
-              
-              <button
-                onClick={() => setSelectedConvertType('USD')}
-                className={`w-full p-3 rounded-xl border transition-all flex items-center gap-3 ${
-                  selectedConvertType === 'USD' 
-                    ? 'border-[#4cd3ff] bg-[#4cd3ff]/10' 
-                    : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'
-                }`}
-              >
-                <div className="w-9 h-9 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center">
-                  <span className="text-green-400 font-bold text-sm">$</span>
-                </div>
-                <div className="text-left flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <DiamondIcon size={12} />
-                    <span className="text-gray-400 text-xs">→</span>
-                    <span className="text-green-400 font-bold text-xs">USD</span>
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setConvertPopupOpen(false)}
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 100, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 100, scale: 0.95 }}
+            className="relative w-full max-w-md bg-[#1C1C1E] border border-white/10 rounded-[32px] overflow-hidden shadow-2xl"
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-blue-400" />
+                  Convert PAD
+                </h3>
+                <button
+                  onClick={() => setConvertPopupOpen(false)}
+                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5 text-white/60" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                {(['USD', 'TON', 'BUG'] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setSelectedConvertType(type)}
+                    className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all duration-200 ${
+                      selectedConvertType === type
+                        ? "bg-blue-500/10 border-blue-500/50"
+                        : "bg-white/5 border-white/5 hover:bg-white/10"
+                    }`}
+                  >
+                    {type === 'USD' ? <DollarSign className={`w-5 h-5 ${selectedConvertType === type ? 'text-blue-400' : 'text-white/60'}`} /> :
+                     type === 'TON' ? <DiamondIcon size={20} className={selectedConvertType === type ? 'text-blue-400' : 'text-white/60'} /> :
+                     <Bug className={`w-5 h-5 ${selectedConvertType === type ? 'text-blue-400' : 'text-white/60'}`} />}
+                    <span className={`text-sm font-bold ${selectedConvertType === type ? 'text-white' : 'text-white/60'}`}>{type}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-4">
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <DiamondIcon size={18} />
                   </div>
-                  <p className="text-xs text-gray-500">Min: {(appSettings?.minimumConvertPAD || 10000).toLocaleString()} PAD</p>
+                  <Input
+                    type="number"
+                    placeholder="Amount to convert"
+                    value={convertAmount}
+                    onChange={(e) => setConvertAmount(e.target.value)}
+                    className="w-full h-14 pl-12 bg-white/5 border-white/10 rounded-2xl text-white placeholder:text-white/30 focus:ring-blue-500/50"
+                  />
+                  <button
+                    onClick={() => setConvertAmount(balancePAD.toString())}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-blue-400 hover:text-blue-300 px-2 py-1 bg-blue-400/10 rounded-lg transition-colors"
+                  >
+                    MAX
+                  </button>
                 </div>
-              </button>
-              
-              <button
-                onClick={() => setSelectedConvertType('BUG')}
-                className={`w-full p-3 rounded-xl border transition-all flex items-center gap-3 ${
-                  selectedConvertType === 'BUG' 
-                    ? 'border-[#4cd3ff] bg-[#4cd3ff]/10' 
-                    : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'
-                }`}
-              >
-                <div className="w-9 h-9 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center">
-                  <Bug className="w-4 h-4 text-green-400" />
-                </div>
-                <div className="text-left flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <DiamondIcon size={12} />
-                    <span className="text-gray-400 text-xs">→</span>
-                    <Bug className="w-3 h-3 text-green-400" />
-                    <span className="text-green-400 font-bold text-xs">BUG</span>
+
+                <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                  <div className="flex justify-between items-center text-sm mb-2">
+                    <span className="text-white/60">Minimum Required</span>
+                    <span className="text-white font-medium">
+                      {selectedConvertType === 'USD'
+                        ? (appSettings?.minimumConvertPAD || 10000).toLocaleString()
+                        : selectedConvertType === 'TON'
+                          ? (appSettings?.minimumConvertPadToTon || 10000).toLocaleString()
+                          : (appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} PAD
+                    </span>
                   </div>
-                  <p className="text-xs text-gray-500">Min: {(appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} PAD</p>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-white/60">Balance</span>
+                    <span className="text-white font-medium">{balancePAD.toLocaleString()} PAD</span>
+                  </div>
                 </div>
-              </button>
+
+                <Button
+                  onClick={handleConvertConfirm}
+                  disabled={isConverting || convertMutation.isPending}
+                  className="w-full h-14 bg-blue-500 hover:bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]"
+                >
+                  {isConverting || convertMutation.isPending ? (
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  ) : (
+                    "Confirm Conversion"
+                  )}
+                </Button>
+                <p className="text-center text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                  Watch ads to unlock conversion
+                </p>
+              </div>
             </div>
-            
-            <div className="flex gap-3">
-              <Button
-                onClick={() => {
-                  setConvertPopupOpen(false);
-                  setConvertAmount("");
-                }}
-                className="flex-1 h-11 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold rounded-xl border border-[#2a2a2a]"
-              >
-                Close
-              </Button>
-              <Button
-                onClick={handleConvertConfirm}
-                disabled={isConverting || convertMutation.isPending}
-                className="flex-1 h-11 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold rounded-xl disabled:opacity-50"
-              >
-                {isConverting || convertMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  "Convert"
-                )}
-              </Button>
-            </div>
-          </div>
+          </motion.div>
         </div>
       )}
     </Layout>
