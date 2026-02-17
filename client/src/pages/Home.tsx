@@ -819,42 +819,57 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <Button
-              onClick={handleConvertClick}
-              className="h-[52px] bg-[#252525] hover:bg-[#333333] text-white font-sans font-semibold text-sm rounded-[18px] border border-[#444444] flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
-            >
-              <RefreshCw className="w-5 h-5 text-blue-400" />
-              <span>Convert</span>
-            </Button>
-            
-            <Button
-              onClick={() => setPromoPopupOpen(true)}
-              className="h-[52px] bg-[#252525] hover:bg-[#333333] text-white font-sans font-semibold text-sm rounded-[18px] border border-[#444444] flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
-            >
-              <Ticket className="w-5 h-5 text-purple-400" />
-              <span>Promo</span>
-            </Button>
-            
-            <Button
-              onClick={handleClaimStreak}
-              disabled={isClaimingStreak || hasClaimed}
-              className={`h-[56px] w-full ${hasClaimed ? 'bg-[#1C1C1E] border-white/5 opacity-50' : 'bg-[#4cd3ff] hover:bg-[#6ddeff]'} text-white font-sans font-bold text-lg rounded-[20px] border border-white/10 flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-blue-500/10`}
-            >
-              {isClaimingStreak ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : canClaimStreak ? (
-                <div className="flex items-center gap-2">
-                  <Gift className="w-5 h-5 text-white animate-bounce" />
-                  <span>Claim Bonus</span>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center leading-none">
-                  <span className="text-[10px] opacity-60 uppercase font-semibold">NEXT CLAIM</span>
+          <div className="bg-[#111111] rounded-[24px] p-4 border border-white/5 shadow-2xl mt-4">
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <Button
+                onClick={handleConvertClick}
+                disabled={isConverting || convertMutation.isPending}
+                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full border border-[#4cd3ff]/30 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
+              >
+                <RefreshCw className="w-5 h-5 text-[#4cd3ff]" />
+                <span>Convert</span>
+              </Button>
+              
+              <Button
+                onClick={handleClaimStreak}
+                disabled={isClaimingStreak || !canClaimStreak}
+                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full border border-[#4cd3ff]/30 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg disabled:opacity-50"
+              >
+                {isClaimingStreak ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : canClaimStreak ? (
+                  <>
+                    <Gift className="w-5 h-5 text-[#4cd3ff]" />
+                    <span>Claim Bonus</span>
+                  </>
+                ) : (
                   <span className="text-[13px] font-semibold">{timeUntilNextClaim}</span>
-                </div>
-              )}
-            </Button>
+                )}
+              </Button>
+            </div>
+
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  placeholder="Enter Code"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                  disabled={redeemPromoMutation.isPending || isApplyingPromo}
+                  className="w-full h-12 bg-[#1a1a1a] border border-[#4cd3ff]/30 rounded-full text-white placeholder:text-gray-500 px-4 text-sm focus:border-[#4cd3ff] focus:ring-0"
+                />
+              </div>
+              <Button
+                onClick={handleApplyPromo}
+                disabled={redeemPromoMutation.isPending || isApplyingPromo || !promoCode.trim()}
+                className="h-12 px-6 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-bold rounded-full transition-all disabled:opacity-50 shadow-lg"
+              >
+                {redeemPromoMutation.isPending || isApplyingPromo ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Go"
+                )}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -1104,47 +1119,6 @@ export default function Home() {
         </button>
       </div>
 
-      {promoPopupOpen && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4">
-          <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a]">
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <Gift className="w-5 h-5 text-[#4cd3ff]" />
-              <h2 className="text-lg font-bold text-white">Promo</h2>
-            </div>
-            
-            <Input
-              placeholder="Enter code here"
-              value={promoCode}
-              onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-              disabled={redeemPromoMutation.isPending || isApplyingPromo}
-              className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white placeholder:text-gray-500 px-4 py-3 h-12 text-center text-lg font-semibold tracking-wider focus:border-[#4cd3ff] focus:ring-0 mb-4"
-            />
-            
-            <div className="flex gap-3">
-              <Button
-                onClick={() => {
-                  setPromoPopupOpen(false);
-                  setPromoCode("");
-                }}
-                className="flex-1 h-11 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold rounded-xl border border-[#2a2a2a]"
-              >
-                Close
-              </Button>
-              <Button
-                onClick={handleApplyPromo}
-                disabled={redeemPromoMutation.isPending || isApplyingPromo || !promoCode.trim()}
-                className="flex-1 h-11 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold rounded-xl disabled:opacity-50"
-              >
-                {redeemPromoMutation.isPending || isApplyingPromo ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  "Apply"
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {convertPopupOpen && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
