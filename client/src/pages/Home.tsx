@@ -72,7 +72,7 @@ export default function Home() {
   const [promoPopupOpen, setPromoPopupOpen] = useState(false);
   const [convertPopupOpen, setConvertPopupOpen] = useState(false);
   const [boosterPopupOpen, setBoosterPopupOpen] = useState(false);
-  const [selectedConvertType, setSelectedConvertType] = useState<'USD' | 'TON' | 'BUG'>('USD');
+  const [selectedConvertType, setSelectedConvertType] = useState<'USD' | 'BUG'>('USD');
   const [convertAmount, setConvertAmount] = useState<string>("");
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
   
@@ -430,9 +430,7 @@ export default function Home() {
 
     const minimumConvertPAD = selectedConvertType === 'USD' 
       ? (appSettings?.minimumConvertPAD || 10000)
-      : selectedConvertType === 'TON'
-        ? (appSettings?.minimumConvertPadToTon || 10000)
-        : (appSettings?.minimumConvertPadToBug || 1000);
+      : (appSettings?.minimumConvertPadToBug || 1000);
     
     if (amount < minimumConvertPAD) {
       showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} PAD required.`, "error");
@@ -1120,110 +1118,100 @@ export default function Home() {
       </div>
 
 
-      {convertPopupOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setConvertPopupOpen(false)}
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-          />
-          <motion.div
-            initial={{ opacity: 0, y: 100, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 100, scale: 0.95 }}
-            className="relative w-full max-w-sm bg-[#1C1C1E] border border-white/10 rounded-[32px] overflow-hidden shadow-2xl"
-          >
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <RefreshCw className="w-5 h-5 text-blue-400" />
-                  Convert PAD
-                </h3>
-                <button
-                  onClick={() => setConvertPopupOpen(false)}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 transition-colors"
-                >
-                  <X className="w-5 h-5 text-white" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 mb-6">
-                {(['USD', 'TON', 'BUG'] as const).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setSelectedConvertType(type)}
-                    className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all duration-200 ${
-                      selectedConvertType === type
-                        ? "bg-blue-500/10 border-blue-500/50"
-                        : "bg-white/5 border-white/5 hover:bg-white/10"
-                    }`}
-                  >
-                    {type === 'USD' ? <DollarSign className={`w-5 h-5 ${selectedConvertType === type ? 'text-blue-400' : 'text-white/60'}`} /> :
-                     type === 'TON' ? <DiamondIcon size={20} className={selectedConvertType === type ? 'text-blue-400' : 'text-white/60'} /> :
-                     <Bug className={`w-5 h-5 ${selectedConvertType === type ? 'text-blue-400' : 'text-white/60'}`} />}
-                    <span className={`text-sm font-bold ${selectedConvertType === type ? 'text-white' : 'text-white/60'}`}>{type}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-4">
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
-                    <DiamondIcon size={18} />
-                  </div>
-                  <Input
-                    type="number"
-                    placeholder="Amount to convert"
-                    value={convertAmount}
-                    onChange={(e) => setConvertAmount(e.target.value)}
-                    className="w-full h-14 pl-12 bg-white/5 border-white/10 rounded-2xl text-white placeholder:text-white/30 focus:ring-blue-500/50"
-                  />
-                  <button
-                    onClick={() => setConvertAmount(balancePAD.toString())}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-blue-400 hover:text-blue-300 px-2 py-1 bg-blue-400/10 rounded-lg transition-colors"
-                  >
-                    MAX
-                  </button>
+      <AnimatePresence>
+        {convertPopupOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConvertPopupOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-[90%] max-w-[320px] bg-[#1a1a1a] border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-5 space-y-5">
+                <div className="text-center space-y-0.5">
+                  <h2 className="text-lg font-bold text-white">Convert Currency</h2>
+                  <p className="text-xs text-white/50">Convert your PAD to other currencies</p>
                 </div>
 
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                  <div className="flex justify-between items-center text-sm mb-2">
-                    <span className="text-white/60">Minimum Required</span>
-                    <span className="text-white font-medium">
-                      {selectedConvertType === 'USD'
-                        ? (appSettings?.minimumConvertPAD || 10000).toLocaleString()
-                        : selectedConvertType === 'TON'
-                          ? (appSettings?.minimumConvertPadToTon || 10000).toLocaleString()
-                          : (appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} PAD
-                    </span>
+                <div className="space-y-3">
+                  <div className="flex p-0.5 bg-white/5 rounded-lg border border-white/5">
+                    <button
+                      onClick={() => setSelectedConvertType('USD')}
+                      className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md transition-all ${
+                        selectedConvertType === 'USD'
+                          ? 'bg-blue-500 text-white shadow-md'
+                          : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      <DollarSign className="w-3.5 h-3.5" />
+                      <span className="text-xs font-bold">USD</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedConvertType('BUG')}
+                      className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md transition-all ${
+                        selectedConvertType === 'BUG'
+                          ? 'bg-blue-500 text-white shadow-md'
+                          : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      <Bug className="w-3.5 h-3.5" />
+                      <span className="text-xs font-bold">BUG</span>
+                    </button>
                   </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-white/60">Balance</span>
-                    <span className="text-white font-medium">{balancePAD.toLocaleString()} PAD</span>
+
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2">
+                      <Coins className="w-4 h-4 text-blue-400" />
+                    </div>
+                    <Input
+                      type="number"
+                      placeholder="Enter PAD amount"
+                      value={convertAmount}
+                      onChange={(e) => setConvertAmount(e.target.value)}
+                      className="w-full bg-white/5 border-white/10 h-11 pl-10 pr-16 text-sm font-bold text-white rounded-xl focus:ring-1 focus:ring-blue-500/50 transition-all"
+                    />
+                    <button
+                      onClick={() => setConvertAmount(balancePAD.toString())}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 bg-blue-500/10 text-blue-400 text-[10px] font-bold rounded-md hover:bg-blue-500/20 transition-colors"
+                    >
+                      MAX
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between px-1 text-[9px] font-medium uppercase tracking-wider text-white/40">
+                    <span>Min: {selectedConvertType === 'USD'
+                        ? (appSettings?.minimumConvertPAD || 100).toLocaleString()
+                        : (appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} PAD</span>
+                    <span>Bal: {balancePAD.toLocaleString()}</span>
                   </div>
                 </div>
 
                 <Button
                   onClick={handleConvertConfirm}
-                  disabled={isConverting || convertMutation.isPending}
-                  className="w-full h-14 bg-blue-500 hover:bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]"
+                  disabled={isConverting || convertMutation.isPending || !convertAmount || parseFloat(convertAmount) <= 0}
+                  className="w-full h-11 bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-500/10 transition-all disabled:opacity-50"
                 >
                   {isConverting || convertMutation.isPending ? (
-                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Processing...</span>
+                    </div>
                   ) : (
-                    "Confirm Conversion"
+                    "Convert Now"
                   )}
                 </Button>
-                <p className="text-center text-[10px] text-white/40 uppercase tracking-widest font-bold">
-                  Watch ads to unlock conversion
-                </p>
               </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </Layout>
   );
 }
