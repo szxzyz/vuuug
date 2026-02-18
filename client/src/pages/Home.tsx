@@ -817,64 +817,56 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="bg-[#1C1C1E] rounded-[24px] p-4 border border-white/5 shadow-2xl mt-4">
-            <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="bg-[#111111] rounded-[24px] p-4 border border-white/5 shadow-2xl mt-4">
+            <div className="grid grid-cols-2 gap-3 mb-3">
               <Button
                 onClick={handleConvertClick}
                 disabled={isConverting || convertMutation.isPending}
-                className="h-16 bg-gradient-to-br from-[#1C1C1E] to-[#2C2C2E] border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-1 hover:from-[#2C2C2E] hover:to-[#3A3A3C] transition-all shadow-lg active:scale-95"
+                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full border border-[#4cd3ff]/30 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
               >
-                <RefreshCw className={`w-5 h-5 text-[#4cd3ff] ${isConverting ? 'animate-spin' : ''}`} />
-                <span className="text-[10px] font-bold tracking-wider uppercase text-white/90">Convert</span>
+                <RefreshCw className="w-5 h-5 text-[#4cd3ff]" />
+                <span>Convert</span>
               </Button>
-
+              
               <Button
                 onClick={handleClaimStreak}
                 disabled={isClaimingStreak || !canClaimStreak}
-                className={`h-16 border rounded-2xl flex flex-col items-center justify-center gap-1 transition-all shadow-lg active:scale-95 ${
-                  canClaimStreak 
-                    ? "bg-gradient-to-br from-[#4cd3ff] to-[#00a2ff] border-[#4cd3ff]/50 text-white animate-pulse" 
-                    : "bg-gradient-to-br from-[#1C1C1E] to-[#2C2C2E] border-white/5 text-white/40"
-                }`}
+                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full border border-[#4cd3ff]/30 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg disabled:opacity-50"
               >
                 {isClaimingStreak ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
+                ) : canClaimStreak ? (
                   <>
-                    <Flame className={`w-5 h-5 ${canClaimStreak ? 'text-white' : 'text-orange-500/50'}`} />
-                    <span className="text-[10px] font-bold tracking-wider uppercase">
-                      {hasClaimed ? timeUntilNextClaim : "Claim Bonus"}
-                    </span>
+                    <Gift className="w-5 h-5 text-[#4cd3ff]" />
+                    <span>Claim Bonus</span>
                   </>
+                ) : (
+                  <span className="text-[13px] font-semibold">{timeUntilNextClaim}</span>
                 )}
               </Button>
             </div>
 
-            <div className="bg-black/20 border border-white/5 rounded-2xl p-3 shadow-inner">
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <Ticket className="w-3.5 h-3.5 text-[#4cd3ff]" />
-                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Promo Code</span>
-              </div>
-              <div className="flex gap-2">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
                 <Input
-                  placeholder="ENTER CODE"
+                  placeholder="Enter Code"
                   value={promoCode}
                   onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
                   disabled={redeemPromoMutation.isPending || isApplyingPromo}
-                  className="flex-1 h-10 bg-black/40 border-white/10 rounded-xl text-white placeholder:text-white/10 px-4 text-xs font-mono tracking-widest focus:border-[#4cd3ff]/50 focus:ring-0"
+                  className="w-full h-12 bg-[#1a1a1a] border border-[#4cd3ff]/30 rounded-full text-white placeholder:text-gray-500 px-4 text-sm focus:border-[#4cd3ff] focus:ring-0"
                 />
-                <Button
-                  onClick={handleApplyPromo}
-                  disabled={redeemPromoMutation.isPending || isApplyingPromo || !promoCode.trim()}
-                  className="h-10 px-5 bg-[#4cd3ff] hover:bg-[#3db0d6] text-black font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 text-xs"
-                >
-                  {redeemPromoMutation.isPending || isApplyingPromo ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    "APPLY"
-                  )}
-                </Button>
               </div>
+              <Button
+                onClick={handleApplyPromo}
+                disabled={redeemPromoMutation.isPending || isApplyingPromo || !promoCode.trim()}
+                className="h-12 px-6 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-bold rounded-full transition-all disabled:opacity-50 shadow-lg"
+              >
+                {redeemPromoMutation.isPending || isApplyingPromo ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Go"
+                )}
+              </Button>
             </div>
           </div>
         </div>
