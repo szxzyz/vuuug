@@ -798,6 +798,19 @@ export class DatabaseStorage implements IStorage {
 
   // Check and activate referral bonus when friend watches required number of ads (PAD + USD rewards)
   // Uses admin-configured 'referral_ads_required' setting instead of hardcoded value
+  async getAppSetting(key: string, defaultValue: string = ''): Promise<string> {
+    try {
+      const [setting] = await db
+        .select()
+        .from(adminSettings)
+        .where(eq(adminSettings.settingKey, key));
+      return setting?.settingValue ?? defaultValue;
+    } catch (error) {
+      console.error(`Error fetching setting ${key}:`, error);
+      return defaultValue;
+    }
+  }
+
   async checkAndActivateReferralBonus(userId: string): Promise<void> {
     try {
       // Check if this user has already received their referral bonus
@@ -830,9 +843,8 @@ export class DatabaseStorage implements IStorage {
           .where(eq(users.id, userId));
 
         // Get referral reward settings from admin (no hardcoded values)
-        const referralRewardEnabled = await this.getAppSetting('referral_reward_enabled', 'false');
-        const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
-        const referralRewardUSD = parseFloat(await this.getAppSetting('referral_reward_usd', '0.0005'));
+        const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.50');
+        const referralRewardBUG = await this.getAppSetting('referral_reward_bug', '10');
 
         // Find pending referrals where this user is the referee
         const pendingReferrals = await db
@@ -850,67 +862,48 @@ export class DatabaseStorage implements IStorage {
             .update(referrals)
             .set({ 
               status: 'completed',
-              usdRewardAmount: String(referralRewardUSD),
-              bugRewardAmount: String(referralRewardUSD === '0' ? '0' : (parseFloat(String(referralRewardUSD)) * 50).toFixed(10))
+              rewardAmount: referralRewardUSD, // Keep for backward compatibility
+              usdRewardAmount: referralRewardUSD,
+              bugRewardAmount: referralRewardBUG
             })
             .where(eq(referrals.id, referral.id));
 
-          // Award PAD referral bonus to referrer (uses admin-configured amount)
+          // Add the reward to the referrer's balance
           await this.addEarning({
             userId: referral.referrerId,
-            amount: String(referralRewardPAD),
+            amount: referralRewardUSD,
             source: 'referral',
-            description: `Referral bonus - friend watched ${referralAdsRequired} ads (+${referralRewardPAD} PAD)`,
+            description: `Referral bonus for inviting a friend`,
           });
 
-          console.log(`✅ Referral bonus: ${referralRewardPAD} PAD awarded to ${referral.referrerId} from ${userId}'s ${referralAdsRequired} ad watches`);
+          // Add BUG rewards for withdrawal requirements
+          await db
+            .update(users)
+            .set({
+              bugBalance: sql`COALESCE(${users.bugBalance}, 0) + ${referralRewardBUG}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, referral.referrerId));
 
-          // Award USD bonus if enabled (uses admin-configured amount)
-          if (referralRewardEnabled === 'true' && referralRewardUSD > 0) {
-            await this.addUSDBalance(
-              referral.referrerId,
-              String(referralRewardUSD),
-              'referral',
-              `Referral bonus - friend watched ${referralAdsRequired} ads (+$${referralRewardUSD} USD)`
-            );
-            console.log(`✅ Referral bonus: $${referralRewardUSD} USD awarded to ${referral.referrerId} from ${userId}'s ${referralAdsRequired} ad watches`);
+          // Notify the referrer via Telegram
+          const referrer = await this.getUser(referral.referrerId);
+          const referee = await this.getUser(userId);
 
-            // CRITICAL FIX: Also credit BUG balance for referral bonus
-            const bugRewardAmount = parseFloat(String(referralRewardUSD)) * 50; // Calculate BUG from USD
-            await this.addBUGBalance(
-              referral.referrerId,
-              String(bugRewardAmount),
-              'referral',
-              `Referral bonus - BUG earned (+${bugRewardAmount} BUG)`
-            );
-            console.log(`✅ Referral bonus: ${bugRewardAmount} BUG awarded to ${referral.referrerId}`);
-          }
-
-          // CRITICAL: Send ONLY ONE notification to referrer when their friend watches their first ad
-          // Uses USD reward amount from Admin Settings (no PAD/commission messages)
-          try {
+          if (referrer?.telegram_id && referee) {
+            const refereeName = referee.firstName || referee.username || 'A friend';
             const { sendReferralRewardNotification } = await import('./telegram');
-            const referrer = await this.getUser(referral.referrerId);
-            const referredUser = await this.getUser(userId);
-            
-            if (referrer && referrer.telegram_id && referredUser) {
-              const referredName = referredUser.username || referredUser.firstName || 'your friend';
-              // Send notification with USD amount from Admin Settings (not PAD)
-              await sendReferralRewardNotification(
-                referrer.telegram_id,
-                referredName,
-                String(referralRewardUSD) // USD amount from admin settings
-              );
-              console.log(`📩 Referral reward notification sent to ${referrer.telegram_id} with $${referralRewardUSD} USD`);
-            }
-          } catch (notifyError) {
-            console.error('❌ Error sending referral reward notification:', notifyError);
-            // Don't throw - notification failure shouldn't block the referral process
+            await sendReferralRewardNotification(
+              referrer.telegram_id,
+              refereeName,
+              referralRewardUSD
+            );
           }
+
+          console.log(`✅ Referral bonus activated: $${referralRewardUSD} USD and ${referralRewardBUG} BUG for user ${referral.referrerId}`);
         }
       }
     } catch (error) {
-      console.error('Error checking referral bonus activation:', error);
+      console.error('❌ Error activating referral bonus:', error);
     }
   }
 

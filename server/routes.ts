@@ -474,16 +474,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 2. CHANNEL/GROUP JOIN CHECK
-      // MANDATORY: ALWAYS check membership in both channel and group
-      const [channelMember, groupMember] = await Promise.all([
-        verifyChannelMembership(userId, channelConfig.channelId, botToken),
-        verifyChannelMembership(userId, channelConfig.groupId, botToken)
-      ]);
+      // 2. CHANNEL/GROUP JOIN CHECK - DISABLED
+      const isVerified = true;
+      const channelMember = true;
+      const groupMember = true;
       
-      const isVerified = channelMember && groupMember;
-      
-      console.log(`🔍 check-membership for ${telegramId}: channel=${channelMember}, group=${groupMember}, verified=${isVerified}`);
+      console.log(`🔍 check-membership for ${telegramId}: bypass enabled`);
       
       // Update user status in database to match current membership state
       if (user) {
@@ -520,79 +516,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mandatory channel/group membership check endpoint - authenticated
   app.get('/api/membership/check', authenticateTelegram, async (req: any, res) => {
     try {
-      // Get telegramId from authenticated session, NOT from query params
-      const sessionUser = req.user?.user;
-      const telegramId = sessionUser?.telegram_id;
-      const isDevMode = process.env.NODE_ENV === 'development';
-      
-      // In development mode, skip verification to allow easy testing
-      if (isDevMode) {
-        console.log('🔧 Development mode: Skipping channel join check');
-        const channelConfig = getChannelConfig();
-        return res.json({
-          success: true,
-          isVerified: true,
-          channelMember: true,
-          groupMember: true,
-          channelUrl: channelConfig.channelUrl,
-          groupUrl: channelConfig.groupUrl,
-          channelName: channelConfig.channelName,
-          groupName: channelConfig.groupName
-        });
-      }
-      
-      if (!telegramId) {
-        console.log('⚠️ Membership check failed - no telegram_id in session');
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Authentication required',
-          isVerified: false 
-        });
-      }
-      
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (!botToken) {
-        // SECURITY: Fail closed when bot token is missing
-        console.log('❌ TELEGRAM_BOT_TOKEN not configured - blocking access');
-        return res.json({ 
-          success: false, 
-          isVerified: false,
-          channelMember: false,
-          groupMember: false,
-          message: 'Bot token not configured - verification unavailable'
-        });
-      }
-      
+      // Bypass membership check - always verified
       const channelConfig = getChannelConfig();
-      const userId = parseInt(telegramId, 10);
-      
-      // Check both channel and group membership
-      const [channelMember, groupMember] = await Promise.all([
-        verifyChannelMembership(userId, channelConfig.channelId, botToken),
-        verifyChannelMembership(userId, channelConfig.groupId, botToken)
-      ]);
-      
-      const isVerified = channelMember && groupMember;
-      
-      // Update user verification status in database
-      try {
-        await db.update(users)
-          .set({ 
-            isChannelGroupVerified: isVerified,
-            lastMembershipCheck: new Date()
-          })
-          .where(eq(users.id, sessionUser.id));
-      } catch (dbError) {
-        console.error('⚠️ Could not update user verification status:', dbError);
-      }
-      
-      console.log(`🔍 Membership check for ${telegramId}: channel=${channelMember}, group=${groupMember}, verified=${isVerified}`);
-      
       res.json({
         success: true,
-        isVerified,
-        channelMember,
-        groupMember,
+        isVerified: true,
+        channelMember: true,
+        groupMember: true,
         channelUrl: channelConfig.channelUrl,
         groupUrl: channelConfig.groupUrl,
         channelName: channelConfig.channelName,
@@ -603,7 +533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         message: 'Failed to check membership',
-        isVerified: false 
+        isVerified: true 
       });
     }
   });

@@ -365,10 +365,8 @@ export async function sendReferralRewardNotification(
     const formattedUSD = parseFloat(usdRewardAmount).toFixed(2);
     
     const message = `🎉 <b>New Referral Activity!</b>
-
 Your friend <b>${safeName}</b> watched their first ad.
-💰 You earned <b>$${formattedUSD}</b>
-
+💰 You earned <b>$ ${formattedUSD}</b>
 Keep inviting more friends to earn more!`;
 
     const result = await sendUserTelegramNotification(referrerTelegramId, message);
@@ -455,18 +453,34 @@ export async function sendSharePhotoToChat(
   }
 }
 
-export function formatWelcomeMessage(): { message: string; inlineKeyboard: any } {
+export async function formatWelcomeMessage(userId: string): Promise<{ message: string; inlineKeyboard: any }> {
   const botUsername = process.env.VITE_BOT_USERNAME || process.env.BOT_USERNAME || 'MoneyAdzbot';
   const channelUrl = 'https://t.me/MoneyAdz';
-  const groupUrl = 'https://t.me/MoneyAdzChat';
   
-  const message = `Stop wasting time on useless airdrops.
-Start earning real rewards today.
+  const user = await storage.getUserByTelegramId(userId);
+  const name = user?.firstName || 'User';
+  
+  // Fetch real balance from database
+  const balance = parseFloat(user?.usdBalance || '0').toFixed(2);
+  
+  // Calculate total referral earnings
+  const [referralStats] = await db
+    .select({
+      total: sql<string>`COALESCE(SUM(${earnings.amount}), 0)`
+    })
+    .from(earnings)
+    .where(and(
+      eq(earnings.userId, user?.id || ''),
+      eq(earnings.source, 'referral')
+    ));
+    
+  const referralEarnings = parseFloat(referralStats?.total || '0').toFixed(2);
 
-Money Adz is a Telegram mini-app where you earn $PAD tokens by watching ads or completing simple tasks — and swap them instantly to $USD, even before any airdrop. 💸
-
-Every ad has value.
-Every task pays. 🚀`;
+  const message = `✅ Hello, ${name}!
+Welcome to Money BuG
+💰 Balance: $ ${balance}
+🤝 Referral Earnings: $ ${referralEarnings}
+Ready to earn more? Tap 🚀 Let's Go to open the app.`;
 
   const inlineKeyboard = {
     inline_keyboard: [
@@ -478,14 +492,8 @@ Every task pays. 🚀`;
       ],
       [
         {
-          text: "🤝 Channel",
+          text: "📢 Official Channel",
           url: channelUrl
-        }
-      ],
-      [
-        {
-          text: "💬 Group Chat",
-          url: groupUrl
         }
       ]
     ]
@@ -506,7 +514,7 @@ export async function sendWelcomeMessage(userId: string): Promise<boolean> {
     console.error('Error checking ban status for welcome message:', err);
   }
 
-  const { message, inlineKeyboard } = formatWelcomeMessage();
+  const { message, inlineKeyboard } = await formatWelcomeMessage(userId);
   const domain = process.env.REPLIT_DOMAIN || (process.env.REPL_SLUG ? `${process.env.REPL_SLUG}.replit.app` : null);
   const imageUrl = domain ? `https://${domain}/images/welcome-image.jpg` : null;
   
