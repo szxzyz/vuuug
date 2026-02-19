@@ -1,6 +1,9 @@
 // Telegram Bot API integration for sending notifications
 import TelegramBot from 'node-telegram-bot-api';
 import { storage } from './storage';
+import { db } from './db';
+import { earnings } from '../shared/schema';
+import { eq, sql, and } from 'drizzle-orm';
 
 const isAdmin = (telegramId: string): boolean => {
   const adminId = process.env.TELEGRAM_ADMIN_ID;
