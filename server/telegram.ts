@@ -488,6 +488,7 @@ export async function sendSharePhotoToChat(
 
 export async function formatWelcomeMessage(userId: string): Promise<{ message: string; inlineKeyboard: any }> {
   const botUsername = process.env.VITE_BOT_USERNAME || process.env.BOT_USERNAME || 'MoneyAdzbot';
+  const channelUrl = 'https://t.me/MoneyAdz';
   
   const user = await storage.getUserByTelegramId(userId);
   const name = user?.firstName || 'SZN';
@@ -504,6 +505,12 @@ Welcome to MONEY ADZ — where every click turns into rewards.
         {
           text: "🚀 Open App",
           url: `https://t.me/${botUsername}/MyWAdz`
+        }
+      ],
+      [
+        {
+          text: "📢 Official Channel",
+          url: channelUrl
         }
       ]
     ]
