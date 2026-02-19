@@ -491,7 +491,7 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
   const channelUrl = 'https://t.me/MoneyAdz';
   
   const user = await storage.getUserByTelegramId(userId);
-  const name = user?.firstName || 'SZN';
+  const name = user?.firstName || 'User';
   
   const message = `👋 Hey ${name}!
 

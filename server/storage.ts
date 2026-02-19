@@ -796,21 +796,27 @@ export class DatabaseStorage implements IStorage {
     return referral;
   }
 
-  // Check and activate referral bonus when friend watches required number of ads (PAD + USD rewards)
-  // Uses admin-configured 'referral_ads_required' setting instead of hardcoded value
-  async getAppSetting(key: string, defaultValue: string = ''): Promise<string> {
+  // Get app setting from admin_settings table
+  async getAppSetting(key: string, defaultValue: string | number = ''): Promise<string> {
     try {
       const [setting] = await db
-        .select()
+        .select({ settingValue: adminSettings.settingValue })
         .from(adminSettings)
-        .where(eq(adminSettings.settingKey, key));
-      return setting?.settingValue ?? defaultValue;
+        .where(eq(adminSettings.settingKey, key))
+        .limit(1);
+      
+      if (setting && setting.settingValue) {
+        return setting.settingValue;
+      }
+      return String(defaultValue);
     } catch (error) {
-      console.error(`Error fetching setting ${key}:`, error);
-      return defaultValue;
+      console.error(`Error getting app setting ${key}:`, error);
+      return String(defaultValue);
     }
   }
 
+  // Check and activate referral bonus when friend watches required number of ads (PAD + USD rewards)
+  // Uses admin-configured 'referral_ads_required' setting instead of hardcoded value
   async checkAndActivateReferralBonus(userId: string): Promise<void> {
     try {
       // Check if this user has already received their referral bonus
@@ -3336,25 +3342,6 @@ export class DatabaseStorage implements IStorage {
       }
       console.error(`❌ Error recording task click:`, error);
       return { success: false, message: "Failed to record task click" };
-    }
-  }
-
-  // Get app setting from admin_settings table
-  async getAppSetting(key: string, defaultValue: string | number): Promise<string> {
-    try {
-      const [setting] = await db
-        .select({ settingValue: adminSettings.settingValue })
-        .from(adminSettings)
-        .where(eq(adminSettings.settingKey, key))
-        .limit(1);
-      
-      if (setting && setting.settingValue) {
-        return setting.settingValue;
-      }
-      return String(defaultValue);
-    } catch (error) {
-      console.error(`Error getting app setting ${key}:`, error);
-      return String(defaultValue);
     }
   }
 
