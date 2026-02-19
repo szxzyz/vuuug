@@ -30,7 +30,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
       CREATE TABLE IF NOT EXISTS sessions (
         sid VARCHAR NOT NULL PRIMARY KEY,
         sess JSONB NOT NULL,
-        expire TIMESTAMP NOT NULL
+        expire TIMESTAMP(6) NOT NULL
       )
     `);
     console.log('✅ [MIGRATION] Sessions table ensured');
