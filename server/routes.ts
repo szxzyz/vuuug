@@ -6582,7 +6582,11 @@ ${walletAddress}
       if (result.success) {
         console.log(`✅ Withdrawal ${withdrawalId} approved by admin ${req.user.telegramUser.id}`);
         
-        // Send real-time update to user (no Telegram notification)
+        // Send Telegram notification to the withdrawal channel
+        const { sendWithdrawalApprovedNotification } = await import('./telegram');
+        await sendWithdrawalApprovedNotification(result.withdrawal);
+
+        // Send real-time update to user
         if (result.withdrawal) {
           sendRealtimeUpdate(result.withdrawal.userId, {
             type: 'withdrawal_approved',
@@ -6633,7 +6637,11 @@ ${walletAddress}
       if (result.success) {
         console.log(`❌ Withdrawal ${withdrawalId} rejected by admin ${req.user.telegramUser.id}`);
         
-        // Send real-time update to user (no Telegram notification)
+        // Send Telegram notification to the withdrawal channel
+        const { sendWithdrawalRejectedNotification } = await import('./telegram');
+        await sendWithdrawalRejectedNotification(result.withdrawal, adminNotes || reason);
+
+        // Send real-time update to user
         if (result.withdrawal) {
           sendRealtimeUpdate(result.withdrawal.userId, {
             type: 'withdrawal_rejected',

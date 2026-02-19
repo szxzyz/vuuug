@@ -301,13 +301,11 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
   }
 
   try {
-    const PAIDADZ_GROUP_CHAT_ID = '-1003402950172';
+    const WITHDRAWAL_CHANNEL_ID = '-1002480439556';
     const user = await storage.getUser(withdrawal.userId);
     
     const withdrawalDetails = withdrawal.details as any;
     const netAmount = parseFloat(withdrawalDetails?.netAmount || withdrawal.amount);
-    const feeAmount = parseFloat(withdrawalDetails?.fee || '0');
-    const feePercent = withdrawalDetails?.feePercent || '0';
     const walletAddress = withdrawalDetails?.paymentDetails || withdrawalDetails?.walletAddress || 'N/A';
     
     const userName = user?.firstName || user?.username || 'Unknown';
@@ -315,15 +313,13 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
     const userTelegramUsername = user?.username ? `@${user.username}` : 'N/A';
     const currentDate = new Date().toUTCString();
 
-    const groupMessage = `✅ Withdrawal Approved
-    
+    const groupMessage = `✅ <b>Withdrawal Approved</b>
+
 🗣 User: <a href="tg://user?id=${userTelegramId}">${escapeHtml(userName)}</a>
-🆔 User ID: ${userTelegramId}
+🆔 User ID: <code>${userTelegramId}</code>
 💳 Username: ${userTelegramUsername}
-🆔 Cwallet ID:
-<code>${walletAddress}</code>
-💸 Amount: ${netAmount.toFixed(5)} USD
-🛂 Fee: ${feeAmount.toFixed(5)} (${feePercent}%)
+💰 Wallet: <code>${walletAddress}</code>
+💸 Amount: <b>${netAmount.toFixed(2)} USD</b>
 📅 Date: ${currentDate}
 🤖 Bot: @MoneyAdzbot`;
 
@@ -331,7 +327,7 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: PAIDADZ_GROUP_CHAT_ID,
+        chat_id: WITHDRAWAL_CHANNEL_ID,
         text: groupMessage,
         parse_mode: 'HTML'
       })
@@ -347,6 +343,40 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
     }
   } catch (error) {
     console.error('❌ Error sending withdrawal approval group notification:', error);
+    return false;
+  }
+}
+
+export async function sendWithdrawalRejectedNotification(withdrawal: any, reason: string): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) return false;
+  
+  try {
+    const WITHDRAWAL_CHANNEL_ID = '-1002480439556';
+    const user = await storage.getUser(withdrawal.userId);
+    const userTelegramId = user?.telegram_id || '';
+    const userName = user?.firstName || user?.username || 'Unknown';
+    
+    const message = `❌ <b>Withdrawal Rejected</b>
+
+🗣 User: <a href="tg://user?id=${userTelegramId}">${escapeHtml(userName)}</a>
+🆔 User ID: <code>${userTelegramId}</code>
+💸 Amount: <b>${parseFloat(withdrawal.amount).toFixed(2)} USD</b>
+⚠️ Reason: ${escapeHtml(reason)}
+📅 Date: ${new Date().toUTCString()}
+🤖 Bot: @MoneyAdzbot`;
+
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: WITHDRAWAL_CHANNEL_ID,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    });
+    return true;
+  } catch (error) {
+    console.error('Error sending rejection notification:', error);
     return false;
   }
 }
@@ -458,45 +488,22 @@ export async function sendSharePhotoToChat(
 
 export async function formatWelcomeMessage(userId: string): Promise<{ message: string; inlineKeyboard: any }> {
   const botUsername = process.env.VITE_BOT_USERNAME || process.env.BOT_USERNAME || 'MoneyAdzbot';
-  const channelUrl = 'https://t.me/MoneyAdz';
   
   const user = await storage.getUserByTelegramId(userId);
-  const name = user?.firstName || 'User';
+  const name = user?.firstName || 'SZN';
   
-  // Fetch real balance from database
-  const balance = parseFloat(user?.usdBalance || '0').toFixed(2);
-  
-  // Calculate total referral earnings
-  const [referralStats] = await db
-    .select({
-      total: sql<string>`COALESCE(SUM(${earnings.amount}), 0)`
-    })
-    .from(earnings)
-    .where(and(
-      eq(earnings.userId, user?.id || ''),
-      eq(earnings.source, 'referral')
-    ));
-    
-  const referralEarnings = parseFloat(referralStats?.total || '0').toFixed(2);
+  const message = `👋 Hey ${name}!
 
-  const message = `✅ Hello, ${name}!
-Welcome to Money BuG
-💰 Balance: $ ${balance}
-🤝 Referral Earnings: $ ${referralEarnings}
-Ready to earn more? Tap 🚀 Let's Go to open the app.`;
+Welcome to MONEY ADZ — where every click turns into rewards.
+
+👇Tap below to open the app.`;
 
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
-          text: "🚀 Let's Go",
+          text: "🚀 Open App",
           url: `https://t.me/${botUsername}/MyWAdz`
-        }
-      ],
-      [
-        {
-          text: "📢 Official Channel",
-          url: channelUrl
         }
       ]
     ]
@@ -741,6 +748,7 @@ export async function handleTelegramMessage(update: any): Promise<boolean> {
     if (message) {
       const chatId = message.chat.id.toString();
       const telegramId = message.from?.id?.toString();
+      const text = message.text || '';
 
       if (telegramId) {
         const user = await storage.getUserByTelegramId(telegramId);
@@ -752,6 +760,12 @@ export async function handleTelegramMessage(update: any): Promise<boolean> {
             ]
           };
           await sendUserTelegramNotification(chatId, banMessage, replyMarkup);
+          return true;
+        }
+
+        // Handle /start command
+        if (text.startsWith('/start')) {
+          await sendWelcomeMessage(telegramId);
           return true;
         }
       }
