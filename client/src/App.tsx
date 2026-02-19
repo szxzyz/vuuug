@@ -177,33 +177,12 @@ function App() {
   const [isCheckingCountry, setIsCheckingCountry] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(true);
   const [isChannelVerified, setIsChannelVerified] = useState<boolean>(true);
-  const [isCheckingMembership, setIsCheckingMembership] = useState(true);
+  const [isCheckingMembership, setIsCheckingMembership] = useState(false);
   
   const isDevMode = import.meta.env.DEV || import.meta.env.MODE === 'development';
 
   const checkMembership = useCallback(async () => {
-    try {
-      const headers: Record<string, string> = {};
-      const tg = window.Telegram?.WebApp;
-      if (tg?.initData) {
-        headers['x-telegram-data'] = tg.initData;
-      }
-      
-      const response = await fetch('/api/check-membership', { headers });
-      const data = await response.json();
-      
-      if (data.success) {
-        if (data.banned) {
-          setIsBanned(true);
-          return;
-        }
-        setIsChannelVerified(data.isVerified);
-      }
-    } catch (err) {
-      console.error("Membership check error:", err);
-    } finally {
-      setIsCheckingMembership(false);
-    }
+    setIsCheckingMembership(false);
   }, []);
 
   useEffect(() => {
@@ -402,14 +381,6 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
         <TooltipProvider>
-          {!isChannelVerified && (
-            <Suspense fallback={null}>
-              <ChannelJoinPopup 
-                telegramId={telegramId || ""} 
-                onVerified={() => setIsChannelVerified(true)} 
-              />
-            </Suspense>
-          )}
           <AppContent />
         </TooltipProvider>
       </LanguageProvider>
