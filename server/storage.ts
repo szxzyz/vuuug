@@ -929,7 +929,7 @@ export class DatabaseStorage implements IStorage {
       .from(referrals)
       .where(eq(referrals.referrerId, userId));
     
-    return result[0]?.count || 0;
+    return Number(result[0]?.count || 0);
   }
 
   // Clear orphaned referral - when referrer no longer exists
@@ -3084,14 +3084,12 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .select({ count: sql<number>`count(*)` })
       .from(referrals)
-      .innerJoin(users, eq(referrals.refereeId, users.id))
       .where(and(
         eq(referrals.referrerId, userId),
-        eq(referrals.status, 'completed'),
-        eq(users.banned, false)
+        eq(referrals.status, 'completed')
       ));
     
-    return result[0]?.count || 0;
+    return Number(result[0]?.count || 0);
   }
 
   // Get tasks created by a specific user (my tasks)

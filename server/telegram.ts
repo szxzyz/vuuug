@@ -1876,131 +1876,31 @@ ${walletAddress}
     // Handle /start command with referral processing and promotion claims
     if (text.startsWith('/start')) {
       console.log('🚀 Processing /start command...');
-      // Extract parameter if present (e.g., /start REF123 or /start claim_promotionId)
+      // Extract parameter if present (e.g., /start REF123)
       const parameter = text.split(' ')[1];
-      
-      // Handle promotion task claim (DISABLED - no promotion system)
-      if (parameter && parameter.startsWith('task_')) {
-        console.log('⚠️ Promotion system disabled');
-        return true;
-      }
-      
-      // Extract referral code if present (e.g., /start REF123)
       const referralCode = parameter;
       
       // CRITICAL FIX: Process referral for BOTH new users AND existing users without a referrer
-      // This fixes the bug where users who visited before and then clicked a referral link weren't tracked
       if (referralCode && referralCode !== chatId) {
-        console.log(`🔄 Processing referral: referralCode=${referralCode}, user=${chatId}, isNewUser=${isNewUser}`);
+        console.log(`🔄 Processing referral: referralCode=${referralCode}, user=${chatId}`);
         try {
-          // Find the referrer by referral_code (NOT telegram_id or user_id)
           const referrer = await storage.getUserByReferralCode(referralCode);
           
-          if (referrer) {
-            console.log(`👤 Found referrer: ${referrer.id} (${referrer.firstName || 'No name'}) via referral code: ${referralCode}`);
-            console.log(`🔍 Referrer details: ID=${referrer.id}, TelegramID=${referrer.telegram_id}, RefCode=${referrer.referralCode}`);
-            console.log(`🔍 New user details: ID=${dbUser.id}, TelegramID=${dbUser.telegram_id}, RefCode=${dbUser.referralCode}`);
+          if (referrer && referrer.id !== dbUser.id) {
+            const existingReferral = await storage.getReferralByUsers(referrer.id, dbUser.id);
             
-            // Verify both users have valid IDs before creating referral
-            if (!referrer.id || !dbUser.id) {
-              console.error(`❌ Invalid user IDs: referrer.id=${referrer.id}, dbUser.id=${dbUser.id}`);
-              throw new Error('Invalid user IDs for referral creation');
+            if (!existingReferral) {
+              console.log(`💾 Creating referral relationship: ${referrer.id} -> ${dbUser.id}`);
+              await storage.createReferral(referrer.id, dbUser.id);
             }
-            
-            // Prevent self-referral by comparing user IDs
-            if (referrer.id === dbUser.id) {
-              console.log(`⚠️  Self-referral prevented: referrer.id=${referrer.id} === dbUser.id=${dbUser.id}`);
-            } else {
-              const { detectSelfReferral, banUserForMultipleAccounts, sendWarningToMainAccount } = await import('./deviceTracking');
-              const selfReferralCheck = await detectSelfReferral(dbUser.id, referralCode);
-              
-              if (selfReferralCheck.isSelfReferral && selfReferralCheck.shouldBan) {
-                console.log(`⚠️ Device-based self-referral detected! User ${dbUser.id} tried to refer themselves using device matching.`);
-                
-                await banUserForMultipleAccounts(
-                  dbUser.id,
-                  "Self-referral attempt detected - multiple accounts on same device"
-                );
-                
-                if (selfReferralCheck.referrerId) {
-                  await sendWarningToMainAccount(selfReferralCheck.referrerId);
-                }
-                
-                // Ban message with inline button for support (no text links)
-                const banMessage = `Your account has been banned for violating our multi-account policy.
-
-Reason: Self-referral attempt detected.
-
-Please contact support if you believe this is a mistake.`;
-                
-                const supportButton = {
-                  inline_keyboard: [[
-                    { text: '👉🏻 Contact Support', url: 'https://t.me/szxzyz' }
-                  ]]
-                };
-                
-                await sendUserTelegramNotification(chatId, banMessage, supportButton, 'HTML');
-                
-                return true;
-              }
-              
-              // CANONICAL CHECK: Use referrals table as source of truth to check if referral exists
-              const existingReferral = await storage.getReferralByUsers(referrer.id, dbUser.id);
-              
-              if (existingReferral) {
-                console.log(`ℹ️ Referral already exists in referrals table: ${referrer.id} -> ${dbUser.id}`);
-              } else {
-                console.log(`💾 Creating referral relationship: ${referrer.id} -> ${dbUser.id}`);
-                const createdReferral = await storage.createReferral(referrer.id, dbUser.id);
-                console.log(`✅ Referral created successfully in database:`, {
-                  referralId: createdReferral.id,
-                  referrerId: createdReferral.referrerId,
-                  refereeId: createdReferral.refereeId,
-                  status: createdReferral.status,
-                  rewardAmount: createdReferral.rewardAmount
-                });
-              }
-            }
-          } else {
-            console.log(`❌ Invalid referral code: ${referralCode} - no user found with this referral code`);
           }
         } catch (error) {
           console.error('❌ Referral processing failed:', error);
-          console.error('Error details:', {
-            referralCode: referralCode,
-            newUserTelegramId: chatId,
-            newUserDbId: dbUser.id,
-            newUserRefCode: dbUser.referralCode,
-            isNewUser,
-            errorMessage: error instanceof Error ? error.message : String(error),
-            errorStack: error instanceof Error ? error.stack : undefined
-          });
-        }
-      } else {
-        if (!referralCode) {
-          console.log(`ℹ️  No referral code provided in /start command`);
-        }
-        if (referralCode === chatId) {
-          console.log(`⚠️  Self-referral attempted: ${chatId}`);
         }
       }
 
-      // Send welcome message to user
-      console.log('📤 Sending welcome message to:', chatId);
-      const welcomeSent = await sendWelcomeMessage(chatId);
-      console.log('📧 Welcome message sent successfully:', welcomeSent);
+      await sendWelcomeMessage(chatId);
       return true;
-    }
-
-    // All keyboard navigation removed - bot uses inline buttons only for withdrawal management
-
-    // Admin command to list pending withdrawal requests
-    if (text === '/payouts' || text === '/withdrawals') {
-      if (!isAdmin(chatId)) {
-        return true; // Ignore command for non-admins
-      }
-      
-      console.log('💰 Processing admin payouts list command');
       
       try {
         const pendingWithdrawals = await storage.getAllPendingWithdrawals();
