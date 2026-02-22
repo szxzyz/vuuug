@@ -1901,6 +1901,15 @@ ${walletAddress}
 
       await sendWelcomeMessage(chatId);
       return true;
+    }
+
+    // Admin command to list pending withdrawal requests
+    if (text === '/payouts' || text === '/withdrawals') {
+      if (!isAdmin(chatId)) {
+        return true; // Ignore command for non-admins
+      }
+      
+      console.log('💰 Processing admin payouts list command');
       
       try {
         const pendingWithdrawals = await storage.getAllPendingWithdrawals();
