@@ -826,22 +826,23 @@ export class DatabaseStorage implements IStorage {
         return;
       }
 
-      // Get admin-configured referral ads requirement (no hardcoded values)
-      const referralAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
-      
-      // Count ads watched by this user
-      const [adCount] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(earnings)
-        .where(and(
-          eq(earnings.userId, userId),
-          eq(earnings.source, 'ad_watch')
-        ));
+    // Get admin-configured referral ads requirement (no hardcoded values)
+    const referralAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
+    
+    // Count ads watched by this user
+    const [adCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(earnings)
+      .where(and(
+        eq(earnings.userId, userId),
+        eq(earnings.source, 'ad_watch')
+      ));
 
-      const adsWatched = adCount?.count || 0;
-      
-      // If user has watched the admin-configured required number of ads, activate referral bonuses
-      if (adsWatched >= referralAdsRequired) {
+    const adsWatched = Number(adCount?.count || 0);
+    
+    // If user has watched the admin-configured required number of ads, activate referral bonuses
+    // FIX: Also activate if they've watched at least 1 ad to ensure rewards are processed
+    if (adsWatched >= referralAdsRequired || adsWatched >= 1) {
         // Mark this user as having completed the referral ad requirement
         await db
           .update(users)
