@@ -4,23 +4,18 @@ import { Button } from "@/components/ui/button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
-import { Ticket, Clock, Shield } from "lucide-react";
+import { Clock, Shield } from "lucide-react";
 
 declare global {
   interface Window {
     show_10401872: (type?: string | { type: string; inAppSettings: any }) => Promise<void>;
-    Adsgram: {
-      init: (config: { blockId: string }) => {
-        show: () => Promise<void>;
-      };
-    };
   }
 }
 
 export default function PromoCodeInput() {
   const [promoCode, setPromoCode] = useState("");
   const [isShowingAd, setIsShowingAd] = useState(false);
-  const [currentAdStep, setCurrentAdStep] = useState<'idle' | 'monetag' | 'adsgram' | 'verifying'>('idle');
+  const [currentAdStep, setCurrentAdStep] = useState<'idle' | 'monetag' | 'verifying'>('idle');
   const monetagStartTimeRef = useRef<number>(0);
   const queryClient = useQueryClient();
 
@@ -68,22 +63,6 @@ export default function PromoCodeInput() {
     });
   };
 
-  const showAdsgramAd = (): Promise<boolean> => {
-    return new Promise(async (resolve) => {
-      if (window.Adsgram) {
-        try {
-          await window.Adsgram.init({ blockId: "int-20373" }).show();
-          resolve(true);
-        } catch (error) {
-          console.error('Adsgram ad error:', error);
-          resolve(false);
-        }
-      } else {
-        resolve(false);
-      }
-    });
-  };
-
   const handleSubmit = async () => {
     if (!promoCode.trim()) {
       showNotification("Please enter a promo code", "error");
@@ -96,29 +75,19 @@ export default function PromoCodeInput() {
     try {
       setCurrentAdStep('monetag');
       const monetagResult = await showMonetagAd();
-      
+
       if (monetagResult.unavailable) {
         showNotification("Monetag ads not available. Please try again later.", "error");
         return;
       }
-      
+
       if (!monetagResult.watchedFully) {
         showNotification("Claimed too fast!", "error");
         return;
       }
 
       if (!monetagResult.success) {
-        showNotification("Monetag ad failed. Please try again.", "error");
-        return;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setCurrentAdStep('adsgram');
-      const adsgramSuccess = await showAdsgramAd();
-      
-      if (!adsgramSuccess) {
-        showNotification("Both ads must be watched completely to claim promo.", "error");
+        showNotification("Ad failed. Please try again.", "error");
         return;
       }
 
@@ -131,8 +100,7 @@ export default function PromoCodeInput() {
   };
 
   const getButtonText = () => {
-    if (currentAdStep === 'monetag') return "Monetag...";
-    if (currentAdStep === 'adsgram') return "AdGram...";
+    if (currentAdStep === 'monetag') return "Loading...";
     if (currentAdStep === 'verifying') return "Verifying...";
     if (redeemPromoMutation.isPending) return "Applying...";
     return "Apply";
