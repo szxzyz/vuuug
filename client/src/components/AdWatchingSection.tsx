@@ -8,11 +8,6 @@ import { showNotification } from "@/components/AppNotification";
 declare global {
   interface Window {
     show_10401872: (type?: string | { type: string; inAppSettings: any }) => Promise<void>;
-    Adsgram: {
-      init: (config: { blockId: string }) => {
-        show: () => Promise<void>;
-      };
-    };
   }
 }
 
@@ -23,7 +18,7 @@ interface AdWatchingSectionProps {
 export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const [isShowingAds, setIsShowingAds] = useState(false);
-  const [currentAdStep, setCurrentAdStep] = useState<'idle' | 'monetag' | 'adsgram' | 'verifying'>('idle');
+  const [currentAdStep, setCurrentAdStep] = useState<'idle' | 'monetag' | 'verifying'>('idle');
   const sessionRewardedRef = useRef(false);
   const monetagStartTimeRef = useRef<number>(0);
 
@@ -47,7 +42,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       return response.json();
     },
     onSuccess: async (data) => {
-      // Reward already shown optimistically for speed
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
@@ -57,7 +51,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     onError: (error: any) => {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      
+
       if (error.status === 429) {
         const limit = error.limit || appSettings?.dailyAdLimit || 50;
         showNotification(`Daily ad limit reached (${limit} ads/day)`, "error");
@@ -93,93 +87,53 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     });
   };
 
-  const showAdsgramAd = (): Promise<boolean> => {
-    return new Promise(async (resolve) => {
-      if (window.Adsgram) {
-        try {
-          await window.Adsgram.init({ blockId: "20372" }).show();
-          resolve(true);
-        } catch (error) {
-          console.error('Adsgram ad error:', error);
-          resolve(true); // Resolve true even on error to prevent being stuck
-        }
-      } else {
-        resolve(true); // Fallback to let user proceed
-      }
-    });
-  };
-
   const handleStartEarning = async () => {
     if (isShowingAds) return;
-    
+
     setIsShowingAds(true);
     sessionRewardedRef.current = false;
-    
+
     try {
-      // STEP 1: Show Monetag ad - User must watch at least 3 seconds
       setCurrentAdStep('monetag');
       const monetagResult = await showMonetagAd();
-      
-      // Handle Monetag unavailable
+
       if (monetagResult.unavailable) {
         showNotification("Ads not available. Please try again later.", "error");
         return;
       }
-      
-      // Check if Monetag was closed before 3 seconds
+
       if (!monetagResult.watchedFully) {
         showNotification("Claimed too fast!", "error");
         return;
       }
-      
-      // Monetag was watched fully (at least 3 seconds)
+
       if (!monetagResult.success) {
         showNotification("Ad failed. Please try again.", "error");
         return;
       }
 
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // STEP 2: Show Adsgram ad
-      setCurrentAdStep('adsgram');
-      const adsgramSuccess = await showAdsgramAd();
-
-      if (!adsgramSuccess) {
-        showNotification("Please complete the ad to earn reward.", "error");
-        return;
-      }
-      
-      // STEP 3: Grant reward after both complete successfully
       setCurrentAdStep('verifying');
-      
-      // Ensure the verification step is brief and follows through
       await new Promise(resolve => setTimeout(resolve, 300));
 
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
-        
-        // Optimistic UI update - only ONE increment to progress
+
         const rewardAmount = appSettings?.rewardPerAd || 2;
         queryClient.setQueryData(["/api/auth/user"], (old: any) => ({
           ...old,
           balance: String(parseFloat(old?.balance || '0') + rewardAmount),
           adsWatchedToday: (old?.adsWatchedToday || 0) + 1
         }));
-        
-        // Instant notification for better UX
+
         showNotification(`+${rewardAmount} PAD earned!`, "success");
-        
-        // Sync with backend - single reward call
         watchAdMutation.mutate('monetag');
       }
     } catch (error) {
       console.error('Ad watching error:', error);
       showNotification("Error playing ads. Try again.", "error");
     } finally {
-      // Always reset state on completion or error
       setCurrentAdStep('idle');
       setIsShowingAds(false);
-      // Ensure data is fresh
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     }
   };
@@ -194,7 +148,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           <h2 className="text-base font-bold text-white mb-1">Viewing ads</h2>
           <p className="text-[#AAAAAA] text-xs">Get PAD for watching commercials</p>
         </div>
-        
+
         <div className="flex justify-center mb-3">
           <button
             onClick={handleStartEarning}
@@ -210,8 +164,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                   <Clock size={16} className="animate-spin" />
                 )}
                 <span className="text-sm font-semibold">
-                  {currentAdStep === 'monetag' ? 'Monetag...' : 
-                   currentAdStep === 'adsgram' ? 'AdGram...' :
+                  {currentAdStep === 'monetag' ? 'Loading...' :
                    currentAdStep === 'verifying' ? 'Verifying...' : 'Loading...'}
                 </span>
               </>
@@ -223,8 +176,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
             )}
           </button>
         </div>
-        
-        {/* Watched counter - Always visible */}
+
         <div className="text-center">
           <p className="text-xs text-muted-foreground">
             Watched: {adsWatchedToday}/{dailyLimit}
