@@ -256,12 +256,6 @@ export default function Missions() {
       return;
     }
     
-    if (!adResult.adsgramWatched) {
-      showNotification("Please complete all ads to claim your reward!", "error");
-      setDailyCheckinStep('idle');
-      return;
-    }
-    
     setDailyCheckinStep('ready');
   }, [missionStatus?.dailyCheckin?.claimed, dailyCheckinStep, runAdFlow]);
 
@@ -400,9 +394,19 @@ export default function Missions() {
     const countdown = countdownTasks.get(task.id);
 
     return (
-      <div className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
-        <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${getTaskIconBg(task.taskType)} flex items-center justify-center flex-shrink-0`}>
-          {getTaskBoxIcon(task.taskType)}
+      <div className="flex items-center gap-3 py-2.5 border-b border-white/5 last:border-0">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+          task.taskType === 'bot' ? 'bg-purple-500/10 border border-purple-500/20' :
+          task.taskType === 'channel' ? 'bg-blue-500/10 border border-blue-500/20' :
+          'bg-green-500/10 border border-green-500/20'
+        }`}>
+          <span className={
+            task.taskType === 'bot' ? 'text-purple-400' :
+            task.taskType === 'channel' ? 'text-blue-400' :
+            'text-green-400'
+          }>
+            {getTaskBoxIcon(task.taskType)}
+          </span>
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-medium truncate">{task.title}</p>
@@ -411,9 +415,9 @@ export default function Missions() {
         <Button
           onClick={() => isClaimReady ? clickTaskMutation.mutate(task.id) : handleTaskClick(task)}
           disabled={isLoading || (countdown !== undefined && countdown > 0)}
-          className={`h-8 w-20 text-xs font-bold rounded-lg ${
-            isLoading ? 'bg-[#4cd3ff]/50' :
-            countdown ? 'bg-gray-600' :
+          className={`h-8 w-20 text-xs font-bold rounded-xl ${
+            isLoading ? 'bg-[#4cd3ff]/50 text-black' :
+            countdown ? 'bg-[#1a1a1a] text-gray-400 border border-white/10' :
             isClaimReady ? 'bg-green-500 hover:bg-green-600 text-white' :
             'bg-[#4cd3ff] hover:bg-[#3bc3ef] text-black'
           }`}
@@ -435,12 +439,12 @@ export default function Missions() {
     if (tasks.length === 0) return null;
     
     return (
-      <div className="bg-[#111] rounded-xl p-3 mb-3">
-        <div className="flex items-center gap-2 mb-2">
+      <div className="bg-[#0d0d0d] rounded-2xl p-3.5 mb-3 border border-white/5">
+        <div className="flex items-center gap-2 mb-1">
           <div className={iconColor}>{icon}</div>
           <span className="text-white text-sm font-semibold">{title}</span>
         </div>
-        <div className="px-1">
+        <div className="px-0.5">
           {tasks.map(t => <TaskItem key={t.id} task={t} />)}
         </div>
       </div>
@@ -456,32 +460,34 @@ export default function Missions() {
         </div>
 
         <div 
-          className="bg-[#111] rounded-xl p-3 mb-3 cursor-pointer active:scale-[0.98] transition-transform"
+          className="bg-[#0d0d0d] rounded-2xl p-3.5 mb-3 cursor-pointer active:scale-[0.98] transition-transform border border-white/5"
           onClick={() => setLocation("/task/create")}
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4cd3ff] to-[#007BFF] flex items-center justify-center flex-shrink-0">
-              <Sparkles className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-[#4cd3ff]/10 border border-[#4cd3ff]/20 flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-5 h-5 text-[#4cd3ff]" />
             </div>
             <div className="flex-1">
               <h3 className="text-white font-semibold text-sm">Create My Task</h3>
-              <p className="text-gray-400 text-xs">Promote your channel or bot</p>
+              <p className="text-gray-500 text-xs">Promote your channel or bot</p>
             </div>
-            <ChevronRight className="w-5 h-5 text-gray-500" />
+            <ChevronRight className="w-4 h-4 text-gray-600" />
           </div>
         </div>
 
-        <div className="bg-[#111] rounded-xl p-3 mb-3">
-          <div className="flex items-center gap-2 mb-2">
-            <CalendarCheck className="w-4 h-4 text-yellow-400" />
+        <div className="bg-[#0d0d0d] rounded-2xl p-3.5 mb-3 border border-white/5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center">
+              <CalendarCheck className="w-3.5 h-3.5 text-yellow-400" />
+            </div>
             <span className="text-white text-sm font-semibold">Daily Tasks</span>
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-2.5">
+            <div className="flex items-center justify-between bg-[#141414] rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                  <Users className="w-4 h-4 text-white" />
+                <div className="w-9 h-9 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+                  <Users className="w-4 h-4 text-green-400" />
                 </div>
                 <div>
                   <p className="text-white text-sm font-medium">Share with Friends</p>
@@ -518,14 +524,14 @@ export default function Missions() {
               )}
             </div>
 
-            <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-2.5">
+            <div className="flex items-center justify-between bg-[#141414] rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
-                  <CalendarCheck className="w-4 h-4 text-white" />
+                <div className="w-9 h-9 rounded-xl bg-[#4cd3ff]/10 border border-[#4cd3ff]/20 flex items-center justify-center">
+                  <CalendarCheck className="w-4 h-4 text-[#4cd3ff]" />
                 </div>
                 <div>
                   <p className="text-white text-sm font-medium">Daily Check-in</p>
-                  <p className="text-cyan-400 text-xs font-bold">+5 PAD</p>
+                  <p className="text-[#4cd3ff] text-xs font-bold">+5 PAD</p>
                 </div>
               </div>
               {missionStatus?.dailyCheckin?.claimed ? (
@@ -564,10 +570,10 @@ export default function Missions() {
               )}
             </div>
 
-            <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-2.5">
+            <div className="flex items-center justify-between bg-[#141414] rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
-                  <Bell className="w-4 h-4 text-white" />
+                <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                  <Bell className="w-4 h-4 text-orange-400" />
                 </div>
                 <div>
                   <p className="text-white text-sm font-medium">Check for Updates</p>
@@ -628,9 +634,9 @@ export default function Missions() {
         />
 
         {gameTasks.length === 0 && socialTasks.length === 0 && partnerTasks.length === 0 && (
-          <div className="bg-[#111] rounded-xl p-6 text-center">
+          <div className="bg-[#0d0d0d] rounded-2xl p-6 text-center border border-white/5">
             <p className="text-gray-400 text-sm">No tasks available right now</p>
-            <p className="text-gray-500 text-xs mt-1">Check back later for new tasks!</p>
+            <p className="text-gray-600 text-xs mt-1">Check back later for new tasks!</p>
           </div>
         )}
       </main>

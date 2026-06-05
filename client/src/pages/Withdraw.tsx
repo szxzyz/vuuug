@@ -473,7 +473,7 @@ export default function Withdraw() {
         {activeTab === 'withdraw' && (
           <div className="space-y-4">
             {isLoadingRequirements && (
-              <Card className="bg-[#111111] border-[#2a2a2a] overflow-hidden">
+              <Card className="bg-[#111111] border-0 overflow-hidden">
                 <CardContent className="p-6 flex items-center justify-center">
                   <div className="flex items-center gap-3">
                     <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
@@ -499,10 +499,10 @@ export default function Withdraw() {
                   <button
                     key={system.id}
                     onClick={() => setSelectedMethod(system.id)}
-                    className={`w-full flex items-center space-x-2 p-3 rounded-lg border-2 transition-all ${
+                    className={`w-full flex items-center space-x-2 p-3 rounded-lg transition-all ${
                       selectedMethod === system.id
-                        ? 'border-[#4cd3ff] bg-[#4cd3ff]/10'
-                        : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#4cd3ff]/50'
+                        ? 'bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]'
+                        : 'bg-[#1a1a1a] hover:bg-[#252525]'
                     }`}
                   >
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
@@ -521,7 +521,7 @@ export default function Withdraw() {
                 ))}
               </div>
 
-              <div className="p-3 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] space-y-3">
+              <div className="p-3 bg-[#1a1a1a] rounded-xl space-y-3">
                 <div className="text-xs text-[#aaa]">Select Withdrawal Package</div>
                 
                 <div className="grid grid-cols-3 gap-2">
@@ -537,12 +537,12 @@ export default function Withdraw() {
                         key={pkg.usd}
                         onClick={() => !isDisabled && setSelectedPackage(pkg.usd)}
                         disabled={isDisabled}
-                        className={`relative p-2 rounded-lg border transition-all text-center ${
+                        className={`relative p-2 rounded-lg transition-all text-center ${
                           isSelected
-                            ? 'border-[#4cd3ff] bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]/50'
+                            ? 'bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]'
                             : isDisabled
-                              ? 'border-[#2a2a2a] bg-[#0d0d0d] opacity-40 cursor-not-allowed'
-                              : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#4cd3ff]/50'
+                              ? 'bg-[#0d0d0d] opacity-40 cursor-not-allowed'
+                              : 'bg-[#0d0d0d] hover:bg-[#111]'
                         }`}
                       >
                         {isSelected && (
@@ -563,12 +563,12 @@ export default function Withdraw() {
                 <button
                   onClick={() => usdBalance > 0 && setSelectedPackage('FULL')}
                   disabled={usdBalance <= 0}
-                  className={`relative w-full p-2 rounded-lg border transition-all text-center ${
+                  className={`relative w-full p-2 rounded-lg transition-all text-center ${
                     selectedPackage === 'FULL'
-                      ? 'border-[#4cd3ff] bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]/50'
+                      ? 'bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]'
                       : usdBalance <= 0
-                        ? 'border-[#2a2a2a] bg-[#0d0d0d] opacity-40 cursor-not-allowed'
-                        : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#4cd3ff]/50'
+                        ? 'bg-[#0d0d0d] opacity-40 cursor-not-allowed'
+                        : 'bg-[#0d0d0d] hover:bg-[#111]'
                   }`}
                 >
                   {selectedPackage === 'FULL' && (
@@ -584,7 +584,7 @@ export default function Withdraw() {
                   </div>
                 </button>
                 
-                <div className="pt-3 border-t border-[#2a2a2a] space-y-2">
+                <div className="pt-3 space-y-2">
                   <div>
                     <div className="text-xs text-[#aaa]">You will receive</div>
                     <div className="text-2xl font-bold text-white">${calculateWithdrawalAmount().toFixed(2)}</div>
@@ -650,7 +650,7 @@ export default function Withdraw() {
             </>
             )}
 
-            <div className="mt-6 pt-4 border-t border-[#2a2a2a]">
+            <div className="mt-6 pt-4">
               <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-[#4cd3ff]" />
                 Wallet Activity
@@ -670,7 +670,7 @@ export default function Withdraw() {
                   {withdrawalsData.map((withdrawal) => (
                     <div 
                       key={withdrawal.id}
-                      className="flex items-center justify-between p-3 bg-[#1a1a1a]/50 rounded-xl border border-white/5"
+                      className="flex items-center justify-between p-3 bg-[#1a1a1a]/50 rounded-xl"
                     >
                       <div className="flex items-center gap-3">
                         {getStatusIcon(withdrawal.status)}
@@ -704,7 +704,7 @@ export default function Withdraw() {
             <div className="space-y-2">
               <div className="space-y-2">
                 <button
-                  className="w-full flex items-center space-x-2 p-3 rounded-lg border-2 transition-all border-[#4cd3ff] bg-[#4cd3ff]/10"
+                  className="w-full flex items-center space-x-2 p-3 rounded-lg transition-all bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]"
                 >
                   <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center border-[#4cd3ff] bg-[#4cd3ff]">
                     <Check className="w-3 h-3 text-black" />
@@ -734,7 +734,7 @@ export default function Withdraw() {
                     type="text"
                     value={tonWalletId}
                     disabled={true}
-                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="bg-[#0d0d0d] border-0 text-white placeholder:text-[#808080] rounded-lg h-11 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="space-y-2">
@@ -744,10 +744,10 @@ export default function Withdraw() {
                     placeholder="Enter your Cwallet ID (numeric only)"
                     value={newTonWalletId}
                     onChange={(e) => setNewTonWalletId(e.target.value.replace(/\D/g, ''))}
-                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11"
+                    className="bg-[#0d0d0d] border-0 text-white placeholder:text-[#808080] rounded-lg h-11"
                   />
                 </div>
-                <div className="flex items-start gap-2 p-3 bg-[#4cd3ff]/10 rounded-lg border border-[#4cd3ff]/30">
+                <div className="flex items-start gap-2 p-3 bg-[#4cd3ff]/10 rounded-lg">
                   <Info className="w-4 h-4 text-[#4cd3ff] mt-0.5 flex-shrink-0" />
                   <div className="text-xs text-[#c0c0c0]">
                     Fee: <span className="text-[#4cd3ff] font-semibold">{walletChangeFee} PAD</span> will be deducted
@@ -765,14 +765,14 @@ export default function Withdraw() {
                     placeholder="Enter your Cwallet ID (numeric only)"
                     value={tonWalletId}
                     onChange={(e) => setTonWalletId(e.target.value.replace(/\D/g, ''))}
-                    className="bg-[#0d0d0d] border-white/20 text-white placeholder:text-[#808080] focus:border-[#4cd3ff] transition-colors rounded-lg h-11"
+                    className="bg-[#0d0d0d] border-0 text-white placeholder:text-[#808080] rounded-lg h-11"
                   />
                   <p className="text-xs text-blue-500 font-medium flex items-center gap-1">
                     <Info className="w-3 h-3" />
                     Enter your numeric Cwallet ID from Cwallet app/website
                   </p>
                 </div>
-                <div className="flex items-start gap-2 p-3 bg-[#0d0d0d] rounded-lg border border-white/5">
+                <div className="flex items-start gap-2 p-3 bg-[#0d0d0d] rounded-lg">
                   <HelpCircle className="w-4 h-4 text-[#4cd3ff] mt-0.5 flex-shrink-0" />
                   <div className="text-xs text-[#c0c0c0]">
                     Don't have a Cwallet ID?{' '}
@@ -795,7 +795,7 @@ export default function Withdraw() {
                   <Button
                     variant="outline"
                     onClick={() => setIsChangingTonWallet(true)}
-                    className="flex-1 bg-transparent border-[#4cd3ff]/50 text-[#4cd3ff] hover:bg-[#4cd3ff]/10"
+                    className="flex-1 bg-[#1a1a1a] border-0 text-[#4cd3ff] hover:bg-[#252525]"
                   >
                     Change Cwallet ID
                   </Button>
@@ -814,7 +814,7 @@ export default function Withdraw() {
                       setIsChangingTonWallet(false);
                       setNewTonWalletId('');
                     }}
-                    className="flex-1 bg-transparent border-white/20 text-white hover:bg-white/10"
+                    className="flex-1 bg-[#1a1a1a] border-0 text-white hover:bg-[#252525]"
                   >
                     Cancel
                   </Button>
@@ -831,7 +831,7 @@ export default function Withdraw() {
                   <Button
                     variant="outline"
                     onClick={() => setActiveTab('withdraw')}
-                    className="flex-1 bg-transparent border-white/20 text-white hover:bg-white/10"
+                    className="flex-1 bg-[#1a1a1a] border-0 text-white hover:bg-[#252525]"
                   >
                     Cancel
                   </Button>

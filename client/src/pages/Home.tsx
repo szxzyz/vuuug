@@ -34,11 +34,6 @@ interface UnifiedTask {
 declare global {
   interface Window {
     show_10401872: (type?: string | { type: string; inAppSettings: any }) => Promise<void>;
-    Adsgram: {
-      init: (config: { blockId: string }) => {
-        show: () => Promise<void>;
-      };
-    };
   }
 }
 
@@ -363,22 +358,6 @@ export default function Home() {
 
   const isTaskPending = advertiserTaskMutation.isPending;
 
-  const showAdsgramAd = (): Promise<boolean> => {
-    return new Promise(async (resolve) => {
-      if (window.Adsgram) {
-        try {
-          await window.Adsgram.init({ blockId: "int-20373" }).show();
-          resolve(true);
-        } catch (error) {
-          console.error('Adsgram ad error:', error);
-          resolve(false);
-        }
-      } else {
-        resolve(false);
-      }
-    });
-  };
-
   const showMonetagAd = (): Promise<{ success: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
       if (typeof window.show_10401872 === 'function') {
@@ -454,18 +433,6 @@ export default function Home() {
         setIsConverting(false);
         return;
       }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const adsgramSuccess = await window.Adsgram.init({ blockId: "int-7589" }).show()
-        .then(() => true)
-        .catch(() => true);
-
-      if (!adsgramSuccess) {
-        showNotification("Please watch the ad to convert.", "error");
-        setIsConverting(false);
-        return;
-      }
 
       convertMutation.mutate({ amount, convertTo: selectedConvertType });
       
@@ -486,16 +453,6 @@ export default function Home() {
       const monetagResult = await showMonetagRewardedAd();
       
       if (!monetagResult.unavailable && !monetagResult.success) {
-        showNotification("Please watch the ad completely to claim your bonus.", "error");
-        setIsClaimingStreak(false);
-        return;
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const adsgramSuccess = await showAdsgramAd();
-      
-      if (!adsgramSuccess) {
         showNotification("Please watch the ad completely to claim your bonus.", "error");
         setIsClaimingStreak(false);
         return;
@@ -527,10 +484,8 @@ export default function Home() {
     if (isApplyingPromo || redeemPromoMutation.isPending) return;
     
     setIsApplyingPromo(true);
-    console.log('🎫 Promo code claim started, showing Monetag ad first...');
     
     try {
-      // Show Monetag rewarded ad first
       const monetagResult = await showMonetagRewardedAd();
       
       if (!monetagResult.unavailable && !monetagResult.success) {
@@ -538,20 +493,7 @@ export default function Home() {
         setIsApplyingPromo(false);
         return;
       }
-
-      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Then show AdsGram ad
-      console.log('🎬 Proceeding with AdsGram...');
-      const adsgramSuccess = await showAdsgramAd();
-      
-      if (!adsgramSuccess) {
-        showNotification("Both ads must be watched to claim promo.", "error");
-        setIsApplyingPromo(false);
-        return;
-      }
-      
-      console.log('✅ Ads watched, claiming promo code');
       redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
     } catch (error) {
       console.error('Promo claim error:', error);
@@ -785,8 +727,8 @@ export default function Home() {
       <Header />
       <main className="max-w-md mx-auto px-4 pt-1 bg-black text-white">
         {/* Profile Section Container */}
-        <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm border border-white/5 mb-4">
-          <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4 border border-white/5">
+        <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm mb-4">
+          <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4">
             <div className="relative flex-shrink-0">
               <div 
                 className={`w-[78px] h-[78px] rounded-full border-[1px] ${isAdmin ? 'border-blue-500 cursor-pointer hover:scale-105 transition-transform' : 'border-blue-500'} p-[2.5px] bg-[#0D0D0D]`}
@@ -801,28 +743,28 @@ export default function Home() {
             </div>
 
             <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 border border-[#2a2a2a] shadow-sm">
+              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 shadow-sm">
                 <span className="text-gray-500 text-[10px] font-bold tracking-tight uppercase">Name</span>
-                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[65px] text-center border border-[#353535]">
+                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[65px] text-center">
                   <span className="text-gray-400 font-bold text-[11px]">{displayName}</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 border border-[#2a2a2a] shadow-sm">
+              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 shadow-sm">
                 <span className="text-gray-500 text-[10px] font-bold tracking-tight uppercase">Telegram ID</span>
-                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[80px] text-center border border-[#353535]">
+                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[80px] text-center">
                   <span className="text-blue-400 font-mono text-[12px] font-bold">{user?.telegram_id || (user as any)?.telegramId || "---"}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-[#111111] rounded-[24px] p-4 border border-white/5 shadow-2xl mt-4">
+          <div className="bg-[#111111] rounded-[24px] p-4 shadow-2xl mt-4">
             <div className="grid grid-cols-2 gap-3 mb-3">
               <Button
                 onClick={handleConvertClick}
                 disabled={isConverting || convertMutation.isPending}
-                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full border border-[#4cd3ff]/30 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
+                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
               >
                 <RefreshCw className="w-5 h-5 text-[#4cd3ff]" />
                 <span>Convert</span>
@@ -831,7 +773,7 @@ export default function Home() {
               <Button
                 onClick={handleClaimStreak}
                 disabled={isClaimingStreak || !canClaimStreak}
-                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full border border-[#4cd3ff]/30 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg disabled:opacity-50"
+                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg disabled:opacity-50"
               >
                 {isClaimingStreak ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -853,7 +795,7 @@ export default function Home() {
                   value={promoCode}
                   onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
                   disabled={redeemPromoMutation.isPending || isApplyingPromo}
-                  className="w-full h-12 bg-[#1a1a1a] border border-[#4cd3ff]/30 rounded-full text-white placeholder:text-gray-500 px-4 text-sm focus:border-[#4cd3ff] focus:ring-0"
+                  className="w-full h-12 bg-[#1a1a1a] border-0 rounded-full text-white placeholder:text-gray-500 px-4 text-sm focus:ring-0"
                 />
               </div>
               <Button
@@ -877,9 +819,9 @@ export default function Home() {
         </div>
 
         <div className="mt-3 px-0">
-          <div className="bg-[#0d0d0d] rounded-xl border border-[#1a1a1a] p-3">
+          <div className="bg-[#0d0d0d] rounded-xl p-3">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                   <ListChecks className="w-4 h-4 text-blue-400" />
                 </div>
                 <span className="text-base font-bold text-white tracking-tight">Active Tasks</span>
