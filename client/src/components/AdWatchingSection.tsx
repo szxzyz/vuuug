@@ -142,7 +142,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const dailyLimit = appSettings?.dailyAdLimit || 50;
 
   return (
-    <Card className="rounded-2xl minimal-card mb-3">
+    <Card className="rounded-2xl minimal-card mb-3 border-0">
       <CardContent className="p-4">
         <div className="text-center mb-3">
           <h2 className="text-base font-bold text-white mb-1">Viewing ads</h2>

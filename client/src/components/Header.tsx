@@ -31,23 +31,23 @@ export default function Header() {
   };
 
   return (
-    <div className="fixed top-2 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-md h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl border border-white/5">
+    <div className="fixed top-2 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-md h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl">
       <div className="flex items-center justify-center h-full px-6 gap-3">
-        <div className="flex items-center gap-2 bg-white/5 px-3 h-9 rounded-full border border-white/5 min-w-[85px]">
+        <div className="flex items-center gap-2 bg-white/5 px-3 h-9 rounded-full min-w-[85px]">
           <DiamondIcon size={16} withGlow />
           <span className="text-sm text-white font-bold truncate">
             {formatBalance(padBalance)}
           </span>
         </div>
         
-        <div className="flex items-center gap-2 bg-white/5 px-3 h-9 rounded-full border border-white/5 min-w-[75px]">
+        <div className="flex items-center gap-2 bg-white/5 px-3 h-9 rounded-full min-w-[75px]">
           <Bug className="w-4 h-4 text-green-400 flex-shrink-0" />
           <span className="text-sm text-white font-bold truncate">
             {formatBalance(bugBalance)}
           </span>
         </div>
 
-        <div className="flex items-center gap-2 bg-white/5 px-4 h-9 rounded-full border border-white/5 min-w-[90px]">
+        <div className="flex items-center gap-2 bg-white/5 px-4 h-9 rounded-full min-w-[90px]">
           <span className="text-green-400 font-bold text-sm">$</span>
           <span className="text-sm text-white font-bold">
             {usdBalance.toFixed(3)}
