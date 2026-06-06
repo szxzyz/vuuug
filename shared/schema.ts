@@ -81,6 +81,9 @@ export const users = pgTable("users", {
   taskCheckinCompletedToday: boolean("task_checkin_completed_today").default(false),
   extraAdsWatchedToday: integer("extra_ads_watched_today").default(0),
   lastExtraAdDate: timestamp("last_extra_ad_date"),
+  hourlyAdsWatched: integer("hourly_ads_watched").default(0),
+  lastHourlyReset: timestamp("last_hourly_reset"),
+  lastBonusClaimedDate: text("last_bonus_claimed_date"),
   // Wallet details
   tonWalletAddress: text("ton_wallet_address"),
   tonWalletComment: text("ton_wallet_comment"),
