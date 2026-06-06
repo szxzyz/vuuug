@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAdmin } from "@/hooks/useAdmin";
 import { motion, AnimatePresence } from "framer-motion";
-import { HeartHandshake, CircleDollarSign, User, Plus } from "lucide-react";
+import { HeartHandshake, CircleDollarSign, User, Play } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import { useSeasonEnd } from "@/lib/SeasonEndContext";
@@ -28,6 +28,7 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const navItems = [
+    { href: "/watch", icon: Play, label: "WATCH" },
     { href: "/affiliates", icon: HeartHandshake, label: "INVITE" },
     { href: "/withdraw", icon: CircleDollarSign, label: "PAYOUT" },
   ];

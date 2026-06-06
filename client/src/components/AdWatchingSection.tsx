@@ -41,7 +41,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }
       return response.json();
     },
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
@@ -52,9 +52,13 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
 
-      if (error.status === 429) {
-        const limit = error.limit || appSettings?.dailyAdLimit || 50;
-        showNotification(`Daily ad limit reached (${limit} ads/day)`, "error");
+      if (error.limitType === 'hourly') {
+        const mins = error.minsUntilRefill || 60;
+        showNotification(`Hourly limit reached. Refills in ${mins} min.`, "error");
+      } else if (error.limitType === 'daily') {
+        showNotification("Daily limit reached (510 ads/day). Come back tomorrow.", "error");
+      } else if (error.status === 429) {
+        showNotification("Limit reached. Please wait before watching more ads.", "error");
       } else if (error.status === 401 || error.status === 403) {
         showNotification("Authentication error. Please refresh the page.", "error");
       } else if (error.message) {
@@ -72,14 +76,12 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         window.show_10401872()
           .then(() => {
             const watchDuration = Date.now() - monetagStartTimeRef.current;
-            const watchedAtLeast3Seconds = watchDuration >= 3000;
-            resolve({ success: true, watchedFully: watchedAtLeast3Seconds, unavailable: false });
+            resolve({ success: true, watchedFully: watchDuration >= 3000, unavailable: false });
           })
           .catch((error) => {
             console.error('Monetag ad error:', error);
             const watchDuration = Date.now() - monetagStartTimeRef.current;
-            const watchedAtLeast3Seconds = watchDuration >= 3000;
-            resolve({ success: false, watchedFully: watchedAtLeast3Seconds, unavailable: false });
+            resolve({ success: false, watchedFully: watchDuration >= 3000, unavailable: false });
           });
       } else {
         resolve({ success: false, watchedFully: false, unavailable: true });
@@ -122,7 +124,8 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         queryClient.setQueryData(["/api/auth/user"], (old: any) => ({
           ...old,
           balance: String(parseFloat(old?.balance || '0') + rewardAmount),
-          adsWatchedToday: (old?.adsWatchedToday || 0) + 1
+          adsWatchedToday: (old?.adsWatchedToday || 0) + 1,
+          hourlyAdsWatched: (old?.hourlyAdsWatched || 0) + 1,
         }));
 
         showNotification(`+${rewardAmount} PAD earned!`, "success");
@@ -138,21 +141,41 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     }
   };
 
-  const adsWatchedToday = user?.adsWatchedToday || 0;
-  const dailyLimit = appSettings?.dailyAdLimit || 50;
+  const DAILY_LIMIT = appSettings?.dailyAdLimit || 510;
+  const HOURLY_LIMIT = appSettings?.hourlyAdLimit || 63;
+
+  const dailyWatched = user?.adsWatchedToday || 0;
+  const hourlyWatched = user?.hourlyAdsWatched || 0;
+  const lastHourlyReset = user?.lastHourlyReset ? new Date(user.lastHourlyReset) : null;
+  const hoursSinceReset = lastHourlyReset
+    ? (Date.now() - lastHourlyReset.getTime()) / (1000 * 60 * 60)
+    : 2;
+  const effectiveHourlyWatched = hoursSinceReset >= 1 ? 0 : hourlyWatched;
+
+  const adsAvailableHourly = Math.max(0, HOURLY_LIMIT - effectiveHourlyWatched);
+  const adsAvailableDaily = Math.max(0, DAILY_LIMIT - dailyWatched);
+  const adsAvailable = Math.min(adsAvailableHourly, adsAvailableDaily);
+
+  const isLimitReached = adsAvailable === 0;
 
   return (
     <Card className="rounded-2xl minimal-card mb-3 border-0">
-      <CardContent className="p-4">
-        <div className="text-center mb-3">
-          <h2 className="text-base font-bold text-white mb-1">Viewing ads</h2>
-          <p className="text-[#AAAAAA] text-xs">Get PAD for watching commercials</p>
+      <CardContent className="p-5">
+        <div className="text-center mb-5">
+          <h2
+            className="text-lg font-extrabold text-white mb-1 tracking-widest uppercase"
+          >
+            Viewing Ads
+          </h2>
+          <p className="text-[#AAAAAA] text-xs leading-relaxed">
+            Get paid for watching short Ads on Telegram.
+          </p>
         </div>
 
-        <div className="flex justify-center mb-3">
+        <div className="flex justify-center mb-4">
           <button
             onClick={handleStartEarning}
-            disabled={isShowingAds || adsWatchedToday >= dailyLimit}
+            disabled={isShowingAds || isLimitReached}
             className="btn-primary px-6 py-3 flex items-center gap-2 min-w-[160px] justify-center text-base disabled:opacity-50"
             data-testid="button-watch-ad"
           >
@@ -170,17 +193,24 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
               </>
             ) : (
               <>
-                <Play size={16} className="group-hover:scale-110 transition-transform" />
+                <Play size={16} />
                 <span className="text-sm font-semibold">Start Earning</span>
               </>
             )}
           </button>
         </div>
 
+        {/* Hourly availability info */}
         <div className="text-center">
-          <p className="text-xs text-muted-foreground">
-            Watched: {adsWatchedToday}/{dailyLimit}
-          </p>
+          {isLimitReached && dailyWatched >= DAILY_LIMIT ? (
+            <p className="text-xs text-red-400/80">Daily limit reached. Resets tomorrow.</p>
+          ) : isLimitReached ? (
+            <p className="text-xs text-yellow-400/80">Hourly limit reached. Refills in ~1 hour.</p>
+          ) : (
+            <p className="text-xs text-white/30">
+              {adsAvailable} ads available · {dailyWatched}/{DAILY_LIMIT} today
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>
