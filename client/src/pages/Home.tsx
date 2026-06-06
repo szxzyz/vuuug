@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import Header from "@/components/Header";
-import AdWatchingSection from "@/components/AdWatchingSection";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -792,108 +791,57 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Statistics Section */}
+        <div className="mt-5 px-1">
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
+            Statistics
+          </p>
 
-        <div className="mt-4">
-          <AdWatchingSection user={user as User} />
-        </div>
+          {/* Money earned */}
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 6 }}>Money earned</p>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>Today</p>
+              <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>
+                ${parseFloat((user as User)?.dailyEarnings || '0').toFixed(3)}
+              </p>
+            </div>
+            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>All time</p>
+              <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>
+                ${parseFloat((user as User)?.totalEarned || '0').toFixed(3)}
+              </p>
+            </div>
+          </div>
 
-        <div className="mt-3 px-0">
-          <div className="bg-[#0d0d0d] rounded-xl p-3">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                  <ListChecks className="w-4 h-4 text-blue-400" />
+          {/* Watched videos */}
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 6 }}>Watched videos</p>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 6 }}>Today</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 22, height: 22, background: '#000', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Play style={{ width: 10, height: 10, color: '#fff', fill: '#fff' }} />
                 </div>
-                <span className="text-base font-bold text-white tracking-tight">Active Tasks</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>
+                  {(user as User)?.adsWatchedToday ?? (user as User)?.dailyAdsWatched ?? 0}
+                </span>
               </div>
-            
-            <div className="flex flex-col gap-2">
-              <AnimatePresence mode="popLayout">
-                {isLoadingTasks ? (
-                  <motion.div
-                    key="loading"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="bg-[#1a1a1a] rounded-lg p-4 text-center"
-                  >
-                    <Loader2 className="w-5 h-5 text-[#4cd3ff] animate-spin mx-auto" />
-                  </motion.div>
-                ) : (unifiedTasksData?.tasks && unifiedTasksData.tasks.length > 0) ? (
-                  unifiedTasksData.tasks.map((task) => (
-                    <motion.div
-                      key={task.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.2 }}
-                      className="bg-[#1a1a1a] rounded-lg p-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-green-500/20">
-                            <span className="text-green-400">
-                              {getTaskIcon(task)}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-white font-medium text-sm truncate">{task.title}</h3>
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1">
-                                <DiamondIcon size={12} />
-                                <span className="text-xs font-semibold text-[#4cd3ff]">+{task.rewardPAD.toLocaleString()}</span>
-                              </div>
-                              {task.rewardBUG && task.rewardBUG > 0 && (
-                                <div className="flex items-center gap-1">
-                                  <Bug className="w-3 h-3 text-purple-400" />
-                                  <span className="text-xs font-semibold text-purple-400">+{task.rewardBUG}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => handleUnifiedTask(task)}
-                          disabled={isTaskPending || claimAdvertiserTaskMutation.isPending || completedTasks.has(task.id)}
-                          className={`h-8 px-4 text-xs font-bold rounded-lg transition-all ${
-                            completedTasks.has(task.id)
-                              ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                              : clickedTasks.has(task.id)
-                                ? "bg-blue-500 text-white"
-                                : "bg-green-400 hover:bg-green-300 text-black"
-                          }`}
-                        >
-                          {completedTasks.has(task.id) ? (
-                            <div className="flex items-center gap-1">
-                              <Check className="w-3 h-3" />
-                              <span>Done</span>
-                            </div>
-                          ) : (isTaskPending || claimAdvertiserTaskMutation.isPending) ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : clickedTasks.has(task.id) ? (
-                            "Claim"
-                          ) : (
-                            "Start"
-                          )}
-                        </Button>
-                      </div>
-                    </motion.div>
-                  ))
-                ) : (
-                  <motion.div
-                    key="no-tasks"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.3 }}
-                    className="bg-[#1a1a1a] rounded-lg p-4 text-center"
-                  >
-                    <span className="text-gray-400 text-sm">No tasks available</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            </div>
+            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 6 }}>All time</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 22, height: 22, background: '#000', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Play style={{ width: 10, height: 10, color: '#fff', fill: '#fff' }} />
+                </div>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>
+                  {(user as User)?.adsWatched ?? 0}
+                </span>
+              </div>
             </div>
           </div>
         </div>
+
       </main>
 
 
