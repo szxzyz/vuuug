@@ -735,69 +735,59 @@ export default function Home() {
     <Layout>
       <Header />
       <main className="max-w-md mx-auto px-4 pt-0 bg-black text-white">
-        {/* Wallet Balance Section */}
-        <div className="text-center mb-4 pt-2">
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Wallet Balance
+        {/* Balance Section — left aligned */}
+        <div className="mb-4 pt-2 px-1">
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4 }}>
+            Balance
           </p>
 
           {/* Main USD balance */}
-          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'flex-start', justifyContent: 'center', marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 2 }}>
+            <span style={{ fontSize: 32, fontWeight: 700, color: 'rgba(255,255,255,0.65)', lineHeight: 1 }}>$</span>
             <span style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: 'rgba(255,255,255,0.45)',
-              marginTop: 6,
-              marginRight: 2,
-              letterSpacing: '0.02em',
-              fontFamily: 'monospace',
-            }}>USD</span>
-            <span style={{
-              fontSize: balanceUSD >= 1000 ? 40 : balanceUSD >= 100 ? 48 : 56,
+              fontSize: balanceUSD >= 1000 ? 38 : 44,
               fontWeight: 800,
               color: '#fff',
               fontFamily: "'Space Grotesk', sans-serif",
-              letterSpacing: '-1px',
+              letterSpacing: '-1.5px',
               fontVariantNumeric: 'tabular-nums',
               lineHeight: 1,
             }}>
               {usdInt}
             </span>
-            <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.5)', lineHeight: 1, marginTop: 8 }}>.{usdDec}</span>
+            <span style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.45)', lineHeight: 1 }}>.{usdDec}</span>
           </div>
 
           {/* PAD sub-value */}
-          <div style={{ marginBottom: 20 }}>
-            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', fontWeight: 500 }}>
-              {formatBalance(balancePAD)} PAD
-            </span>
-          </div>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginBottom: 16 }}>
+            {formatBalance(balancePAD)} PAD
+          </p>
 
-          {/* Pill buttons — same style as Start Earning */}
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+          {/* Equal-width buttons */}
+          <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={() => setLocation('/withdraw')}
               className="btn-primary active:scale-95 transition-transform"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2v14M5 9l7 7 7-7"/><path d="M3 20h18"/>
               </svg>
-              Withdraw
+              WITHDRAW
             </button>
 
             <button
               onClick={handleConvertClick}
-              className="btn-primary active:scale-95 transition-transform"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              className="active:scale-95 transition-transform"
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)', border: 'none' }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="17 1 21 5 17 9"/>
                 <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
                 <polyline points="7 23 3 19 7 15"/>
                 <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
               </svg>
-              Swap
+              SWAP
             </button>
           </div>
         </div>
