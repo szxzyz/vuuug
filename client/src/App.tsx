@@ -19,6 +19,7 @@ declare global {
 }
 
 const Home = lazy(() => import("@/pages/Home"));
+const Watch = lazy(() => import("@/pages/Watch"));
 const Landing = lazy(() => import("@/pages/Landing"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const Affiliates = lazy(() => import("@/pages/Affiliates"));
@@ -45,6 +46,7 @@ function Router() {
     <Suspense fallback={<PageLoader />}>
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/watch" component={Watch} />
         <Route path="/task/create" component={CreateTask} />
         <Route path="/create-task" component={CreateTask} />
         <Route path="/affiliates" component={Affiliates} />
