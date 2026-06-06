@@ -8,7 +8,7 @@ import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
-import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Bug, DollarSign, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks } from "lucide-react";
+import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Bug, DollarSign, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
@@ -722,94 +722,83 @@ export default function Home() {
     checkForUpdatesMutation.mutate();
   }, [checkForUpdatesMutation]);
 
+  const formatBalance = (n: number) => {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+    return Math.round(n).toLocaleString();
+  };
+
+  const usdFormatted = balanceUSD.toFixed(3);
+  const [usdInt, usdDec] = usdFormatted.split('.');
+
   return (
     <Layout>
       <Header />
-      <main className="max-w-md mx-auto px-4 pt-1 bg-black text-white">
-        {/* Profile Section Container */}
-        <div className="bg-[#0D0D0D] rounded-[24px] p-4 shadow-sm mb-4">
-          <div className="bg-[#1A1A1A] rounded-[20px] p-3.5 flex items-center gap-4">
-            <div className="relative flex-shrink-0">
-              <div 
-                className={`w-[78px] h-[78px] rounded-full border-[1px] ${isAdmin ? 'border-blue-500 cursor-pointer hover:scale-105 transition-transform' : 'border-blue-500'} p-[2.5px] bg-[#0D0D0D]`}
-                onClick={() => isAdmin && setLocation('/admin')}
-              >
-                <img
-                  src={photoUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=szxzyz"}
-                  alt="Profile"
-                  className="w-full h-full rounded-full object-cover bg-black"
-                />
-              </div>
-            </div>
+      <main className="max-w-md mx-auto px-4 pt-0 bg-black text-white">
+        {/* Wallet Balance Section */}
+        <div className="text-center mb-4 pt-2">
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Wallet Balance
+          </p>
 
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 shadow-sm">
-                <span className="text-gray-500 text-[10px] font-bold tracking-tight uppercase">Name</span>
-                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[65px] text-center">
-                  <span className="text-gray-400 font-bold text-[11px]">{displayName}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-[14px] px-3 py-2 shadow-sm">
-                <span className="text-gray-500 text-[10px] font-bold tracking-tight uppercase">Telegram ID</span>
-                <div className="bg-[#252525] rounded-lg px-3 py-1 min-w-[80px] text-center">
-                  <span className="text-blue-400 font-mono text-[12px] font-bold">{user?.telegram_id || (user as any)?.telegramId || "---"}</span>
-                </div>
-              </div>
-            </div>
+          {/* Main USD balance */}
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'flex-start', justifyContent: 'center', marginBottom: 4 }}>
+            <span style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: 'rgba(255,255,255,0.45)',
+              marginTop: 6,
+              marginRight: 2,
+              letterSpacing: '0.02em',
+              fontFamily: 'monospace',
+            }}>USD</span>
+            <span style={{
+              fontSize: balanceUSD >= 1000 ? 40 : balanceUSD >= 100 ? 48 : 56,
+              fontWeight: 800,
+              color: '#fff',
+              fontFamily: "'Space Grotesk', sans-serif",
+              letterSpacing: '-1px',
+              fontVariantNumeric: 'tabular-nums',
+              lineHeight: 1,
+            }}>
+              {usdInt}
+            </span>
+            <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.5)', lineHeight: 1, marginTop: 8 }}>.{usdDec}</span>
           </div>
 
-          <div className="bg-[#111111] rounded-[24px] p-4 shadow-2xl mt-4">
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <Button
-                onClick={handleConvertClick}
-                disabled={isConverting || convertMutation.isPending}
-                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
-              >
-                <RefreshCw className="w-5 h-5 text-[#4cd3ff]" />
-                <span>Convert</span>
-              </Button>
-              
-              <Button
-                onClick={handleClaimStreak}
-                disabled={isClaimingStreak || !canClaimStreak}
-                className="h-[52px] bg-[#1a1a1a] hover:bg-[#252525] text-white font-sans font-semibold text-sm rounded-full flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg disabled:opacity-50"
-              >
-                {isClaimingStreak ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : canClaimStreak ? (
-                  <>
-                    <Gift className="w-5 h-5 text-[#4cd3ff]" />
-                    <span>Claim Bonus</span>
-                  </>
-                ) : (
-                  <span className="text-[13px] font-semibold">{timeUntilNextClaim}</span>
-                )}
-              </Button>
-            </div>
+          {/* PAD sub-value */}
+          <div style={{ marginBottom: 20 }}>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', fontWeight: 500 }}>
+              {formatBalance(balancePAD)} PAD
+            </span>
+          </div>
 
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  placeholder="Enter Code"
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                  disabled={redeemPromoMutation.isPending || isApplyingPromo}
-                  className="w-full h-12 bg-[#1a1a1a] border-0 rounded-full text-white placeholder:text-gray-500 px-4 text-sm focus:ring-0"
-                />
-              </div>
-              <Button
-                onClick={handleApplyPromo}
-                disabled={redeemPromoMutation.isPending || isApplyingPromo || !promoCode.trim()}
-                className="h-12 px-6 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-bold rounded-full transition-all disabled:opacity-50 shadow-lg"
-              >
-                {redeemPromoMutation.isPending || isApplyingPromo ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  "Go"
-                )}
-              </Button>
-            </div>
+          {/* Pill buttons — same style as Start Earning */}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button
+              onClick={() => setLocation('/withdraw')}
+              className="btn-primary active:scale-95 transition-transform"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v14M5 9l7 7 7-7"/><path d="M3 20h18"/>
+              </svg>
+              Withdraw
+            </button>
+
+            <button
+              onClick={handleConvertClick}
+              className="btn-primary active:scale-95 transition-transform"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="17 1 21 5 17 9"/>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                <polyline points="7 23 3 19 7 15"/>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+              </svg>
+              Swap
+            </button>
           </div>
         </div>
 
