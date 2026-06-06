@@ -124,6 +124,12 @@ export async function ensureDatabaseSchema(): Promise<void> {
       // Add mandatory channel/group join verification columns
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_channel_group_verified BOOLEAN DEFAULT false`);
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_membership_check TIMESTAMP`);
+
+      // Add hourly ad refill tracking columns
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS hourly_ads_watched INTEGER DEFAULT 0`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_hourly_reset TIMESTAMP`);
+      // Add daily activity bonus tracking column
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_bonus_claimed_date TEXT`);
       
       // Alter existing balance columns to new precision (safely handle existing data)
       await db.execute(sql`ALTER TABLE users ALTER COLUMN balance TYPE DECIMAL(20, 0) USING ROUND(balance)`);
@@ -567,6 +573,15 @@ export async function ensureDatabaseSchema(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_promotions_status ON promotions(status)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_task_completions_user_id ON task_completions(user_id)`);
     
+    // Update ad limits to new system (510 daily, 63 hourly)
+    await db.execute(sql`
+      INSERT INTO admin_settings (setting_key, setting_value, description)
+      VALUES
+        ('daily_ad_limit', '510', 'Maximum number of ads a user can watch per day'),
+        ('hourly_ad_limit', '63', 'Maximum number of ads a user can watch per hour (refills every hour)')
+      ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+    `);
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {

@@ -913,7 +913,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       // Parse all settings with NEW defaults
-      const dailyAdLimit = parseInt(getSetting('daily_ad_limit', '50'));
+      const dailyAdLimit = parseInt(getSetting('daily_ad_limit', '510'));
+      const hourlyAdLimit = parseInt(getSetting('hourly_ad_limit', '63'));
       const rewardPerAd = parseInt(getSetting('reward_per_ad', '2')); // Default 2 PAD per ad
       const seasonBroadcastActive = getSetting('season_broadcast_active', 'false') === 'true';
       const affiliateCommission = parseFloat(getSetting('affiliate_commission', '10'));
@@ -984,6 +985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         dailyAdLimit,
+        hourlyAdLimit,
         rewardPerAd,
         rewardPerAdPAD: rewardPerAd,
         seasonBroadcastActive,
@@ -1100,22 +1102,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Fetch admin settings for daily limit and reward amount
+      // Fetch admin settings for limits and reward amounts
       const dailyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'daily_ad_limit')).limit(1);
+      const hourlyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'hourly_ad_limit')).limit(1);
       const rewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'reward_per_ad')).limit(1);
       const bugRewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'bug_reward_per_ad')).limit(1);
       
-      const dailyAdLimit = dailyAdLimitSetting[0]?.settingValue ? parseInt(dailyAdLimitSetting[0].settingValue) : 50;
+      const DAILY_AD_LIMIT = dailyAdLimitSetting[0]?.settingValue ? parseInt(dailyAdLimitSetting[0].settingValue) : 510;
+      const HOURLY_AD_LIMIT = hourlyAdLimitSetting[0]?.settingValue ? parseInt(hourlyAdLimitSetting[0].settingValue) : 63;
       const rewardPerAdPAD = rewardPerAdSetting[0]?.settingValue ? parseInt(rewardPerAdSetting[0].settingValue) : 1000;
       const bugRewardPerAd = bugRewardPerAdSetting[0]?.settingValue ? parseInt(bugRewardPerAdSetting[0].settingValue) : 1;
-      
-      // Enforce daily ad limit (configurable, default 50)
+
+      // Hourly refill logic: 63 ads/hour, 510 ads/day
+      const now = new Date();
       const adsWatchedToday = user.adsWatchedToday || 0;
-      if (adsWatchedToday >= dailyAdLimit) {
+      const hourlyAdsWatched = (user as any).hourlyAdsWatched || 0;
+      const lastHourlyReset = (user as any).lastHourlyReset ? new Date((user as any).lastHourlyReset) : new Date(0);
+
+      const hoursSinceReset = (now.getTime() - lastHourlyReset.getTime()) / (1000 * 60 * 60);
+      const needsHourlyReset = hoursSinceReset >= 1;
+      const currentHourlyWatched = needsHourlyReset ? 0 : hourlyAdsWatched;
+
+      // Check daily limit first
+      if (adsWatchedToday >= DAILY_AD_LIMIT) {
         return res.status(429).json({ 
-          message: `Daily ad limit reached. You can watch up to ${dailyAdLimit} ads per day.`,
-          limit: dailyAdLimit,
-          watched: adsWatchedToday
+          message: `Daily limit reached (${DAILY_AD_LIMIT} ads/day). Come back tomorrow.`,
+          limit: DAILY_AD_LIMIT,
+          watched: adsWatchedToday,
+          limitType: 'daily'
+        });
+      }
+
+      // Check hourly limit
+      if (currentHourlyWatched >= HOURLY_AD_LIMIT) {
+        const nextRefillAt = new Date(lastHourlyReset.getTime() + 60 * 60 * 1000);
+        const minsUntilRefill = Math.ceil((nextRefillAt.getTime() - now.getTime()) / 60000);
+        return res.status(429).json({
+          message: `Hourly limit reached (${HOURLY_AD_LIMIT} ads/hour). Refills in ${minsUntilRefill} min.`,
+          hourlyLimit: HOURLY_AD_LIMIT,
+          hourlyWatched: currentHourlyWatched,
+          limitType: 'hourly',
+          nextRefillAt: nextRefillAt.toISOString(),
+          minsUntilRefill,
         });
       }
       
@@ -1131,8 +1159,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: 'Watched advertisement',
         });
         
-        // Increment ads watched count
+        // Increment ads watched count (daily)
         await storage.incrementAdsWatched(userId);
+
+        // Update hourly counter
+        await db
+          .update(users)
+          .set({
+            hourlyAdsWatched: currentHourlyWatched + 1,
+            lastHourlyReset: needsHourlyReset ? now : lastHourlyReset,
+          } as any)
+          .where(eq(users.id, userId));
         
         // Add BUG reward for watching ad
         if (bugRewardPerAd > 0) {
@@ -1227,6 +1264,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adsWatchedToday: 0,
         warning: "Reward processing encountered an issue but was acknowledged"
       });
+    }
+  });
+
+  // Daily Activity Bonus endpoints
+  const DAILY_BONUS_MILESTONES = [
+    { ads: 100, bugReward: 100,  usdReward: null  },
+    { ads: 200, bugReward: 500,  usdReward: null  },
+    { ads: 300, bugReward: 1000, usdReward: null  },
+    { ads: 400, bugReward: null, usdReward: 0.005 },
+    { ads: 500, bugReward: null, usdReward: 0.01  },
+  ];
+
+  function getDailyResetDateStr(): string {
+    const now = new Date();
+    if (now.getUTCHours() < 12) {
+      const prev = new Date(now);
+      prev.setUTCDate(prev.getUTCDate() - 1);
+      return prev.toISOString().split('T')[0];
+    }
+    return now.toISOString().split('T')[0];
+  }
+
+  app.get('/api/daily-bonus/status', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+
+      const adsWatchedToday = user.adsWatchedToday || 0;
+      const today = getDailyResetDateStr();
+      const claimedToday = (user as any).lastBonusClaimedDate === today;
+
+      let currentMilestoneIndex = -1;
+      for (let i = 0; i < DAILY_BONUS_MILESTONES.length; i++) {
+        if (adsWatchedToday >= DAILY_BONUS_MILESTONES[i].ads) {
+          currentMilestoneIndex = i;
+        }
+      }
+
+      res.json({
+        adsWatchedToday,
+        milestones: DAILY_BONUS_MILESTONES,
+        currentMilestoneIndex,
+        currentBonus: currentMilestoneIndex >= 0 ? DAILY_BONUS_MILESTONES[currentMilestoneIndex] : null,
+        claimedToday,
+      });
+    } catch (error) {
+      console.error('Daily bonus status error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/daily-bonus/claim', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+
+      const today = getDailyResetDateStr();
+      if ((user as any).lastBonusClaimedDate === today) {
+        return res.status(400).json({ message: 'Bonus already claimed today', alreadyClaimed: true });
+      }
+
+      const adsWatchedToday = user.adsWatchedToday || 0;
+      let milestoneIndex = -1;
+      for (let i = 0; i < DAILY_BONUS_MILESTONES.length; i++) {
+        if (adsWatchedToday >= DAILY_BONUS_MILESTONES[i].ads) milestoneIndex = i;
+      }
+
+      if (milestoneIndex < 0) {
+        return res.status(400).json({ message: 'No milestone reached yet', noMilestone: true });
+      }
+
+      const milestone = DAILY_BONUS_MILESTONES[milestoneIndex];
+
+      if (milestone.bugReward) {
+        await db.update(users).set({
+          bugBalance: sql`COALESCE(${users.bugBalance}, '0')::numeric + ${milestone.bugReward}`,
+          lastBonusClaimedDate: today,
+          updatedAt: new Date(),
+        } as any).where(eq(users.id, userId));
+      } else if (milestone.usdReward) {
+        const padReward = Math.round(milestone.usdReward * 10000000); // convert USD to PAD
+        await storage.addEarning({
+          userId,
+          amount: String(padReward),
+          source: 'daily_bonus',
+          description: `Daily activity bonus: $${milestone.usdReward}`,
+        });
+        await db.update(users).set({
+          lastBonusClaimedDate: today,
+          updatedAt: new Date(),
+        } as any).where(eq(users.id, userId));
+      }
+
+      res.json({ success: true, milestoneIndex, milestone });
+    } catch (error) {
+      console.error('Daily bonus claim error:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   });
 
