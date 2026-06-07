@@ -23,11 +23,11 @@ export default function Watch() {
     <Layout>
       <Header />
       <main className="max-w-md mx-auto px-4 pt-4 pb-28 bg-black min-h-screen">
-        <AdWatchingSection user={user} />
         <LimitsSection
           dailyLimit={appSettings?.dailyAdLimit ?? 510}
           hourlyLimit={appSettings?.hourlyAdLimit ?? 63}
         />
+        <AdWatchingSection user={user} />
         <DailyActivityBonus user={user} />
       </main>
     </Layout>

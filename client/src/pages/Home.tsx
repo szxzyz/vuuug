@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import Header from "@/components/Header";
+import IncomeChart from "@/components/IncomeChart";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -807,7 +808,7 @@ export default function Home() {
 
         {/* Statistics Section */}
         <div className="mt-5 px-1">
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
             Income Statistics
           </p>
 
@@ -854,6 +855,15 @@ export default function Home() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Total Income Chart */}
+        <div className="mt-6 pb-8">
+          <IncomeChart
+            title="TOTAL INCOME"
+            subtitle="Earnings statistics from all sources"
+            apiEndpoint="/api/earnings/chart"
+          />
         </div>
 
       </main>
@@ -989,16 +999,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Static Create Task Button - Only on Home Page */}
-      <div className="fixed bottom-6 right-4 z-50">
-        <button
-          onClick={() => setLocation('/task/create')}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black text-white font-semibold text-sm border border-gray-700"
-        >
-          <Plus className="w-4 h-4" />
-          Create Task
-        </button>
-      </div>
 
 
       <AnimatePresence>

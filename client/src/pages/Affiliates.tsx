@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { showNotification } from '@/components/AppNotification';
 import Layout from '@/components/Layout';
 import Header from '@/components/Header';
+import IncomeChart from '@/components/IncomeChart';
 import { Loader2 } from 'lucide-react';
 
 export default function Affiliates() {
@@ -130,7 +131,7 @@ export default function Affiliates() {
         </div>
 
         {/* Commission info */}
-        <div className="bg-[#111] rounded-2xl p-4 border border-white/5">
+        <div className="bg-[#111] rounded-2xl p-4 border border-white/5 mb-6">
           <div className="flex items-center justify-between py-2">
             <span className="text-[#888] text-xs">Level 1 commission</span>
             <span className="text-green-400 font-bold text-sm">20%</span>
@@ -140,6 +141,13 @@ export default function Affiliates() {
             <span className="text-green-400 font-bold text-sm">4%</span>
           </div>
         </div>
+
+        {/* Referral Income Chart */}
+        <IncomeChart
+          title="REFERRAL INCOME"
+          subtitle="Total referral income statistics across all levels"
+          apiEndpoint="/api/referrals/earnings/chart"
+        />
 
       </main>
     </Layout>
