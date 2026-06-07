@@ -131,7 +131,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
             <div
               key={i}
               style={{
-                background: '#111',
+                background: '#1C1C1E',
                 borderRadius: 12,
                 padding: '10px 14px',
                 display: 'flex',

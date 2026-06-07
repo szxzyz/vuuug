@@ -13,11 +13,11 @@ export default function LimitsSection({ dailyLimit = 510, hourlyLimit = 63 }: Li
         Every day we analyze your account and set individual limits for Ads views per hour and per day. This is necessary for Us to count all your views.
       </p>
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-[#111] rounded-xl px-3 py-2.5 flex items-center justify-between border border-white/5">
+        <div className="bg-[#1C1C1E] rounded-xl px-3 py-2.5 flex items-center justify-between border border-white/5">
           <span className="text-[#666] text-[10px] font-semibold uppercase tracking-wide">Per day</span>
           <span className="text-white text-lg font-black">{dailyLimit}</span>
         </div>
-        <div className="bg-[#111] rounded-xl px-3 py-2.5 flex items-center justify-between border border-white/5">
+        <div className="bg-[#1C1C1E] rounded-xl px-3 py-2.5 flex items-center justify-between border border-white/5">
           <span className="text-[#666] text-[10px] font-semibold uppercase tracking-wide">Per hour</span>
           <span className="text-white text-lg font-black">{hourlyLimit}</span>
         </div>
