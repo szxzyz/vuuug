@@ -111,5 +111,10 @@
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
+  },
+  "overrides": {
+    "form-data": "^4.0.0",
+    "har-validator": "^5.1.5",
+    "es5-ext": "0.10.50"
   }
 }
