@@ -118,13 +118,13 @@
 
 /* Minimal Dark Theme Card Styling */
 .minimal-card {
-  background: #111111;
+  background: #1C1C1E;
   border-radius: 20px;
   box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 .minimal-card-inner {
-  background: #1A1A1A;
+  background: #2C2C2E;
   border-radius: 16px;
 }
 
@@ -184,8 +184,8 @@
 
 /* Remove all diamond/glow effects */
 .frosted-glass, .diamond-glow, .neon-glow-border, .neon-glow-border-strong {
-  background: #111111 !important;
-  border: 1px solid #1A1A1A !important;
+  background: #1C1C1E !important;
+  border: 1px solid #2C2C2E !important;
   box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
 
