@@ -949,7 +949,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const referralRewardEnabled = getSetting('referral_reward_enabled', 'false') === 'true';
       const referralRewardUSD = parseFloat(getSetting('referral_reward_usd', '0.0005'));
       const referralRewardPAD = parseInt(getSetting('referral_reward_pad', '50'));
+      const referralRewardPADEnabled = getSetting('referral_reward_pad_enabled', 'false') === 'true';
+      const referralRewardUSDEnabled = getSetting('referral_reward_usd_enabled', 'false') === 'true';
       const referralAdsRequired = parseInt(getSetting('referral_ads_required', '1')); // Ads needed for affiliate bonus
+      const l1CommissionPercent = parseFloat(getSetting('l1_commission_percent', '20'));
+      const l2CommissionPercent = parseFloat(getSetting('l2_commission_percent', '4'));
       
       // Daily task rewards (for TaskSection.tsx)
       const streakReward = parseInt(getSetting('streak_reward', '100')); // Daily streak claim reward in PAD
@@ -1015,7 +1019,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralRewardEnabled,
         referralRewardUSD,
         referralRewardPAD,
+        referralRewardPADEnabled,
+        referralRewardUSDEnabled,
         referralAdsRequired,
+        l1CommissionPercent,
+        l2CommissionPercent,
         // Daily task rewards
         streakReward,
         shareTaskReward,
@@ -3067,9 +3075,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumConvertUSD: parseInt(getSetting('minimum_convert_pad', '100')) / 10000, // Convert to USD
         minimumClicks: parseInt(getSetting('minimum_clicks', '500')), // NEW: Min clicks for task creation
         seasonBroadcastActive: getSetting('season_broadcast_active', 'false') === 'true',
+        hourlyAdLimit: parseInt(getSetting('hourly_ad_limit', '63')),
         referralRewardEnabled: getSetting('referral_reward_enabled', 'false') === 'true',
         referralRewardUSD: parseFloat(getSetting('referral_reward_usd', '0.0005')),
         referralRewardPAD: parseInt(getSetting('referral_reward_pad', '50')),
+        referralRewardPADEnabled: getSetting('referral_reward_pad_enabled', 'false') === 'true',
+        referralRewardUSDEnabled: getSetting('referral_reward_usd_enabled', 'false') === 'true',
         referralAdsRequired: parseInt(getSetting('referral_ads_required', '1')),
         l1CommissionPercent: parseFloat(getSetting('l1_commission_percent', '20')),
         l2CommissionPercent: parseFloat(getSetting('l2_commission_percent', '4')),
@@ -3110,6 +3121,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const settingsData = req.body;
       console.log('📝 Updating admin settings:', settingsData);
+
+      // Proper camelCase → snake_case that handles acronyms (PAD, USD, BUG, etc.)
+      const toSnakeCase = (key: string): string =>
+        key
+          .replace(/([a-z\d])([A-Z])/g, '$1_$2')      // camelCase word boundary
+          .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')   // acronym before word (PADEnabled → PAD_Enabled)
+          .toLowerCase();
       
       const updatePromises = Object.entries(settingsData).map(async ([key, value]) => {
         const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
@@ -3130,7 +3148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
         // Also handle snake_case version for compatibility if key is camelCase
-        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        const snakeKey = toSnakeCase(key);
         if (snakeKey !== key) {
           await db.insert(adminSettings)
             .values({
@@ -3212,6 +3230,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settingsData = req.body;
       console.log('📝 Updating admin settings:', settingsData);
       
+      // Proper camelCase → snake_case that handles acronyms (PAD, USD, BUG, etc.)
+      const toSnakeCase2 = (key: string): string =>
+        key
+          .replace(/([a-z\d])([A-Z])/g, '$1_$2')
+          .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+          .toLowerCase();
+
       const updatePromises = Object.entries(settingsData).map(async ([key, value]) => {
         if (value === undefined || value === null) return;
         const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
@@ -3230,7 +3255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
           
-        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        const snakeKey = toSnakeCase2(key);
         if (snakeKey !== key) {
           await db.insert(adminSettings)
             .values({

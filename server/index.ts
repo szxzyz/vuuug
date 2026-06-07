@@ -23,6 +23,40 @@ try {
   // Continue server startup even if setup fails
 }
 
+// One-time migration: fix admin settings keys that were incorrectly snake_cased
+// (e.g. referralRewardPADEnabled was saved as referral_reward_p_a_d_enabled instead of referral_reward_pad_enabled)
+try {
+  const { db } = await import('./db');
+  const { adminSettings } = await import('../shared/schema');
+  const { sql } = await import('drizzle-orm');
+
+  const toSnakeCase = (key: string): string =>
+    key
+      .replace(/([a-z\d])([A-Z])/g, '$1_$2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+      .toLowerCase();
+
+  const allSettings = await db.select().from(adminSettings);
+  let fixed = 0;
+  for (const setting of allSettings) {
+    const correctKey = toSnakeCase(setting.settingKey);
+    if (correctKey !== setting.settingKey) {
+      // Save under the correct snake_case key (upsert)
+      await db.insert(adminSettings)
+        .values({ settingKey: correctKey, settingValue: setting.settingValue, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: adminSettings.settingKey,
+          set: { settingValue: setting.settingValue, updatedAt: new Date() }
+        });
+      fixed++;
+      console.log(`🔧 Fixed admin setting key: ${setting.settingKey} → ${correctKey}`);
+    }
+  }
+  if (fixed > 0) console.log(`✅ Migrated ${fixed} admin setting keys to correct snake_case`);
+} catch (err) {
+  console.log('⚠️ Admin settings key migration skipped:', err);
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

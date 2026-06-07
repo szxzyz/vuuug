@@ -850,8 +850,15 @@ export class DatabaseStorage implements IStorage {
           .where(eq(users.id, userId));
 
         // Get referral reward settings from admin (no hardcoded values)
-        const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.50');
+        const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
+        const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
         const referralRewardBUG = await this.getAppSetting('referral_reward_bug', '10');
+        const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'false')) === 'true';
+        const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
+        // Legacy: if neither specific flag is set, fall back to the master enabled flag
+        const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'false')) === 'true';
+        const givePAD = referralRewardPADEnabled || (!referralRewardPADEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
+        const giveUSD = referralRewardUSDEnabled;
 
         // Find pending referrals where this user is the referee
         const pendingReferrals = await db
@@ -869,19 +876,31 @@ export class DatabaseStorage implements IStorage {
             .update(referrals)
             .set({ 
               status: 'completed',
-              rewardAmount: referralRewardUSD, // Keep for backward compatibility
-              usdRewardAmount: referralRewardUSD,
+              rewardAmount: giveUSD ? referralRewardUSD : '0',
+              usdRewardAmount: giveUSD ? referralRewardUSD : '0',
               bugRewardAmount: referralRewardBUG
             })
             .where(eq(referrals.id, referral.id));
 
-          // Add the reward to the referrer's balance
-          await this.addEarning({
-            userId: referral.referrerId,
-            amount: referralRewardUSD,
-            source: 'referral',
-            description: `Referral bonus for inviting a friend`,
-          });
+          // Give PAD reward if enabled
+          if (givePAD && referralRewardPAD > 0) {
+            await this.addEarning({
+              userId: referral.referrerId,
+              amount: String(referralRewardPAD),
+              source: 'referral',
+              description: `Referral bonus (PAD) for inviting a friend`,
+            });
+          }
+
+          // Give USD reward if enabled
+          if (giveUSD && parseFloat(referralRewardUSD) > 0) {
+            await this.addEarning({
+              userId: referral.referrerId,
+              amount: referralRewardUSD,
+              source: 'referral',
+              description: `Referral bonus (USD) for inviting a friend`,
+            });
+          }
 
           // Add BUG rewards for withdrawal requirements
           await db
@@ -898,15 +917,16 @@ export class DatabaseStorage implements IStorage {
 
           if (referrer?.telegram_id && referee) {
             const refereeName = referee.firstName || referee.username || 'A friend';
+            const bonusDesc = givePAD ? `${referralRewardPAD} PAD` : giveUSD ? `$${referralRewardUSD}` : '';
             const { sendReferralRewardNotification } = await import('./telegram');
             await sendReferralRewardNotification(
               referrer.telegram_id,
               refereeName,
-              referralRewardUSD
+              giveUSD ? referralRewardUSD : '0'
             );
           }
 
-          console.log(`✅ Referral bonus activated: $${referralRewardUSD} USD and ${referralRewardBUG} BUG for user ${referral.referrerId}`);
+          console.log(`✅ Referral bonus activated: PAD=${givePAD ? referralRewardPAD : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardBUG} for user ${referral.referrerId}`);
         }
       }
     } catch (error) {
