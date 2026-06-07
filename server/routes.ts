@@ -1191,13 +1191,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error("⚠️ Referral bonus processing failed (non-critical):", bonusError);
         }
         
-        // Process 2-level referral commission (L1=20%, L2=4%)
+        // Process 2-level referral commission (configurable from admin settings)
         if (user.referredBy) {
           try {
+            const l1Setting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'l1_commission_percent')).limit(1);
+            const l2Setting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'l2_commission_percent')).limit(1);
+            const l1Rate = l1Setting[0]?.settingValue ? parseFloat(l1Setting[0].settingValue) / 100 : 0.20;
+            const l2Rate = l2Setting[0]?.settingValue ? parseFloat(l2Setting[0].settingValue) / 100 : 0.04;
+
             // L1 referrer — the person who directly invited this user (stored as referral code)
             const l1Referrer = await storage.getUserByReferralCode(user.referredBy);
             if (l1Referrer) {
-              const l1CommissionPAD = Math.round(adRewardPAD * 0.20);
+              const l1CommissionPAD = Math.round(adRewardPAD * l1Rate);
               await storage.addEarning({
                 userId: l1Referrer.id,
                 amount: String(l1CommissionPAD),
@@ -1211,7 +1216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 try {
                   const l2Referrer = await storage.getUserByReferralCode(l1Referrer.referredBy);
                   if (l2Referrer) {
-                    const l2CommissionPAD = Math.round(adRewardPAD * 0.04);
+                    const l2CommissionPAD = Math.round(adRewardPAD * l2Rate);
                     await storage.addEarning({
                       userId: l2Referrer.id,
                       amount: String(l2CommissionPAD),
@@ -1322,12 +1327,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Calculate exact next reset time: 12:00 PM UTC
+      const now = new Date();
+      const nextReset = new Date();
+      nextReset.setUTCHours(12, 0, 0, 0);
+      if (now.getUTCHours() >= 12) {
+        nextReset.setUTCDate(nextReset.getUTCDate() + 1);
+      }
+
       res.json({
         adsWatchedToday,
         milestones: DAILY_BONUS_MILESTONES,
         currentMilestoneIndex,
         currentBonus: currentMilestoneIndex >= 0 ? DAILY_BONUS_MILESTONES[currentMilestoneIndex] : null,
         claimedToday,
+        nextResetAt: nextReset.toISOString(),
+        resetHourUTC: 12,
       });
     } catch (error) {
       console.error('Daily bonus status error:', error);
@@ -1854,7 +1869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           COALESCE(SUM(amount), 0)::float as amount
         FROM earnings
         WHERE user_id = ${userId}
-          AND source IN ('referral', 'referral_commission', 'referral_bonus')
+          AND source IN ('referral', 'referral_commission', 'referral_commission_l2', 'referral_bonus')
           AND created_at >= NOW() - INTERVAL '1 day' * ${days}
         GROUP BY DATE(created_at AT TIME ZONE 'UTC')
         ORDER BY DATE(created_at AT TIME ZONE 'UTC') ASC
@@ -3034,6 +3049,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dailyAdLimit: parseInt(getSetting('daily_ad_limit', '50')),
         rewardPerAd: parseInt(getSetting('reward_per_ad', '2')), // Default 2 PAD
         affiliateCommission: parseFloat(getSetting('affiliate_commission', '10')),
+        l1CommissionPercent: parseFloat(getSetting('l1_commission_percent', '20')),
+        l2CommissionPercent: parseFloat(getSetting('l2_commission_percent', '4')),
         walletChangeFee: parseInt(getSetting('wallet_change_fee', '100')), // Return as PAD, default 100
         minimumWithdrawalUSD: parseFloat(getSetting('minimum_withdrawal_usd', '1.00')), // NEW: Min USD withdrawal
         minimumWithdrawalTON: parseFloat(getSetting('minimum_withdrawal_ton', '0.5')), // NEW: Min TON withdrawal
@@ -3054,6 +3071,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralRewardUSD: parseFloat(getSetting('referral_reward_usd', '0.0005')),
         referralRewardPAD: parseInt(getSetting('referral_reward_pad', '50')),
         referralAdsRequired: parseInt(getSetting('referral_ads_required', '1')),
+        l1CommissionPercent: parseFloat(getSetting('l1_commission_percent', '20')),
+        l2CommissionPercent: parseFloat(getSetting('l2_commission_percent', '4')),
         // Daily task rewards
         streakReward: parseInt(getSetting('streak_reward', '100')),
         shareTaskReward: parseInt(getSetting('share_task_reward', '1000')),
