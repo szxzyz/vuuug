@@ -1191,26 +1191,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error("⚠️ Referral bonus processing failed (non-critical):", bonusError);
         }
         
-        // Process 10% referral commission for referrer (if user was referred)
+        // Process 2-level referral commission (L1=20%, L2=4%)
         if (user.referredBy) {
           try {
-            // CRITICAL: Validate referrer exists before adding commission
-            const referrer = await storage.getUser(user.referredBy);
-            if (referrer) {
-              const referralCommissionPAD = Math.round(adRewardPAD * 0.1);
+            // L1 referrer — the person who directly invited this user (stored as referral code)
+            const l1Referrer = await storage.getUserByReferralCode(user.referredBy);
+            if (l1Referrer) {
+              const l1CommissionPAD = Math.round(adRewardPAD * 0.20);
               await storage.addEarning({
-                userId: user.referredBy,
-                amount: String(referralCommissionPAD),
+                userId: l1Referrer.id,
+                amount: String(l1CommissionPAD),
                 source: 'referral_commission',
-                description: `10% commission from ${user.username || user.telegram_id}'s ad watch`,
+                description: `20% L1 commission from ${user.username || user.telegram_id}'s ad watch`,
               });
+              console.log(`💰 L1 commission: ${l1CommissionPAD} PAD → ${l1Referrer.id}`);
+
+              // L2 referrer — the person who invited the L1 referrer
+              if (l1Referrer.referredBy) {
+                try {
+                  const l2Referrer = await storage.getUserByReferralCode(l1Referrer.referredBy);
+                  if (l2Referrer) {
+                    const l2CommissionPAD = Math.round(adRewardPAD * 0.04);
+                    await storage.addEarning({
+                      userId: l2Referrer.id,
+                      amount: String(l2CommissionPAD),
+                      source: 'referral_commission_l2',
+                      description: `4% L2 commission from ${user.username || user.telegram_id}'s ad watch`,
+                    });
+                    console.log(`💰 L2 commission: ${l2CommissionPAD} PAD → ${l2Referrer.id}`);
+                  }
+                } catch (l2Error) {
+                  console.error("⚠️ L2 commission failed (non-critical):", l2Error);
+                }
+              }
             } else {
-              // Referrer no longer exists - clean up orphaned reference
-              console.warn(`⚠️ Referrer ${user.referredBy} no longer exists, clearing orphaned referral for user ${userId}`);
+              // L1 referrer not found — orphaned reference
+              console.warn(`⚠️ L1 referrer with code ${user.referredBy} not found, clearing orphaned referral for user ${userId}`);
               await storage.clearOrphanedReferral(userId);
             }
           } catch (commissionError) {
-            // Log but don't fail the request if commission processing fails
             console.error("⚠️ Referral commission processing failed (non-critical):", commissionError);
           }
         }
@@ -1571,9 +1590,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pendingCount = completedReferrals.length < successfulInvitesCount ? 
         successfulInvitesCount - completedReferrals.length : 0;
       
+      // L2 count: users referred by my direct referrals
+      let l2Count = 0;
+      try {
+        if (user?.referralCode) {
+          // Find all L1 users (referred_by = my referral code) and get their referral codes
+          const l1Users = await db
+            .select({ referralCode: users.referralCode })
+            .from(users)
+            .where(eq(users.referredBy, user.referralCode));
+          
+          if (l1Users.length > 0) {
+            const l1Codes = l1Users.map(u => u.referralCode).filter(Boolean) as string[];
+            if (l1Codes.length > 0) {
+              const l2Result = await db
+                .select({ count: sql<number>`COUNT(*)` })
+                .from(users)
+                .where(sql`${users.referredBy} IN ${l1Codes}`);
+              l2Count = Number(l2Result[0]?.count ?? 0);
+            }
+          }
+        }
+      } catch (l2Error) {
+        console.error("Error computing L2 count:", l2Error);
+      }
+
       res.json({
         totalInvites: totalInvitesCount,
         successfulInvites: successfulInvitesCount,
+        l2Count,
         totalClaimed: user?.totalClaimedReferralBonus || '0',
         availableBonus: user?.pendingReferralBonus || '0',
         readyToClaim: user?.pendingReferralBonus || '0',
