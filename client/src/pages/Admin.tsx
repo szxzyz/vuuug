@@ -1428,7 +1428,7 @@ function BanLogsSection() {
   );
 }
 
-type SettingsCategory = 'ads' | 'affiliates' | 'withdrawals' | 'tasks' | 'other';
+type SettingsCategory = 'ads' | 'affiliates' | 'withdrawals' | 'tasks' | 'bug' | 'other';
 
 function SettingsSection() {
   const { toast } = useToast();
@@ -1443,6 +1443,7 @@ function SettingsSection() {
   
   const [settings, setSettings] = useState({
     dailyAdLimit: '50',
+    hourlyAdLimit: '63',
     rewardPerAd: '2',
     l1CommissionPercent: '20',
     l2CommissionPercent: '4',
@@ -1462,6 +1463,8 @@ function SettingsSection() {
     minimumClicks: '500',
     seasonBroadcastActive: false,
     referralRewardEnabled: false,
+    referralRewardPADEnabled: false,
+    referralRewardUSDEnabled: false,
     referralRewardUSD: '0.0005',
     referralRewardPAD: '50',
     referralAdsRequired: '1',
@@ -1489,6 +1492,7 @@ function SettingsSection() {
     if (settingsData) {
       setSettings({
         dailyAdLimit: settingsData.dailyAdLimit?.toString() || '50',
+        hourlyAdLimit: settingsData.hourlyAdLimit?.toString() || '63',
         rewardPerAd: settingsData.rewardPerAd?.toString() || '2',
         l1CommissionPercent: settingsData.l1CommissionPercent?.toString() || '20',
         l2CommissionPercent: settingsData.l2CommissionPercent?.toString() || '4',
@@ -1508,6 +1512,8 @@ function SettingsSection() {
         minimumClicks: settingsData.minimumClicks?.toString() || '500',
         seasonBroadcastActive: settingsData.seasonBroadcastActive || false,
         referralRewardEnabled: settingsData.referralRewardEnabled || false,
+        referralRewardPADEnabled: settingsData.referralRewardPADEnabled || false,
+        referralRewardUSDEnabled: settingsData.referralRewardUSDEnabled || false,
         referralRewardUSD: settingsData.referralRewardUSD?.toString() || '0.0005',
         referralRewardPAD: settingsData.referralRewardPAD?.toString() || '50',
         referralAdsRequired: settingsData.referralAdsRequired?.toString() || '1',
@@ -1584,6 +1590,7 @@ function SettingsSection() {
     try {
       const response = await apiRequest('PUT', '/api/admin/settings', {
         dailyAdLimit: adLimit,
+        hourlyAdLimit: parseInt(settings.hourlyAdLimit) || 63,
         rewardPerAd: reward,
         l1CommissionPercent: parseFloat(settings.l1CommissionPercent) || 20,
         l2CommissionPercent: parseFloat(settings.l2CommissionPercent) || 4,
@@ -1602,7 +1609,9 @@ function SettingsSection() {
         minimumConvertPAD: minConvertPAD,
         minimumClicks: minClicks,
         seasonBroadcastActive: settings.seasonBroadcastActive,
-        referralRewardEnabled: settings.referralRewardEnabled,
+        referralRewardEnabled: settings.referralRewardPADEnabled || settings.referralRewardUSDEnabled,
+        referralRewardPADEnabled: settings.referralRewardPADEnabled,
+        referralRewardUSDEnabled: settings.referralRewardUSDEnabled,
         referralRewardUSD: refRewardUSD,
         referralRewardPAD: refRewardPAD,
         referralAdsRequired: parseInt(settings.referralAdsRequired) || 1,
@@ -1688,11 +1697,29 @@ function SettingsSection() {
                 type="number"
                 value={settings.dailyAdLimit}
                 onChange={(e) => setSettings({ ...settings, dailyAdLimit: e.target.value })}
-                placeholder="50"
+                placeholder="510"
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.dailyAdLimit || 50} ads/day
+                Current: {settingsData?.dailyAdLimit || 510} ads/day
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="hourly-ad-limit" className="text-sm font-semibold">
+                <i className="fas fa-clock mr-2 text-orange-400"></i>
+                Hourly Ad Limit
+              </Label>
+              <Input
+                id="hourly-ad-limit"
+                type="number"
+                value={settings.hourlyAdLimit}
+                onChange={(e) => setSettings({ ...settings, hourlyAdLimit: e.target.value })}
+                placeholder="63"
+                min="1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Current: {settingsData?.hourlyAdLimit || 63} ads/hour — shown on Watch page
               </p>
             </div>
             
@@ -1710,7 +1737,7 @@ function SettingsSection() {
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.rewardPerAd || 1000} PAD
+                Current: {settingsData?.rewardPerAd || 1000} PAD per ad
               </p>
             </div>
           </div>
@@ -1758,49 +1785,63 @@ function SettingsSection() {
               </p>
             </div>
 
-            <div className="space-y-2 p-3 border rounded-lg bg-green-50/5 border-green-500/20">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">
-                  <i className="fas fa-gift mr-2 text-green-500"></i>
-                  Referral Bonus
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setSettings({ ...settings, referralRewardEnabled: !settings.referralRewardEnabled })}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    settings.referralRewardEnabled ? 'bg-green-500' : 'bg-gray-600'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                      settings.referralRewardEnabled ? 'translate-x-5' : 'translate-x-1'
+            <div className="space-y-2 p-3 border rounded-lg bg-green-50/5 border-green-500/20 md:col-span-2">
+              <Label className="text-sm font-semibold block mb-2">
+                <i className="fas fa-gift mr-2 text-green-500"></i>
+                Referral Bonus — When friend watches 1 ad
+              </Label>
+              <p className="text-xs text-muted-foreground mb-3">Enable PAD and/or USD independently. Users receive whichever are enabled. Affiliate page shows accordingly.</p>
+
+              <div className="grid grid-cols-1 gap-3">
+                {/* PAD Toggle */}
+                <div className="flex items-start gap-3 p-2 rounded-lg bg-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, referralRewardPADEnabled: !settings.referralRewardPADEnabled })}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors mt-0.5 flex-shrink-0 ${
+                      settings.referralRewardPADEnabled ? 'bg-green-500' : 'bg-gray-600'
                     }`}
-                  />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div>
-                  <Label className="text-xs">PAD</Label>
-                  <Input
-                    type="number"
-                    value={settings.referralRewardPAD}
-                    onChange={(e) => setSettings({ ...settings, referralRewardPAD: e.target.value })}
-                    placeholder="50"
-                    disabled={!settings.referralRewardEnabled}
-                    className={`h-8 ${!settings.referralRewardEnabled ? 'opacity-50' : ''}`}
-                  />
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${settings.referralRewardPADEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                  <div className="flex-1">
+                    <Label className="text-xs font-semibold text-green-400">PAD Reward</Label>
+                    <Input
+                      type="number"
+                      value={settings.referralRewardPAD}
+                      onChange={(e) => setSettings({ ...settings, referralRewardPAD: e.target.value })}
+                      placeholder="50"
+                      disabled={!settings.referralRewardPADEnabled}
+                      className={`h-8 mt-1 ${!settings.referralRewardPADEnabled ? 'opacity-50' : ''}`}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Current: {settingsData?.referralRewardPAD || 50} PAD per referral</p>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs">USD</Label>
-                  <Input
-                    type="number"
-                    value={settings.referralRewardUSD}
-                    onChange={(e) => setSettings({ ...settings, referralRewardUSD: e.target.value })}
-                    placeholder="0.0005"
-                    step="0.0001"
-                    disabled={!settings.referralRewardEnabled}
-                    className={`h-8 ${!settings.referralRewardEnabled ? 'opacity-50' : ''}`}
-                  />
+
+                {/* USD Toggle */}
+                <div className="flex items-start gap-3 p-2 rounded-lg bg-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, referralRewardUSDEnabled: !settings.referralRewardUSDEnabled })}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors mt-0.5 flex-shrink-0 ${
+                      settings.referralRewardUSDEnabled ? 'bg-blue-500' : 'bg-gray-600'
+                    }`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${settings.referralRewardUSDEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                  <div className="flex-1">
+                    <Label className="text-xs font-semibold text-blue-400">USD Reward</Label>
+                    <Input
+                      type="number"
+                      value={settings.referralRewardUSD}
+                      onChange={(e) => setSettings({ ...settings, referralRewardUSD: e.target.value })}
+                      placeholder="0.0005"
+                      step="0.0001"
+                      disabled={!settings.referralRewardUSDEnabled}
+                      className={`h-8 mt-1 ${!settings.referralRewardUSDEnabled ? 'opacity-50' : ''}`}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Current: ${settingsData?.referralRewardUSD || 0.0005} per referral</p>
+                  </div>
                 </div>
               </div>
             </div>
