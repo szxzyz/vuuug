@@ -767,34 +767,48 @@ export default function Home() {
             <button
               onClick={() => setLocation('/withdraw')}
               className="btn-primary active:scale-95 transition-transform"
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2v14M5 9l7 7 7-7"/><path d="M3 20h18"/>
-              </svg>
               WITHDRAW
             </button>
 
             <button
               onClick={handleConvertClick}
               className="active:scale-95 transition-transform"
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)', border: 'none' }}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)', border: 'none' }}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="17 1 21 5 17 9"/>
-                <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                <polyline points="7 23 3 19 7 15"/>
-                <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-              </svg>
               SWAP
             </button>
+          </div>
+        </div>
+
+        {/* Referral Contest Banner */}
+        <div
+          className="mt-4 mb-2 rounded-2xl overflow-hidden relative"
+          style={{ height: 90 }}
+        >
+          <img
+            src="/referral-contest.jpg"
+            alt="Referral Contest"
+            className="w-full h-full object-cover"
+            style={{ objectPosition: 'center' }}
+          />
+          <div
+            className="absolute inset-0 flex items-center"
+            style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 60%, transparent 100%)' }}
+          >
+            <span
+              style={{ fontSize: 18, fontWeight: 900, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', paddingLeft: 16, textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
+            >
+              REFERRAL CONTEST
+            </span>
           </div>
         </div>
 
         {/* Statistics Section */}
         <div className="mt-5 px-1">
           <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
-            Statistics
+            Income Statistics
           </p>
 
           {/* Money earned */}

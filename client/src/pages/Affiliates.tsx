@@ -1,247 +1,144 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { showNotification } from '@/components/AppNotification';
 import Layout from '@/components/Layout';
-import { Share2, Users, Copy, Loader2, Bug, DollarSign } from 'lucide-react';
-
-interface User {
-  id: string;
-  username?: string;
-  firstName?: string;
-  referralCode?: string;
-  [key: string]: any;
-}
-
-interface ReferralStats {
-  totalInvites: number;
-  successfulInvites: number;
-  totalClaimed: string;
-  availableBonus: string;
-  readyToClaim: string;
-  totalBugEarned?: number;
-  totalUsdEarned?: number;
-}
-
-interface AppSettings {
-  affiliateCommission?: number;
-  referralRewardEnabled?: boolean;
-  referralRewardUSD?: number;
-  referralRewardPAD?: number;
-}
+import Header from '@/components/Header';
+import { Loader2 } from 'lucide-react';
 
 export default function Affiliates() {
-  const { data: user, isLoading: userLoading } = useQuery<User>({
+  const { data: user } = useQuery<any>({
     queryKey: ['/api/auth/user'],
     retry: false,
     staleTime: 60000,
-    gcTime: 300000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery<ReferralStats>({
+  const { data: stats } = useQuery<any>({
     queryKey: ['/api/referrals/stats'],
     retry: false,
     staleTime: 60000,
-    gcTime: 300000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
   });
-
-  const { data: appSettings } = useQuery<AppSettings>({
-    queryKey: ['/api/app-settings'],
-    retry: false,
-    staleTime: 120000,
-    gcTime: 600000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-  });
-
-  const isLoading = userLoading || statsLoading;
-
-  const botUsername = import.meta.env.VITE_BOT_USERNAME || 'MoneyAdzbot';
-  // Use bot deep link format (?start=) for reliable referral tracking
-  // This ensures the /start command is triggered and referral is processed via webhook
-  const referralLink = user?.referralCode 
-    ? `https://t.me/${botUsername}?start=${user.referralCode}`
-    : '';
-
-  const copyReferralLink = () => {
-    if (referralLink) {
-      navigator.clipboard.writeText(referralLink);
-      showNotification('Link copied!', 'success');
-    }
-  };
 
   const [isSharing, setIsSharing] = useState(false);
 
-  const shareReferralLink = async () => {
-    if (!referralLink || isSharing) return;
-    
+  const botUsername = import.meta.env.VITE_BOT_USERNAME || 'MoneyAdzbot';
+  const referralLink = user?.referralCode
+    ? `https://t.me/${botUsername}?start=${user.referralCode}`
+    : 'https://t.me/MoneyAdzbot?start=XXXXXXXX';
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(referralLink);
+    showNotification('Link copied!', 'success');
+  };
+
+  const shareLink = async () => {
+    if (isSharing) return;
     setIsSharing(true);
-    
     try {
-      const tgWebApp = window.Telegram?.WebApp as any;
-      
-      // Native Telegram share: Use shareMessage() with prepared message from backend
-      if (tgWebApp?.shareMessage) {
-        try {
-          // First, prepare the message on the backend
-          const response = await fetch('/api/share/prepare-message', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' }
-          });
-          const data = await response.json();
-          
-          if (data.success && data.messageId) {
-            // Use the native Telegram share dialog with prepared message
-            tgWebApp.shareMessage(data.messageId, (success: boolean) => {
-              if (success) {
-                showNotification('Message shared successfully!', 'success');
-              }
-              setIsSharing(false);
-            });
-            return;
-          } else if (data.fallbackUrl) {
-            // Backend returned fallback URL
-            tgWebApp.openTelegramLink(data.fallbackUrl);
-            setIsSharing(false);
-            return;
-          }
-        } catch (error) {
-          console.error('Prepare message error:', error);
-        }
-      }
-      
-      // Fallback: Use Telegram's native share URL dialog
-      const shareTitle = `💵 Get paid for completing tasks and watching ads.`;
+      const tgWebApp = (window as any).Telegram?.WebApp;
+      const shareTitle = `💵 Get paid for watching ads on Telegram.`;
       const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareTitle)}`;
-      
       if (tgWebApp?.openTelegramLink) {
         tgWebApp.openTelegramLink(shareUrl);
       } else {
         window.open(shareUrl, '_blank');
       }
-    } catch (error) {
-      console.error('Share error:', error);
+    } catch (e) {
+      console.error(e);
     }
-    
     setIsSharing(false);
   };
 
-  if (isLoading) {
-    return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="flex gap-1 justify-center mb-4">
-              <div className="w-2 h-2 rounded-full bg-[#4cd3ff] animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="w-2 h-2 rounded-full bg-[#4cd3ff] animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="w-2 h-2 rounded-full bg-[#4cd3ff] animate-bounce" style={{ animationDelay: '300ms' }}></div>
-            </div>
-            <div className="text-foreground font-medium">Loading...</div>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
+  const l1Count = stats?.totalInvites ?? 0;
+  const l2Count = stats?.l2Count ?? 0;
 
   return (
     <Layout>
-      <main className="max-w-md mx-auto px-4 pt-3">
-        <Card className="mb-4 minimal-card">
-          <CardContent className="pt-5 pb-5">
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <Users className="w-7 h-7 text-[#007BFF]" />
-              <h1 className="text-2xl font-bold text-white">Affiliates program</h1>
-            </div>
-            
-            <p className="text-sm text-center text-white leading-relaxed mb-4">
-              Invite friends and get <span className="font-bold">{appSettings?.affiliateCommission || 10}%</span> of every ads completed by your referrals automatically added to your balance
-            </p>
-            
-            {appSettings?.referralRewardEnabled && (
-              <div className="mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                <p className="text-xs text-green-400 font-medium text-center">
-                  Bonus: Earn <span className="font-bold">{appSettings.referralRewardPAD || 50} PAD</span> + <span className="font-bold">${appSettings.referralRewardUSD || 0.0005} USD</span> when your friend watches their first ad!
-                </p>
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2 mb-3">
-              <Share2 className="w-4 h-4 text-blue-400" />
-              <h3 className="text-sm font-semibold text-blue-400">Friend Invite Link</h3>
-            </div>
-            
-            <div className="bg-muted/50 rounded-lg p-3 mb-3 overflow-x-auto text-sm text-foreground whitespace-nowrap">
-              {referralLink}
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                className="h-12 btn-primary"
-                onClick={copyReferralLink}
-                disabled={!referralLink}
-              >
-                <Copy className="w-4 h-4 mr-2" />
-                Copy
-              </Button>
-              
-              <Button
-                className="h-12 btn-primary"
-                onClick={shareReferralLink}
-                disabled={!referralLink || isSharing}
-              >
-                {isSharing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Share2 className="w-4 h-4 mr-2" />}
-                {isSharing ? 'Sending...' : 'Share'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      <Header />
+      <main className="max-w-md mx-auto px-4 pt-4 bg-black min-h-screen">
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <Card className="minimal-card">
-            <CardContent className="pt-4 pb-4">
-              <div className="text-xs text-muted-foreground mb-1">Total Invites</div>
-              <div className="text-xl font-bold text-[#e5e5e5]">{stats?.totalInvites || 0}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="minimal-card">
-            <CardContent className="pt-4 pb-4">
-              <div className="text-xs text-muted-foreground mb-1">Successful Invites</div>
-              <div className="text-xl font-bold text-[#4cd3ff]">{stats?.successfulInvites || 0}</div>
-            </CardContent>
-          </Card>
+        {/* Header */}
+        <div className="mb-4">
+          <h1 className="text-2xl font-black text-white tracking-tight mb-2">
+            Affiliates Program
+          </h1>
+          <p className="text-[#888] text-sm leading-relaxed">
+            We Pay out up to <span className="text-white font-semibold">20%</span> from the income of referrals of the 1st level and up to{' '}
+            <span className="text-white font-semibold">4%</span> from the income of referrals of the 2nd level.
+          </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <Card className="minimal-card">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-2 mb-1">
-                <Bug className="w-4 h-4 text-green-400" />
-                <span className="text-xs text-muted-foreground">BUG Earned</span>
-              </div>
-              <div className="text-xl font-bold text-green-400">
-                {(stats?.totalBugEarned || 0).toLocaleString()}
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="minimal-card">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-2 mb-1">
-                <DollarSign className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs text-muted-foreground">Total Earned</span>
-              </div>
-              <div className="text-xl font-bold text-emerald-400">
-                ${(stats?.totalUsdEarned || 0).toFixed(3)}
-              </div>
-            </CardContent>
-          </Card>
+        {/* Direct link section */}
+        <div className="bg-[#111] rounded-2xl p-4 mb-3 border border-white/5">
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-widest mb-3">
+            Direct link in TG bot
+          </p>
+
+          {/* Link display */}
+          <div className="bg-[#1C1C1E] rounded-xl px-3 py-3 mb-3 overflow-hidden">
+            <p className="text-white/60 text-xs font-mono truncate">
+              {referralLink}
+            </p>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={copyLink}
+              disabled={!user?.referralCode}
+              className="w-full py-3.5 rounded-xl text-sm font-bold tracking-wide btn-primary active:scale-95 transition-transform disabled:opacity-50"
+            >
+              Copy the link
+            </button>
+
+            <button
+              onClick={shareLink}
+              disabled={isSharing}
+              className="w-full py-3.5 rounded-xl text-sm font-bold tracking-wide active:scale-95 transition-transform flex items-center justify-center gap-2"
+              style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}
+            >
+              {isSharing && <Loader2 className="w-4 h-4 animate-spin" />}
+              Send the link as a message
+            </button>
+          </div>
+        </div>
+
+        {/* Referral counts */}
+        <div className="bg-[#111] rounded-2xl p-4 mb-3 border border-white/5">
+          <div className="flex items-center justify-between py-3 border-b border-white/5">
+            <div>
+              <p className="text-white text-sm font-semibold">Referrals of the 1st level</p>
+              <p className="text-[#888] text-xs mt-0.5">Users you invited directly</p>
+            </div>
+            <span className="text-white text-xl font-black">{l1Count}</span>
+          </div>
+
+          <div className="flex items-center justify-between py-3 border-b border-white/5">
+            <div>
+              <p className="text-white text-sm font-semibold">Referrals of the 2nd level</p>
+              <p className="text-[#888] text-xs mt-0.5">Users invited by your referrals</p>
+            </div>
+            <span className="text-white text-xl font-black">{l2Count}</span>
+          </div>
+
+          <div className="flex items-center justify-between pt-3">
+            <div>
+              <p className="text-white text-sm font-semibold">Bonus</p>
+              <p className="text-[#888] text-xs mt-0.5">Total referral earnings</p>
+            </div>
+            <span className="text-white/40 text-sm font-semibold">Coming soon</span>
+          </div>
+        </div>
+
+        {/* Commission info */}
+        <div className="bg-[#111] rounded-2xl p-4 border border-white/5">
+          <div className="flex items-center justify-between py-2">
+            <span className="text-[#888] text-xs">Level 1 commission</span>
+            <span className="text-green-400 font-bold text-sm">20%</span>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <span className="text-[#888] text-xs">Level 2 commission</span>
+            <span className="text-green-400 font-bold text-sm">4%</span>
+          </div>
         </div>
 
       </main>
