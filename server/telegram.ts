@@ -1,6 +1,13 @@
 // Telegram Bot API integration for sending notifications
-import TelegramBot from 'node-telegram-bot-api';
 import { storage } from './storage';
+
+let TelegramBot: any = null;
+try {
+  const mod = await import('node-telegram-bot-api');
+  TelegramBot = mod.default;
+} catch {
+  console.warn('⚠️ node-telegram-bot-api not installed - Telegram bot features disabled');
+}
 import { db } from './db';
 import { earnings } from '../shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
@@ -55,6 +62,7 @@ interface TelegramMessage {
 
 export async function verifyChannelMembership(userId: number, channelIdOrUsername: string, botToken: string): Promise<boolean> {
   try {
+    if (!TelegramBot) return false;
     const bot = new TelegramBot(botToken);
     
     // Support both numeric channel IDs (e.g., -1001234567890) and @username formats

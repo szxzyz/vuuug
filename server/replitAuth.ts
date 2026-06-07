@@ -4,7 +4,6 @@ import { Strategy, type VerifyFunction } from "openid-client/passport";
 import passport from "passport";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
-import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
@@ -12,18 +11,23 @@ import { storage } from "./storage";
 const replitDomainsEnv = process.env.REPLIT_DOMAINS;
 const isReplitEnvironment = !!replitDomainsEnv;
 
-const getOidcConfig = memoize(
-  async () => {
-    if (!isReplitEnvironment) {
-      throw new Error("OIDC config only available in Replit environment");
-    }
-    return await client.discovery(
-      new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-      process.env.REPL_ID!
-    );
-  },
-  { maxAge: 3600 * 1000 }
-);
+let _oidcConfigCache: any = null;
+let _oidcConfigTime = 0;
+const getOidcConfig = async () => {
+  const now = Date.now();
+  if (_oidcConfigCache && now - _oidcConfigTime < 3600 * 1000) {
+    return _oidcConfigCache;
+  }
+  if (!isReplitEnvironment) {
+    throw new Error("OIDC config only available in Replit environment");
+  }
+  _oidcConfigCache = await client.discovery(
+    new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
+    process.env.REPL_ID!
+  );
+  _oidcConfigTime = now;
+  return _oidcConfigCache;
+};
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week

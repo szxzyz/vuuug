@@ -1810,6 +1810,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Earnings chart data endpoint - returns daily totals grouped by date
+  app.get('/api/earnings/chart', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const period = req.query.period as string || 'week';
+      const days = period === 'month' ? 31 : period === '2weeks' ? 14 : 7;
+
+      const result_raw = await db.execute(sql`
+        SELECT 
+          TO_CHAR(DATE(created_at AT TIME ZONE 'UTC'), 'DD.MM') as date,
+          COALESCE(SUM(amount), 0)::float as amount
+        FROM earnings
+        WHERE user_id = ${userId}
+          AND created_at >= NOW() - INTERVAL '1 day' * ${days}
+        GROUP BY DATE(created_at AT TIME ZONE 'UTC')
+        ORDER BY DATE(created_at AT TIME ZONE 'UTC') ASC
+      `);
+
+      const rowsArr = Array.isArray(result_raw) ? result_raw : (result_raw as any).rows ?? [];
+      const result = rowsArr.map((r: any) => ({
+        date: r.date,
+        amount: parseFloat(r.amount) || 0,
+      }));
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching earnings chart:", error);
+      res.status(500).json({ message: "Failed to fetch earnings chart" });
+    }
+  });
+
+  // Referral earnings chart data endpoint
+  app.get('/api/referrals/earnings/chart', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const period = req.query.period as string || 'week';
+      const days = period === 'month' ? 31 : period === '2weeks' ? 14 : 7;
+
+      const result_raw2 = await db.execute(sql`
+        SELECT 
+          TO_CHAR(DATE(created_at AT TIME ZONE 'UTC'), 'DD.MM') as date,
+          COALESCE(SUM(amount), 0)::float as amount
+        FROM earnings
+        WHERE user_id = ${userId}
+          AND source IN ('referral', 'referral_commission', 'referral_bonus')
+          AND created_at >= NOW() - INTERVAL '1 day' * ${days}
+        GROUP BY DATE(created_at AT TIME ZONE 'UTC')
+        ORDER BY DATE(created_at AT TIME ZONE 'UTC') ASC
+      `);
+
+      const rowsArr2 = Array.isArray(result_raw2) ? result_raw2 : (result_raw2 as any).rows ?? [];
+      const result = rowsArr2.map((r: any) => ({
+        date: r.date,
+        amount: parseFloat(r.amount) || 0,
+      }));
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching referral earnings chart:", error);
+      res.status(500).json({ message: "Failed to fetch referral earnings chart" });
+    }
+  });
+
 
 
 
