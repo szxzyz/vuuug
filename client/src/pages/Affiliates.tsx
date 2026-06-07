@@ -34,6 +34,9 @@ export default function Affiliates() {
   const l1Percent = appSettings?.l1CommissionPercent ?? 20;
   const l2Percent = appSettings?.l2CommissionPercent ?? 4;
 
+  const referralRewardPADEnabled = appSettings?.referralRewardPADEnabled;
+  const referralRewardUSDEnabled = appSettings?.referralRewardUSDEnabled;
+
   const copyLink = () => {
     navigator.clipboard.writeText(referralLink);
     showNotification('Link copied!', 'success');
@@ -60,16 +63,14 @@ export default function Affiliates() {
   const l1Count = stats?.totalInvites ?? 0;
   const l2Count = stats?.l2Count ?? 0;
 
-  // Bonus label from admin settings
-  const rewardEnabled = appSettings?.referralRewardEnabled;
+  // Bonus label from admin settings (using per-currency toggles)
   const rewardPAD = appSettings?.referralRewardPAD ?? 0;
   const rewardUSD = appSettings?.referralRewardUSD ?? 0;
-  const bonusLabel = rewardEnabled
-    ? rewardPAD > 0 && rewardUSD > 0
-      ? `${rewardPAD} PAD + $${rewardUSD}`
-      : rewardPAD > 0
-      ? `${rewardPAD} PAD`
-      : `$${rewardUSD}`
+  const padActive = referralRewardPADEnabled;
+  const usdActive = referralRewardUSDEnabled;
+  const bonusLabel = (padActive || usdActive)
+    ? [padActive && rewardPAD > 0 ? `${rewardPAD} PAD` : null, usdActive && rewardUSD > 0 ? `$${rewardUSD}` : null]
+        .filter(Boolean).join(' + ') || null
     : null;
 
   return (
@@ -123,7 +124,7 @@ export default function Affiliates() {
         </div>
 
         {/* Referral counts */}
-        <div className="bg-[#111] rounded-2xl p-4 mb-3 border border-white/5">
+        <div className="bg-[#1C1C1E] rounded-2xl p-4 mb-3 border border-white/5">
           <div className="flex items-center justify-between py-3 border-b border-white/5">
             <div>
               <p className="text-white text-sm font-semibold">Level 1 Referrals</p>
@@ -154,7 +155,7 @@ export default function Affiliates() {
         </div>
 
         {/* Referral Income Chart */}
-        <div className="mt-4">
+        <div className="mt-2 pb-2">
           <IncomeChart
             title="REFERRAL INCOME"
             subtitle="Earnings from friends — L1 and L2 commissions"

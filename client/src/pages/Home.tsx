@@ -815,13 +815,13 @@ export default function Home() {
           {/* Money earned */}
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 6 }}>Money earned</p>
           <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>Today</p>
               <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>
                 ${parseFloat((user as User)?.dailyEarnings || '0').toFixed(3)}
               </p>
             </div>
-            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>All time</p>
               <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>
                 ${parseFloat((user as User)?.totalEarned || '0').toFixed(3)}
@@ -832,7 +832,7 @@ export default function Home() {
           {/* Watched videos */}
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 6 }}>Watched videos</p>
           <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 6 }}>Today</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{ width: 22, height: 22, background: '#000', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -843,7 +843,7 @@ export default function Home() {
                 </span>
               </div>
             </div>
-            <div style={{ flex: 1, background: '#111', borderRadius: 12, padding: '12px 14px' }}>
+            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 6 }}>All time</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{ width: 22, height: 22, background: '#000', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -858,7 +858,7 @@ export default function Home() {
         </div>
 
         {/* Total Income Chart */}
-        <div className="mt-6">
+        <div className="mt-3 pb-2">
           <IncomeChart
             title="TOTAL INCOME"
             subtitle="Earnings statistics from all sources"
@@ -871,14 +871,14 @@ export default function Home() {
 
       {boosterPopupOpen && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4">
-          <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a] relative">
+          <div className="bg-[#1C1C1E] rounded-2xl p-6 w-full max-w-sm border border-[#2C2C2E] relative">
             <div className="flex items-center justify-center gap-3 mb-6">
               <CalendarCheck className="w-6 h-6 text-blue-400" />
               <h2 className="text-xl font-bold text-white tracking-tight">Daily Missions</h2>
             </div>
             
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
-              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-3 hover:bg-[#222] transition">
+              <div className="flex items-center justify-between bg-[#1C1C1E] rounded-lg p-3 hover:bg-[#2C2C2E] transition">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <Users className="w-4 h-4 text-[#4cd3ff]" />
@@ -913,7 +913,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-3 hover:bg-[#222] transition">
+              <div className="flex items-center justify-between bg-[#1C1C1E] rounded-lg p-3 hover:bg-[#2C2C2E] transition">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <CalendarCheck className="w-4 h-4 text-[#4cd3ff]" />
@@ -954,7 +954,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-3 hover:bg-[#222] transition">
+              <div className="flex items-center justify-between bg-[#1C1C1E] rounded-lg p-3 hover:bg-[#2C2C2E] transition">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <Bell className="w-4 h-4 text-[#4cd3ff]" />
@@ -1015,7 +1015,7 @@ export default function Home() {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative w-[90%] max-w-[320px] bg-[#1a1a1a] border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+              className="relative w-[90%] max-w-[320px] bg-[#1C1C1E] border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
             >
               <div className="p-5 space-y-5">
                 <div className="text-center space-y-0.5">

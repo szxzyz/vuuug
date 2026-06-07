@@ -449,7 +449,7 @@ export default function Withdraw() {
             className={`flex-1 h-11 rounded-xl font-semibold text-sm shadow-md transition-all border-0 ${
               activeTab === 'withdraw'
                 ? "bg-[#007BFF] text-white shadow-[#007BFF]/30" 
-                : "bg-[#1a1a1a] text-gray-400 hover:bg-[#252525] hover:text-white"
+                : "bg-[#1C1C1E] text-gray-400 hover:bg-[#2C2C2E] hover:text-white"
             }`}
             onClick={() => setActiveTab('withdraw')}
           >
@@ -461,7 +461,7 @@ export default function Withdraw() {
             className={`flex-1 h-11 rounded-xl font-semibold text-sm shadow-md transition-all border-0 ${
               activeTab === 'wallet-setup'
                 ? "bg-[#007BFF] text-white shadow-[#007BFF]/30" 
-                : "bg-[#1a1a1a] text-gray-400 hover:bg-[#252525] hover:text-white"
+                : "bg-[#1C1C1E] text-gray-400 hover:bg-[#2C2C2E] hover:text-white"
             }`}
             onClick={() => setActiveTab('wallet-setup')}
           >
@@ -473,7 +473,7 @@ export default function Withdraw() {
         {activeTab === 'withdraw' && (
           <div className="space-y-4">
             {isLoadingRequirements && (
-              <Card className="bg-[#111111] border-0 overflow-hidden">
+              <Card className="bg-[#1C1C1E] border-0 overflow-hidden">
                 <CardContent className="p-6 flex items-center justify-center">
                   <div className="flex items-center gap-3">
                     <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
@@ -502,7 +502,7 @@ export default function Withdraw() {
                     className={`w-full flex items-center space-x-2 p-3 rounded-lg transition-all ${
                       selectedMethod === system.id
                         ? 'bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]'
-                        : 'bg-[#1a1a1a] hover:bg-[#252525]'
+                        : 'bg-[#1C1C1E] hover:bg-[#2C2C2E]'
                     }`}
                   >
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
@@ -521,7 +521,7 @@ export default function Withdraw() {
                 ))}
               </div>
 
-              <div className="p-3 bg-[#1a1a1a] rounded-xl space-y-3">
+              <div className="p-3 bg-[#1C1C1E] rounded-xl space-y-3">
                 <div className="text-xs text-[#aaa]">Select Withdrawal Package</div>
                 
                 <div className="grid grid-cols-3 gap-2">
@@ -660,7 +660,7 @@ export default function Withdraw() {
                   <Loader2 className="w-6 h-6 animate-spin text-[#4cd3ff]" />
                 </div>
               ) : withdrawalsData.length === 0 ? (
-                <div className="text-center py-6 bg-[#1a1a1a]/50 rounded-xl">
+                <div className="text-center py-6 bg-[#1C1C1E]/50 rounded-xl">
                   <Receipt className="w-12 h-12 text-gray-600 mx-auto mb-3" />
                   <p className="text-gray-500 text-sm">No transactions yet</p>
                   <p className="text-gray-600 text-xs mt-1">Your withdrawal history will appear here</p>
@@ -670,7 +670,7 @@ export default function Withdraw() {
                   {withdrawalsData.map((withdrawal) => (
                     <div 
                       key={withdrawal.id}
-                      className="flex items-center justify-between p-3 bg-[#1a1a1a]/50 rounded-xl"
+                      className="flex items-center justify-between p-3 bg-[#1C1C1E]/50 rounded-xl"
                     >
                       <div className="flex items-center gap-3">
                         {getStatusIcon(withdrawal.status)}
@@ -795,7 +795,7 @@ export default function Withdraw() {
                   <Button
                     variant="outline"
                     onClick={() => setIsChangingTonWallet(true)}
-                    className="flex-1 bg-[#1a1a1a] border-0 text-[#4cd3ff] hover:bg-[#252525]"
+                    className="flex-1 bg-[#1C1C1E] border-0 text-[#4cd3ff] hover:bg-[#2C2C2E]"
                   >
                     Change Cwallet ID
                   </Button>
@@ -814,7 +814,7 @@ export default function Withdraw() {
                       setIsChangingTonWallet(false);
                       setNewTonWalletId('');
                     }}
-                    className="flex-1 bg-[#1a1a1a] border-0 text-white hover:bg-[#252525]"
+                    className="flex-1 bg-[#1C1C1E] border-0 text-white hover:bg-[#2C2C2E]"
                   >
                     Cancel
                   </Button>
@@ -831,7 +831,7 @@ export default function Withdraw() {
                   <Button
                     variant="outline"
                     onClick={() => setActiveTab('withdraw')}
-                    className="flex-1 bg-[#1a1a1a] border-0 text-white hover:bg-[#252525]"
+                    className="flex-1 bg-[#1C1C1E] border-0 text-white hover:bg-[#2C2C2E]"
                   >
                     Cancel
                   </Button>

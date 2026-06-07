@@ -417,7 +417,7 @@ export default function Missions() {
           disabled={isLoading || (countdown !== undefined && countdown > 0)}
           className={`h-8 w-20 text-xs font-bold rounded-xl ${
             isLoading ? 'bg-[#4cd3ff]/50 text-black' :
-            countdown ? 'bg-[#1a1a1a] text-gray-400 border border-white/10' :
+            countdown ? 'bg-[#1C1C1E] text-gray-400 border border-white/10' :
             isClaimReady ? 'bg-green-500 hover:bg-green-600 text-white' :
             'bg-[#4cd3ff] hover:bg-[#3bc3ef] text-black'
           }`}
@@ -439,7 +439,7 @@ export default function Missions() {
     if (tasks.length === 0) return null;
     
     return (
-      <div className="bg-[#0d0d0d] rounded-2xl p-3.5 mb-3 border border-white/5">
+      <div className="bg-[#1C1C1E] rounded-2xl p-3.5 mb-3 border border-white/5">
         <div className="flex items-center gap-2 mb-1">
           <div className={iconColor}>{icon}</div>
           <span className="text-white text-sm font-semibold">{title}</span>
@@ -460,7 +460,7 @@ export default function Missions() {
         </div>
 
         <div 
-          className="bg-[#0d0d0d] rounded-2xl p-3.5 mb-3 cursor-pointer active:scale-[0.98] transition-transform border border-white/5"
+          className="bg-[#1C1C1E] rounded-2xl p-3.5 mb-3 cursor-pointer active:scale-[0.98] transition-transform border border-white/5"
           onClick={() => setLocation("/task/create")}
         >
           <div className="flex items-center gap-3">
@@ -475,7 +475,7 @@ export default function Missions() {
           </div>
         </div>
 
-        <div className="bg-[#0d0d0d] rounded-2xl p-3.5 mb-3 border border-white/5">
+        <div className="bg-[#1C1C1E] rounded-2xl p-3.5 mb-3 border border-white/5">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-lg bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center">
               <CalendarCheck className="w-3.5 h-3.5 text-yellow-400" />
@@ -484,7 +484,7 @@ export default function Missions() {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between bg-[#141414] rounded-xl p-2.5 border border-white/5">
+            <div className="flex items-center justify-between bg-[#1C1C1E] rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
                   <Users className="w-4 h-4 text-green-400" />
@@ -524,7 +524,7 @@ export default function Missions() {
               )}
             </div>
 
-            <div className="flex items-center justify-between bg-[#141414] rounded-xl p-2.5 border border-white/5">
+            <div className="flex items-center justify-between bg-[#1C1C1E] rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-[#4cd3ff]/10 border border-[#4cd3ff]/20 flex items-center justify-center">
                   <CalendarCheck className="w-4 h-4 text-[#4cd3ff]" />
@@ -570,7 +570,7 @@ export default function Missions() {
               )}
             </div>
 
-            <div className="flex items-center justify-between bg-[#141414] rounded-xl p-2.5 border border-white/5">
+            <div className="flex items-center justify-between bg-[#1C1C1E] rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
                   <Bell className="w-4 h-4 text-orange-400" />
@@ -634,7 +634,7 @@ export default function Missions() {
         />
 
         {gameTasks.length === 0 && socialTasks.length === 0 && partnerTasks.length === 0 && (
-          <div className="bg-[#0d0d0d] rounded-2xl p-6 text-center border border-white/5">
+          <div className="bg-[#1C1C1E] rounded-2xl p-6 text-center border border-white/5">
             <p className="text-gray-400 text-sm">No tasks available right now</p>
             <p className="text-gray-600 text-xs mt-1">Check back later for new tasks!</p>
           </div>

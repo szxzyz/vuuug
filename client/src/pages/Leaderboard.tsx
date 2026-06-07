@@ -101,7 +101,7 @@ export default function Leaderboard() {
               className={`h-9 text-sm ${
                 activeTab === 'earners'
                   ? 'btn-primary'
-                  : 'bg-[#1A1A1A] border border-[#2A2A2A] text-muted-foreground hover:bg-[#2A2A2A]'
+                  : 'bg-[#1C1C1E] border border-[#2A2A2A] text-muted-foreground hover:bg-[#2C2C2E]'
               }`}
             >
               <Trophy className="w-3.5 h-3.5 mr-1.5" />
@@ -112,7 +112,7 @@ export default function Leaderboard() {
               className={`h-9 text-sm ${
                 activeTab === 'referrers'
                   ? 'btn-primary'
-                  : 'bg-[#1A1A1A] border border-[#2A2A2A] text-muted-foreground hover:bg-[#2A2A2A]'
+                  : 'bg-[#1C1C1E] border border-[#2A2A2A] text-muted-foreground hover:bg-[#2C2C2E]'
               }`}
             >
               <Users className="w-3.5 h-3.5 mr-1.5" />
