@@ -18,7 +18,6 @@ function useCountdown() {
   useEffect(() => {
     const tick = () => {
       const now = new Date();
-      // Reset at 12:00 PM UTC
       const next = new Date();
       next.setUTCHours(12, 0, 0, 0);
       if (now.getUTCHours() >= 12) {
@@ -88,136 +87,137 @@ export default function DailyActivityBonus({ user }: { user: any }) {
   const currentMilestoneIndex: number = bonusStatus?.currentMilestoneIndex ?? -1;
   const claimedToday: boolean = bonusStatus?.claimedToday ?? false;
 
-  // Current bonus info (highest reached milestone)
   const currentMilestone = currentMilestoneIndex >= 0 ? MILESTONES[currentMilestoneIndex] : null;
   const currentBonusLabel = currentMilestone
     ? currentMilestone.isBug
       ? `✦ ${currentMilestone.bugReward}`
       : currentMilestone.label
-    : "✦ 0";
+    : null;
+
+  const canClaim = !!currentMilestone && !claimedToday;
 
   return (
-    <div className="rounded-2xl bg-[#111111] border border-white/5 mb-3 p-5">
-      {/* Header */}
-      <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+    <div className="mb-3 px-1">
+      {/* Section header — matches home page style */}
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
         Daily Activity Bonus
       </p>
-      <p className="text-[#888] text-xs mb-5">
+      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontWeight: 500, marginBottom: 14 }}>
         Watch more ads — earn extra rewards daily
       </p>
 
-      {/* Milestones with timeline */}
-      <div className="relative">
-        {/* Vertical connecting line */}
-        <div
-          className="absolute left-[14px] top-[22px] w-[2px] bg-white/10 rounded-full"
-          style={{ height: `calc(100% - 44px)` }}
-        />
+      {/* Milestone rows — minimal cards like home stats */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {MILESTONES.map((m, i) => {
+          const reached = adsWatched >= m.ads;
+          const isNext = i === currentMilestoneIndex + 1;
+          const progress = Math.min(100, (adsWatched / m.ads) * 100);
 
-        <div className="space-y-3">
-          {MILESTONES.map((m, i) => {
-            const reached = adsWatched >= m.ads;
-            const isCurrent =
-              i === currentMilestoneIndex ||
-              (i === 0 && currentMilestoneIndex < 0 && adsWatched < m.ads);
-            const progress = Math.min(100, (adsWatched / m.ads) * 100);
-            const isActive = i === 0 && !reached; // first incomplete milestone is "active"
-            const borderColor = reached
-              ? "border-green-500/50"
-              : isCurrent && i === (currentMilestoneIndex + 1)
-              ? "border-green-500/70"
-              : "border-white/5";
+          return (
+            <div
+              key={i}
+              style={{
+                background: '#111',
+                borderRadius: 12,
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                opacity: reached ? 1 : isNext ? 1 : 0.55,
+              }}
+            >
+              {/* Status dot */}
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: reached
+                    ? '#22c55e'
+                    : isNext
+                    ? 'rgba(255,255,255,0.3)'
+                    : 'rgba(255,255,255,0.12)',
+                }}
+              />
 
-            // Find which is the "next" milestone to work toward
-            const isNext = i === currentMilestoneIndex + 1;
+              {/* Ads count label */}
+              <span style={{ fontSize: 13, fontWeight: 700, color: reached ? '#22c55e' : isNext ? '#fff' : 'rgba(255,255,255,0.5)', minWidth: 46 }}>
+                {m.ads} ads
+              </span>
 
-            return (
-              <div key={i} className="flex items-center gap-3">
-                {/* Dot */}
-                <div
-                  className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center z-10 border-2 transition-all ${
-                    reached
-                      ? "bg-green-500 border-green-400"
-                      : "bg-[#1C1C1E] border-white/20"
-                  }`}
-                >
-                  {reached && (
-                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
+              {/* Progress bar (only for next target) */}
+              {isNext && (
+                <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99, overflow: 'hidden' }}>
+                  <div
+                    style={{ width: `${progress}%`, height: '100%', background: '#22c55e', borderRadius: 99, transition: 'width 0.5s ease' }}
+                  />
                 </div>
+              )}
 
-                {/* Row card */}
-                <div
-                  className={`flex-1 rounded-xl border px-4 py-3 ${
-                    reached
-                      ? "bg-green-500/5 border-green-500/30"
-                      : isNext
-                      ? "bg-[#1a1a1a] border-green-500/40"
-                      : "bg-[#1C1C1E] border-white/5"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`text-sm font-bold ${reached ? "text-green-400" : isNext ? "text-white" : "text-white/60"}`}>
-                      {adsWatched >= m.ads ? m.ads : adsWatched} / {m.ads}
-                    </span>
-                    <span className={`text-sm font-bold ${reached ? "text-green-300" : isNext ? "text-white" : "text-white/40"}`}>
-                      {m.label}
-                    </span>
-                  </div>
-                  {/* Progress bar only on current active milestone */}
-                  {isNext && (
-                    <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-green-500 rounded-full transition-all duration-500"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              {/* Spacer if not next */}
+              {!isNext && <div style={{ flex: 1 }} />}
+
+              {/* Reward label */}
+              <span style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color: reached ? '#22c55e' : isNext ? '#fff' : 'rgba(255,255,255,0.4)',
+                letterSpacing: '-0.2px',
+              }}>
+                {m.label}
+              </span>
+
+              {/* Checkmark if reached */}
+              {reached && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Timer + current bonus row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 4, paddingLeft: 2, paddingRight: 2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Clock style={{ width: 13, height: 13, color: 'rgba(255,255,255,0.3)' }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.45)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+            {countdown}
+          </span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontWeight: 500 }}>resets</span>
         </div>
+        {currentBonusLabel && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>Bonus</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>{currentBonusLabel}</span>
+          </div>
+        )}
       </div>
 
-      {/* Note + Timer */}
-      <div className="mt-5 text-center">
-        <p className="text-[#666] text-xs leading-relaxed">
-          The bonus can be claimed only once per day.
-          <br />
-          All views reset when the timer expires.
-        </p>
-        <div className="flex items-center justify-center gap-1.5 mt-2">
-          <Clock className="w-3.5 h-3.5 text-white/40" />
-          <span className="text-white/60 text-sm font-mono font-semibold">{countdown}</span>
-        </div>
-      </div>
-
-      {/* Current Bonus display */}
-      <div className="mt-4 bg-[#1C1C1E] rounded-xl px-4 py-3 text-center border border-white/5">
-        <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-1">
-          Current Bonus
-        </p>
-        <p className={`text-xl font-black ${currentMilestone ? "text-white" : "text-white/30"}`}>
-          {currentBonusLabel}
-        </p>
-      </div>
-
-      {/* Get A Bonus button */}
+      {/* Get A Bonus button — matches home page btn-primary style */}
       <button
         onClick={() => claimMutation.mutate()}
-        disabled={claimMutation.isPending || claimedToday || isLoading}
-        className={`w-full mt-3 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all ${
-          claimedToday
-            ? "bg-white/10 text-white/30 cursor-not-allowed"
-            : currentMilestone
-            ? "bg-green-500 hover:bg-green-400 text-black active:scale-95"
-            : "bg-white/10 text-white/30 cursor-not-allowed"
+        disabled={claimMutation.isPending || claimedToday || isLoading || !canClaim}
+        className={`btn-primary active:scale-95 transition-transform ${
+          claimedToday || !canClaim ? 'opacity-40 cursor-not-allowed' : ''
         }`}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '12px 0',
+          borderRadius: 12,
+          fontSize: 14,
+          fontWeight: 700,
+          cursor: claimedToday || !canClaim ? 'not-allowed' : 'pointer',
+          letterSpacing: '0.03em',
+          marginTop: 10,
+        }}
       >
-        {claimedToday ? "Claimed Today ✓" : claimMutation.isPending ? "Claiming..." : "Get A Bonus"}
+        {claimedToday ? "CLAIMED TODAY ✓" : claimMutation.isPending ? "CLAIMING..." : "GET BONUS"}
       </button>
     </div>
   );
