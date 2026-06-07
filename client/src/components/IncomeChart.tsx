@@ -91,7 +91,7 @@ export default function IncomeChart({ title, subtitle, apiEndpoint }: IncomeChar
   const tickInterval = period === "week" ? 0 : period === "2weeks" ? 1 : 3;
 
   return (
-    <div className="mb-6 px-1">
+    <div className="mb-2 px-1">
       <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>{title}</p>
       <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 16 }}>{subtitle}</p>
 
