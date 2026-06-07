@@ -99,9 +99,9 @@ export default function DailyActivityBonus({ user }: { user: any }) {
   return (
     <div className="rounded-2xl bg-[#111111] border border-white/5 mb-3 p-5">
       {/* Header */}
-      <h3 className="text-lg font-black text-white uppercase tracking-widest mb-1">
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
         Daily Activity Bonus
-      </h3>
+      </p>
       <p className="text-[#888] text-xs mb-5">
         Watch more ads — earn extra rewards daily
       </p>
