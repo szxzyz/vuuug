@@ -22,7 +22,7 @@ export default function Watch() {
   return (
     <Layout>
       <Header />
-      <main className="max-w-md mx-auto px-4 pt-4 pb-28 bg-black min-h-screen">
+      <main className="max-w-md mx-auto px-4 pt-4 bg-black">
         <LimitsSection
           dailyLimit={appSettings?.dailyAdLimit ?? 510}
           hourlyLimit={appSettings?.hourlyAdLimit ?? 63}

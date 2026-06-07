@@ -858,7 +858,7 @@ export default function Home() {
         </div>
 
         {/* Total Income Chart */}
-        <div className="mt-6 pb-8">
+        <div className="mt-6">
           <IncomeChart
             title="TOTAL INCOME"
             subtitle="Earnings statistics from all sources"

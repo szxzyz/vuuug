@@ -1444,7 +1444,8 @@ function SettingsSection() {
   const [settings, setSettings] = useState({
     dailyAdLimit: '50',
     rewardPerAd: '2',
-    affiliateCommission: '10',
+    l1CommissionPercent: '20',
+    l2CommissionPercent: '4',
     walletChangeFee: '100',
     minimumWithdrawalUSD: '1.00',
     minimumWithdrawalTON: '0.5',
@@ -1489,7 +1490,8 @@ function SettingsSection() {
       setSettings({
         dailyAdLimit: settingsData.dailyAdLimit?.toString() || '50',
         rewardPerAd: settingsData.rewardPerAd?.toString() || '2',
-        affiliateCommission: settingsData.affiliateCommission?.toString() || '10',
+        l1CommissionPercent: settingsData.l1CommissionPercent?.toString() || '20',
+        l2CommissionPercent: settingsData.l2CommissionPercent?.toString() || '4',
         walletChangeFee: settingsData.walletChangeFee?.toString() || '100',
         minimumWithdrawalUSD: settingsData.minimumWithdrawalUSD?.toString() || '1.00',
         minimumWithdrawalTON: settingsData.minimumWithdrawalTON?.toString() || '0.5',
@@ -1543,7 +1545,6 @@ function SettingsSection() {
   const handleSaveSettings = async () => {
     const adLimit = parseInt(settings.dailyAdLimit);
     const reward = parseInt(settings.rewardPerAd);
-    const affiliate = parseFloat(settings.affiliateCommission);
     const walletFee = parseInt(settings.walletChangeFee);
     const minWithdrawalUSD = parseFloat(settings.minimumWithdrawalUSD);
     const minWithdrawalTON = parseFloat(settings.minimumWithdrawalTON);
@@ -1584,7 +1585,8 @@ function SettingsSection() {
       const response = await apiRequest('PUT', '/api/admin/settings', {
         dailyAdLimit: adLimit,
         rewardPerAd: reward,
-        affiliateCommission: affiliate,
+        l1CommissionPercent: parseFloat(settings.l1CommissionPercent) || 20,
+        l2CommissionPercent: parseFloat(settings.l2CommissionPercent) || 4,
         walletChangeFee: walletFee,
         minimumWithdrawalUSD: minWithdrawalUSD,
         minimumWithdrawalTON: minWithdrawalTON,
@@ -1717,22 +1719,42 @@ function SettingsSection() {
         {activeCategory === 'affiliates' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="affiliate-commission" className="text-sm font-semibold">
+              <Label htmlFor="l1-commission" className="text-sm font-semibold">
                 <i className="fas fa-percent mr-2 text-green-600"></i>
-                Affiliate Commission (%)
+                Level 1 Commission (%)
               </Label>
               <Input
-                id="affiliate-commission"
+                id="l1-commission"
                 type="number"
-                value={settings.affiliateCommission}
-                onChange={(e) => setSettings({ ...settings, affiliateCommission: e.target.value })}
-                placeholder="10"
+                value={settings.l1CommissionPercent}
+                onChange={(e) => setSettings({ ...settings, l1CommissionPercent: e.target.value })}
+                placeholder="20"
                 min="0"
                 max="100"
                 step="0.1"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.affiliateCommission || 10}%
+                Direct referrals. Current: {settingsData?.l1CommissionPercent || 20}%
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="l2-commission" className="text-sm font-semibold">
+                <i className="fas fa-percent mr-2 text-blue-500"></i>
+                Level 2 Commission (%)
+              </Label>
+              <Input
+                id="l2-commission"
+                type="number"
+                value={settings.l2CommissionPercent}
+                onChange={(e) => setSettings({ ...settings, l2CommissionPercent: e.target.value })}
+                placeholder="4"
+                min="0"
+                max="100"
+                step="0.1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Referrals of referrals. Current: {settingsData?.l2CommissionPercent || 4}%
               </p>
             </div>
 
