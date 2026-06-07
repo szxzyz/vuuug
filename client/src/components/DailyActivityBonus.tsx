@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Clock } from "lucide-react";
@@ -12,18 +12,26 @@ const MILESTONES = [
   { ads: 500, bugReward: null, usdReward: 0.01,  label: "$0.01",   isBug: false },
 ];
 
-function useCountdown() {
-  const [timeStr, setTimeStr] = useState("00:00:00");
+function useCountdown(targetIso: string | undefined, onReset?: () => void) {
+  const [timeStr, setTimeStr] = useState("--:--:--");
+  const hasFiredRef = useRef(false);
 
   useEffect(() => {
+    if (!targetIso) return;
+    hasFiredRef.current = false;
+
+    const targetMs = new Date(targetIso).getTime();
+
     const tick = () => {
-      const now = new Date();
-      const next = new Date();
-      next.setUTCHours(12, 0, 0, 0);
-      if (now.getUTCHours() >= 12) {
-        next.setUTCDate(next.getUTCDate() + 1);
+      const diff = targetMs - Date.now();
+      if (diff <= 1000) {
+        setTimeStr("00:00:00");
+        if (!hasFiredRef.current) {
+          hasFiredRef.current = true;
+          onReset?.();
+        }
+        return;
       }
-      const diff = next.getTime() - now.getTime();
       const h = Math.floor(diff / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
@@ -31,17 +39,17 @@ function useCountdown() {
         `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
       );
     };
+
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [targetIso]);
 
   return timeStr;
 }
 
 export default function DailyActivityBonus({ user }: { user: any }) {
   const queryClient = useQueryClient();
-  const countdown = useCountdown();
 
   const { data: bonusStatus, isLoading } = useQuery({
     queryKey: ["/api/daily-bonus/status"],
@@ -49,7 +57,13 @@ export default function DailyActivityBonus({ user }: { user: any }) {
       const res = await apiRequest("GET", "/api/daily-bonus/status");
       return res.json();
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000,
+  });
+
+  const countdown = useCountdown(bonusStatus?.nextResetAt, () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/daily-bonus/status"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
   });
 
   const claimMutation = useMutation({
@@ -98,7 +112,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
 
   return (
     <div className="mb-3 px-1">
-      {/* Section header — matches home page style */}
+      {/* Section header */}
       <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
         Daily Activity Bonus
       </p>
@@ -106,7 +120,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
         Watch more ads — earn extra rewards daily
       </p>
 
-      {/* Milestone rows — minimal cards like home stats */}
+      {/* Milestone rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {MILESTONES.map((m, i) => {
           const reached = adsWatched >= m.ads;
@@ -126,7 +140,6 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 opacity: reached ? 1 : isNext ? 1 : 0.55,
               }}
             >
-              {/* Status dot */}
               <div
                 style={{
                   width: 8,
@@ -141,12 +154,10 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 }}
               />
 
-              {/* Ads count label */}
               <span style={{ fontSize: 13, fontWeight: 700, color: reached ? '#22c55e' : isNext ? '#fff' : 'rgba(255,255,255,0.5)', minWidth: 46 }}>
                 {m.ads} ads
               </span>
 
-              {/* Progress bar (only for next target) */}
               {isNext && (
                 <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99, overflow: 'hidden' }}>
                   <div
@@ -155,10 +166,8 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 </div>
               )}
 
-              {/* Spacer if not next */}
               {!isNext && <div style={{ flex: 1 }} />}
 
-              {/* Reward label */}
               <span style={{
                 fontSize: 13,
                 fontWeight: 800,
@@ -168,7 +177,6 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 {m.label}
               </span>
 
-              {/* Checkmark if reached */}
               {reached && (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <path d="M5 13l4 4L19 7" />
@@ -179,7 +187,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
         })}
       </div>
 
-      {/* Timer + current bonus row */}
+      {/* Timer + bonus row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 4, paddingLeft: 2, paddingRight: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Clock style={{ width: 13, height: 13, color: 'rgba(255,255,255,0.3)' }} />
@@ -196,7 +204,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
         )}
       </div>
 
-      {/* Get A Bonus button — matches home page btn-primary style */}
+      {/* Claim button */}
       <button
         onClick={() => claimMutation.mutate()}
         disabled={claimMutation.isPending || claimedToday || isLoading || !canClaim}

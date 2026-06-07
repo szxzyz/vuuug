@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAdmin } from "@/hooks/useAdmin";
 import { motion, AnimatePresence } from "framer-motion";
-import { HeartHandshake, CircleDollarSign, User, Play } from "lucide-react";
+import { HeartHandshake, User, Play, ListTodo } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import { useSeasonEnd } from "@/lib/SeasonEndContext";
@@ -30,7 +30,7 @@ export default function Layout({ children }: LayoutProps) {
   const navItems = [
     { href: "/watch", icon: Play, label: "WATCH" },
     { href: "/affiliates", icon: HeartHandshake, label: "INVITE" },
-    { href: "/withdraw", icon: CircleDollarSign, label: "PAYOUT" },
+    { href: "/missions", icon: ListTodo, label: "MISSIONS" },
   ];
 
   // Get photo from Telegram WebApp first, then fallback to user data
@@ -42,7 +42,7 @@ export default function Layout({ children }: LayoutProps) {
     <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
       {!showSeasonEnd && <Header />}
       
-      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '100px', paddingTop: '68px' }}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '88px', paddingTop: '68px' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location}
@@ -88,7 +88,7 @@ export default function Layout({ children }: LayoutProps) {
                   </div>
                 )}
                 <span className={`text-[10px] font-semibold tracking-wide uppercase ${isHomeActive ? 'opacity-100' : 'opacity-70'}`}>
-                  EARN
+                  HOME
                 </span>
               </button>
             </Link>

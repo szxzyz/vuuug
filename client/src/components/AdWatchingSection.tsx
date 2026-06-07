@@ -69,22 +69,20 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     },
   });
 
-  const showMonetagAd = (): Promise<{ success: boolean; watchedFully: boolean; unavailable: boolean }> => {
+  const showMonetagAd = (): Promise<{ success: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
       if (typeof window.show_10401872 === 'function') {
         monetagStartTimeRef.current = Date.now();
         window.show_10401872()
           .then(() => {
-            const watchDuration = Date.now() - monetagStartTimeRef.current;
-            resolve({ success: true, watchedFully: watchDuration >= 3000, unavailable: false });
+            resolve({ success: true, unavailable: false });
           })
           .catch((error) => {
             console.error('Monetag ad error:', error);
-            const watchDuration = Date.now() - monetagStartTimeRef.current;
-            resolve({ success: false, watchedFully: watchDuration >= 3000, unavailable: false });
+            resolve({ success: false, unavailable: false });
           });
       } else {
-        resolve({ success: false, watchedFully: false, unavailable: true });
+        resolve({ success: false, unavailable: true });
       }
     });
   };
@@ -104,18 +102,12 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         return;
       }
 
-      if (!monetagResult.watchedFully) {
-        showNotification("Claimed too fast!", "error");
-        return;
-      }
-
       if (!monetagResult.success) {
         showNotification("Ad failed. Please try again.", "error");
         return;
       }
 
       setCurrentAdStep('verifying');
-      await new Promise(resolve => setTimeout(resolve, 300));
 
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
