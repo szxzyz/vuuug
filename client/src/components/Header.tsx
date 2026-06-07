@@ -24,7 +24,7 @@ export default function Header() {
   const fallbackUrl = user?.profileImageUrl || user?.profileUrl || null;
 
   const usdBalance = parseFloat(user?.usdBalance || "0");
-  const usdFormatted = usdBalance.toFixed(7);
+  const usdFormatted = usdBalance.toFixed(3);
 
   return (
     <div className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 h-16">
