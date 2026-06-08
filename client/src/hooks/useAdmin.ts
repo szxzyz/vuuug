@@ -1,21 +1,49 @@
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "./useAuth";
 
+export type AdminPermission =
+  | 'view_stats'
+  | 'manage_users'
+  | 'manage_withdrawals'
+  | 'manage_tasks'
+  | 'manage_settings'
+  | 'manage_promos'
+  | 'manage_admins'
+  | 'manage_bans';
+
+export type AdminRole = 'super_admin' | 'finance' | 'moderator' | 'content';
+
+interface AdminCheckResponse {
+  isAdmin: boolean;
+  role: AdminRole | null;
+  permissions: AdminPermission[];
+  name: string | null;
+}
+
 export function useAdmin() {
-  const { user, isLoading } = useAuth();
-  
-  // Check if current user is admin based on their Telegram ID
-  // In development mode, allow test user to be admin
-  const telegramId = (user as any)?.telegram_id || (user as any)?.telegramId;
-  const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'development';
-  
-  const isAdmin = telegramId === (import.meta.env.VITE_ADMIN_TELEGRAM_ID || "6653616672") || 
-                  (telegramId === "123456789" && isDevelopment);
-  
-  console.log('🔍 Admin check:', { telegramId, isDevelopment, isAdmin, user: !!user });
-  
+  const { user, isLoading: authLoading } = useAuth();
+
+  const { data, isLoading: checkLoading } = useQuery<AdminCheckResponse>({
+    queryKey: ["/api/admin/check"],
+    enabled: !!user,
+    staleTime: 30_000,
+  });
+
+  const isAdmin = data?.isAdmin ?? false;
+  const role = data?.role ?? null;
+  const permissions = data?.permissions ?? [];
+  const adminName = data?.name ?? null;
+
+  const can = (permission: AdminPermission): boolean =>
+    isAdmin && permissions.includes(permission);
+
   return {
     isAdmin,
-    isLoading,
-    user
+    role,
+    permissions,
+    adminName,
+    can,
+    isLoading: authLoading || checkLoading,
+    user,
   };
 }
