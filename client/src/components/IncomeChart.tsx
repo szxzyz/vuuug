@@ -29,6 +29,14 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "month", label: "Month" },
 ];
 
+const USD_TO_POW = 10_000_000;
+
+function formatPOW(val: number): string {
+  if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + "M";
+  if (val >= 1_000) return (val / 1_000).toFixed(0) + "K";
+  return val.toFixed(0);
+}
+
 function generateDateRange(period: Period): string[] {
   const days = period === "week" ? 7 : period === "2weeks" ? 14 : 31;
   const dates: string[] = [];
@@ -45,6 +53,8 @@ function generateDateRange(period: Period): string[] {
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
+    const powVal = payload[0].value as number;
+    const usdVal = powVal / USD_TO_POW;
     return (
       <div
         style={{
@@ -56,7 +66,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
       >
         <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, marginBottom: 2 }}>{label}</p>
         <p style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>
-          ${payload[0].value.toFixed(4)}
+          {formatPOW(powVal)} POW
+        </p>
+        <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 10 }}>
+          ≈ ${usdVal.toFixed(5)}
         </p>
       </div>
     );
@@ -82,16 +95,20 @@ export default function IncomeChart({ title, subtitle, apiEndpoint }: IncomeChar
 
   const chartData = dateRange.map((dateLabel) => {
     const found = (rawData || []).find((d) => d.date === dateLabel);
+    const usdAmount = found ? found.amount : 0;
     return {
       date: dateLabel,
-      amount: found ? found.amount : 0,
+      amount: Math.round(usdAmount * USD_TO_POW),
     };
   });
+
+  const maxVal = Math.max(...chartData.map(d => d.amount), 1);
+  const yMax = Math.ceil(maxVal / 1000) * 1000 || 10000;
 
   const tickInterval = period === "week" ? 0 : period === "2weeks" ? 1 : 3;
 
   return (
-    <div className="mb-2 px-1">
+    <div className="mb-1 px-1">
       <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>{title}</p>
       <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 16 }}>{subtitle}</p>
 
@@ -101,7 +118,7 @@ export default function IncomeChart({ title, subtitle, apiEndpoint }: IncomeChar
           background: "#1C1C1E",
           borderRadius: 999,
           padding: "3px",
-          marginBottom: 24,
+          marginBottom: 20,
         }}
       >
         {PERIODS.map((p) => (
@@ -126,8 +143,8 @@ export default function IncomeChart({ title, subtitle, apiEndpoint }: IncomeChar
         ))}
       </div>
 
-      <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={chartData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={200}>
+        <LineChart data={chartData} margin={{ top: 5, right: 8, left: -14, bottom: 0 }}>
           <CartesianGrid stroke="rgba(255,255,255,0.07)" strokeDasharray="0" vertical={false} />
           <XAxis
             dataKey="date"
@@ -137,12 +154,11 @@ export default function IncomeChart({ title, subtitle, apiEndpoint }: IncomeChar
             interval={tickInterval}
           />
           <YAxis
-            domain={[0, 2]}
-            ticks={[0, 0.5, 1, 1.5, 2]}
+            domain={[0, yMax]}
             tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 10, fontWeight: 500 }}
             axisLine={false}
             tickLine={false}
-            tickFormatter={(v) => (v === 0 ? "0" : v.toString())}
+            tickFormatter={(v) => formatPOW(v)}
           />
           <Tooltip content={<CustomTooltip />} cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }} />
           <Line

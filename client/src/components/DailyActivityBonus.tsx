@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Clock } from "lucide-react";
+import { Clock, Bug } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 const MILESTONES = [
-  { ads: 100, bugReward: 100,  usdReward: null,  label: "✦ 100",   isBug: true },
-  { ads: 200, bugReward: 500,  usdReward: null,  label: "✦ 500",   isBug: true },
-  { ads: 300, bugReward: 1000, usdReward: null,  label: "✦ 1000",  isBug: true },
-  { ads: 400, bugReward: null, usdReward: 0.005, label: "$0.005",  isBug: false },
-  { ads: 500, bugReward: null, usdReward: 0.01,  label: "$0.01",   isBug: false },
+  { ads: 100, bugReward: 100,  usdReward: null,  label: "100 BUG",   isBug: true },
+  { ads: 200, bugReward: 500,  usdReward: null,  label: "500 BUG",   isBug: true },
+  { ads: 300, bugReward: 1000, usdReward: null,  label: "1000 BUG",  isBug: true },
+  { ads: 400, bugReward: null, usdReward: 0.005, label: "$0.005",    isBug: false },
+  { ads: 500, bugReward: null, usdReward: 0.01,  label: "$0.01",     isBug: false },
 ];
 
 function useCountdown(targetIso: string | undefined, onReset?: () => void) {
@@ -81,7 +81,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
       const m = MILESTONES[data.milestoneIndex];
       if (m) {
         showNotification(
-          m.isBug ? `+${m.bugReward} BUG claimed!` : `+${m.usdReward} USD claimed!`,
+          m.isBug ? `+${m.bugReward} BUG added to your balance!` : `+${m.usdReward} USD earned!`,
           "success"
         );
       }
@@ -102,17 +102,10 @@ export default function DailyActivityBonus({ user }: { user: any }) {
   const claimedToday: boolean = bonusStatus?.claimedToday ?? false;
 
   const currentMilestone = currentMilestoneIndex >= 0 ? MILESTONES[currentMilestoneIndex] : null;
-  const currentBonusLabel = currentMilestone
-    ? currentMilestone.isBug
-      ? `✦ ${currentMilestone.bugReward}`
-      : currentMilestone.label
-    : null;
-
   const canClaim = !!currentMilestone && !claimedToday;
 
   return (
     <div className="mb-3 px-1">
-      {/* Section header */}
       <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
         Daily Activity Bonus
       </p>
@@ -120,7 +113,6 @@ export default function DailyActivityBonus({ user }: { user: any }) {
         Watch more ads — earn extra rewards daily
       </p>
 
-      {/* Milestone rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {MILESTONES.map((m, i) => {
           const reached = adsWatched >= m.ads;
@@ -173,7 +165,13 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 fontWeight: 800,
                 color: reached ? '#22c55e' : isNext ? '#fff' : 'rgba(255,255,255,0.4)',
                 letterSpacing: '-0.2px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 3,
               }}>
+                {m.isBug && (
+                  <Bug style={{ width: 11, height: 11, color: reached ? '#22c55e' : isNext ? '#4ade80' : 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
+                )}
                 {m.label}
               </span>
 
@@ -187,24 +185,25 @@ export default function DailyActivityBonus({ user }: { user: any }) {
         })}
       </div>
 
-      {/* Timer + bonus row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 4, paddingLeft: 2, paddingRight: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Clock style={{ width: 13, height: 13, color: 'rgba(255,255,255,0.3)' }} />
           <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.45)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
             {countdown}
           </span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontWeight: 500 }}>resets</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontWeight: 500 }}>resets at 12:00 UTC</span>
         </div>
-        {currentBonusLabel && (
+        {currentMilestone && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>Bonus</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>{currentBonusLabel}</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 3 }}>
+              {currentMilestone.isBug && <Bug style={{ width: 11, height: 11, color: '#4ade80' }} />}
+              {currentMilestone.label}
+            </span>
           </div>
         )}
       </div>
 
-      {/* Claim button */}
       <button
         onClick={() => claimMutation.mutate()}
         disabled={claimMutation.isPending || claimedToday || isLoading || !canClaim}
