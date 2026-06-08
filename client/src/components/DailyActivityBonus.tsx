@@ -5,9 +5,9 @@ import { Clock, Bug } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 const MILESTONES = [
-  { ads: 100, bugReward: 100,  usdReward: null,  label: "100 BUG",   isBug: true },
-  { ads: 200, bugReward: 500,  usdReward: null,  label: "500 BUG",   isBug: true },
-  { ads: 300, bugReward: 1000, usdReward: null,  label: "1000 BUG",  isBug: true },
+  { ads: 100, bugReward: 100,  usdReward: null,  label: "100 STAR",   isBug: true },
+  { ads: 200, bugReward: 500,  usdReward: null,  label: "500 STAR",   isBug: true },
+  { ads: 300, bugReward: 1000, usdReward: null,  label: "1000 STAR",  isBug: true },
   { ads: 400, bugReward: null, usdReward: 0.005, label: "$0.005",    isBug: false },
   { ads: 500, bugReward: null, usdReward: 0.01,  label: "$0.01",     isBug: false },
 ];
@@ -81,7 +81,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
       const m = MILESTONES[data.milestoneIndex];
       if (m) {
         showNotification(
-          m.isBug ? `+${m.bugReward} BUG added to your balance!` : `+${m.usdReward} USD earned!`,
+          m.isBug ? `+${m.bugReward} STAR added to your balance!` : `+${m.usdReward} USD earned!`,
           "success"
         );
       }
