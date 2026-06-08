@@ -18,7 +18,8 @@ import {
   taskClicks,
   spinData,
   spinHistory,
-  dailyMissions
+  dailyMissions,
+  adminRoles
 } from "../shared/schema";
 import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
@@ -210,6 +211,45 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
 };
 
 // Authentication middleware has been moved to server/auth.ts for better organization
+
+// All permissions available in the system
+const ALL_PERMISSIONS = [
+  'view_stats',
+  'manage_users',
+  'manage_withdrawals',
+  'manage_tasks',
+  'manage_settings',
+  'manage_promos',
+  'manage_admins',
+  'manage_bans',
+];
+
+const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
+  super_admin: ALL_PERMISSIONS,
+  finance: ['view_stats', 'manage_withdrawals'],
+  moderator: ['view_stats', 'manage_users', 'manage_bans'],
+  content: ['view_stats', 'manage_tasks'],
+};
+
+// Get the role + permissions for an admin telegram ID
+// Primary admins (from env) always get super_admin; others are DB-driven
+async function getAdminRole(telegramId: string): Promise<{ role: string; permissions: string[]; name: string } | null> {
+  if (!telegramId) return null;
+  if (!isAdmin(telegramId)) return null;
+
+  // Check DB record first
+  try {
+    const [record] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramId)).limit(1);
+    if (record) {
+      let perms: string[] = [];
+      try { perms = JSON.parse(record.permissions || '[]'); } catch { perms = ROLE_DEFAULT_PERMISSIONS[record.role] || []; }
+      return { role: record.role, permissions: perms, name: record.name || 'Admin' };
+    }
+  } catch { /* no DB record */ }
+
+  // Not in DB — grant super_admin if they're in the env var list
+  return { role: 'super_admin', permissions: ALL_PERMISSIONS, name: 'Super Admin' };
+}
 
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -3106,6 +3146,163 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Admin identity check — returns whether the current user is an admin
+  // Uses the server-side isAdmin() which reads TELEGRAM_ADMIN_IDS (comma-separated)
+  // Returns: { isAdmin, role, permissions, name }
+  app.get('/api/admin/check', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id;
+      if (!userId) return res.json({ isAdmin: false, role: null, permissions: [], name: null });
+      const user = await storage.getUser(userId);
+      const telegramId = user?.telegram_id || '';
+      const adminStatus = isAdmin(telegramId);
+      const devStatus = process.env.NODE_ENV === 'development' && telegramId === '123456789';
+      if (!adminStatus && !devStatus) {
+        return res.json({ isAdmin: false, role: null, permissions: [], name: null });
+      }
+      const roleInfo = await getAdminRole(telegramId);
+      return res.json({
+        isAdmin: true,
+        role: roleInfo?.role ?? 'super_admin',
+        permissions: roleInfo?.permissions ?? [],
+        name: roleInfo?.name ?? 'Admin',
+      });
+    } catch {
+      return res.json({ isAdmin: false, role: null, permissions: [], name: null });
+    }
+  });
+
+  // --- Admin Role Management ---
+
+  // List all admins (from both env + DB)
+  app.get('/api/admin/admins', authenticateAdmin, async (req: any, res) => {
+    try {
+      const callerTelegramId = req.user?.telegramUser?.id?.toString() || '';
+      const callerRole = await getAdminRole(callerTelegramId);
+      if (!callerRole?.permissions.includes('manage_admins')) {
+        return res.status(403).json({ message: 'Permission denied: manage_admins required' });
+      }
+
+      // Env-configured admins (always present)
+      const envIds = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+
+      // DB admin records
+      const dbRecords = await db.select().from(adminRoles).orderBy(adminRoles.createdAt);
+
+      // Merge: DB records override env defaults
+      const dbById = new Map(dbRecords.map(r => [r.telegramId, r]));
+
+      const list = envIds.map(id => {
+        const rec = dbById.get(id);
+        return {
+          telegramId: id,
+          name: rec?.name || 'Super Admin',
+          role: rec?.role || 'super_admin',
+          permissions: (() => { try { return JSON.parse(rec?.permissions || '[]'); } catch { return ALL_PERMISSIONS; } })(),
+          addedBy: rec?.addedBy || null,
+          isPrimary: true,
+          createdAt: rec?.createdAt || null,
+        };
+      });
+
+      // Add DB admins not in env
+      dbRecords.forEach(rec => {
+        if (!envIds.includes(rec.telegramId)) {
+          list.push({
+            telegramId: rec.telegramId,
+            name: rec.name || 'Admin',
+            role: rec.role,
+            permissions: (() => { try { return JSON.parse(rec.permissions || '[]'); } catch { return []; } })(),
+            addedBy: rec.addedBy || null,
+            isPrimary: false,
+            createdAt: rec.createdAt || null,
+          });
+        }
+      });
+
+      res.json({ admins: list });
+    } catch (error) {
+      console.error('Error listing admins:', error);
+      res.status(500).json({ message: 'Failed to list admins' });
+    }
+  });
+
+  // Add or update an admin
+  app.post('/api/admin/admins', authenticateAdmin, async (req: any, res) => {
+    try {
+      const callerTelegramId = req.user?.telegramUser?.id?.toString() || '';
+      const callerRole = await getAdminRole(callerTelegramId);
+      if (!callerRole?.permissions.includes('manage_admins')) {
+        return res.status(403).json({ message: 'Permission denied: manage_admins required' });
+      }
+
+      const { telegramId, name, role, permissions } = req.body;
+      if (!telegramId || !role) {
+        return res.status(400).json({ message: 'telegramId and role are required' });
+      }
+      if (!['super_admin', 'finance', 'moderator', 'content'].includes(role)) {
+        return res.status(400).json({ message: 'Invalid role' });
+      }
+
+      const permsToSave = Array.isArray(permissions)
+        ? permissions
+        : (ROLE_DEFAULT_PERMISSIONS[role] || []);
+
+      await db.insert(adminRoles).values({
+        telegramId: telegramId.toString(),
+        name: name || 'Admin',
+        role,
+        permissions: JSON.stringify(permsToSave),
+        addedBy: callerTelegramId,
+      }).onConflictDoUpdate({
+        target: adminRoles.telegramId,
+        set: {
+          name: name || 'Admin',
+          role,
+          permissions: JSON.stringify(permsToSave),
+          updatedAt: new Date(),
+        }
+      });
+
+      res.json({ success: true, message: 'Admin saved' });
+    } catch (error) {
+      console.error('Error saving admin:', error);
+      res.status(500).json({ message: 'Failed to save admin' });
+    }
+  });
+
+  // Remove an admin from DB (only DB-added admins can be removed; env admins just get reset to super_admin)
+  app.delete('/api/admin/admins/:telegramId', authenticateAdmin, async (req: any, res) => {
+    try {
+      const callerTelegramId = req.user?.telegramUser?.id?.toString() || '';
+      const callerRole = await getAdminRole(callerTelegramId);
+      if (!callerRole?.permissions.includes('manage_admins')) {
+        return res.status(403).json({ message: 'Permission denied: manage_admins required' });
+      }
+
+      const targetId = req.params.telegramId;
+
+      // Prevent self-removal
+      if (targetId === callerTelegramId) {
+        return res.status(400).json({ message: 'Cannot remove yourself' });
+      }
+
+      // Check if it's an env admin
+      const envIds = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      if (envIds.includes(targetId)) {
+        return res.status(400).json({ message: 'Cannot remove primary env admin. Remove from TELEGRAM_ADMIN_IDS env var instead.' });
+      }
+
+      await db.delete(adminRoles).where(eq(adminRoles.telegramId, targetId));
+      res.json({ success: true, message: 'Admin removed' });
+    } catch (error) {
+      console.error('Error removing admin:', error);
+      res.status(500).json({ message: 'Failed to remove admin' });
+    }
+  });
+
   // Admin stats endpoint
   app.get('/api/admin/stats', authenticateAdmin, async (req: any, res) => {
     try {
@@ -3775,8 +3972,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Verify the user is the admin
-      if (telegramUser.id.toString() !== adminTelegramId) {
-        console.log(`❌ Self-unban denied: User ${telegramUser.id} is not admin ${adminTelegramId}`);
+      if (!isAdmin(telegramUser.id.toString())) {
+        console.log(`❌ Self-unban denied: User ${telegramUser.id} is not admin`);
         return res.status(403).json({ success: false, message: "Only admin can use this feature" });
       }
       
@@ -5339,7 +5536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const userIsAdmin = userData.telegram_id === process.env.TELEGRAM_ADMIN_ID || 
+      const userIsAdmin = isAdmin(userData.telegram_id || '') ||
                           (process.env.NODE_ENV === 'development' && userData.telegram_id === '123456789');
 
       // Partner tasks can only be created by admin
@@ -5712,12 +5909,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const isAdmin = user.telegram_id === process.env.TELEGRAM_ADMIN_ID;
+      const userIsAdminFlag = isAdmin(user.telegram_id || '');
       const requiredAmount = parseFloat(additionalCost);
 
       // Admin users: use USD balance
       // Regular users: use TON balance
-      if (isAdmin) {
+      if (userIsAdminFlag) {
         console.log('🔑 Admin adding clicks - using USD balance');
         const [adminUserData] = await db
           .select({ usdBalance: users.usdBalance })
@@ -5933,9 +6130,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .where(eq(users.id, userId));
 
           if (user) {
-            const isAdmin = user.telegram_id === process.env.TELEGRAM_ADMIN_ID;
+            const userIsAdminFlag = isAdmin(user.telegram_id || '');
 
-            if (isAdmin) {
+            if (userIsAdminFlag) {
               // Admin: Refund to USD balance
               const [adminUser] = await tx
                 .select({ usdBalance: users.usdBalance })
@@ -5966,8 +6163,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               amount: refundAmount,
               type: "credit",
               source: "task_deletion_refund",
-              description: `Refund for deleting task: ${task.title} (${isAdmin ? 'USD' : 'TON'})`,
-              metadata: { taskId, remainingClicks, currency: isAdmin ? 'USD' : 'TON' }
+              description: `Refund for deleting task: ${task.title} (${userIsAdminFlag ? 'USD' : 'TON'})`,
+              metadata: { taskId, remainingClicks, currency: userIsAdminFlag ? 'USD' : 'TON' }
             });
           }
         }
@@ -7608,8 +7805,8 @@ ${walletAddress}
       const user = await storage.getUser(userId);
       
       // Check if user is admin
-      const isAdmin = user?.telegram_id === (process.env.TELEGRAM_ADMIN_ID || "6653616672") || (user?.telegram_id === "123456789" && process.env.NODE_ENV === 'development');
-      if (!isAdmin) {
+      const userIsAdminFlag = isAdmin(user?.telegram_id || '') || (user?.telegram_id === "123456789" && process.env.NODE_ENV === 'development');
+      if (!userIsAdminFlag) {
         return res.status(403).json({ message: 'Unauthorized: Admin access required' });
       }
       

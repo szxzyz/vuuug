@@ -6,9 +6,34 @@ import { earnings } from '../shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
 
 const isAdmin = (telegramId: string): boolean => {
-  const adminId = process.env.TELEGRAM_ADMIN_ID;
-  return adminId === telegramId;
+  const adminIdsEnv = process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '';
+  if (!adminIdsEnv) return false;
+  const adminIds = adminIdsEnv.split(',').map(id => id.trim()).filter(Boolean);
+  return adminIds.includes(telegramId.toString());
 };
+
+// Cached bot username fetched from Telegram API on startup
+let cachedBotUsername: string | null = null;
+
+export async function getBotUsername(): Promise<string> {
+  if (cachedBotUsername) return cachedBotUsername;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return process.env.BOT_USERNAME || process.env.VITE_BOT_USERNAME || 'MoneyAdzbot';
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.result?.username) {
+        cachedBotUsername = data.result.username;
+        console.log(`✅ Bot username fetched from API: @${cachedBotUsername}`);
+        return cachedBotUsername;
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ Failed to fetch bot username from API:', e);
+  }
+  return process.env.BOT_USERNAME || process.env.VITE_BOT_USERNAME || 'MoneyAdzbot';
+}
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_ADMIN_ID = process.env.TELEGRAM_ADMIN_ID;
@@ -511,7 +536,7 @@ function buildCustomEmojiMessage(parts: Array<{ text: string; emojiId?: string }
 }
 
 export async function formatWelcomeMessage(userId: string): Promise<{ message: string; entities: any[]; inlineKeyboard: any }> {
-  const botUsername = process.env.VITE_BOT_USERNAME || process.env.BOT_USERNAME || 'MoneyAdzbot';
+  const botUsername = await getBotUsername();
   const channelUrl = 'https://t.me/MoneyAdz';
 
   const { text: message, entities } = buildCustomEmojiMessage([
@@ -682,7 +707,7 @@ export async function handleInlineQuery(inlineQuery: any): Promise<boolean> {
     }
 
     // Build the referral link - use /start flow for reliable referral tracking
-    const botUsername = process.env.VITE_BOT_USERNAME || process.env.BOT_USERNAME || 'MoneyAdzbot';
+    const botUsername = await getBotUsername();
     const referralLink = `https://t.me/${botUsername}?start=${user.referralCode}`;
     
     // Get the app URL for the share banner image
@@ -833,7 +858,7 @@ export async function handleTelegramMessage(update: any): Promise<boolean> {
           const user = await storage.getUserByTelegramId(chatId);
           
           if (user && user.referralCode) {
-            const botUsername = process.env.VITE_BOT_USERNAME || 'PaidAdzbot';
+            const botUsername = await getBotUsername();
             const referralLink = `https://t.me/${botUsername}?start=${user.referralCode}`;
             
             const inviteMessage = `👫🏼 <b>Invite Your Friends!</b>
@@ -2014,8 +2039,7 @@ ${walletAddress}
       return true;
     }
 
-    // No custom emoji found in this message
-    await sendUserTelegramNotification(chatId, '❌ Is message me premium emoji nahi mila');
+    // No custom emoji found - silently ignore normal text messages
     return true;
   } catch (error) {
     console.error('Error handling Telegram message:', error);

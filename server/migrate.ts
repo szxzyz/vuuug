@@ -585,6 +585,21 @@ export async function ensureDatabaseSchema(): Promise<void> {
       ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
     `);
 
+    // Admin roles table — stores role & permissions for each admin
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS admin_roles (
+        id SERIAL PRIMARY KEY,
+        telegram_id VARCHAR(20) NOT NULL UNIQUE,
+        name VARCHAR(100) DEFAULT 'Admin',
+        role VARCHAR(30) NOT NULL DEFAULT 'moderator',
+        permissions TEXT NOT NULL DEFAULT '[]',
+        added_by VARCHAR(20),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('✅ [MIGRATION] admin_roles table ensured');
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
