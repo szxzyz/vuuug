@@ -102,6 +102,8 @@ export const users = pgTable("users", {
   // Mandatory channel/group join verification
   isChannelGroupVerified: boolean("is_channel_group_verified").default(false),
   lastMembershipCheck: timestamp("last_membership_check"),
+  dailyLoginStreak: integer("daily_login_streak").default(0),
+  lastDailyLoginDate: text("last_daily_login_date"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
