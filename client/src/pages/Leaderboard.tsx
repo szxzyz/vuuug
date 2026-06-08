@@ -7,16 +7,14 @@ import { Trophy, Users, Gem, UserPlus } from "lucide-react";
 import { formatCompactNumber } from "@shared/constants";
 import { formatCurrency } from "@/lib/utils";
 
-// Helper function to format PAD with compact notation
+// Helper function to format POW with compact notation
 const formatPADCompact = (value: string): string => {
   const numValue = parseFloat(value || '0');
-  if (isNaN(numValue)) return '0 PAD';
+  if (isNaN(numValue)) return '0 POW';
   
-  // If value is very small (< 1), it might be legacy TON format - convert to PAD
-  // Otherwise, treat as PAD integer
   const padValue = numValue < 1 ? Math.round(numValue * 10000000) : Math.round(numValue);
   
-  return `${formatCompactNumber(padValue)} PAD`;
+  return `${formatCompactNumber(padValue)} POW`;
 };
 import { useState } from "react";
 import type { User } from "@shared/schema";
@@ -105,7 +103,7 @@ export default function Leaderboard() {
               }`}
             >
               <Trophy className="w-3.5 h-3.5 mr-1.5" />
-              PAD Earners
+              POW Earners
             </Button>
             <Button
               onClick={() => setActiveTab('referrers')}
@@ -124,7 +122,7 @@ export default function Leaderboard() {
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto px-4 pt-3 pb-1">
 
-        {/* PAD Earners Ranking */}
+        {/* POW Earners Ranking */}
         {activeTab === 'earners' && (
           <div>
             {leaderboardLoading ? (
@@ -294,7 +292,7 @@ export default function Leaderboard() {
                   </div>
                 ) : (
                   <div className="text-center text-muted-foreground text-xs py-1">
-                    Start earning PAD to appear on the leaderboard
+                    Start earning POW to appear on the leaderboard
                   </div>
                 )}
               </CardContent>

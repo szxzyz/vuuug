@@ -312,7 +312,7 @@ export default function Withdraw() {
       } else if (errorMessage.toLowerCase().includes("pending")) {
         showNotification("You already have a pending withdrawal. Please wait for it to be processed.", "error");
       } else if (errorMessage.toLowerCase().includes("insufficient")) {
-        showNotification("Insufficient balance for withdrawal. Please convert PAD to USD first.", "error");
+        showNotification("Insufficient balance for withdrawal. Please convert POW to USD first.", "error");
       } else {
         showNotification(errorMessage, "error");
       }
@@ -750,7 +750,7 @@ export default function Withdraw() {
                 <div className="flex items-start gap-2 p-3 bg-[#4cd3ff]/10 rounded-lg">
                   <Info className="w-4 h-4 text-[#4cd3ff] mt-0.5 flex-shrink-0" />
                   <div className="text-xs text-[#c0c0c0]">
-                    Fee: <span className="text-[#4cd3ff] font-semibold">{walletChangeFee} PAD</span> will be deducted
+                    Fee: <span className="text-[#4cd3ff] font-semibold">{walletChangeFee} POW</span> will be deducted
                   </div>
                 </div>
               </>
@@ -823,7 +823,7 @@ export default function Withdraw() {
                     disabled={changeTonWalletMutation.isPending}
                     className="flex-1 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold"
                   >
-                    {changeTonWalletMutation.isPending ? "Processing..." : `Pay ${walletChangeFee} PAD & Confirm`}
+                    {changeTonWalletMutation.isPending ? "Processing..." : `Pay ${walletChangeFee} POW & Confirm`}
                   </Button>
                 </>
               ) : (

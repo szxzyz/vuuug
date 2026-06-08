@@ -489,7 +489,7 @@ export default function CreateTask() {
                     className="mt-1"
                   />
                   {taskType === "partner" && (
-                    <p className="text-xs text-green-400 mt-1">Partner tasks: 5 PAD reward, any link type allowed</p>
+                    <p className="text-xs text-green-400 mt-1">Partner tasks: 5 POW reward, any link type allowed</p>
                   )}
                 </div>
 

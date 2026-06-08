@@ -69,7 +69,7 @@ export default function Affiliates() {
   const padActive = referralRewardPADEnabled;
   const usdActive = referralRewardUSDEnabled;
   const bonusLabel = (padActive || usdActive)
-    ? [padActive && rewardPAD > 0 ? `${rewardPAD} PAD` : null, usdActive && rewardUSD > 0 ? `$${rewardUSD}` : null]
+    ? [padActive && rewardPAD > 0 ? `${rewardPAD} POW` : null, usdActive && rewardUSD > 0 ? `$${rewardUSD}` : null]
         .filter(Boolean).join(' + ') || null
     : null;
 
@@ -155,7 +155,7 @@ export default function Affiliates() {
         </div>
 
         {/* Referral Income Chart */}
-        <div className="mt-2 pb-2">
+        <div className="mt-2 pb-0">
           <IncomeChart
             title="REFERRAL INCOME"
             subtitle="Earnings from friends — L1 and L2 commissions"

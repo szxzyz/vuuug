@@ -222,7 +222,7 @@ export default function Home() {
       const rewardAmount = parseFloat(data.rewardEarned || '0');
       if (rewardAmount > 0) {
         const earnedPAD = Math.round(rewardAmount);
-        showNotification(`You've claimed +${earnedPAD} PAD!`, "success");
+        showNotification(`You've claimed +${earnedPAD} POW!`, "success");
       } else {
         showNotification("You've claimed your streak bonus!", "success");
       }
@@ -327,7 +327,7 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       await queryClient.refetchQueries({ queryKey: ['/api/tasks/home/unified'] });
       const padReward = Number(data.reward ?? 0);
-      showNotification(`+${padReward.toLocaleString()} PAD earned!`, 'success');
+      showNotification(`+${padReward.toLocaleString()} POW earned!`, 'success');
     },
     onError: (error: any) => {
       showNotification(error.message || 'Failed to claim reward', 'error');
@@ -412,12 +412,12 @@ export default function Home() {
       : (appSettings?.minimumConvertPadToBug || 1000);
     
     if (amount < minimumConvertPAD) {
-      showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} PAD required.`, "error");
+      showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} POW required.`, "error");
       return;
     }
 
     if (balancePAD < amount) {
-      showNotification("Insufficient PAD balance", "error");
+      showNotification("Insufficient POW balance", "error");
       return;
     }
 
@@ -559,7 +559,7 @@ export default function Home() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} PAD claimed!`, 'success');
+      showNotification(`+${data.reward} POW claimed!`, 'success');
       setShareWithFriendsStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -580,7 +580,7 @@ export default function Home() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} PAD claimed!`, 'success');
+      showNotification(`+${data.reward} POW claimed!`, 'success');
       setDailyCheckinStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -615,7 +615,7 @@ export default function Home() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} PAD claimed!`, 'success');
+      showNotification(`+${data.reward} POW claimed!`, 'success');
       setCheckForUpdatesStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -760,7 +760,7 @@ export default function Home() {
 
           {/* PAD sub-value */}
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginBottom: 16 }}>
-            {formatBalance(balancePAD)} PAD
+            {formatBalance(balancePAD)} POW
           </p>
 
           {/* Equal-width buttons */}
@@ -817,14 +817,20 @@ export default function Home() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
             <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>Today</p>
-              <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>
-                ${parseFloat((user as User)?.dailyEarnings || '0').toFixed(3)}
+              <p style={{ fontSize: 17, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
+                {formatBalance(parseFloat((user as User)?.dailyEarnings || '0') * 10000000)} POW
+              </p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginTop: 2 }}>
+                ≈${parseFloat((user as User)?.dailyEarnings || '0').toFixed(5)}
               </p>
             </div>
             <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>All time</p>
-              <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>
-                ${parseFloat((user as User)?.totalEarned || '0').toFixed(3)}
+              <p style={{ fontSize: 17, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
+                {formatBalance(parseFloat((user as User)?.totalEarned || '0') * 10000000)} POW
+              </p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginTop: 2 }}>
+                ≈${parseFloat((user as User)?.totalEarned || '0').toFixed(5)}
               </p>
             </div>
           </div>
@@ -858,7 +864,7 @@ export default function Home() {
         </div>
 
         {/* Total Income Chart */}
-        <div className="mt-3 pb-2">
+        <div className="mt-3 pb-0">
           <IncomeChart
             title="TOTAL INCOME"
             subtitle="Earnings statistics from all sources"
@@ -885,7 +891,7 @@ export default function Home() {
                     <p className="text-white text-sm font-medium truncate">Share with Friends</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.referralRewardPAD || '5'} PAD</span></p>
+                    <p>Reward: <span className="text-white font-medium">{appSettings?.referralRewardPAD || '5'} POW</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -920,7 +926,7 @@ export default function Home() {
                     <p className="text-white text-sm font-medium truncate">Daily Check-in</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.dailyCheckinReward || '5'} PAD</span></p>
+                    <p>Reward: <span className="text-white font-medium">{appSettings?.dailyCheckinReward || '5'} POW</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -961,7 +967,7 @@ export default function Home() {
                     <p className="text-white text-sm font-medium truncate">Check for Updates</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.checkForUpdatesReward || '5'} PAD</span></p>
+                    <p>Reward: <span className="text-white font-medium">{appSettings?.checkForUpdatesReward || '5'} POW</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -1020,7 +1026,7 @@ export default function Home() {
               <div className="p-5 space-y-5">
                 <div className="text-center space-y-0.5">
                   <h2 className="text-lg font-bold text-white">Convert Currency</h2>
-                  <p className="text-xs text-white/50">Convert your PAD to other currencies</p>
+                  <p className="text-xs text-white/50">Convert your POW to other currencies</p>
                 </div>
 
                 <div className="space-y-3">
@@ -1055,7 +1061,7 @@ export default function Home() {
                     </div>
                     <Input
                       type="number"
-                      placeholder="Enter PAD amount"
+                      placeholder="Enter POW amount"
                       value={convertAmount}
                       onChange={(e) => setConvertAmount(e.target.value)}
                       className="w-full bg-white/5 border-white/10 h-11 pl-10 pr-16 text-sm font-bold text-white rounded-xl focus:ring-1 focus:ring-blue-500/50 transition-all"
@@ -1071,8 +1077,8 @@ export default function Home() {
                   <div className="flex items-center justify-between px-1 text-[9px] font-medium uppercase tracking-wider text-white/40">
                     <span>Min: {selectedConvertType === 'USD'
                         ? (appSettings?.minimumConvertPAD || 100).toLocaleString()
-                        : (appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} PAD</span>
-                    <span>Bal: {balancePAD.toLocaleString()}</span>
+                        : (appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} POW</span>
+                    <span>Bal: {balancePAD.toLocaleString()} POW</span>
                   </div>
                 </div>
 
