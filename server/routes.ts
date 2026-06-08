@@ -3197,8 +3197,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralRewardPADEnabled: getSetting('referral_reward_pad_enabled', 'false') === 'true',
         referralRewardUSDEnabled: getSetting('referral_reward_usd_enabled', 'false') === 'true',
         referralAdsRequired: parseInt(getSetting('referral_ads_required', '1')),
-        l1CommissionPercent: parseFloat(getSetting('l1_commission_percent', '20')),
-        l2CommissionPercent: parseFloat(getSetting('l2_commission_percent', '4')),
         // Daily task rewards
         streakReward: parseInt(getSetting('streak_reward', '100')),
         shareTaskReward: parseInt(getSetting('share_task_reward', '1000')),
@@ -3758,9 +3756,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      const adminTelegramId = process.env.TELEGRAM_ADMIN_ID;
+      const adminIds = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '').split(',').map(id => id.trim()).filter(Boolean);
       
-      if (!botToken || !adminTelegramId) {
+      if (!botToken || adminIds.length === 0) {
         console.error('❌ Self-unban failed: Missing bot token or admin ID config');
         return res.status(500).json({ success: false, message: "Server configuration error" });
       }
@@ -3774,9 +3772,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ success: false, message: "Invalid authentication" });
       }
       
-      // Verify the user is the admin
-      if (telegramUser.id.toString() !== adminTelegramId) {
-        console.log(`❌ Self-unban denied: User ${telegramUser.id} is not admin ${adminTelegramId}`);
+      // Verify the user is an admin
+      if (!isAdmin(telegramUser.id.toString())) {
+        console.log(`❌ Self-unban denied: User ${telegramUser.id} is not an admin`);
         return res.status(403).json({ success: false, message: "Only admin can use this feature" });
       }
       
@@ -3784,7 +3782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [adminUser] = await db
         .select({ id: users.id, banned: users.banned })
         .from(users)
-        .where(eq(users.telegram_id, adminTelegramId));
+        .where(eq(users.telegram_id, telegramUser.id.toString()));
       
       if (!adminUser) {
         return res.status(404).json({ success: false, message: "Admin user not found" });
@@ -5339,7 +5337,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const userIsAdmin = userData.telegram_id === process.env.TELEGRAM_ADMIN_ID || 
+      const userIsAdmin = isAdmin(userData.telegram_id || '') || 
                           (process.env.NODE_ENV === 'development' && userData.telegram_id === '123456789');
 
       // Partner tasks can only be created by admin
@@ -5712,12 +5710,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const isAdmin = user.telegram_id === process.env.TELEGRAM_ADMIN_ID;
+      const userIsAdminFlag = isAdmin(user.telegram_id || '');
       const requiredAmount = parseFloat(additionalCost);
 
       // Admin users: use USD balance
       // Regular users: use TON balance
-      if (isAdmin) {
+      if (userIsAdminFlag) {
         console.log('🔑 Admin adding clicks - using USD balance');
         const [adminUserData] = await db
           .select({ usdBalance: users.usdBalance })
@@ -5933,9 +5931,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .where(eq(users.id, userId));
 
           if (user) {
-            const isAdmin = user.telegram_id === process.env.TELEGRAM_ADMIN_ID;
+            const userIsAdminForRefund = isAdmin(user.telegram_id || '');
 
-            if (isAdmin) {
+            if (userIsAdminForRefund) {
               // Admin: Refund to USD balance
               const [adminUser] = await tx
                 .select({ usdBalance: users.usdBalance })
@@ -5966,8 +5964,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               amount: refundAmount,
               type: "credit",
               source: "task_deletion_refund",
-              description: `Refund for deleting task: ${task.title} (${isAdmin ? 'USD' : 'TON'})`,
-              metadata: { taskId, remainingClicks, currency: isAdmin ? 'USD' : 'TON' }
+              description: `Refund for deleting task: ${task.title} (${userIsAdminForRefund ? 'USD' : 'TON'})`,
+              metadata: { taskId, remainingClicks, currency: userIsAdminForRefund ? 'USD' : 'TON' }
             });
           }
         }
@@ -6620,20 +6618,23 @@ ${walletAddress}
         ]]
       };
 
-      // Send message with inline buttons to admin
-      if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_ADMIN_ID) {
-        fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: process.env.TELEGRAM_ADMIN_ID,
-            text: adminMessage,
-            parse_mode: 'HTML',
-            reply_markup: inlineKeyboard
-          })
-        }).catch(err => {
-          console.error('❌ Failed to send admin notification:', err);
-        });
+      // Send message with inline buttons to all admins
+      const notifAdminIds = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '').split(',').map(id => id.trim()).filter(Boolean);
+      if (process.env.TELEGRAM_BOT_TOKEN && notifAdminIds.length > 0) {
+        for (const adminId of notifAdminIds) {
+          fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: adminId,
+              text: adminMessage,
+              parse_mode: 'HTML',
+              reply_markup: inlineKeyboard
+            })
+          }).catch(err => {
+            console.error(`❌ Failed to send admin notification to ${adminId}:`, err);
+          });
+        }
       }
       
       // Send notification to PaidAdzGroup for withdrawal requests (same format as admin notification)

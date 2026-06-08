@@ -536,7 +536,7 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
       [
         {
           text: "⚡️ Open App",
-          web_app: { url: `https://t.me/${botUsername}/MyWAdz` }
+          url: `https://t.me/${botUsername}/MyWAdz`
         }
       ],
       [
