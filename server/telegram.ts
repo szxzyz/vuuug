@@ -486,47 +486,71 @@ export async function sendSharePhotoToChat(
   }
 }
 
-export async function formatWelcomeMessage(userId: string): Promise<{ message: string; inlineKeyboard: any }> {
+// Helper: calculate UTF-16 length Telegram uses for entity offsets
+function utf16Len(str: string): number {
+  let len = 0;
+  for (const ch of str) {
+    len += (ch.codePointAt(0)! > 0xffff) ? 2 : 1;
+  }
+  return len;
+}
+
+// Helper: build plain text + entities array for custom emoji
+function buildCustomEmojiMessage(parts: Array<{ text: string; emojiId?: string }>): { text: string; entities: any[] } {
+  let text = '';
+  const entities: any[] = [];
+  for (const part of parts) {
+    if (part.emojiId) {
+      const offset = utf16Len(text);
+      const length = utf16Len(part.text);
+      entities.push({ type: 'custom_emoji', offset, length, custom_emoji_id: part.emojiId });
+    }
+    text += part.text;
+  }
+  return { text, entities };
+}
+
+export async function formatWelcomeMessage(userId: string): Promise<{ message: string; entities: any[]; inlineKeyboard: any }> {
   const botUsername = process.env.VITE_BOT_USERNAME || process.env.BOT_USERNAME || 'MoneyAdzbot';
   const channelUrl = 'https://t.me/MoneyAdz';
-  
-  const user = await storage.getUserByTelegramId(userId);
-  const name = user?.firstName || 'User';
-  
-  const message = `<tg-emoji emoji-id="5258029071207505708">👋</tg-emoji> Welcome to Paid Adz
 
-<tg-emoji emoji-id="5188481279963715781">🚀</tg-emoji> Earn POW Tokens by watching ads or completing tasks — your gateway to real rewards.
-
-<tg-emoji emoji-id="5298614648138919107">📈</tg-emoji> Start earning and growing your balance today!`;
+  const { text: message, entities } = buildCustomEmojiMessage([
+    { text: '👋', emojiId: '5258029071207505708' },
+    { text: ' Welcome to Paid Adz\n\n' },
+    { text: '🚀', emojiId: '5188481279963715781' },
+    { text: ' Earn POW Tokens by watching ads or completing tasks — your gateway to real rewards.\n\n' },
+    { text: '📈', emojiId: '5298614648138919107' },
+    { text: ' Start earning and growing your balance today!' },
+  ]);
 
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
-          text: "<tg-emoji emoji-id=\"5188481279963715781\">🚀</tg-emoji> Let's Go",
+          text: "🚀 Let's Go",
           url: `https://t.me/${botUsername}/MyWAdz`
         }
       ],
       [
         {
-          text: "<tg-emoji emoji-id=\"5357122032674818130\">🤝</tg-emoji> Announcements",
+          text: "🤝 Announcements",
           url: channelUrl
         },
         {
-          text: "<tg-emoji emoji-id=\"5303138782004924588\">💬</tg-emoji> Group Chat",
+          text: "💬 Group Chat",
           url: channelUrl
         }
       ],
       [
         {
-          text: "<tg-emoji emoji-id=\"5314504236132747481\">⁉️</tg-emoji> FAQ",
+          text: "⁉️ FAQ",
           url: channelUrl
         }
       ]
     ]
   };
 
-  return { message, inlineKeyboard };
+  return { message, entities, inlineKeyboard };
 }
 
 export async function sendWelcomeMessage(userId: string): Promise<boolean> {
@@ -541,33 +565,38 @@ export async function sendWelcomeMessage(userId: string): Promise<boolean> {
     console.error('Error checking ban status for welcome message:', err);
   }
 
-  const { message, inlineKeyboard } = await formatWelcomeMessage(userId);
-  const domain = process.env.REPLIT_DOMAIN || (process.env.REPL_SLUG ? `${process.env.REPL_SLUG}.replit.app` : null);
-  const imageUrl = domain ? `https://${domain}/images/welcome-image.jpg` : null;
-  
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.error('❌ Telegram bot token not configured');
+    return false;
+  }
+
+  const { message, entities, inlineKeyboard } = await formatWelcomeMessage(userId);
+
   try {
-    if (imageUrl) {
-      const payload = {
-        chat_id: userId,
-        photo: imageUrl,
-        caption: message,
-        parse_mode: 'HTML',
-        reply_markup: inlineKeyboard
-      };
+    const payload = {
+      chat_id: userId,
+      text: message,
+      entities: entities,
+      reply_markup: inlineKeyboard,
+    };
 
-      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-      if (response.ok) return true;
+    const result = await response.json() as any;
+    if (response.ok && result.ok) {
+      console.log(`✅ Welcome message sent to ${userId} with premium custom emojis`);
+      return true;
     }
-    
-    // Fallback to text if photo fails or imageUrl is null
-    return await sendUserTelegramNotification(userId, message, inlineKeyboard);
+
+    console.error('❌ Failed to send welcome message:', result.description);
+    return false;
   } catch (error) {
-    return await sendUserTelegramNotification(userId, message, inlineKeyboard);
+    console.error('❌ Error sending welcome message:', error);
+    return false;
   }
 }
 
@@ -1974,8 +2003,19 @@ ${walletAddress}
       }
     }
 
-    // All other messages ignored - bot only responds to /start and callback queries
-    console.log('ℹ️ Message ignored (bot uses inline buttons only):', text);
+    // Custom emoji ID finder - like the Python telebot script
+    // If message has custom_emoji entities, reply with their IDs
+    const entities = update.message?.entities || [];
+    const customEmojiEntities = entities.filter((e: any) => e.type === 'custom_emoji');
+
+    if (customEmojiEntities.length > 0) {
+      const ids = customEmojiEntities.map((e: any) => `🔥 custom_emoji_id:\n${e.custom_emoji_id}`).join('\n\n');
+      await sendUserTelegramNotification(chatId, ids);
+      return true;
+    }
+
+    // No custom emoji found in this message
+    await sendUserTelegramNotification(chatId, '❌ Is message me premium emoji nahi mila');
     return true;
   } catch (error) {
     console.error('Error handling Telegram message:', error);
