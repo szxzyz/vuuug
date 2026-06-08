@@ -147,8 +147,9 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
     if (!telegramData && (process.env.NODE_ENV === 'development' || process.env.REPL_ID)) {
       console.log('🔧 Development mode: Using test user authentication');
       
+      const devAdminId = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '123456789').split(',')[0].trim();
       const testUser = {
-        id: '123456789',
+        id: devAdminId,
         username: 'testuser',
         first_name: 'Test',
         last_name: 'User'

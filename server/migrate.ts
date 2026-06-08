@@ -130,6 +130,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_hourly_reset TIMESTAMP`);
       // Add daily activity bonus tracking column
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_bonus_claimed_date TEXT`);
+      // Add daily login streak tracking columns
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_login_streak INTEGER DEFAULT 0`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_login_date TEXT`);
       
       // Alter existing balance columns to new precision (safely handle existing data)
       await db.execute(sql`ALTER TABLE users ALTER COLUMN balance TYPE DECIMAL(20, 0) USING ROUND(balance)`);

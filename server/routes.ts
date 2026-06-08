@@ -131,15 +131,15 @@ function broadcastUpdate(update: any) {
   return messagesSent;
 }
 
-// Check if user is admin
+// Check if user is admin — supports comma-separated TELEGRAM_ADMIN_IDS or single TELEGRAM_ADMIN_ID
 const isAdmin = (telegramId: string): boolean => {
-  const adminId = process.env.TELEGRAM_ADMIN_ID;
-  if (!adminId) {
-    console.warn('⚠️ TELEGRAM_ADMIN_ID not set - admin access disabled');
+  const adminIdsEnv = process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '';
+  if (!adminIdsEnv) {
+    console.warn('⚠️ TELEGRAM_ADMIN_IDS not set - admin access disabled');
     return false;
   }
-  // Ensure both values are strings for comparison
-  return adminId.toString() === telegramId.toString();
+  const adminIds = adminIdsEnv.split(',').map(id => id.trim()).filter(Boolean);
+  return adminIds.includes(telegramId.toString());
 };
 
 // Admin authentication middleware with optional signature verification
@@ -148,12 +148,13 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
     const telegramData = req.headers['x-telegram-data'] || req.query.tgData;
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     
-    // Development mode: Allow admin access for test user
+    // Development mode: Allow admin access for configured admin user
     if (process.env.NODE_ENV === 'development' && !telegramData) {
-      console.log('🔧 Development mode: Granting admin access to test user');
+      const devAdminId = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '123456789').split(',')[0].trim();
+      console.log('🔧 Development mode: Granting admin access to dev admin');
       req.user = { 
         telegramUser: { 
-          id: '123456789',
+          id: devAdminId,
           username: 'testuser',
           first_name: 'Test',
           last_name: 'Admin'
@@ -1404,6 +1405,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, milestoneIndex, milestone });
     } catch (error) {
       console.error('Daily bonus claim error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Daily login streak reward tiers (in POW = PAD units, 1 USD = 10,000,000 POW)
+  function getDailyStreakReward(streakDay: number): { usd: number; pow: number } {
+    if (streakDay <= 10)  return { usd: 0.0005, pow: 5000 };
+    if (streakDay <= 20)  return { usd: 0.001,  pow: 10000 };
+    if (streakDay <= 30)  return { usd: 0.0015, pow: 15000 };
+    if (streakDay <= 40)  return { usd: 0.002,  pow: 20000 };
+    return                       { usd: 0.0025, pow: 25000 };
+  }
+
+  app.get('/api/daily-streak/status', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+
+      const today = getDailyResetDateStr();
+      const lastLogin = (user as any).lastDailyLoginDate;
+      const streak = (user as any).dailyLoginStreak || 0;
+      const claimedToday = lastLogin === today;
+
+      // Compute what the current (or next) day streak would be
+      const yesterday = (() => {
+        const now = new Date();
+        const resetHour = now.getUTCHours() >= 12 ? 0 : -1;
+        const d = new Date(now);
+        d.setUTCDate(d.getUTCDate() - 1 + resetHour);
+        return d.toISOString().split('T')[0];
+      })();
+
+      let nextStreakDay = streak + 1;
+      if (claimedToday) {
+        nextStreakDay = streak; // already claimed, show current streak
+      } else if (lastLogin && lastLogin !== yesterday) {
+        nextStreakDay = 1; // streak will reset
+      }
+
+      const now = new Date();
+      const nextReset = new Date();
+      nextReset.setUTCHours(12, 0, 0, 0);
+      if (now.getUTCHours() >= 12) nextReset.setUTCDate(nextReset.getUTCDate() + 1);
+
+      const reward = getDailyStreakReward(nextStreakDay);
+
+      res.json({
+        streak,
+        nextStreakDay,
+        claimedToday,
+        reward,
+        nextResetAt: nextReset.toISOString(),
+        lastDailyLoginDate: lastLogin,
+      });
+    } catch (error) {
+      console.error('Daily streak status error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/daily-streak/claim', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+
+      const today = getDailyResetDateStr();
+      const lastLogin = (user as any).lastDailyLoginDate;
+      const currentStreak = (user as any).dailyLoginStreak || 0;
+
+      if (lastLogin === today) {
+        return res.status(400).json({ message: 'Already claimed today', alreadyClaimed: true });
+      }
+
+      // Determine next streak day
+      const yesterday = (() => {
+        const now = new Date();
+        const d = new Date(now);
+        if (now.getUTCHours() < 12) {
+          d.setUTCDate(d.getUTCDate() - 2);
+        } else {
+          d.setUTCDate(d.getUTCDate() - 1);
+        }
+        return d.toISOString().split('T')[0];
+      })();
+
+      let newStreak: number;
+      if (!lastLogin || lastLogin !== yesterday) {
+        newStreak = 1; // missed a day or first time
+      } else {
+        newStreak = currentStreak + 1;
+      }
+
+      const reward = getDailyStreakReward(newStreak);
+
+      // Give POW reward to user balance
+      await storage.addEarning({
+        userId,
+        amount: String(reward.pow),
+        source: 'daily_streak',
+        description: `Daily streak reward — Day ${newStreak}`,
+      });
+
+      // Update streak fields
+      await db.update(users).set({
+        dailyLoginStreak: newStreak,
+        lastDailyLoginDate: today,
+        updatedAt: new Date(),
+      } as any).where(eq(users.id, userId));
+
+      res.json({ success: true, newStreak, reward });
+    } catch (error) {
+      console.error('Daily streak claim error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
