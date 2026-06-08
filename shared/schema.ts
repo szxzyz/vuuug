@@ -327,6 +327,20 @@ export const blockedCountries = pgTable("blocked_countries", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Admin roles table — one row per admin Telegram ID
+// role: 'super_admin' | 'finance' | 'moderator' | 'content'
+// permissions: JSON array of permission strings
+export const adminRoles = pgTable("admin_roles", {
+  id: serial("id").primaryKey(),
+  telegramId: varchar("telegram_id", { length: 20 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).default("Admin"),
+  role: varchar("role", { length: 30 }).notNull().default("moderator"),
+  permissions: text("permissions").notNull().default("[]"), // JSON array stored as text
+  addedBy: varchar("added_by", { length: 20 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertEarningSchema = createInsertSchema(earnings).omit({ createdAt: true });
@@ -346,6 +360,7 @@ export const insertSpinDataSchema = createInsertSchema(spinData).omit({ id: true
 export const insertSpinHistorySchema = createInsertSchema(spinHistory).omit({ id: true, createdAt: true });
 export const insertDailyMissionSchema = createInsertSchema(dailyMissions).omit({ id: true, createdAt: true });
 export const insertBlockedCountrySchema = createInsertSchema(blockedCountries).omit({ id: true, createdAt: true });
+export const insertAdminRoleSchema = createInsertSchema(adminRoles).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
