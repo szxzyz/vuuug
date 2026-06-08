@@ -5,9 +5,16 @@ import { db } from './db';
 import { earnings } from '../shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
 
+// Support multiple admins via TELEGRAM_ADMIN_IDS (comma-separated) or single TELEGRAM_ADMIN_ID
+function getAdminIds(): string[] {
+  const multi = process.env.TELEGRAM_ADMIN_IDS;
+  if (multi) return multi.split(',').map(id => id.trim()).filter(Boolean);
+  const single = process.env.TELEGRAM_ADMIN_ID;
+  return single ? [single.trim()] : [];
+}
+
 const isAdmin = (telegramId: string): boolean => {
-  const adminId = process.env.TELEGRAM_ADMIN_ID;
-  return adminId === telegramId;
+  return getAdminIds().includes(telegramId);
 };
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -189,35 +196,36 @@ function extractBotUsernameFromUrl(url: string): string | null {
 // All old Telegram notifications removed - bot uses inline buttons only
 
 export async function sendTelegramMessage(message: string): Promise<boolean> {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ADMIN_ID) {
+  const adminIds = getAdminIds();
+  if (!TELEGRAM_BOT_TOKEN || adminIds.length === 0) {
     console.error('Telegram bot token or admin ID not configured');
     return false;
   }
 
   try {
-    const telegramMessage: TelegramMessage = {
-      chat_id: TELEGRAM_ADMIN_ID,
-      text: message,
-      parse_mode: 'HTML',
-      protect_content: false
-    };
+    // Send to all admins
+    for (const adminId of adminIds) {
+      const telegramMessage: TelegramMessage = {
+        chat_id: adminId,
+        text: message,
+        parse_mode: 'HTML',
+        protect_content: false
+      };
 
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(telegramMessage),
-    });
+      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(telegramMessage),
+      });
 
-    if (response.ok) {
-      console.log('Telegram notification sent successfully');
-      return true;
-    } else {
-      const errorData = await response.text();
-      console.error('Failed to send Telegram notification:', errorData);
-      return false;
+      if (response.ok) {
+        console.log(`✅ Telegram notification sent to admin ${adminId}`);
+      } else {
+        const errorData = await response.text();
+        console.error(`❌ Failed to send notification to admin ${adminId}:`, errorData);
+      }
     }
+    return true;
   } catch (error) {
     console.error('Error sending Telegram notification:', error);
     return false;
@@ -527,23 +535,27 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
     inline_keyboard: [
       [
         {
-          text: "🚀 Let's Go",
-          url: `https://t.me/${botUsername}/MyWAdz`
+          text: "⚡️ Open App",
+          web_app: { url: `https://t.me/${botUsername}/MyWAdz` }
         }
       ],
       [
         {
-          text: "🤝 Announcements",
+          text: "📢 Announcements",
           url: channelUrl
         },
         {
-          text: "💬 Group Chat",
+          text: "👥 Group Chat",
           url: channelUrl
         }
       ],
       [
         {
-          text: "⁉️ FAQ",
+          text: "💰 Earn Now",
+          url: `https://t.me/${botUsername}/MyWAdz`
+        },
+        {
+          text: "❓ FAQ",
           url: channelUrl
         }
       ]
