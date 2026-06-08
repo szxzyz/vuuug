@@ -493,23 +493,33 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
   const user = await storage.getUserByTelegramId(userId);
   const name = user?.firstName || 'User';
   
-  const message = `👋 Hey ${name}!
+  const message = `<tg-emoji emoji-id="5258029071207505708">👋</tg-emoji> Welcome to Paid Adz
 
-Welcome to MONEY ADZ — where every click turns into rewards.
+<tg-emoji emoji-id="5188481279963715781">🚀</tg-emoji> Earn POW Tokens by watching ads or completing tasks — your gateway to real rewards.
 
-👇Tap below to open the app.`;
+<tg-emoji emoji-id="5298614648138919107">📈</tg-emoji> Start earning and growing your balance today!`;
 
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
-          text: "🚀 Open App",
+          text: "<tg-emoji emoji-id=\"5188481279963715781\">🚀</tg-emoji> Let's Go",
           url: `https://t.me/${botUsername}/MyWAdz`
         }
       ],
       [
         {
-          text: "📢 Official Channel",
+          text: "<tg-emoji emoji-id=\"5357122032674818130\">🤝</tg-emoji> Announcements",
+          url: channelUrl
+        },
+        {
+          text: "<tg-emoji emoji-id=\"5303138782004924588\">💬</tg-emoji> Group Chat",
+          url: channelUrl
+        }
+      ],
+      [
+        {
+          text: "<tg-emoji emoji-id=\"5314504236132747481\">⁉️</tg-emoji> FAQ",
           url: channelUrl
         }
       ]
