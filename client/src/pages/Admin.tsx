@@ -72,7 +72,7 @@ function StatCard({ icon, label, value, iconColor }: {
 
 export default function AdminPage() {
   const { toast } = useToast();
-  const { isAdmin, isLoading: adminLoading } = useAdmin();
+  const { isAdmin, isLoading: adminLoading, role, can } = useAdmin();
   const queryClient = useQueryClient();
 
   // Fetch admin stats
@@ -156,7 +156,7 @@ export default function AdminPage() {
 
         {/* Tabs Navigation - Move to Top */}
         <Tabs defaultValue="summary" className="w-full">
-          <TabsList className="grid grid-cols-7 w-full mb-3">
+          <TabsList className={`grid w-full mb-3 ${can('manage_admins') ? 'grid-cols-8' : 'grid-cols-7'}`}>
             <TabsTrigger value="summary" className="text-xs">
               Summary
             </TabsTrigger>
@@ -178,6 +178,11 @@ export default function AdminPage() {
             <TabsTrigger value="settings" className="text-xs">
               Settings
             </TabsTrigger>
+            {can('manage_admins') && (
+              <TabsTrigger value="admins" className="text-xs">
+                Admins
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Summary Tab - Clean Minimal Design */}
@@ -282,6 +287,12 @@ export default function AdminPage() {
           <TabsContent value="settings" className="mt-0">
             <SettingsSection />
           </TabsContent>
+
+          {can('manage_admins') && (
+            <TabsContent value="admins" className="mt-0">
+              <AdminManagementSection />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
     </Layout>
@@ -1544,7 +1555,7 @@ function SettingsSection() {
     { id: 'affiliates' as const, label: 'Affiliates', icon: 'users' },
     { id: 'withdrawals' as const, label: 'Withdrawals', icon: 'wallet' },
     { id: 'tasks' as const, label: 'Tasks', icon: 'tasks' },
-    { id: 'bug' as const, label: 'BUG Currency', icon: 'bug' },
+    { id: 'bug' as const, label: 'STAR Currency', icon: 'star' },
     { id: 'other' as const, label: 'Other', icon: 'cog' },
   ];
   
@@ -2118,8 +2129,8 @@ function SettingsSection() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="bug-reward-per-ad" className="text-sm font-semibold">
-                <i className="fas fa-bug mr-2 text-lime-600"></i>
-                BUG Per Ad Watch
+                <i className="fas fa-star mr-2 text-lime-600"></i>
+                STAR Per Ad Watch
               </Label>
               <Input
                 id="bug-reward-per-ad"
@@ -2130,14 +2141,14 @@ function SettingsSection() {
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.bugRewardPerAd || 1} BUG
+                Current: {settingsData?.bugRewardPerAd || 1} STAR
               </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="bug-reward-per-task" className="text-sm font-semibold">
                 <i className="fas fa-tasks mr-2 text-lime-600"></i>
-                BUG Per Task
+                STAR Per Task
               </Label>
               <Input
                 id="bug-reward-per-task"
@@ -2148,14 +2159,14 @@ function SettingsSection() {
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.bugRewardPerTask || 10} BUG
+                Current: {settingsData?.bugRewardPerTask || 10} STAR
               </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="bug-reward-per-referral" className="text-sm font-semibold">
                 <i className="fas fa-users mr-2 text-lime-600"></i>
-                BUG Per Referral
+                STAR Per Referral
               </Label>
               <Input
                 id="bug-reward-per-referral"
@@ -2166,14 +2177,14 @@ function SettingsSection() {
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.bugRewardPerReferral || 50} BUG
+                Current: {settingsData?.bugRewardPerReferral || 50} STAR
               </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="minimum-bug-for-withdrawal" className="text-sm font-semibold">
                 <i className="fas fa-wallet mr-2 text-lime-600"></i>
-                Min BUG for Withdrawal
+                Min STAR for Withdrawal
               </Label>
               <Input
                 id="minimum-bug-for-withdrawal"
@@ -2184,14 +2195,14 @@ function SettingsSection() {
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumBugForWithdrawal || 1000} BUG (1000 BUG = $0.1)
+                Current: {settingsData?.minimumBugForWithdrawal || 1000} STAR (1000 STAR = $0.1)
               </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="pad-to-bug-rate" className="text-sm font-semibold">
                 <i className="fas fa-exchange-alt mr-2 text-lime-600"></i>
-                PAD to BUG Rate
+                POW to STAR Rate
               </Label>
               <Input
                 id="pad-to-bug-rate"
@@ -2202,14 +2213,14 @@ function SettingsSection() {
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                1 PAD = {settingsData?.padToBugRate || 1} BUG
+                1 POW = {settingsData?.padToBugRate || 1} STAR
               </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="minimum-convert-pad-to-bug" className="text-sm font-semibold">
                 <i className="fas fa-coins mr-2 text-lime-600"></i>
-                Min PAD to Convert to BUG
+                Min POW to Convert to STAR
               </Label>
               <Input
                 id="minimum-convert-pad-to-bug"
@@ -2220,14 +2231,14 @@ function SettingsSection() {
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumConvertPadToBug || 1000} PAD
+                Current: {settingsData?.minimumConvertPadToBug || 1000} POW
               </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="bug-per-usd" className="text-sm font-semibold">
                 <i className="fas fa-dollar-sign mr-2 text-lime-600"></i>
-                BUG per USD (Withdrawal)
+                STAR per USD (Withdrawal)
               </Label>
               <Input
                 id="bug-per-usd"
@@ -2238,15 +2249,15 @@ function SettingsSection() {
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                1 USD = {settingsData?.bugPerUsd || 10000} BUG required for withdrawal
+                1 USD = {settingsData?.bugPerUsd || 10000} STAR required for withdrawal
               </p>
             </div>
 
             <div className="space-y-2 p-3 border rounded-lg bg-lime-50/5 border-lime-500/20 md:col-span-2">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold">
-                  <i className="fas fa-bug mr-2 text-lime-500"></i>
-                  Withdrawal BUG Requirement
+                  <i className="fas fa-star mr-2 text-lime-500"></i>
+                  Withdrawal STAR Requirement
                 </Label>
                 <button
                   type="button"
@@ -2264,8 +2275,8 @@ function SettingsSection() {
               </div>
               <p className="text-xs text-muted-foreground">
                 {settings.withdrawalBugRequirementEnabled 
-                  ? 'Users must have enough BUG (based on USD amount × BUG per USD) to withdraw' 
-                  : 'BUG requirement disabled - users can withdraw without BUG'}
+                  ? 'Users must have enough STAR (based on USD amount × STAR per USD) to withdraw' 
+                  : 'STAR requirement disabled - users can withdraw without STAR'}
               </p>
             </div>
           </div>
@@ -2655,6 +2666,303 @@ function TaskManagementSection() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Admin Management Section ---
+type AdminRoleType = 'super_admin' | 'finance' | 'moderator' | 'content';
+
+const ROLE_LABELS: Record<AdminRoleType, string> = {
+  super_admin: 'Super Admin',
+  finance: 'Finance',
+  moderator: 'Moderator',
+  content: 'Content',
+};
+
+const ROLE_COLORS: Record<AdminRoleType, string> = {
+  super_admin: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
+  finance: 'text-green-400 bg-green-500/10 border-green-500/30',
+  moderator: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+  content: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
+};
+
+const ROLE_DEFAULT_PERMS: Record<AdminRoleType, string[]> = {
+  super_admin: ['view_stats','manage_users','manage_withdrawals','manage_tasks','manage_settings','manage_promos','manage_admins','manage_bans'],
+  finance: ['view_stats', 'manage_withdrawals'],
+  moderator: ['view_stats', 'manage_users', 'manage_bans'],
+  content: ['view_stats', 'manage_tasks'],
+};
+
+const ALL_ADMIN_PERMISSIONS = [
+  'view_stats',
+  'manage_users',
+  'manage_withdrawals',
+  'manage_tasks',
+  'manage_settings',
+  'manage_promos',
+  'manage_admins',
+  'manage_bans',
+];
+
+interface AdminRecord {
+  telegramId: string;
+  name: string;
+  role: AdminRoleType;
+  permissions: string[];
+  addedBy: string | null;
+  isPrimary: boolean;
+  createdAt: string | null;
+}
+
+function AdminManagementSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingAdmin, setEditingAdmin] = useState<AdminRecord | null>(null);
+  const [form, setForm] = useState({
+    telegramId: '',
+    name: '',
+    role: 'moderator' as AdminRoleType,
+    permissions: ROLE_DEFAULT_PERMS['moderator'] as string[],
+  });
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery<{ admins: AdminRecord[] }>({
+    queryKey: ['/api/admin/admins'],
+    queryFn: () => apiRequest('GET', '/api/admin/admins').then(r => r.json()),
+    refetchInterval: 15000,
+  });
+
+  const admins = data?.admins ?? [];
+
+  const handleRoleChange = (role: AdminRoleType) => {
+    setForm(f => ({ ...f, role, permissions: ROLE_DEFAULT_PERMS[role] }));
+  };
+
+  const togglePermission = (perm: string) => {
+    setForm(f => ({
+      ...f,
+      permissions: f.permissions.includes(perm)
+        ? f.permissions.filter(p => p !== perm)
+        : [...f.permissions, perm],
+    }));
+  };
+
+  const openAdd = () => {
+    setEditingAdmin(null);
+    setForm({ telegramId: '', name: '', role: 'moderator', permissions: ROLE_DEFAULT_PERMS['moderator'] });
+    setShowAddForm(true);
+  };
+
+  const openEdit = (admin: AdminRecord) => {
+    setEditingAdmin(admin);
+    setForm({ telegramId: admin.telegramId, name: admin.name, role: admin.role, permissions: admin.permissions });
+    setShowAddForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.telegramId.trim()) {
+      toast({ title: 'Telegram ID is required', variant: 'destructive' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiRequest('POST', '/api/admin/admins', {
+        telegramId: form.telegramId.trim(),
+        name: form.name.trim() || 'Admin',
+        role: form.role,
+        permissions: form.permissions,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed');
+      }
+      toast({ title: editingAdmin ? 'Admin updated' : 'Admin added' });
+      setShowAddForm(false);
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/admins'] });
+    } catch (e: any) {
+      toast({ title: e.message || 'Error saving admin', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemove = async (telegramId: string) => {
+    setRemoving(telegramId);
+    try {
+      const res = await apiRequest('DELETE', `/api/admin/admins/${telegramId}`);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed');
+      }
+      toast({ title: 'Admin removed' });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/admins'] });
+    } catch (e: any) {
+      toast({ title: e.message || 'Error removing admin', variant: 'destructive' });
+    } finally {
+      setRemoving(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-white">Admin Management</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Control who has admin access and what they can do</p>
+        </div>
+        <Button size="sm" onClick={openAdd} className="bg-[#4cd3ff] hover:bg-[#3ab8e0] text-black text-xs h-8 px-3">
+          <i className="fas fa-plus mr-1.5"></i>
+          Add Admin
+        </Button>
+      </div>
+
+      {/* Role reference cards */}
+      <div className="grid grid-cols-2 gap-2">
+        {(Object.entries(ROLE_LABELS) as [AdminRoleType, string][]).map(([r, label]) => (
+          <div key={r} className="bg-[#121212] border border-white/10 rounded-lg p-3">
+            <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${ROLE_COLORS[r]}`}>{label}</span>
+            <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">
+              {ROLE_DEFAULT_PERMS[r].map(p => p.replace('manage_', '').replace(/_/g, ' ')).join(', ')}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Admin list */}
+      {isLoading ? (
+        <div className="text-center py-8 text-gray-500 text-sm">Loading admins...</div>
+      ) : admins.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">No admins configured</div>
+      ) : (
+        <div className="space-y-2">
+          {admins.map(admin => (
+            <div key={admin.telegramId} className="bg-[#121212] border border-white/10 rounded-xl p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="text-sm font-medium text-white truncate">{admin.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${ROLE_COLORS[admin.role as AdminRoleType] || 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>
+                      {ROLE_LABELS[admin.role as AdminRoleType] || admin.role}
+                    </span>
+                    {admin.isPrimary && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border text-yellow-400 bg-yellow-500/10 border-yellow-500/30 font-medium">ENV</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">ID: {admin.telegramId}</p>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {admin.permissions.map(p => (
+                      <span key={p} className="text-[9px] px-1 py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">
+                        {p.replace('manage_', '').replace(/_/g, ' ')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => openEdit(admin)} className="h-7 px-2 text-[10px] border-white/20 text-gray-300">
+                    <i className="fas fa-edit"></i>
+                  </Button>
+                  {!admin.isPrimary && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRemove(admin.telegramId)}
+                      disabled={removing === admin.telegramId}
+                      className="h-7 px-2 text-[10px] border-red-500/30 text-red-400 hover:bg-red-500/10"
+                    >
+                      {removing === admin.telegramId ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-trash"></i>}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
+        <DialogContent className="bg-[#0d0d0d] border border-white/10 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">{editingAdmin ? 'Edit Admin' : 'Add New Admin'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label className="text-xs text-gray-400 mb-1.5 block">Telegram User ID</Label>
+              <Input
+                value={form.telegramId}
+                onChange={e => setForm(f => ({ ...f, telegramId: e.target.value }))}
+                disabled={!!editingAdmin}
+                placeholder="e.g. 123456789"
+                className="bg-[#1a1a1a] border-white/10 text-white text-sm h-9"
+              />
+              {!editingAdmin && <p className="text-[10px] text-gray-500 mt-1">Find by forwarding a message to @userinfobot</p>}
+            </div>
+
+            <div>
+              <Label className="text-xs text-gray-400 mb-1.5 block">Display Name</Label>
+              <Input
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Admin name"
+                className="bg-[#1a1a1a] border-white/10 text-white text-sm h-9"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-gray-400 mb-1.5 block">Role</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.entries(ROLE_LABELS) as [AdminRoleType, string][]).map(([r, label]) => (
+                  <button
+                    key={r}
+                    onClick={() => handleRoleChange(r)}
+                    className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                      form.role === r
+                        ? `${ROLE_COLORS[r]} border-current`
+                        : 'bg-[#1a1a1a] border-white/10 text-gray-400 hover:border-white/20'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs text-gray-400 mb-1.5 block">Permissions (fine-tune)</Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {ALL_ADMIN_PERMISSIONS.map(perm => (
+                  <button
+                    key={perm}
+                    onClick={() => togglePermission(perm)}
+                    className={`text-[10px] px-2 py-1.5 rounded border text-left transition-all ${
+                      form.permissions.includes(perm)
+                        ? 'bg-[#4cd3ff]/10 border-[#4cd3ff]/40 text-[#4cd3ff]'
+                        : 'bg-[#1a1a1a] border-white/10 text-gray-500 hover:border-white/20'
+                    }`}
+                  >
+                    <i className={`fas fa-check mr-1.5 ${form.permissions.includes(perm) ? 'opacity-100' : 'opacity-0'}`}></i>
+                    {perm.replace('manage_', '').replace(/_/g, ' ')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1 border-white/10 text-gray-300 text-xs" onClick={() => setShowAddForm(false)}>
+                Cancel
+              </Button>
+              <Button className="flex-1 bg-[#4cd3ff] hover:bg-[#3ab8e0] text-black text-xs" onClick={handleSave} disabled={saving}>
+                {saving ? <i className="fas fa-spinner fa-spin mr-1.5"></i> : null}
+                {editingAdmin ? 'Save Changes' : 'Add Admin'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -364,7 +364,7 @@ export default function Withdraw() {
     
     if (!hasEnoughBug) {
       const remaining = Math.ceil(minimumBugForWithdrawal - bugBalance);
-      showNotification(`You need ${remaining.toLocaleString()} more BUG to withdraw. Watch ads or complete tasks to earn BUG.`, "error");
+      showNotification(`You need ${remaining.toLocaleString()} more STAR to withdraw. Watch ads or complete tasks to earn STAR.`, "error");
       return;
     }
 
@@ -580,7 +580,7 @@ export default function Withdraw() {
                   <div className="text-[10px] text-gray-400">${usdBalance.toFixed(2)}</div>
                   <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasEnoughBugForPackage('FULL') ? 'text-green-400' : 'text-red-400'}`}>
                     <Bug className="w-2.5 h-2.5" />
-                    {Math.ceil(usdBalance * bugPerUsd).toLocaleString()} BUG
+                    {Math.ceil(usdBalance * bugPerUsd).toLocaleString()} STAR
                   </div>
                 </button>
                 
@@ -599,7 +599,7 @@ export default function Withdraw() {
                   {withdrawalBugRequirementEnabled && getWithdrawalUsdAmount() > 0 && (
                     <div className={`flex items-center gap-2 text-xs ${hasEnoughBug ? 'text-green-400' : 'text-red-400'}`}>
                       <Bug className="w-4 h-4" />
-                      <span>BUG Required: {minimumBugForWithdrawal.toLocaleString()} (You have: {Math.floor(bugBalance).toLocaleString()})</span>
+                      <span>STAR Required: {minimumBugForWithdrawal.toLocaleString()} (You have: {Math.floor(bugBalance).toLocaleString()})</span>
                       {hasEnoughBug && <Check className="w-3 h-3" />}
                     </div>
                   )}
