@@ -3447,8 +3447,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralRewardPADEnabled: getSetting('referral_reward_pad_enabled', 'false') === 'true',
         referralRewardUSDEnabled: getSetting('referral_reward_usd_enabled', 'false') === 'true',
         referralAdsRequired: parseInt(getSetting('referral_ads_required', '1')),
-        l1CommissionPercent: parseFloat(getSetting('l1_commission_percent', '20')),
-        l2CommissionPercent: parseFloat(getSetting('l2_commission_percent', '4')),
         // Daily task rewards
         streakReward: parseInt(getSetting('streak_reward', '100')),
         shareTaskReward: parseInt(getSetting('share_task_reward', '1000')),
