@@ -239,6 +239,16 @@ app.use((req, res, next) => {
         console.error('❌ Error in daily reset check:', error);
       }
     }, 5 * 60 * 1000); // Every 5 minutes
+
+    // Weekly leaderboard report check (runs every 30 minutes on Monday UTC)
+    setInterval(async () => {
+      try {
+        const { checkAndSendWeeklyLeaderboardReport } = await import('./telegram');
+        await checkAndSendWeeklyLeaderboardReport();
+      } catch (error) {
+        console.error('❌ Error in weekly leaderboard report check:', error);
+      }
+    }, 30 * 60 * 1000); // Every 30 minutes
     
     // Auto-setup Telegram webhook on server start with retry logic
     if (process.env.TELEGRAM_BOT_TOKEN) {

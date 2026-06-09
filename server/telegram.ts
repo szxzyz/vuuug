@@ -213,6 +213,122 @@ function extractBotUsernameFromUrl(url: string): string | null {
 
 // All old Telegram notifications removed - bot uses inline buttons only
 
+// Prize map for weekly leaderboard
+const WEEKLY_PRIZE_MAP: Record<number, string> = { 1: '$5', 2: '$3', 3: '$2' };
+function getWeeklyPrize(rank: number): string { return WEEKLY_PRIZE_MAP[rank] || '$0'; }
+
+function getISOWeekString(date?: Date): string {
+  const now = date || new Date();
+  const year = now.getUTCFullYear();
+  const startOfYear = new Date(Date.UTC(year, 0, 1));
+  const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+  const week = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+function getPreviousISOWeekString(): string {
+  const now = new Date();
+  const prevWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  return getISOWeekString(prevWeek);
+}
+
+export async function sendWeeklyLeaderboardReport(weekLabel?: string): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ADMIN_ID) {
+    console.log('⚠️ Telegram not configured, skipping weekly leaderboard report');
+    return false;
+  }
+  try {
+    const { db } = await import('./db');
+    const { sql } = await import('drizzle-orm');
+    const { users, adminSettings } = await import('../shared/schema');
+
+    const reportWeek = weekLabel || getPreviousISOWeekString();
+
+    // Check if already reported
+    const alreadyReported = await db.select().from(adminSettings)
+      .where(sql`${adminSettings.settingKey} = ${'weekly_leaderboard_reported_' + reportWeek}`);
+    if (alreadyReported.length > 0 && alreadyReported[0].settingValue === 'true') {
+      console.log(`⏭️ Weekly leaderboard for ${reportWeek} already reported`);
+      return false;
+    }
+
+    const top10 = await db
+      .select({
+        userId: users.id,
+        username: users.username,
+        firstName: users.firstName,
+        weeklyStars: users.weeklyStars,
+        weeklyStarWeek: users.weeklyStarWeek,
+      })
+      .from(users)
+      .where(sql`COALESCE(${users.weeklyStarWeek}, '') = ${reportWeek} AND COALESCE(${users.weeklyStars}, 0) > 0`)
+      .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+      .limit(10);
+
+    if (top10.length === 0) {
+      console.log(`⚠️ No leaderboard data for week ${reportWeek}`);
+      return false;
+    }
+
+    const rankEmojis: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
+
+    const rows = top10.map((u, i) => {
+      const rank = i + 1;
+      const rankStr = rankEmojis[rank] || `${rank}.`;
+      const name = (u.firstName || u.username || `Player ${rank}`).slice(0, 14);
+      const stars = (u.weeklyStars ?? 0).toLocaleString();
+      const prize = getWeeklyPrize(rank);
+      return `${rankStr.padEnd(3)} <b>${name}</b>  ⭐ ${stars}  💰 <code>${prize}</code>`;
+    });
+
+    const message =
+      `🏆 <b>Weekly Leaderboard</b> — <code>${reportWeek}</code>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `<b>Position  │  Stars  │  Prize</b>\n\n` +
+      rows.join('\n') +
+      `\n\n━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🕐 ${new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC`;
+
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_ADMIN_ID,
+        text: message,
+        parse_mode: 'HTML',
+      }),
+    });
+
+    if (response.ok) {
+      // Mark as reported
+      await db.insert(adminSettings)
+        .values({ settingKey: 'weekly_leaderboard_reported_' + reportWeek, settingValue: 'true', updatedAt: new Date() })
+        .onConflictDoUpdate({ target: adminSettings.settingKey, set: { settingValue: 'true', updatedAt: new Date() } });
+      console.log(`✅ Weekly leaderboard report sent for ${reportWeek}`);
+      return true;
+    } else {
+      const err = await response.text();
+      console.error('❌ Failed to send weekly leaderboard report:', err);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error sending weekly leaderboard report:', error);
+    return false;
+  }
+}
+
+export async function checkAndSendWeeklyLeaderboardReport(): Promise<void> {
+  try {
+    const now = new Date();
+    // Send report on Monday UTC (day 1), first check of the new week
+    if (now.getUTCDay() === 1) {
+      await sendWeeklyLeaderboardReport();
+    }
+  } catch (error) {
+    console.error('❌ Error in weekly leaderboard check:', error);
+  }
+}
+
 export async function sendTelegramMessage(message: string): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ADMIN_ID) {
     console.error('Telegram bot token or admin ID not configured');
@@ -1036,6 +1152,7 @@ Share your unique referral link and earn PAD when your friends join:
               reply_markup: {
                 inline_keyboard: [
                   [{ text: '💰 Pending Withdrawals', callback_data: 'admin_pending_withdrawals' }],
+                  [{ text: '🏆 Leaderboard', callback_data: 'admin_leaderboard' }],
                   [{ text: '🔔 Announcement', callback_data: 'admin_announce' }],
                   [{ text: '📊 Advertise', callback_data: 'admin_advertise' }],
                   [{ text: '🔄 Refresh', callback_data: 'admin_refresh' }]
@@ -1049,6 +1166,82 @@ Share your unique referral link and earn PAD when your friends join:
         return true;
       }
       
+      // Handle admin leaderboard button - shows current weekly leaderboard
+      if (data === 'admin_leaderboard' && isAdmin(chatId)) {
+        try {
+          const { db } = await import('./db');
+          const { sql } = await import('drizzle-orm');
+          const { users } = await import('../shared/schema');
+
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ callback_query_id: callbackQuery.id, text: '🏆 Loading leaderboard...' })
+          });
+
+          const currentWeek = (() => {
+            const now = new Date();
+            const year = now.getUTCFullYear();
+            const startOfYear = new Date(Date.UTC(year, 0, 1));
+            const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+            const week = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+            return `${year}-W${String(week).padStart(2, '0')}`;
+          })();
+
+          const top10 = await db
+            .select({
+              userId: users.id,
+              username: users.username,
+              firstName: users.firstName,
+              weeklyStars: users.weeklyStars,
+            })
+            .from(users)
+            .where(sql`COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek} AND COALESCE(${users.weeklyStars}, 0) > 0`)
+            .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+            .limit(10);
+
+          const rankEmojis: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
+          const prizeMap: Record<number, string> = { 1: '$5', 2: '$3', 3: '$2' };
+
+          let lbText = `🏆 <b>Leaderboard (Weekly)</b>\n<code>${currentWeek}</code>\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+          if (top10.length === 0) {
+            lbText += '<i>No participants this week yet.</i>';
+          } else {
+            lbText += `<b>Position  │  Stars  │  Prize</b>\n\n`;
+            top10.forEach((u, i) => {
+              const rank = i + 1;
+              const rankStr = rankEmojis[rank] || `${rank}.`;
+              const name = (u.firstName || u.username || `Player ${rank}`).slice(0, 14);
+              const stars = (u.weeklyStars ?? 0).toLocaleString();
+              const prize = prizeMap[rank] || '$0';
+              lbText += `${rankStr} <b>${name}</b>  ⭐ ${stars}  💰 <code>${prize}</code>\n`;
+            });
+          }
+
+          lbText += `\n━━━━━━━━━━━━━━━━━━━━━━\n🕐 ${new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC`;
+
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: lbText,
+              parse_mode: 'HTML',
+            })
+          });
+
+        } catch (error) {
+          console.error('❌ Error showing leaderboard:', error);
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ callback_query_id: callbackQuery.id, text: '❌ Error loading leaderboard' })
+          });
+        }
+        return true;
+      }
+
       // Handle admin advertise button - sends plain promotional messages without inline buttons
       if (data === 'admin_advertise' && isAdmin(chatId)) {
         // Set pending advertise state (using pendingBroadcasts Map with advertise prefix)
@@ -1921,6 +2114,7 @@ ${walletAddress}
             reply_markup: {
               inline_keyboard: [
                 [{ text: '💰 Pending Withdrawals', callback_data: 'admin_pending_withdrawals' }],
+                [{ text: '🏆 Leaderboard', callback_data: 'admin_leaderboard' }],
                 [{ text: '🔔 Announcement', callback_data: 'admin_announce' }],
                 [{ text: '📊 Advertise', callback_data: 'admin_advertise' }],
                 [{ text: '🔄 Refresh', callback_data: 'admin_refresh' }]

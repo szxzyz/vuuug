@@ -1524,6 +1524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: users.username,
           firstName: users.firstName,
           weeklyStars: users.weeklyStars,
+          profileImageUrl: users.profileImageUrl,
         })
         .from(users)
         .where(
