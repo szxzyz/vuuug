@@ -26,7 +26,6 @@ const Affiliates = lazy(() => import("@/pages/Affiliates"));
 const CreateTask = lazy(() => import("@/pages/CreateTask"));
 const Withdraw = lazy(() => import("@/pages/Withdraw"));
 const CountryControls = lazy(() => import("@/pages/CountryControls"));
-const Store = lazy(() => import("@/pages/Store"));
 const Missions = lazy(() => import("@/pages/Missions"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -55,7 +54,6 @@ function Router() {
         <Route path="/profile" component={Landing} />
         <Route path="/admin" component={Admin} />
         <Route path="/admin/country-controls" component={CountryControls} />
-        <Route path="/store" component={Store} />
         <Route path="/missions" component={Missions} />
         <Route component={NotFound} />
       </Switch>
