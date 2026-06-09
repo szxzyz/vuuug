@@ -170,7 +170,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 gap: 3,
               }}>
                 {m.isBug && (
-                  <img src="/star-bug.png" alt="STAR" style={{ width: 11, height: 11, flexShrink: 0, objectFit: 'contain' }} />
+                  <img src="/star-bug.png" alt="STAR" style={{ width: 16, height: 16, flexShrink: 0, objectFit: 'contain' }} />
                 )}
                 {m.label}
               </span>
@@ -197,7 +197,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>Bonus</span>
             <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 3 }}>
-              {currentMilestone.isBug && <img src="/star-bug.png" alt="STAR" style={{ width: 11, height: 11, objectFit: 'contain' }} />}
+              {currentMilestone.isBug && <img src="/star-bug.png" alt="STAR" style={{ width: 16, height: 16, objectFit: 'contain' }} />}
               {currentMilestone.label}
             </span>
           </div>

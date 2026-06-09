@@ -59,13 +59,13 @@ export default function Header() {
 
           {/* BUG balance — same height as avatar (h-10) */}
           <div className="h-10 flex items-center gap-1.5 bg-white/10 rounded-full px-3">
-            <img src="/star-bug.png" alt="STAR" className="w-4 h-4 object-contain flex-shrink-0" />
+            <img src="/star-bug.png" alt="STAR" className="w-8 h-8 object-contain flex-shrink-0" />
             <span className="text-[13px] font-bold text-white leading-none">{bugFormatted}</span>
           </div>
 
           {/* USD balance — same height as avatar (h-10) */}
           <div className="h-10 flex items-center gap-1.5 bg-white/10 rounded-full px-3">
-            <img src="/usdt.png" alt="USDT" className="w-4 h-4 object-contain flex-shrink-0" />
+            <img src="/usdt.png" alt="USDT" className="w-6 h-6 object-contain flex-shrink-0" />
             <span className="text-[13px] font-bold text-white leading-none">{usdFormatted}</span>
           </div>
         </div>
@@ -74,7 +74,7 @@ export default function Header() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowPromo(true)}
-            className="w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-all duration-200 relative"
+            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition-all duration-200 relative"
             title="Promo Code"
           >
             <Gift className="w-5 h-5 text-white" />
@@ -83,7 +83,7 @@ export default function Header() {
 
           <button
             onClick={() => setShowSettings(true)}
-            className="w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-all duration-200"
+            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition-all duration-200"
           >
             <Settings className="w-5 h-5 text-white" />
           </button>
