@@ -8,34 +8,108 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Fira+Code:wght@300..700&family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400..700;1,400..700&family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Outfit:wght@100..900&family=Oxanium:wght@200..800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Roboto:ital,wght@0,100..900;1,100..900&family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Space+Grotesk:wght@300..700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Monetag Rewarded Interstitial/Popup SDK -->
-    <script src="//libtl.com/sdk.js" data-zone="10401872" data-sdk="show_10401872"></script>
-    <!-- Monetag In-App Interstitial -->
-    <script>
-      (function(d,z,s){s.src='https://'+d+'/401/'+z;try{(document.body||document.documentElement).appendChild(s)}catch(e){}})('vaugroede.com',10401872,document.createElement('script'));
-      window.monetagInAppConfig = {
-        adsNumber: 999,
-        timePerAds: 24,
-        timeBetweenAds: 15,
-        delay: 5,
-        everyPage: false
-      };
-    </script>
-    <!-- Giga Hub Ad Network -->
-    <script src="https://ad.gigapub.tech/script?id=5162"></script>
-    <!-- Adexora Ads SDK -->
-    <script src="https://adexora.com/cdn/ads.js?id=1078"></script>
-    <!-- AdExtra Ads SDK -->
-    <script async src="https://partner.adextra.io/jt/353c332d4f2440f448057df79cb605e5d3d64ef0.js"></script>
-    <!-- Adsgram SDK -->
-    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- Monetag Rewarded Interstitial SDK (zone 11123429) -->
+    <script src='//libtl.com/sdk.js' data-zone='11123429' data-sdk='show_11123429'></script>
+
+    <!-- GiGaPub Ad Network — publisher script -->
+    <script src="https://ad.gigapub.tech/script?id=6937"></script>
+    <!-- GiGaPub — mission rewarded ad unit -->
+    <script src="https://ad.gigapub.tech/script?id=34625"></script>
+    <!-- GiGaPub — app-open popup (shown once per session) -->
+    <script src="https://ad.gigapub.tech/script?id=34626"></script>
+
+    <!-- Adexium Widget SDK -->
+    <script type="text/javascript">
+      window._adexiumWidget = null;
+      window._adexiumScriptLoaded = false;
+      window._adexiumScriptFailed = false;
+
+      function _initAdexium() {
+        if (window._adexiumWidget) return true;
+        if (typeof AdexiumWidget !== 'undefined') {
+          try {
+            window._adexiumWidget = new AdexiumWidget({
+              wid: '834b83d2-003e-4ece-a918-df6833aac001',
+              adFormat: 'interstitial'
+            });
+            return true;
+          } catch(e) {
+            console.warn('[Adexium] Init error:', e);
+          }
+        }
+        return false;
+      }
+
+      // Poll until AdexiumWidget is defined (max 5s), then show ad
+      window.showAdexium = function() {
+        return new Promise(function(resolve, reject) {
+          if (window._adexiumScriptFailed) {
+            reject(new Error('unavailable'));
+            return;
+          }
+          var attempts = 0;
+          var maxAttempts = 50; // 50 x 100ms = 5s
+          function tryShow() {
+            if (_initAdexium()) {
+              try {
+                var result = window._adexiumWidget.show();
+                if (result && typeof result.then === 'function') {
+                  result.then(resolve).catch(resolve);
+                } else {
+                  // Non-Promise show(): wait 5s for ad to complete
+                  setTimeout(resolve, 5000);
+                }
+              } catch(e) {
+                console.warn('[Adexium] show() error:', e);
+                reject(e);
+              }
+            } else if (attempts++ < maxAttempts) {
+              setTimeout(tryShow, 100);
+            } else {
+              console.warn('[Adexium] SDK not available after 5s');
+              reject(new Error('unavailable'));
+            }
+          }
+          tryShow();
+        });
+      };
+
+      // Load script dynamically so we can track success/failure
+      var adexiumScript = document.createElement('script');
+      adexiumScript.type = 'text/javascript';
+      adexiumScript.src = 'https://cdn.tgads.space/assets/js/adexium-widget.min.js';
+      adexiumScript.onload = function() {
+        window._adexiumScriptLoaded = true;
+        _initAdexium();
+        console.log('[Adexium] SDK loaded', typeof AdexiumWidget);
+      };
+      adexiumScript.onerror = function() {
+        window._adexiumScriptFailed = true;
+        console.warn('[Adexium] SDK failed to load');
+      };
+      document.head.appendChild(adexiumScript);
+    </script>
+
+    <!-- Richads Telegram Ads (app-open popup) -->
+    <script src="https://richinfo.co/richpartners/telegram/js/tg-ob.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        if (typeof TelegramAdsController !== 'undefined') {
+          window.TelegramAdsController = new TelegramAdsController();
+          window.TelegramAdsController.initialize({
+            pubId: "1014157",
+            appId: "7733",
+          });
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <!-- AdExtra Container (hidden by default) -->
-    <div id="353c332d4f2440f448057df79cb605e5d3d64ef0" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: rgba(0,0,0,0.9);"></div>
     <script type="module" src="/src/main.tsx"></script>
     <!-- This is a replit script which adds a banner on the top of the page when opened in development mode outside the replit environment -->
     <script type="text/javascript" src="https://replit.com/public/js/replit-dev-banner.js"></script>
