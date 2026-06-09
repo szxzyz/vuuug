@@ -104,13 +104,16 @@ export const users = pgTable("users", {
   lastMembershipCheck: timestamp("last_membership_check"),
   dailyLoginStreak: integer("daily_login_streak").default(0),
   lastDailyLoginDate: text("last_daily_login_date"),
+  starBalance: integer("star_balance").default(0),
+  weeklyStars: integer("weekly_stars").default(0),
+  weeklyStarWeek: text("weekly_star_week"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Earnings table
 export const earnings = pgTable("earnings", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  id: serial("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   amount: decimal("amount", { precision: 30, scale: 10 }).notNull(),
   source: varchar("source").notNull(),
