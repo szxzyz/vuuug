@@ -2,7 +2,18 @@ import { useState, useRef, useCallback } from 'react';
 
 declare global {
   interface Window {
-    show_10401872: (type?: string | { type: string; inAppSettings: any }) => Promise<void>;
+    show_11123429: (type?: string) => Promise<void>;
+    showGiga: (id?: number) => Promise<void>;
+    showAdexium: () => Promise<void>;
+    _adexiumWidget: {
+      show: () => void | Promise<void>;
+      autoMode: () => void;
+    } | null;
+    _adexiumReady: boolean;
+    AdexiumWidget: new (config: { wid: string; adFormat: string }) => {
+      show: () => void | Promise<void>;
+      autoMode: () => void;
+    };
   }
 }
 
@@ -18,9 +29,9 @@ export function useAdFlow() {
 
   const showMonetagAd = useCallback((): Promise<{ success: boolean; watchedFully: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
-      if (typeof window.show_10401872 === 'function') {
+      if (typeof window.show_11123429 === 'function') {
         monetagStartTimeRef.current = Date.now();
-        window.show_10401872()
+        window.show_11123429()
           .then(() => {
             const watchDuration = Date.now() - monetagStartTimeRef.current;
             const watchedAtLeast3Seconds = watchDuration >= 3000;
@@ -34,6 +45,33 @@ export function useAdFlow() {
           });
       } else {
         resolve({ success: false, watchedFully: false, unavailable: true });
+      }
+    });
+  }, []);
+
+  const showGigaPubAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
+    return new Promise((resolve) => {
+      if (typeof window.showGiga === 'function') {
+        window.showGiga()
+          .then(() => resolve({ success: true, unavailable: false }))
+          .catch(() => resolve({ success: false, unavailable: false }));
+      } else {
+        resolve({ success: false, unavailable: true });
+      }
+    });
+  }, []);
+
+  const showAdexiumAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
+    return new Promise((resolve) => {
+      if (typeof window.showAdexium === 'function') {
+        window.showAdexium()
+          .then(() => resolve({ success: true, unavailable: false }))
+          .catch((err: Error) => {
+            const isUnavailable = err?.message === 'unavailable' || !window._adexiumScriptLoaded;
+            resolve({ success: false, unavailable: isUnavailable });
+          });
+      } else {
+        resolve({ success: false, unavailable: true });
       }
     });
   }, []);
@@ -72,5 +110,7 @@ export function useAdFlow() {
     adStep,
     runAdFlow,
     showMonetagAd,
+    showGigaPubAd,
+    showAdexiumAd,
   };
 }
