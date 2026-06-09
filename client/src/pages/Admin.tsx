@@ -1498,10 +1498,11 @@ function SettingsSection() {
     bugPerUsd: '10000',
     withdrawalBugRequirementEnabled: true,
     weeklyGiveawayAmount: '10',
+    weeklyContestEndDate: '',
     monetagMissionReward: '50',
     monetagMissionLimit: '10',
-    adGramMissionReward: '50',
-    adGramMissionLimit: '10',
+    adexiumMissionReward: '50',
+    adexiumMissionLimit: '10',
     gigaPubMissionReward: '50',
     gigaPubMissionLimit: '10',
   });
@@ -1554,10 +1555,11 @@ function SettingsSection() {
         bugPerUsd: settingsData.bugPerUsd?.toString() || '10000',
         withdrawalBugRequirementEnabled: settingsData.withdrawalBugRequirementEnabled !== false,
         weeklyGiveawayAmount: settingsData.weeklyGiveawayAmount?.toString() || '10',
+        weeklyContestEndDate: settingsData.weeklyContestEndDate?.toString() || '',
         monetagMissionReward: settingsData.monetagMissionReward?.toString() || '50',
         monetagMissionLimit: settingsData.monetagMissionLimit?.toString() || '10',
-        adGramMissionReward: settingsData.adGramMissionReward?.toString() || '50',
-        adGramMissionLimit: settingsData.adGramMissionLimit?.toString() || '10',
+        adexiumMissionReward: settingsData.adexiumMissionReward?.toString() || '50',
+        adexiumMissionLimit: settingsData.adexiumMissionLimit?.toString() || '10',
         gigaPubMissionReward: settingsData.gigaPubMissionReward?.toString() || '50',
         gigaPubMissionLimit: settingsData.gigaPubMissionLimit?.toString() || '10',
       });
@@ -1658,10 +1660,11 @@ function SettingsSection() {
         bugPerUsd: parseInt(settings.bugPerUsd) || 10000,
         withdrawalBugRequirementEnabled: settings.withdrawalBugRequirementEnabled,
         weeklyGiveawayAmount: parseFloat(settings.weeklyGiveawayAmount) || 10,
+        weeklyContestEndDate: settings.weeklyContestEndDate || '',
         monetagMissionReward: parseInt(settings.monetagMissionReward) || 50,
         monetagMissionLimit: parseInt(settings.monetagMissionLimit) || 10,
-        adGramMissionReward: parseInt(settings.adGramMissionReward) || 50,
-        adGramMissionLimit: parseInt(settings.adGramMissionLimit) || 10,
+        adexiumMissionReward: parseInt(settings.adexiumMissionReward) || 50,
+        adexiumMissionLimit: parseInt(settings.adexiumMissionLimit) || 10,
         gigaPubMissionReward: parseInt(settings.gigaPubMissionReward) || 50,
         gigaPubMissionLimit: parseInt(settings.gigaPubMissionLimit) || 10,
       });
@@ -2318,7 +2321,7 @@ function SettingsSection() {
               </Label>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs">Reward (PAD/ad)</Label>
+                  <Label className="text-xs">Reward (POW/ad)</Label>
                   <Input
                     type="number"
                     value={settings.monetagMissionReward}
@@ -2340,21 +2343,21 @@ function SettingsSection() {
                   />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagMissionReward || 50} PAD · {settingsData?.monetagMissionLimit || 10} ads/day</p>
+              <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagMissionReward || 50} POW · {settingsData?.monetagMissionLimit || 10} ads/day</p>
             </div>
 
-            {/* AdGram */}
+            {/* Adexium */}
             <div className="space-y-2 p-3 border rounded-lg border-blue-500/20 bg-blue-500/5">
               <Label className="text-sm font-semibold text-blue-400">
-                <i className="fas fa-bullhorn mr-2"></i>AdGram
+                <i className="fas fa-tv mr-2"></i>Adexium
               </Label>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs">Reward (PAD/ad)</Label>
+                  <Label className="text-xs">Reward (POW/ad)</Label>
                   <Input
                     type="number"
-                    value={settings.adGramMissionReward}
-                    onChange={(e) => setSettings({ ...settings, adGramMissionReward: e.target.value })}
+                    value={settings.adexiumMissionReward}
+                    onChange={(e) => setSettings({ ...settings, adexiumMissionReward: e.target.value })}
                     placeholder="50"
                     min="1"
                     className="h-8"
@@ -2364,15 +2367,15 @@ function SettingsSection() {
                   <Label className="text-xs">Daily Limit</Label>
                   <Input
                     type="number"
-                    value={settings.adGramMissionLimit}
-                    onChange={(e) => setSettings({ ...settings, adGramMissionLimit: e.target.value })}
+                    value={settings.adexiumMissionLimit}
+                    onChange={(e) => setSettings({ ...settings, adexiumMissionLimit: e.target.value })}
                     placeholder="10"
                     min="1"
                     className="h-8"
                   />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">Current: {settingsData?.adGramMissionReward || 50} PAD · {settingsData?.adGramMissionLimit || 10} ads/day</p>
+              <p className="text-xs text-muted-foreground">Current: {settingsData?.adexiumMissionReward || 50} POW · {settingsData?.adexiumMissionLimit || 10} ads/day</p>
             </div>
 
             {/* GiGaPub */}
@@ -2382,7 +2385,7 @@ function SettingsSection() {
               </Label>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs">Reward (PAD/ad)</Label>
+                  <Label className="text-xs">Reward (POW/ad)</Label>
                   <Input
                     type="number"
                     value={settings.gigaPubMissionReward}
@@ -2404,7 +2407,7 @@ function SettingsSection() {
                   />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">Current: {settingsData?.gigaPubMissionReward || 50} PAD · {settingsData?.gigaPubMissionLimit || 10} ads/day</p>
+              <p className="text-xs text-muted-foreground">Current: {settingsData?.gigaPubMissionReward || 50} POW · {settingsData?.gigaPubMissionLimit || 10} ads/day</p>
             </div>
           </div>
         )}
@@ -2428,6 +2431,22 @@ function SettingsSection() {
                 Displayed on the Home page weekly contest banner. Current: ${settingsData?.weeklyGiveawayAmount || 10}
               </p>
             </div>
+
+            <div className="space-y-2 md:col-span-2 p-3 border rounded-lg border-cyan-500/20 bg-cyan-500/5">
+              <Label htmlFor="weekly-contest-end" className="text-sm font-semibold text-cyan-400">
+                <i className="fas fa-clock mr-2"></i>Weekly Contest End Date
+              </Label>
+              <Input
+                id="weekly-contest-end"
+                type="datetime-local"
+                value={settings.weeklyContestEndDate}
+                onChange={(e) => setSettings({ ...settings, weeklyContestEndDate: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Timer shown on Leaderboard Contest Info tab. Current: {settingsData?.weeklyContestEndDate || 'Not set'}
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="wallet-change-fee" className="text-sm font-semibold">
                 <i className="fas fa-exchange-alt mr-2 text-yellow-600"></i>
