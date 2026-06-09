@@ -6,10 +6,26 @@ import { earnings } from '../shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
 
 const isAdmin = (telegramId: string): boolean => {
-  const adminIdsEnv = process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '';
+  const tid = telegramId.toString();
+  // Check SUPER_ADMIN_ID / TELEGRAM_ADMIN_ID (master admin)
+  const superAdmin = (process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_ID || '').trim();
+  if (superAdmin && tid === superAdmin) return true;
+  // Check comma-separated sub-admins
+  const adminIdsEnv = (process.env.TELEGRAM_ADMIN_IDS || '').trim();
   if (!adminIdsEnv) return false;
-  const adminIds = adminIdsEnv.split(',').map(id => id.trim()).filter(Boolean);
-  return adminIds.includes(telegramId.toString());
+  return adminIdsEnv.split(',').map(id => id.trim()).filter(Boolean).includes(tid);
+};
+
+// Async version — also checks DB-added admins (added via the admin panel)
+const isAdminAsync = async (telegramId: string): Promise<boolean> => {
+  if (isAdmin(telegramId)) return true;
+  try {
+    const { db: dbConn } = await import('./db');
+    const { adminRoles } = await import('../shared/schema');
+    const { eq } = await import('drizzle-orm');
+    const [record] = await dbConn.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramId.toString())).limit(1);
+    return !!record;
+  } catch { return false; }
 };
 
 // Cached bot username fetched from Telegram API on startup
@@ -743,7 +759,7 @@ export async function sendWelcomeMessage(userId: string): Promise<boolean> {
 
 // Admin broadcast functionality
 export async function sendBroadcastMessage(message: string, adminTelegramId: string): Promise<{ success: number; failed: number }> {
-  if (!isAdmin(adminTelegramId)) {
+  if (!await isAdminAsync(adminTelegramId)) {
     console.error('❌ Unauthorized attempt to send broadcast message');
     return { success: 0, failed: 0 };
   }
@@ -1020,7 +1036,7 @@ Share your unique referral link and earn PAD when your friends join:
         return true;
       }
       
-      if (data === 'refresh_stats' && isAdmin(chatId)) {
+      if (data === 'refresh_stats' && await isAdminAsync(chatId)) {
         try {
           const stats = await storage.getAppStats();
           
@@ -1056,7 +1072,7 @@ Share your unique referral link and earn PAD when your friends join:
       }
       
       // Handle admin panel refresh button
-      if (data === 'admin_refresh' && isAdmin(chatId)) {
+      if (data === 'admin_refresh' && await isAdminAsync(chatId)) {
         try {
           const { db } = await import('./db');
           const { sql } = await import('drizzle-orm');
@@ -1167,7 +1183,7 @@ Share your unique referral link and earn PAD when your friends join:
       }
       
       // Handle admin leaderboard button - shows current weekly leaderboard
-      if (data === 'admin_leaderboard' && isAdmin(chatId)) {
+      if (data === 'admin_leaderboard' && await isAdminAsync(chatId)) {
         try {
           const { db } = await import('./db');
           const { sql } = await import('drizzle-orm');
@@ -1243,7 +1259,7 @@ Share your unique referral link and earn PAD when your friends join:
       }
 
       // Handle admin advertise button - sends plain promotional messages without inline buttons
-      if (data === 'admin_advertise' && isAdmin(chatId)) {
+      if (data === 'admin_advertise' && await isAdminAsync(chatId)) {
         // Set pending advertise state (using pendingBroadcasts Map with advertise prefix)
         pendingBroadcasts.set(`advertise_${chatId}`, { timestamp: Date.now() });
         
@@ -1263,7 +1279,7 @@ Share your unique referral link and earn PAD when your friends join:
       }
       
       // Handle pending withdrawals button - show all pending withdrawal requests
-      if (data && (data === 'admin_pending_withdrawals' || data.startsWith('admin_pending_withdrawals_page_')) && isAdmin(chatId)) {
+      if (data && (data === 'admin_pending_withdrawals' || data.startsWith('admin_pending_withdrawals_page_')) && await isAdminAsync(chatId)) {
         try {
           const { db } = await import('./db');
           const { eq } = await import('drizzle-orm');
@@ -1408,7 +1424,7 @@ ${walletAddress}
       }
       
       // Handle admin announce button - prompt for broadcast message
-      if (data === 'admin_announce' && isAdmin(chatId)) {
+      if (data === 'admin_announce' && await isAdminAsync(chatId)) {
         // Store pending broadcast state
         pendingBroadcasts.set(chatId, { timestamp: Date.now() });
         
@@ -1450,7 +1466,7 @@ ${walletAddress}
       }
       
       // Handle cancel broadcast button
-      if (data === 'cancel_broadcast' && isAdmin(chatId)) {
+      if (data === 'cancel_broadcast' && await isAdminAsync(chatId)) {
         // Clear pending broadcast state
         pendingBroadcasts.delete(chatId);
         
@@ -1474,7 +1490,7 @@ ${walletAddress}
       if (data && data.startsWith('withdraw_paid_')) {
         const withdrawalId = data.replace('withdraw_paid_', '');
         
-        if (!isAdmin(chatId)) {
+        if (!await isAdminAsync(chatId)) {
           await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1584,7 +1600,7 @@ ${walletAddress}
       if (data && data.startsWith('withdraw_reject_')) {
         const withdrawalId = data.replace('withdraw_reject_', '');
         
-        if (!isAdmin(chatId)) {
+        if (!await isAdminAsync(chatId)) {
           await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1759,7 +1775,7 @@ ${walletAddress}
     console.log(`📝 User upserted: ID=${dbUser.id}, TelegramID=${dbUser.telegram_id}, RefCode=${dbUser.referralCode}, IsNew=${isNewUser}`);
 
     // Check if admin has a pending rejection waiting for a reason
-    if (isAdmin(chatId) && pendingRejections.has(chatId)) {
+    if (await isAdminAsync(chatId) && pendingRejections.has(chatId)) {
       const rejectionState = pendingRejections.get(chatId)!;
       const rejectionReason = text;
       
@@ -1809,7 +1825,7 @@ ${walletAddress}
     // CRITICAL: Use delete() in condition for atomic check-and-clear
     // Map.delete() returns true if key existed, false otherwise
     // This ensures ONLY the first webhook event proceeds, preventing duplicates
-    if (isAdmin(chatId) && pendingBroadcasts.delete(chatId)) {
+    if (await isAdminAsync(chatId) && pendingBroadcasts.delete(chatId)) {
       const broadcastMessage = text;
       
       console.log(`📢 [BROADCAST START] Admin ${chatId} initiating broadcast: "${broadcastMessage.substring(0, 50)}..."`);
@@ -1926,7 +1942,7 @@ ${walletAddress}
     }
     
     // Check if admin has a pending advertise message waiting
-    if (isAdmin(chatId) && pendingBroadcasts.delete(`advertise_${chatId}`)) {
+    if (await isAdminAsync(chatId) && pendingBroadcasts.delete(`advertise_${chatId}`)) {
       const advertiseMessage = text;
       
       console.log(`📊 [ADVERTISE START] Admin ${chatId} initiating advertise: "${advertiseMessage.substring(0, 50)}..."`);
@@ -2019,7 +2035,7 @@ ${walletAddress}
     
     // Handle /szxzyz command - Admin Control Panel
     if (text === '/szxzyz') {
-      if (!isAdmin(chatId)) {
+      if (!await isAdminAsync(chatId)) {
         // Non-admin users get redirected to /start
         await sendUserTelegramNotification(chatId, 'Please use /start');
         return true;
@@ -2163,7 +2179,7 @@ ${walletAddress}
 
     // Admin command to list pending withdrawal requests
     if (text === '/payouts' || text === '/withdrawals') {
-      if (!isAdmin(chatId)) {
+      if (!await isAdminAsync(chatId)) {
         return true; // Ignore command for non-admins
       }
       

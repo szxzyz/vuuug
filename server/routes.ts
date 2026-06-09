@@ -260,9 +260,19 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 // Get the role + permissions for an admin telegram ID
 // TELEGRAM_ADMIN_ID / SUPER_ADMIN_ID always gets super_admin with ALL permissions
 // TELEGRAM_ADMIN_IDS sub-admins get their DB-assigned role (or moderator by default)
+// Check admin status including DB-added admins (async version used in API routes)
+async function isAdminAsync(telegramId: string): Promise<boolean> {
+  if (!telegramId) return false;
+  if (isAdmin(telegramId)) return true;
+  // Check DB-added admins
+  try {
+    const [record] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramId)).limit(1);
+    return !!record;
+  } catch { return false; }
+}
+
 async function getAdminRole(telegramId: string): Promise<{ role: string; permissions: string[]; name: string } | null> {
   if (!telegramId) return null;
-  if (!isAdmin(telegramId)) return null;
 
   // Super admin always gets full super_admin role regardless of DB
   if (isSuperAdmin(telegramId)) {
@@ -273,7 +283,7 @@ async function getAdminRole(telegramId: string): Promise<{ role: string; permiss
     return { role: 'super_admin', permissions: ALL_PERMISSIONS, name: 'Super Admin' };
   }
 
-  // Sub-admin: check DB record for assigned role/permissions
+  // Always check DB for assigned role/permissions (covers both env sub-admins and DB-added admins)
   try {
     const [record] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramId)).limit(1);
     if (record) {
@@ -283,8 +293,12 @@ async function getAdminRole(telegramId: string): Promise<{ role: string; permiss
     }
   } catch { /* no DB record */ }
 
-  // Sub-admin with no DB record — default to moderator (super admin controls their real role)
-  return { role: 'moderator', permissions: ROLE_DEFAULT_PERMISSIONS['moderator'] || [], name: 'Admin' };
+  // Env-listed sub-admin with no DB record — default to moderator
+  if (isAdmin(telegramId)) {
+    return { role: 'moderator', permissions: ROLE_DEFAULT_PERMISSIONS['moderator'] || [], name: 'Admin' };
+  }
+
+  return null;
 }
 
 
@@ -1132,10 +1146,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Mission page ad platform settings
         monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '50')),
         monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '10')),
-        adGramMissionReward: parseInt(getSetting('adgram_mission_reward', '50')),
-        adGramMissionLimit: parseInt(getSetting('adgram_mission_limit', '10')),
-        gigaPubMissionReward: parseInt(getSetting('gigapub_mission_reward', '50')),
-        gigaPubMissionLimit: parseInt(getSetting('gigapub_mission_limit', '10')),
+        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '50')),
+        adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '10')),
+        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '50')),
+        gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '10')),
+        weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -3291,7 +3306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin identity check — returns whether the current user is an admin
-  // Super admin = TELEGRAM_ADMIN_ID or SUPER_ADMIN_ID; sub-admins = TELEGRAM_ADMIN_IDS
+  // Checks: SUPER_ADMIN_ID/TELEGRAM_ADMIN_ID env → TELEGRAM_ADMIN_IDS env → DB admin_roles table
   // Returns: { isAdmin, role, permissions, name }
   app.get('/api/admin/check', authenticateTelegram, async (req: any, res) => {
     try {
@@ -3299,16 +3314,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!userId) return res.json({ isAdmin: false, role: null, permissions: [], name: null });
       const user = await storage.getUser(userId);
       const telegramId = user?.telegram_id || '';
-      const adminStatus = isAdmin(telegramId);
       const devStatus = process.env.NODE_ENV === 'development' && telegramId === '123456789';
-      if (!adminStatus && !devStatus) {
+
+      // Check env vars + DB (isAdminAsync covers both)
+      const adminStatus = devStatus || await isAdminAsync(telegramId);
+      if (!adminStatus) {
         return res.json({ isAdmin: false, role: null, permissions: [], name: null });
       }
+
       const roleInfo = await getAdminRole(telegramId);
+      if (!roleInfo && !devStatus) {
+        return res.json({ isAdmin: false, role: null, permissions: [], name: null });
+      }
       return res.json({
         isAdmin: true,
         role: roleInfo?.role ?? 'super_admin',
-        permissions: roleInfo?.permissions ?? [],
+        permissions: roleInfo?.permissions ?? ALL_PERMISSIONS,
         name: roleInfo?.name ?? 'Admin',
       });
     } catch {
@@ -3599,10 +3620,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Mission page ad platform settings
         monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '50')),
         monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '10')),
-        adGramMissionReward: parseInt(getSetting('adgram_mission_reward', '50')),
-        adGramMissionLimit: parseInt(getSetting('adgram_mission_limit', '10')),
-        gigaPubMissionReward: parseInt(getSetting('gigapub_mission_reward', '50')),
-        gigaPubMissionLimit: parseInt(getSetting('gigapub_mission_limit', '10')),
+        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '50')),
+        adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '10')),
+        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '50')),
+        gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '10')),
+        weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);
@@ -3665,6 +3687,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating admin settings:", error);
       res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // Mission Ads Watch endpoint — per-platform reward from admin settings
+  app.post('/api/missions/ads/watch', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const { platform } = req.body;
+
+      if (!['monetag', 'gigapub', 'adexium'].includes(platform)) {
+        return res.status(400).json({ success: false, message: 'Invalid platform' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+      if (user.banned) return res.status(403).json({ success: false, message: 'Account banned' });
+
+      // Get per-platform reward from admin settings
+      const settings = await db.select().from(adminSettings);
+      const getSetting = (key: string, def: string) => settings.find(s => s.settingKey === key)?.settingValue || def;
+
+      let reward: number;
+      switch (platform) {
+        case 'monetag':
+          reward = parseInt(getSetting('monetag_mission_reward', '50'));
+          break;
+        case 'gigapub':
+          reward = parseInt(getSetting('giga_pub_mission_reward', '50'));
+          break;
+        case 'adexium':
+          reward = parseInt(getSetting('adexium_mission_reward', '50'));
+          break;
+        default:
+          reward = 50;
+      }
+
+      await storage.addEarning({
+        userId,
+        amount: String(reward),
+        source: 'mission_ad',
+        description: `Mission ad reward (${platform})`,
+      });
+
+      return res.json({ success: true, reward });
+    } catch (error) {
+      console.error('Error in mission ad watch:', error);
+      return res.status(500).json({ success: false, message: 'Internal error' });
     }
   });
 
