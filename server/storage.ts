@@ -1330,8 +1330,9 @@ export class DatabaseStorage implements IStorage {
       }
 
       // Check balance (but don't deduct yet - wait for admin approval)
-      // Note: Admins have unlimited balance, so skip balance check for them
-      const isAdmin = user.telegram_id === process.env.TELEGRAM_ADMIN_ID;
+      // Super admin has unlimited balance - skip balance check
+      const superAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
+      const isAdmin = !!superAdminId && user.telegram_id === superAdminId;
       const userBalance = parseFloat(user.balance || '0');
       
       if (!isAdmin && userBalance < requestedAmount) {
@@ -1792,7 +1793,7 @@ export class DatabaseStorage implements IStorage {
   // Ensure admin user with unlimited balance exists for production deployment
   async ensureAdminUserExists(): Promise<void> {
     try {
-      const adminTelegramId = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '').split(',')[0].trim();
+      const adminTelegramId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
       const maxBalance = '99.999'; // Admin balance as requested
       
       // Check if admin user already exists
@@ -2623,9 +2624,10 @@ export class DatabaseStorage implements IStorage {
 
   async deductBalance(userId: string, amount: string): Promise<{ success: boolean; message: string }> {
     try {
-      // Check if user is admin - admins have unlimited balance
+      // Check if user is super admin - super admin has unlimited balance
       const user = await this.getUser(userId);
-      const isAdmin = user?.telegram_id === process.env.TELEGRAM_ADMIN_ID;
+      const superAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
+      const isAdmin = !!superAdminId && user?.telegram_id === superAdminId;
       
       if (isAdmin) {
         console.log('🔑 Admin has unlimited balance - allowing deduction');

@@ -132,15 +132,27 @@ function broadcastUpdate(update: any) {
   return messagesSent;
 }
 
-// Check if user is admin — supports comma-separated TELEGRAM_ADMIN_IDS or single TELEGRAM_ADMIN_ID
+// Super admin check — TELEGRAM_ADMIN_ID or SUPER_ADMIN_ID env var (the one true master admin)
+const isSuperAdmin = (telegramId: string): boolean => {
+  const superAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
+  if (!superAdminId) return false;
+  return telegramId.toString() === superAdminId;
+};
+
+// Check if user is admin — super admin first, then sub-admins from TELEGRAM_ADMIN_IDS
 const isAdmin = (telegramId: string): boolean => {
-  const adminIdsEnv = process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '';
-  if (!adminIdsEnv) {
-    console.warn('⚠️ TELEGRAM_ADMIN_IDS not set - admin access disabled');
+  // Super admin always has access
+  if (isSuperAdmin(telegramId)) return true;
+  // Sub-admins added by super admin (TELEGRAM_ADMIN_IDS is a separate pool)
+  const subAdminIds = (process.env.TELEGRAM_ADMIN_IDS || '').trim();
+  if (!subAdminIds) {
+    if (!process.env.TELEGRAM_ADMIN_ID && !process.env.SUPER_ADMIN_ID) {
+      console.warn('⚠️ TELEGRAM_ADMIN_ID / SUPER_ADMIN_ID not set - admin access disabled');
+    }
     return false;
   }
-  const adminIds = adminIdsEnv.split(',').map(id => id.trim()).filter(Boolean);
-  return adminIds.includes(telegramId.toString());
+  const ids = subAdminIds.split(',').map(id => id.trim()).filter(Boolean);
+  return ids.includes(telegramId.toString());
 };
 
 // Admin authentication middleware with optional signature verification
@@ -151,7 +163,7 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
     
     // Development mode: Allow admin access for configured admin user
     if (process.env.NODE_ENV === 'development' && !telegramData) {
-      const devAdminId = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '123456789').split(',')[0].trim();
+      const devAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_IDS || '123456789').split(',')[0].trim();
       console.log('🔧 Development mode: Granting admin access to dev admin');
       req.user = { 
         telegramUser: { 
@@ -232,12 +244,22 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 };
 
 // Get the role + permissions for an admin telegram ID
-// Primary admins (from env) always get super_admin; others are DB-driven
+// TELEGRAM_ADMIN_ID / SUPER_ADMIN_ID always gets super_admin with ALL permissions
+// TELEGRAM_ADMIN_IDS sub-admins get their DB-assigned role (or moderator by default)
 async function getAdminRole(telegramId: string): Promise<{ role: string; permissions: string[]; name: string } | null> {
   if (!telegramId) return null;
   if (!isAdmin(telegramId)) return null;
 
-  // Check DB record first
+  // Super admin always gets full super_admin role regardless of DB
+  if (isSuperAdmin(telegramId)) {
+    try {
+      const [record] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramId)).limit(1);
+      return { role: 'super_admin', permissions: ALL_PERMISSIONS, name: record?.name || 'Super Admin' };
+    } catch { /* ignore */ }
+    return { role: 'super_admin', permissions: ALL_PERMISSIONS, name: 'Super Admin' };
+  }
+
+  // Sub-admin: check DB record for assigned role/permissions
   try {
     const [record] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramId)).limit(1);
     if (record) {
@@ -247,8 +269,8 @@ async function getAdminRole(telegramId: string): Promise<{ role: string; permiss
     }
   } catch { /* no DB record */ }
 
-  // Not in DB — grant super_admin if they're in the env var list
-  return { role: 'super_admin', permissions: ALL_PERMISSIONS, name: 'Super Admin' };
+  // Sub-admin with no DB record — default to moderator (super admin controls their real role)
+  return { role: 'moderator', permissions: ROLE_DEFAULT_PERMISSIONS['moderator'] || [], name: 'Admin' };
 }
 
 
@@ -3147,7 +3169,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin identity check — returns whether the current user is an admin
-  // Uses the server-side isAdmin() which reads TELEGRAM_ADMIN_IDS (comma-separated)
+  // Super admin = TELEGRAM_ADMIN_ID or SUPER_ADMIN_ID; sub-admins = TELEGRAM_ADMIN_IDS
   // Returns: { isAdmin, role, permissions, name }
   app.get('/api/admin/check', authenticateTelegram, async (req: any, res) => {
     try {
@@ -3174,7 +3196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- Admin Role Management ---
 
-  // List all admins (from both env + DB)
+  // List all admins (super admin first, then sub-admins from TELEGRAM_ADMIN_IDS + DB)
   app.get('/api/admin/admins', authenticateAdmin, async (req: any, res) => {
     try {
       const callerTelegramId = req.user?.telegramUser?.id?.toString() || '';
@@ -3183,42 +3205,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Permission denied: manage_admins required' });
       }
 
-      // Env-configured admins (always present)
-      const envIds = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '')
+      // The one true super admin (TELEGRAM_ADMIN_ID or SUPER_ADMIN_ID)
+      const superAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
+
+      // Sub-admins from TELEGRAM_ADMIN_IDS env var
+      const subAdminEnvIds = (process.env.TELEGRAM_ADMIN_IDS || '')
         .split(',').map(s => s.trim()).filter(Boolean);
 
       // DB admin records
       const dbRecords = await db.select().from(adminRoles).orderBy(adminRoles.createdAt);
-
-      // Merge: DB records override env defaults
       const dbById = new Map(dbRecords.map(r => [r.telegramId, r]));
 
-      const list = envIds.map(id => {
-        const rec = dbById.get(id);
-        return {
-          telegramId: id,
+      const list: any[] = [];
+
+      // 1. Super admin entry (always first, always super_admin role)
+      if (superAdminId) {
+        const rec = dbById.get(superAdminId);
+        list.push({
+          telegramId: superAdminId,
           name: rec?.name || 'Super Admin',
-          role: rec?.role || 'super_admin',
-          permissions: (() => { try { return JSON.parse(rec?.permissions || '[]'); } catch { return ALL_PERMISSIONS; } })(),
-          addedBy: rec?.addedBy || null,
+          role: 'super_admin',
+          permissions: ALL_PERMISSIONS,
+          addedBy: null,
+          isSuperAdmin: true,
           isPrimary: true,
           createdAt: rec?.createdAt || null,
-        };
+        });
+      }
+
+      // 2. Sub-admins from TELEGRAM_ADMIN_IDS env var
+      subAdminEnvIds.forEach(id => {
+        if (id === superAdminId) return; // skip if same as super admin
+        const rec = dbById.get(id);
+        let perms: string[] = [];
+        try { perms = JSON.parse(rec?.permissions || '[]'); } catch { perms = ROLE_DEFAULT_PERMISSIONS[rec?.role || 'moderator'] || []; }
+        list.push({
+          telegramId: id,
+          name: rec?.name || 'Admin',
+          role: rec?.role || 'moderator',
+          permissions: perms,
+          addedBy: rec?.addedBy || null,
+          isSuperAdmin: false,
+          isPrimary: true,
+          createdAt: rec?.createdAt || null,
+        });
       });
 
-      // Add DB admins not in env
+      // 3. DB-only admins (added via admin panel by super admin)
       dbRecords.forEach(rec => {
-        if (!envIds.includes(rec.telegramId)) {
-          list.push({
-            telegramId: rec.telegramId,
-            name: rec.name || 'Admin',
-            role: rec.role,
-            permissions: (() => { try { return JSON.parse(rec.permissions || '[]'); } catch { return []; } })(),
-            addedBy: rec.addedBy || null,
-            isPrimary: false,
-            createdAt: rec.createdAt || null,
-          });
-        }
+        if (rec.telegramId === superAdminId) return; // already listed
+        if (subAdminEnvIds.includes(rec.telegramId)) return; // already listed
+        let perms: string[] = [];
+        try { perms = JSON.parse(rec.permissions || '[]'); } catch { perms = ROLE_DEFAULT_PERMISSIONS[rec.role] || []; }
+        list.push({
+          telegramId: rec.telegramId,
+          name: rec.name || 'Admin',
+          role: rec.role,
+          permissions: perms,
+          addedBy: rec.addedBy || null,
+          isSuperAdmin: false,
+          isPrimary: false,
+          createdAt: rec.createdAt || null,
+        });
       });
 
       res.json({ admins: list });
@@ -3288,11 +3336,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Cannot remove yourself' });
       }
 
-      // Check if it's an env admin
-      const envIds = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '')
+      // Super admin can never be removed
+      if (isSuperAdmin(targetId)) {
+        return res.status(400).json({ message: 'Cannot remove the super admin (TELEGRAM_ADMIN_ID / SUPER_ADMIN_ID).' });
+      }
+
+      // Sub-admins in TELEGRAM_ADMIN_IDS env var cannot be removed via UI either
+      const subEnvIds = (process.env.TELEGRAM_ADMIN_IDS || '')
         .split(',').map(s => s.trim()).filter(Boolean);
-      if (envIds.includes(targetId)) {
-        return res.status(400).json({ message: 'Cannot remove primary env admin. Remove from TELEGRAM_ADMIN_IDS env var instead.' });
+      if (subEnvIds.includes(targetId)) {
+        return res.status(400).json({ message: 'Cannot remove env-configured admin. Remove from TELEGRAM_ADMIN_IDS env var instead.' });
       }
 
       await db.delete(adminRoles).where(eq(adminRoles.telegramId, targetId));
