@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Clock, Bug } from "lucide-react";
+import { Clock } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 const MILESTONES = [
@@ -170,7 +170,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 gap: 3,
               }}>
                 {m.isBug && (
-                  <Bug style={{ width: 11, height: 11, color: reached ? '#22c55e' : isNext ? '#4ade80' : 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
+                  <img src="/star-bug.png" alt="STAR" style={{ width: 11, height: 11, flexShrink: 0, objectFit: 'contain' }} />
                 )}
                 {m.label}
               </span>
@@ -197,7 +197,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>Bonus</span>
             <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 3 }}>
-              {currentMilestone.isBug && <Bug style={{ width: 11, height: 11, color: '#4ade80' }} />}
+              {currentMilestone.isBug && <img src="/star-bug.png" alt="STAR" style={{ width: 11, height: 11, objectFit: 'contain' }} />}
               {currentMilestone.label}
             </span>
           </div>
