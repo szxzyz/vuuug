@@ -188,8 +188,13 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
       
       if (isValid && verifiedUser) {
         if (!isAdmin(verifiedUser.id.toString())) {
-          console.log(`❌ Admin auth denied: User ${verifiedUser.id} is not admin`);
-          return res.status(403).json({ message: "Admin access required" });
+          // Also check DB-added admins (added via super admin panel)
+          const [dbAdmin] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, verifiedUser.id.toString())).limit(1);
+          if (!dbAdmin) {
+            console.log(`❌ Admin auth denied: User ${verifiedUser.id} is not admin`);
+            return res.status(403).json({ message: "Admin access required" });
+          }
+          console.log(`✅ Admin authenticated via DB role: ${verifiedUser.id}`);
         }
         console.log(`✅ Admin authenticated via signature: ${verifiedUser.id}`);
         req.user = { telegramUser: verifiedUser };
@@ -211,6 +216,15 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
             req.user = { telegramUser };
             return next();
           }
+          // Also allow DB-added admins in bypass mode
+          try {
+            const [dbAdmin] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramUser.id.toString())).limit(1);
+            if (dbAdmin) {
+              console.log(`✅ Admin authenticated via DB role (BYPASS): ${telegramUser.id}`);
+              req.user = { telegramUser };
+              return next();
+            }
+          } catch { /* ignore */ }
         }
       } catch (e) {
         console.error('Error parsing telegram data in bypass:', e);
@@ -1113,6 +1127,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         activePromoCode,
         // Withdrawal packages (JSON array of {usd, bug} objects)
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
+        // Weekly giveaway
+        weeklyGiveawayAmount: parseFloat(getSetting('weekly_giveaway_amount', '10')),
+        // Mission page ad platform settings
+        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '50')),
+        monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '10')),
+        adGramMissionReward: parseInt(getSetting('adgram_mission_reward', '50')),
+        adGramMissionLimit: parseInt(getSetting('adgram_mission_limit', '10')),
+        gigaPubMissionReward: parseInt(getSetting('gigapub_mission_reward', '50')),
+        gigaPubMissionLimit: parseInt(getSetting('gigapub_mission_limit', '10')),
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -3571,6 +3594,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         taskPerClickReward: parseInt(getSetting('channel_task_reward', '30')),
         taskCreationCost: parseFloat(getSetting('channel_task_cost_usd', '0.003')),
         minimumConvert: parseInt(getSetting('minimum_convert_pad', '100')) / 10000,
+        // Weekly giveaway
+        weeklyGiveawayAmount: parseFloat(getSetting('weekly_giveaway_amount', '10')),
+        // Mission page ad platform settings
+        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '50')),
+        monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '10')),
+        adGramMissionReward: parseInt(getSetting('adgram_mission_reward', '50')),
+        adGramMissionLimit: parseInt(getSetting('adgram_mission_limit', '10')),
+        gigaPubMissionReward: parseInt(getSetting('gigapub_mission_reward', '50')),
+        gigaPubMissionLimit: parseInt(getSetting('gigapub_mission_limit', '10')),
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);
