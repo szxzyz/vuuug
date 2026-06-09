@@ -1253,6 +1253,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .where(eq(users.id, userId));
           console.log(`🐛 Added ${bugRewardPerAd} BUG to user ${userId} for ad watch`);
         }
+
+        // Track 1 STAR per ad watched for weekly leaderboard
+        try {
+          const currentWeek = getISOWeek();
+          const userWeekStarWeek = (user as any).weeklyStarWeek;
+          const weeklyReset = userWeekStarWeek !== currentWeek;
+          await db.update(users).set({
+            weeklyStars: weeklyReset ? 1 : sql`COALESCE(${users.weeklyStars}, 0) + 1`,
+            weeklyStarWeek: currentWeek,
+            updatedAt: new Date(),
+          } as any).where(eq(users.id, userId));
+        } catch (starError) {
+          console.error("⚠️ Weekly star tracking failed (non-critical):", starError);
+        }
         
         // Check and activate referral bonuses (anti-fraud: requires 10 ads)
         try {
@@ -1371,6 +1385,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     { ads: 500, bugReward: null, usdReward: 0.01  },
   ];
 
+  function getISOWeek(): string {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const startOfYear = new Date(Date.UTC(year, 0, 1));
+    const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+    const week = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+    return `${year}-W${String(week).padStart(2, '0')}`;
+  }
+
   function getDailyResetDateStr(): string {
     const now = new Date();
     if (now.getUTCHours() < 12) {
@@ -1464,9 +1487,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } as any).where(eq(users.id, userId));
       }
 
+      // Track bonus Stars for milestone on weekly leaderboard: +10 per milestone level
+      try {
+        const bonusStars = (milestoneIndex + 1) * 10;
+        const currentWeek = getISOWeek();
+        const freshUser = await storage.getUser(userId);
+        const userWeek = (freshUser as any)?.weeklyStarWeek;
+        const weeklyReset = userWeek !== currentWeek;
+        await db.update(users).set({
+          weeklyStars: weeklyReset ? bonusStars : sql`COALESCE(${users.weeklyStars}, 0) + ${bonusStars}`,
+          weeklyStarWeek: currentWeek,
+          updatedAt: new Date(),
+        } as any).where(eq(users.id, userId));
+        console.log(`⭐ Added ${bonusStars} weekly stars to ${userId} for milestone ${milestoneIndex + 1}`);
+      } catch (starError) {
+        console.error("⚠️ Milestone weekly star tracking failed (non-critical):", starError);
+      }
+
       res.json({ success: true, milestoneIndex, milestone });
     } catch (error) {
       console.error('Daily bonus claim error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Weekly Leaderboard — ranked by Stars earned this week
+  app.get('/api/leaderboard/weekly', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const currentWeek = getISOWeek();
+
+      // Top 50 users this week sorted by weekly stars
+      const top50 = await db
+        .select({
+          userId: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          weeklyStars: users.weeklyStars,
+        })
+        .from(users)
+        .where(
+          sql`COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
+              AND COALESCE(${users.weeklyStars}, 0) > 0
+              AND COALESCE(${users.banned}, false) = false`
+        )
+        .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+        .limit(50);
+
+      const leaderboard = top50.map((u, i) => ({ ...u, rank: i + 1 }));
+
+      // Current user's stats
+      const currentUser = await storage.getUser(userId);
+      const userWeeklyStars =
+        (currentUser as any)?.weeklyStarWeek === currentWeek
+          ? ((currentUser as any)?.weeklyStars || 0)
+          : 0;
+      const userStarBalance = Number((currentUser as any)?.bugBalance || 0);
+
+      let userRank: { rank: number; weeklyStars: number } | null = null;
+      const myEntry = leaderboard.find((e) => e.userId === userId);
+      if (myEntry) {
+        userRank = { rank: myEntry.rank, weeklyStars: myEntry.weeklyStars || 0 };
+      } else if (userWeeklyStars > 0) {
+        // User has stars but outside top 50 — calculate approximate rank
+        const higherCount = await db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(users)
+          .where(
+            sql`COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
+                AND COALESCE(${users.weeklyStars}, 0) > ${userWeeklyStars}
+                AND COALESCE(${users.banned}, false) = false`
+          );
+        const rank = (Number(higherCount[0]?.count) || 0) + 1;
+        userRank = { rank, weeklyStars: userWeeklyStars };
+      }
+
+      res.json({ leaderboard, userRank, userStars: userWeeklyStars, userStarBalance, currentWeek });
+    } catch (error) {
+      console.error('Weekly leaderboard error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });

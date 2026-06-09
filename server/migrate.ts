@@ -600,6 +600,19 @@ export async function ensureDatabaseSchema(): Promise<void> {
     `);
     console.log('✅ [MIGRATION] admin_roles table ensured');
 
+    // Star & weekly contest columns
+    try {
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS star_balance INTEGER DEFAULT 0`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_stars INTEGER DEFAULT 0`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_star_week TEXT`);
+      console.log('✅ [MIGRATION] Star balance columns added');
+    } catch (error) {
+      console.log('ℹ️ [MIGRATION] Star columns already exist');
+    }
+
+    // Index for leaderboard queries
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_users_weekly_stars ON users(weekly_stars DESC) WHERE weekly_stars > 0`);
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
