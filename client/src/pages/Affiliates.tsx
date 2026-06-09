@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { showNotification } from '@/components/AppNotification';
 import Layout from '@/components/Layout';
 import IncomeChart from '@/components/IncomeChart';
-import { Loader2 } from 'lucide-react';
+import { Copy, Share2 } from 'lucide-react';
 
 export default function Affiliates() {
   const { data: user } = useQuery<any>({
@@ -29,7 +29,7 @@ export default function Affiliates() {
   const botUsername = import.meta.env.VITE_BOT_USERNAME || 'MoneyAdzbot';
   const referralLink = user?.referralCode
     ? `https://t.me/${botUsername}?start=${user.referralCode}`
-    : 'https://t.me/MoneyAdzbot?start=XXXXXXXX';
+    : '';
 
   const l1Percent = appSettings?.l1CommissionPercent ?? 20;
   const l2Percent = appSettings?.l2CommissionPercent ?? 4;
@@ -38,12 +38,13 @@ export default function Affiliates() {
   const referralRewardUSDEnabled = appSettings?.referralRewardUSDEnabled;
 
   const copyLink = () => {
+    if (!referralLink) return;
     navigator.clipboard.writeText(referralLink);
     showNotification('Link copied!', 'success');
   };
 
   const shareLink = async () => {
-    if (isSharing) return;
+    if (isSharing || !referralLink) return;
     setIsSharing(true);
     try {
       const tgWebApp = (window as any).Telegram?.WebApp;
@@ -63,7 +64,6 @@ export default function Affiliates() {
   const l1Count = stats?.totalInvites ?? 0;
   const l2Count = stats?.l2Count ?? 0;
 
-  // Bonus label from admin settings (using per-currency toggles)
   const rewardPAD = appSettings?.referralRewardPAD ?? 0;
   const rewardUSD = appSettings?.referralRewardUSD ?? 0;
   const padActive = referralRewardPADEnabled;
@@ -88,39 +88,28 @@ export default function Affiliates() {
           </p>
         </div>
 
-        {/* Direct link section */}
-        <div className="mb-4">
-          <p className="text-[#888] text-xs font-semibold uppercase tracking-widest mb-3">
-            Direct link in TG bot
-          </p>
+        {/* Copy + Share buttons */}
+        <div className="mb-4 flex items-center justify-end gap-3">
+          {/* Copy icon button */}
+          <button
+            onClick={copyLink}
+            disabled={!user?.referralCode}
+            className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 btn-primary"
+            title="Copy referral link"
+          >
+            <Copy className="w-5 h-5" />
+          </button>
 
-          {/* Link display */}
-          <div className="bg-[#1C1C1E] rounded-xl px-3 py-3 mb-3 overflow-hidden">
-            <p className="text-white/60 text-xs font-mono truncate">
-              {referralLink}
-            </p>
-          </div>
-
-          {/* Buttons side by side */}
-          <div className="flex gap-2">
-            <button
-              onClick={copyLink}
-              disabled={!user?.referralCode}
-              className="flex-1 py-3.5 rounded-xl text-sm font-bold tracking-wide btn-primary active:scale-95 transition-transform disabled:opacity-50"
-            >
-              Copy the link
-            </button>
-
-            <button
-              onClick={shareLink}
-              disabled={isSharing}
-              className="flex-1 py-3.5 rounded-xl text-sm font-bold tracking-wide active:scale-95 transition-transform flex items-center justify-center gap-2"
-              style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}
-            >
-              {isSharing && <Loader2 className="w-4 h-4 animate-spin" />}
-              Send
-            </button>
-          </div>
+          {/* Share circle icon button */}
+          <button
+            onClick={shareLink}
+            disabled={isSharing || !user?.referralCode}
+            className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50"
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)' }}
+            title="Share referral link"
+          >
+            <Share2 className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Referral counts */}
@@ -128,7 +117,7 @@ export default function Affiliates() {
           <div className="flex items-center justify-between py-3 border-b border-white/5">
             <div>
               <p className="text-white text-sm font-semibold">Level 1 Referrals</p>
-              <p className="text-[#888] text-xs mt-0.5">Users you invited directly · {l1Percent}% commission</p>
+              <p className="text-[#888] text-xs mt-0.5">Get {l1Percent}% of your friends POW</p>
             </div>
             <span className="text-white text-xl font-black">{l1Count}</span>
           </div>
@@ -136,7 +125,7 @@ export default function Affiliates() {
           <div className="flex items-center justify-between py-3 border-b border-white/5">
             <div>
               <p className="text-white text-sm font-semibold">Level 2 Referrals</p>
-              <p className="text-[#888] text-xs mt-0.5">Invited by your referrals · {l2Percent}% commission</p>
+              <p className="text-[#888] text-xs mt-0.5">Get {l2Percent}% from their friends</p>
             </div>
             <span className="text-white text-xl font-black">{l2Count}</span>
           </div>

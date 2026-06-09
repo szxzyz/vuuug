@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { FaStar, FaUser, FaCrown, FaMedal, FaSync } from "react-icons/fa";
-import { ChevronLeft } from "lucide-react";
+import { FaStar, FaCrown, FaMedal, FaSync, FaUser } from "react-icons/fa";
+import { Button } from "@/components/ui/button";
 
 interface LeaderboardEntry {
   userId: string;
@@ -11,6 +11,7 @@ interface LeaderboardEntry {
   firstName: string | null;
   weeklyStars: number | null;
   rank: number;
+  profileImageUrl?: string | null;
 }
 
 interface LeaderboardData {
@@ -21,7 +22,6 @@ interface LeaderboardData {
   currentWeek: string;
 }
 
-// Prize per rank
 const PRIZE_MAP: Record<number, string> = { 1: '$5', 2: '$3', 3: '$2' };
 function getPrize(rank: number) { return PRIZE_MAP[rank] || '$0'; }
 
@@ -59,15 +59,15 @@ function shortName(e: LeaderboardEntry, fb: string) {
   return n.length > 10 ? n.slice(0, 9) + '…' : n;
 }
 
-// Medal badge colors
 const MEDAL = [
-  { bg: '#FFD700', shadow: '#b8960088' },   // gold – 1st
-  { bg: '#C0C0C0', shadow: '#99999988' },   // silver – 2nd
-  { bg: '#CD7F32', shadow: '#9a5e2688' },   // bronze – 3rd
+  { bg: '#FFD700', shadow: '#b8960088' },
+  { bg: '#C0C0C0', shadow: '#99999988' },
+  { bg: '#CD7F32', shadow: '#9a5e2688' },
 ];
 
-function Avatar({ size = 64, rank }: { size?: number; rank: number }) {
+function Avatar({ size = 64, rank, profileImageUrl, name }: { size?: number; rank: number; profileImageUrl?: string | null; name?: string }) {
   const m = MEDAL[rank - 1];
+  const initials = name ? name.slice(0, 1).toUpperCase() : '?';
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
       <div style={{
@@ -76,10 +76,19 @@ function Avatar({ size = 64, rank }: { size?: number; rank: number }) {
         border: `2.5px solid ${m?.bg || '#555'}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         boxShadow: `0 0 12px ${m?.shadow || '#00000044'}`,
+        overflow: 'hidden',
       }}>
-        <FaUser style={{ fontSize: size * 0.42, color: 'rgba(255,255,255,0.35)' }} />
+        {profileImageUrl ? (
+          <img
+            src={profileImageUrl}
+            alt={name || 'User'}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        ) : (
+          <span style={{ fontSize: size * 0.38, fontWeight: 800, color: 'rgba(255,255,255,0.6)' }}>{initials}</span>
+        )}
       </div>
-      {/* Medal badge */}
       {rank <= 3 && (
         <div style={{
           position: 'absolute', bottom: -2, right: -2,
@@ -93,6 +102,31 @@ function Avatar({ size = 64, rank }: { size?: number; rank: number }) {
             ? <FaCrown style={{ fontSize: size * 0.17, color: '#000' }} />
             : <FaMedal style={{ fontSize: size * 0.17, color: '#000' }} />}
         </div>
+      )}
+    </div>
+  );
+}
+
+function SmallAvatar({ entry, index }: { entry: LeaderboardEntry; index: number }) {
+  const m = MEDAL[index];
+  const initials = (entry.firstName || entry.username || '?').slice(0, 1).toUpperCase();
+  return (
+    <div style={{
+      width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+      background: '#2C2C2E',
+      border: `1.5px solid ${index < 3 ? MEDAL[index].bg : 'rgba(255,255,255,0.08)'}`,
+      overflow: 'hidden',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      {entry.profileImageUrl ? (
+        <img
+          src={entry.profileImageUrl}
+          alt={entry.firstName || entry.username || 'User'}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      ) : (
+        <span style={{ fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.6)' }}>{initials}</span>
       )}
     </div>
   );
@@ -114,27 +148,18 @@ export default function Leaderboard() {
   const userStars = data?.userStars || 0;
   const userStarBalance = data?.userStarBalance || 0;
 
-  // For podium: show 2nd | 1st | 3rd
   const p1 = lb[0], p2 = lb[1], p3 = lb[2];
-  const rest = lb.slice(3);
 
   return (
-    <div style={{ background: '#0A0A0A', minHeight: '100vh', paddingBottom: 100, overflowX: 'hidden' }}>
+    <div style={{ background: '#0A0A0A', minHeight: '100vh', paddingBottom: 160, overflowX: 'hidden' }}>
 
-      {/* ── Header ── */}
+      {/* ── Header (no back arrow) ── */}
       <div style={{
         display: 'flex', alignItems: 'center', padding: '14px 16px 12px', gap: 10,
         position: 'sticky', top: 0, background: 'rgba(10,10,10,0.96)',
         backdropFilter: 'blur(12px)', zIndex: 20,
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
-        <button onClick={() => navigate('/')} style={{
-          background: '#1C1C1E', border: 'none', borderRadius: 10,
-          width: 36, height: 36, cursor: 'pointer', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          <ChevronLeft size={20} color="#fff" />
-        </button>
         <div style={{ flex: 1 }}>
           <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff' }}>Weekly Contest</p>
           <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
@@ -184,7 +209,7 @@ export default function Leaderboard() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 0 }}>
               {p2 ? (
                 <>
-                  <Avatar size={58} rank={2} />
+                  <Avatar size={58} rank={2} profileImageUrl={p2.profileImageUrl} name={p2.firstName || p2.username || 'Player 2'} />
                   <p style={{ margin: '7px 0 2px', fontSize: 12, fontWeight: 700, color: '#fff', textAlign: 'center' }}>
                     {shortName(p2, 'Player 2')}
                   </p>
@@ -201,7 +226,7 @@ export default function Leaderboard() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 0 }}>
               {p1 ? (
                 <>
-                  <Avatar size={74} rank={1} />
+                  <Avatar size={74} rank={1} profileImageUrl={p1.profileImageUrl} name={p1.firstName || p1.username || 'Player 1'} />
                   <p style={{ margin: '8px 0 2px', fontSize: 13, fontWeight: 800, color: '#fff', textAlign: 'center' }}>
                     {shortName(p1, 'Player 1')}
                   </p>
@@ -218,7 +243,7 @@ export default function Leaderboard() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 0 }}>
               {p3 ? (
                 <>
-                  <Avatar size={52} rank={3} />
+                  <Avatar size={52} rank={3} profileImageUrl={p3.profileImageUrl} name={p3.firstName || p3.username || 'Player 3'} />
                   <p style={{ margin: '7px 0 2px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'center' }}>
                     {shortName(p3, 'Player 3')}
                   </p>
@@ -234,8 +259,6 @@ export default function Leaderboard() {
 
           {/* ── Podium Platforms ── */}
           <div style={{ display: 'flex', alignItems: 'flex-end', height: 110, gap: 2 }}>
-
-            {/* 2nd platform */}
             <div style={{
               flex: 1, height: 86,
               background: 'linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%)',
@@ -245,8 +268,6 @@ export default function Leaderboard() {
             }}>
               <span style={{ fontSize: 36, fontWeight: 900, color: 'rgba(255,255,255,0.12)', userSelect: 'none' }}>2</span>
             </div>
-
-            {/* 1st platform */}
             <div style={{
               flex: 1, height: 110,
               background: 'linear-gradient(180deg, #333 0%, #1e1e1e 100%)',
@@ -256,8 +277,6 @@ export default function Leaderboard() {
             }}>
               <span style={{ fontSize: 42, fontWeight: 900, color: 'rgba(255,255,255,0.15)', userSelect: 'none' }}>1</span>
             </div>
-
-            {/* 3rd platform */}
             <div style={{
               flex: 1, height: 68,
               background: 'linear-gradient(180deg, #252525 0%, #161616 100%)',
@@ -277,7 +296,6 @@ export default function Leaderboard() {
       {!isLoading && lb.length > 0 && (
         <div style={{ background: '#141414', borderRadius: '20px 20px 0 0', marginTop: 0, padding: '20px 16px 16px' }}>
 
-          {/* List header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
               TOP {lb.length} PLAYERS
@@ -290,10 +308,9 @@ export default function Leaderboard() {
             </button>
           </div>
 
-          {/* All entries */}
           {lb.map((entry, i) => {
             const isMe = entry.userId === user?.id;
-            const rankMedal = MEDAL[i]; // only first 3 have medal colors
+            const rankMedal = MEDAL[i];
             return (
               <div key={entry.userId} style={{
                 display: 'flex', alignItems: 'center', gap: 12,
@@ -303,7 +320,6 @@ export default function Leaderboard() {
                 marginBottom: 4,
                 border: isMe ? '1px solid rgba(255,215,0,0.2)' : '1px solid transparent',
               }}>
-                {/* Medal or rank number */}
                 {i < 3 ? (
                   <div style={{
                     width: 28, height: 28, borderRadius: '50%',
@@ -322,17 +338,8 @@ export default function Leaderboard() {
                   </span>
                 )}
 
-                {/* Small avatar */}
-                <div style={{
-                  width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                  background: '#2C2C2E',
-                  border: `1.5px solid ${i < 3 ? MEDAL[i].bg : 'rgba(255,255,255,0.08)'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <FaUser style={{ fontSize: 14, color: 'rgba(255,255,255,0.3)' }} />
-                </div>
+                <SmallAvatar entry={entry} index={i} />
 
-                {/* Name + stars */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isMe ? '#FFD700' : '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {entry.firstName || entry.username || `Player ${i + 1}`}
@@ -344,7 +351,6 @@ export default function Leaderboard() {
                   </div>
                 </div>
 
-                {/* Prize */}
                 <span style={{ fontSize: 15, fontWeight: 800, color: '#4ADE80', flexShrink: 0 }}>
                   {getPrize(i + 1)}
                 </span>
@@ -359,10 +365,10 @@ export default function Leaderboard() {
         position: 'fixed', bottom: 0, left: 0, right: 0,
         background: 'rgba(20,20,20,0.97)', backdropFilter: 'blur(12px)',
         borderTop: '1px solid rgba(255,255,255,0.07)',
-        padding: '12px 16px', zIndex: 30,
+        padding: '12px 16px 16px', zIndex: 30,
       }}>
         {userRank ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <div style={{ background: '#2C2C2E', borderRadius: 10, padding: '7px 13px', textAlign: 'center', flexShrink: 0 }}>
               <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>RANK</p>
               <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#FFD700', lineHeight: 1.1 }}>#{userRank.rank}</p>
@@ -379,7 +385,7 @@ export default function Leaderboard() {
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <div style={{ flex: 1 }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Not on leaderboard yet</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
@@ -392,6 +398,15 @@ export default function Leaderboard() {
             </button>
           </div>
         )}
+
+        {/* Back button — styled like settings popup */}
+        <Button
+          onClick={() => navigate('/')}
+          className="w-full h-12 font-bold rounded-xl"
+          style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#fff' }}
+        >
+          Back
+        </Button>
       </div>
 
       <style>{`@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.6}}`}</style>

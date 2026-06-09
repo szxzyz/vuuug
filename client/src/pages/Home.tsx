@@ -8,7 +8,7 @@ import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
-import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Bug, DollarSign, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
+import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
 import { FaTrophy, FaMedal } from "react-icons/fa";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
@@ -1062,7 +1062,7 @@ export default function Home() {
                           : 'text-white/60 hover:text-white'
                       }`}
                     >
-                      <DollarSign className="w-3.5 h-3.5" />
+                      <img src="/usdt.png" alt="USDT" className="w-3.5 h-3.5 object-contain" />
                       <span className="text-xs font-bold">USD</span>
                     </button>
                     <button
@@ -1073,7 +1073,7 @@ export default function Home() {
                           : 'text-white/60 hover:text-white'
                       }`}
                     >
-                      <Bug className="w-3.5 h-3.5" />
+                      <img src="/star-bug.png" alt="STAR" className="w-3.5 h-3.5 object-contain" />
                       <span className="text-xs font-bold">BUG</span>
                     </button>
                   </div>

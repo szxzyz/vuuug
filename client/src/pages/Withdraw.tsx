@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { apiRequest } from '@/lib/queryClient';
 import { showNotification } from '@/components/AppNotification';
-import { Loader2, Check, Wallet, HelpCircle, Info, CircleDollarSign, Lock, UserPlus, PlayCircle, Receipt, Clock, CheckCircle, XCircle, Bug } from 'lucide-react';
+import { Loader2, Check, Wallet, HelpCircle, Info, Lock, UserPlus, PlayCircle, Receipt, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { getPaymentSystems } from '@/constants/paymentSystems';
 import { useLocation } from 'wouter';
@@ -453,7 +453,7 @@ export default function Withdraw() {
             }`}
             onClick={() => setActiveTab('withdraw')}
           >
-            <CircleDollarSign className="w-4 h-4 mr-2" />
+            <img src="/usdt.png" alt="USDT" className="w-4 h-4 object-contain mr-2" />
             Withdraw
           </Button>
           <Button
@@ -552,7 +552,7 @@ export default function Withdraw() {
                         )}
                         <div className="text-sm font-bold text-white">${pkg.usd.toFixed(2)}</div>
                         <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasBug ? 'text-green-400' : 'text-red-400'}`}>
-                          <Bug className="w-2.5 h-2.5" />
+                          <img src="/star-bug.png" alt="STAR" className="w-2.5 h-2.5 object-contain flex-shrink-0" />
                           {bugRequired.toLocaleString()}
                         </div>
                       </button>
@@ -579,7 +579,7 @@ export default function Withdraw() {
                   <div className="text-sm font-bold text-white">FULL BALANCE</div>
                   <div className="text-[10px] text-gray-400">${usdBalance.toFixed(2)}</div>
                   <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasEnoughBugForPackage('FULL') ? 'text-green-400' : 'text-red-400'}`}>
-                    <Bug className="w-2.5 h-2.5" />
+                    <img src="/star-bug.png" alt="STAR" className="w-2.5 h-2.5 object-contain flex-shrink-0" />
                     {Math.ceil(usdBalance * bugPerUsd).toLocaleString()} STAR
                   </div>
                 </button>
@@ -598,7 +598,7 @@ export default function Withdraw() {
                   
                   {withdrawalBugRequirementEnabled && getWithdrawalUsdAmount() > 0 && (
                     <div className={`flex items-center gap-2 text-xs ${hasEnoughBug ? 'text-green-400' : 'text-red-400'}`}>
-                      <Bug className="w-4 h-4" />
+                      <img src="/star-bug.png" alt="STAR" className="w-4 h-4 object-contain flex-shrink-0" />
                       <span>STAR Required: {minimumBugForWithdrawal.toLocaleString()} (You have: {Math.floor(bugBalance).toLocaleString()})</span>
                       {hasEnoughBug && <Check className="w-3 h-3" />}
                     </div>
