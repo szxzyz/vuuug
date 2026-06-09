@@ -2,6 +2,7 @@ import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/toaster";
 import AppNotification from "@/components/AppNotification";
 import { useEffect, lazy, Suspense, useState, memo, useCallback, useRef } from "react";
 import { setupDeviceTracking } from "@/lib/deviceId";
@@ -14,7 +15,7 @@ import ChannelJoinPopup from "@/components/ChannelJoinPopup";
 
 declare global {
   interface Window {
-    show_10401872: (type?: string | { type: string; inAppSettings: any }) => Promise<void>;
+    show_11123429: (type?: string) => Promise<void>;
   }
 }
 
@@ -93,21 +94,12 @@ function AppContent() {
     inAppAdInitialized.current = true;
 
     const showInAppAd = () => {
-      if (typeof window.show_10401872 === 'function') {
-        console.log('🎬 Showing In-App Interstitial ad...');
-        window.show_10401872({
-          type: 'inApp',
-          inAppSettings: {
-            frequency: 999,
-            capping: 24,
-            interval: 15,
-            timeout: 0,
-            everyPage: false
-          }
-        }).then(() => {
-          console.log('✅ In-App Interstitial ad shown');
+      if (typeof window.show_11123429 === 'function') {
+        console.log('🎬 Showing Monetag Interstitial ad...');
+        window.show_11123429().then(() => {
+          console.log('✅ Monetag Interstitial ad shown');
         }).catch((error) => {
-          console.log('⚠️ In-App Interstitial ad error:', error);
+          console.log('⚠️ Monetag Interstitial ad error:', error);
         });
       } else {
         console.log('⚠️ Monetag SDK not available for In-App ads');
@@ -386,6 +378,7 @@ function App() {
       <LanguageProvider>
         <TooltipProvider>
           <AppContent />
+          <Toaster />
         </TooltipProvider>
       </LanguageProvider>
     </QueryClientProvider>
