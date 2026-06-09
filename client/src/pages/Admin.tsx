@@ -1439,7 +1439,7 @@ function BanLogsSection() {
   );
 }
 
-type SettingsCategory = 'ads' | 'affiliates' | 'withdrawals' | 'tasks' | 'bug' | 'other';
+type SettingsCategory = 'ads' | 'affiliates' | 'withdrawals' | 'tasks' | 'bug' | 'missions' | 'other';
 
 function SettingsSection() {
   const { toast } = useToast();
@@ -1496,7 +1496,14 @@ function SettingsSection() {
     padToBugRate: '1',
     minimumConvertPadToBug: '1000',
     bugPerUsd: '10000',
-    withdrawalBugRequirementEnabled: true
+    withdrawalBugRequirementEnabled: true,
+    weeklyGiveawayAmount: '10',
+    monetagMissionReward: '50',
+    monetagMissionLimit: '10',
+    adGramMissionReward: '50',
+    adGramMissionLimit: '10',
+    gigaPubMissionReward: '50',
+    gigaPubMissionLimit: '10',
   });
   
   useEffect(() => {
@@ -1545,7 +1552,14 @@ function SettingsSection() {
         padToBugRate: settingsData.padToBugRate?.toString() || '1',
         minimumConvertPadToBug: settingsData.minimumConvertPadToBug?.toString() || '1000',
         bugPerUsd: settingsData.bugPerUsd?.toString() || '10000',
-        withdrawalBugRequirementEnabled: settingsData.withdrawalBugRequirementEnabled !== false
+        withdrawalBugRequirementEnabled: settingsData.withdrawalBugRequirementEnabled !== false,
+        weeklyGiveawayAmount: settingsData.weeklyGiveawayAmount?.toString() || '10',
+        monetagMissionReward: settingsData.monetagMissionReward?.toString() || '50',
+        monetagMissionLimit: settingsData.monetagMissionLimit?.toString() || '10',
+        adGramMissionReward: settingsData.adGramMissionReward?.toString() || '50',
+        adGramMissionLimit: settingsData.adGramMissionLimit?.toString() || '10',
+        gigaPubMissionReward: settingsData.gigaPubMissionReward?.toString() || '50',
+        gigaPubMissionLimit: settingsData.gigaPubMissionLimit?.toString() || '10',
       });
     }
   }, [settingsData]);
@@ -1556,6 +1570,7 @@ function SettingsSection() {
     { id: 'withdrawals' as const, label: 'Withdrawals', icon: 'wallet' },
     { id: 'tasks' as const, label: 'Tasks', icon: 'tasks' },
     { id: 'bug' as const, label: 'STAR Currency', icon: 'star' },
+    { id: 'missions' as const, label: 'Missions / ADS', icon: 'tv' },
     { id: 'other' as const, label: 'Other', icon: 'cog' },
   ];
   
@@ -1641,7 +1656,14 @@ function SettingsSection() {
         padToBugRate: parseInt(settings.padToBugRate) || 1,
         minimumConvertPadToBug: parseInt(settings.minimumConvertPadToBug) || 1000,
         bugPerUsd: parseInt(settings.bugPerUsd) || 10000,
-        withdrawalBugRequirementEnabled: settings.withdrawalBugRequirementEnabled
+        withdrawalBugRequirementEnabled: settings.withdrawalBugRequirementEnabled,
+        weeklyGiveawayAmount: parseFloat(settings.weeklyGiveawayAmount) || 10,
+        monetagMissionReward: parseInt(settings.monetagMissionReward) || 50,
+        monetagMissionLimit: parseInt(settings.monetagMissionLimit) || 10,
+        adGramMissionReward: parseInt(settings.adGramMissionReward) || 50,
+        adGramMissionLimit: parseInt(settings.adGramMissionLimit) || 10,
+        gigaPubMissionReward: parseInt(settings.gigaPubMissionReward) || 50,
+        gigaPubMissionLimit: parseInt(settings.gigaPubMissionLimit) || 10,
       });
       
       const result = await response.json();
@@ -2282,8 +2304,130 @@ function SettingsSection() {
           </div>
         )}
 
+        {activeCategory === 'missions' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2 p-3 border rounded-lg bg-[#4cd3ff]/5 border-[#4cd3ff]/20">
+              <p className="text-xs text-[#4cd3ff] font-semibold mb-1">📺 Mission Page — Ad Platforms</p>
+              <p className="text-xs text-muted-foreground">Set reward (PAD per ad) and daily ad limit for each platform shown on the Missions page.</p>
+            </div>
+
+            {/* Monetag */}
+            <div className="space-y-2 p-3 border rounded-lg border-orange-500/20 bg-orange-500/5">
+              <Label className="text-sm font-semibold text-orange-400">
+                <i className="fas fa-bolt mr-2"></i>Monetag
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Reward (PAD/ad)</Label>
+                  <Input
+                    type="number"
+                    value={settings.monetagMissionReward}
+                    onChange={(e) => setSettings({ ...settings, monetagMissionReward: e.target.value })}
+                    placeholder="50"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Daily Limit</Label>
+                  <Input
+                    type="number"
+                    value={settings.monetagMissionLimit}
+                    onChange={(e) => setSettings({ ...settings, monetagMissionLimit: e.target.value })}
+                    placeholder="10"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagMissionReward || 50} PAD · {settingsData?.monetagMissionLimit || 10} ads/day</p>
+            </div>
+
+            {/* AdGram */}
+            <div className="space-y-2 p-3 border rounded-lg border-blue-500/20 bg-blue-500/5">
+              <Label className="text-sm font-semibold text-blue-400">
+                <i className="fas fa-bullhorn mr-2"></i>AdGram
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Reward (PAD/ad)</Label>
+                  <Input
+                    type="number"
+                    value={settings.adGramMissionReward}
+                    onChange={(e) => setSettings({ ...settings, adGramMissionReward: e.target.value })}
+                    placeholder="50"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Daily Limit</Label>
+                  <Input
+                    type="number"
+                    value={settings.adGramMissionLimit}
+                    onChange={(e) => setSettings({ ...settings, adGramMissionLimit: e.target.value })}
+                    placeholder="10"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Current: {settingsData?.adGramMissionReward || 50} PAD · {settingsData?.adGramMissionLimit || 10} ads/day</p>
+            </div>
+
+            {/* GiGaPub */}
+            <div className="space-y-2 p-3 border rounded-lg border-purple-500/20 bg-purple-500/5">
+              <Label className="text-sm font-semibold text-purple-400">
+                <i className="fas fa-globe mr-2"></i>GiGaPub
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Reward (PAD/ad)</Label>
+                  <Input
+                    type="number"
+                    value={settings.gigaPubMissionReward}
+                    onChange={(e) => setSettings({ ...settings, gigaPubMissionReward: e.target.value })}
+                    placeholder="50"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Daily Limit</Label>
+                  <Input
+                    type="number"
+                    value={settings.gigaPubMissionLimit}
+                    onChange={(e) => setSettings({ ...settings, gigaPubMissionLimit: e.target.value })}
+                    placeholder="10"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Current: {settingsData?.gigaPubMissionReward || 50} PAD · {settingsData?.gigaPubMissionLimit || 10} ads/day</p>
+            </div>
+          </div>
+        )}
+
         {activeCategory === 'other' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-2 md:col-span-2 p-3 border rounded-lg border-yellow-500/20 bg-yellow-500/5">
+              <Label htmlFor="weekly-giveaway-amount" className="text-sm font-semibold text-yellow-400">
+                <i className="fas fa-trophy mr-2"></i>Weekly Giveaway Prize Pool (USD)
+              </Label>
+              <Input
+                id="weekly-giveaway-amount"
+                type="number"
+                value={settings.weeklyGiveawayAmount}
+                onChange={(e) => setSettings({ ...settings, weeklyGiveawayAmount: e.target.value })}
+                placeholder="10"
+                min="0"
+                step="0.5"
+              />
+              <p className="text-xs text-muted-foreground">
+                Displayed on the Home page weekly contest banner. Current: ${settingsData?.weeklyGiveawayAmount || 10}
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="wallet-change-fee" className="text-sm font-semibold">
                 <i className="fas fa-exchange-alt mr-2 text-yellow-600"></i>

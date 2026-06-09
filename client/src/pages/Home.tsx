@@ -784,7 +784,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Daily Contest Banner */}
+        {/* Weekly Contest Banner */}
         <div
           className="mt-4 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
           style={{ height: 96 }}
@@ -792,7 +792,7 @@ export default function Home() {
         >
           <img
             src="/daily-contest-banner.jpg"
-            alt="Daily Contest"
+            alt="Weekly Contest"
             className="w-full h-full object-cover"
             style={{ objectPosition: 'center 85%' }}
           />
@@ -808,11 +808,11 @@ export default function Home() {
                   Weekly Contest
                 </span>
               </div>
-              <span style={{ fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: '-0.3px', textShadow: '0 2px 8px rgba(0,0,0,0.95)', lineHeight: 1.1 }}>
-                Watch & Win
+              <span style={{ fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: '-0.3px', textShadow: '0 2px 8px rgba(0,0,0,0.95)', lineHeight: 1.15 }}>
+                Top Earners
               </span>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
-                Top earners take the prize
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textShadow: '0 1px 4px rgba(0,0,0,0.9)', lineHeight: 1.2 }}>
+                take the prize
               </span>
             </div>
 
@@ -820,7 +820,7 @@ export default function Home() {
             <div className="flex flex-col items-center gap-0.5">
               <FaTrophy style={{ color: '#FFD700', fontSize: 22, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))' }} />
               <span style={{ fontSize: 20, fontWeight: 900, color: 'rgba(180,180,180,0.9)', textShadow: '0 2px 6px rgba(0,0,0,0.9)', lineHeight: 1 }}>
-                $10
+                ${appSettings?.weeklyGiveawayAmount ?? 10}
               </span>
               <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>
                 PRIZE POOL

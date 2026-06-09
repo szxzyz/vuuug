@@ -453,7 +453,9 @@ export default function Withdraw() {
             }`}
             onClick={() => setActiveTab('withdraw')}
           >
-            <img src="/usdt.png" alt="USDT" className="w-4 h-4 object-contain mr-2" />
+            <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center mr-2 flex-shrink-0">
+              <img src="/usdt.png" alt="USDT" className="w-5 h-5 object-cover" />
+            </div>
             Withdraw
           </Button>
           <Button
@@ -551,10 +553,14 @@ export default function Withdraw() {
                           </div>
                         )}
                         <div className="text-sm font-bold text-white">${pkg.usd.toFixed(2)}</div>
-                        <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasBug ? 'text-green-400' : 'text-red-400'}`}>
-                          <img src="/star-bug.png" alt="STAR" className="w-2.5 h-2.5 object-contain flex-shrink-0" />
-                          {bugRequired.toLocaleString()}
-                        </div>
+                        {withdrawalBugRequirementEnabled && (
+                          <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasBug ? 'text-green-400' : 'text-red-400'}`}>
+                            <div className="w-3 h-3 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
+                              <img src="/star-bug.png" alt="STAR" className="w-3 h-3 object-cover" />
+                            </div>
+                            {bugRequired.toLocaleString()}
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -578,10 +584,14 @@ export default function Withdraw() {
                   )}
                   <div className="text-sm font-bold text-white">FULL BALANCE</div>
                   <div className="text-[10px] text-gray-400">${usdBalance.toFixed(2)}</div>
-                  <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasEnoughBugForPackage('FULL') ? 'text-green-400' : 'text-red-400'}`}>
-                    <img src="/star-bug.png" alt="STAR" className="w-2.5 h-2.5 object-contain flex-shrink-0" />
-                    {Math.ceil(usdBalance * bugPerUsd).toLocaleString()} STAR
-                  </div>
+                  {withdrawalBugRequirementEnabled && (
+                    <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasEnoughBugForPackage('FULL') ? 'text-green-400' : 'text-red-400'}`}>
+                      <div className="w-3 h-3 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
+                        <img src="/star-bug.png" alt="STAR" className="w-3 h-3 object-cover" />
+                      </div>
+                      {Math.ceil(usdBalance * bugPerUsd).toLocaleString()} STAR
+                    </div>
+                  )}
                 </button>
                 
                 <div className="pt-3 space-y-2">
@@ -598,7 +608,9 @@ export default function Withdraw() {
                   
                   {withdrawalBugRequirementEnabled && getWithdrawalUsdAmount() > 0 && (
                     <div className={`flex items-center gap-2 text-xs ${hasEnoughBug ? 'text-green-400' : 'text-red-400'}`}>
-                      <img src="/star-bug.png" alt="STAR" className="w-4 h-4 object-contain flex-shrink-0" />
+                      <div className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
+                        <img src="/star-bug.png" alt="STAR" className="w-4 h-4 object-cover" />
+                      </div>
                       <span>STAR Required: {minimumBugForWithdrawal.toLocaleString()} (You have: {Math.floor(bugBalance).toLocaleString()})</span>
                       {hasEnoughBug && <Check className="w-3 h-3" />}
                     </div>

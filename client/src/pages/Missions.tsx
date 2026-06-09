@@ -9,7 +9,6 @@ import {
   Users, 
   Handshake, 
   ChevronRight,
-  Sparkles,
   Loader2,
   Check,
   Bot,
@@ -17,7 +16,10 @@ import {
   Link2,
   Megaphone,
   Globe,
-  Bell
+  Bell,
+  Play,
+  Tv,
+  Zap
 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 import { useState, useCallback } from "react";
@@ -49,6 +51,12 @@ interface AppSettings {
   channelTaskReward?: number;
   botTaskReward?: number;
   partnerTaskReward?: number;
+  monetagMissionReward?: number;
+  monetagMissionLimit?: number;
+  adGramMissionReward?: number;
+  adGramMissionLimit?: number;
+  gigaPubMissionReward?: number;
+  gigaPubMissionLimit?: number;
   [key: string]: any;
 }
 
@@ -196,7 +204,6 @@ export default function Missions() {
     try {
       const tgWebApp = window.Telegram?.WebApp as any;
       
-      // Native Telegram share dialog using shareMessage() with prepared message
       if (tgWebApp?.shareMessage) {
         try {
           const response = await fetch('/api/share/prepare-message', {
@@ -221,7 +228,6 @@ export default function Missions() {
         }
       }
       
-      // Fallback: Use Telegram's native share URL dialog
       const shareTitle = `💸 Start earning money just by completing tasks & watching ads!`;
       const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareTitle)}`;
       
@@ -359,31 +365,21 @@ export default function Missions() {
   const botReward = appSettings?.botTaskReward || 20;
   const partnerReward = appSettings?.partnerTaskReward || 5;
 
+  const monetagReward = appSettings?.monetagMissionReward ?? 50;
+  const monetagLimit = appSettings?.monetagMissionLimit ?? 10;
+  const adGramReward = appSettings?.adGramMissionReward ?? 50;
+  const adGramLimit = appSettings?.adGramMissionLimit ?? 10;
+  const gigaPubReward = appSettings?.gigaPubMissionReward ?? 50;
+  const gigaPubLimit = appSettings?.gigaPubMissionLimit ?? 10;
+
   const getReward = (t: Task) => t.taskType === 'partner' ? partnerReward : t.taskType === 'channel' ? channelReward : botReward;
 
   const getTaskBoxIcon = (taskType: string) => {
     switch (taskType) {
-      case 'bot':
-        return <Bot className="w-4 h-4 text-white" />;
-      case 'channel':
-        return <MessageCircle className="w-4 h-4 text-white" />;
-      case 'partner':
-        return <Link2 className="w-4 h-4 text-white" />;
-      default:
-        return <Globe className="w-4 h-4 text-white" />;
-    }
-  };
-
-  const getTaskIconBg = (taskType: string) => {
-    switch (taskType) {
-      case 'bot':
-        return 'from-purple-500 to-purple-600';
-      case 'channel':
-        return 'from-blue-500 to-blue-600';
-      case 'partner':
-        return 'from-green-500 to-green-600';
-      default:
-        return 'from-gray-500 to-gray-600';
+      case 'bot': return <Bot className="w-4 h-4 text-white" />;
+      case 'channel': return <MessageCircle className="w-4 h-4 text-white" />;
+      case 'partner': return <Link2 className="w-4 h-4 text-white" />;
+      default: return <Globe className="w-4 h-4 text-white" />;
     }
   };
 
@@ -454,27 +450,105 @@ export default function Missions() {
   return (
     <Layout>
       <main className="max-w-md mx-auto px-4 pt-3 pb-16">
+        {/* Page Title */}
         <div className="flex items-center gap-2 mb-4">
-          <ListTodo className="w-5 h-5 text-[#4cd3ff]" />
-          <h1 className="text-lg font-bold text-white">Missions</h1>
+          <Tv className="w-5 h-5 text-[#4cd3ff]" />
+          <h1 className="text-lg font-bold text-white">Earn Extra With ADS</h1>
         </div>
 
-        <div 
-          className="bg-[#1C1C1E] rounded-2xl p-3.5 mb-3 cursor-pointer active:scale-[0.98] transition-transform border border-white/5"
+        {/* Spider-Man Banner — replaces "Create My Task" */}
+        <div
+          className="mb-3 rounded-2xl overflow-hidden relative cursor-pointer active:scale-[0.98] transition-transform"
+          style={{ height: 96 }}
           onClick={() => setLocation("/task/create")}
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#4cd3ff]/10 border border-[#4cd3ff]/20 flex items-center justify-center flex-shrink-0">
-              <Sparkles className="w-5 h-5 text-[#4cd3ff]" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-white font-semibold text-sm">Create My Task</h3>
-              <p className="text-gray-500 text-xs">Promote your channel or bot</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-600" />
+          <img
+            src="/spiderman-banner.jpg"
+            alt="Create Task"
+            className="w-full h-full object-cover"
+            style={{ objectPosition: 'center 20%' }}
+          />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.5) 55%, rgba(0,0,0,0.1) 100%)' }} />
+          <div className="absolute inset-0 flex flex-col justify-center" style={{ padding: '0 16px' }}>
+            <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.95)', lineHeight: 1.2 }}>
+              I want my task here
+            </span>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: 500, marginTop: 3 }}>
+              create your own task
+            </span>
           </div>
         </div>
 
+        {/* ADS Platforms Section */}
+        <div className="bg-[#1C1C1E] rounded-2xl p-3.5 mb-3 border border-white/5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-[#4cd3ff]/10 border border-[#4cd3ff]/20 flex items-center justify-center">
+              <Play className="w-3.5 h-3.5 text-[#4cd3ff]" />
+            </div>
+            <span className="text-white text-sm font-semibold">Ad Platforms</span>
+          </div>
+
+          <div className="space-y-2">
+            {/* Monetag */}
+            <div className="flex items-center justify-between bg-black/20 rounded-xl p-2.5 border border-white/5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-medium">Monetag</p>
+                  <p className="text-orange-400 text-xs font-bold">+{monetagReward} PAD · {monetagLimit} ads/day</p>
+                </div>
+              </div>
+              <Button
+                onClick={() => showNotification("Watch ads on the Home page to earn!", "info")}
+                className="h-8 w-16 text-xs font-bold rounded-lg bg-orange-500 hover:bg-orange-600 text-white"
+              >
+                Earn
+              </Button>
+            </div>
+
+            {/* AdGram */}
+            <div className="flex items-center justify-between bg-black/20 rounded-xl p-2.5 border border-white/5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                  <Megaphone className="w-4 h-4 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-medium">AdGram</p>
+                  <p className="text-blue-400 text-xs font-bold">+{adGramReward} PAD · {adGramLimit} ads/day</p>
+                </div>
+              </div>
+              <Button
+                onClick={() => showNotification("AdGram rewards coming soon!", "info")}
+                className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                Earn
+              </Button>
+            </div>
+
+            {/* GiGaPub */}
+            <div className="flex items-center justify-between bg-black/20 rounded-xl p-2.5 border border-white/5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                  <Globe className="w-4 h-4 text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-medium">GiGaPub</p>
+                  <p className="text-purple-400 text-xs font-bold">+{gigaPubReward} PAD · {gigaPubLimit} ads/day</p>
+                </div>
+              </div>
+              <Button
+                onClick={() => showNotification("GiGaPub rewards coming soon!", "info")}
+                className="h-8 w-16 text-xs font-bold rounded-lg bg-purple-500 hover:bg-purple-600 text-white"
+              >
+                Earn
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Daily Tasks */}
         <div className="bg-[#1C1C1E] rounded-2xl p-3.5 mb-3 border border-white/5">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-lg bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center">
@@ -484,7 +558,7 @@ export default function Missions() {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between bg-[#1C1C1E] rounded-xl p-2.5 border border-white/5">
+            <div className="flex items-center justify-between bg-black/20 rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
                   <Users className="w-4 h-4 text-green-400" />
@@ -499,10 +573,7 @@ export default function Missions() {
                   <Check className="w-4 h-4 text-green-400" />
                 </div>
               ) : shareWithFriendsStep === 'countdown' ? (
-                <Button
-                  disabled={true}
-                  className="h-8 w-20 text-xs font-bold rounded-lg bg-gray-600 text-white"
-                >
+                <Button disabled className="h-8 w-20 text-xs font-bold rounded-lg bg-gray-600 text-white">
                   {shareCountdown}s
                 </Button>
               ) : shareWithFriendsStep === 'ready' || shareWithFriendsStep === 'claiming' ? (
@@ -524,7 +595,7 @@ export default function Missions() {
               )}
             </div>
 
-            <div className="flex items-center justify-between bg-[#1C1C1E] rounded-xl p-2.5 border border-white/5">
+            <div className="flex items-center justify-between bg-black/20 rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-[#4cd3ff]/10 border border-[#4cd3ff]/20 flex items-center justify-center">
                   <CalendarCheck className="w-4 h-4 text-[#4cd3ff]" />
@@ -539,17 +610,11 @@ export default function Missions() {
                   <Check className="w-4 h-4 text-green-400" />
                 </div>
               ) : dailyCheckinStep === 'ads' ? (
-                <Button
-                  disabled={true}
-                  className="h-8 w-20 text-xs font-bold rounded-lg bg-purple-600 text-white"
-                >
+                <Button disabled className="h-8 w-20 text-xs font-bold rounded-lg bg-purple-600 text-white">
                   <Loader2 className="w-3 h-3 animate-spin" />
                 </Button>
               ) : dailyCheckinStep === 'countdown' ? (
-                <Button
-                  disabled={true}
-                  className="h-8 w-20 text-xs font-bold rounded-lg bg-gray-600 text-white"
-                >
+                <Button disabled className="h-8 w-20 text-xs font-bold rounded-lg bg-gray-600 text-white">
                   {dailyCheckinCountdown}s
                 </Button>
               ) : dailyCheckinStep === 'ready' || dailyCheckinStep === 'claiming' ? (
@@ -570,7 +635,7 @@ export default function Missions() {
               )}
             </div>
 
-            <div className="flex items-center justify-between bg-[#1C1C1E] rounded-xl p-2.5 border border-white/5">
+            <div className="flex items-center justify-between bg-black/20 rounded-xl p-2.5 border border-white/5">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
                   <Bell className="w-4 h-4 text-orange-400" />
@@ -585,10 +650,7 @@ export default function Missions() {
                   <Check className="w-4 h-4 text-green-400" />
                 </div>
               ) : checkForUpdatesStep === 'opened' ? (
-                <Button
-                  disabled={true}
-                  className="h-8 w-20 text-xs font-bold rounded-lg bg-gray-600 text-white"
-                >
+                <Button disabled className="h-8 w-20 text-xs font-bold rounded-lg bg-gray-600 text-white">
                   {checkForUpdatesCountdown}s
                 </Button>
               ) : checkForUpdatesStep === 'ready' || checkForUpdatesStep === 'claiming' ? (
@@ -608,7 +670,6 @@ export default function Missions() {
                 </Button>
               )}
             </div>
-
           </div>
         </div>
 

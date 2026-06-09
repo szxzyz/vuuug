@@ -22,8 +22,13 @@ interface LeaderboardData {
   currentWeek: string;
 }
 
-const PRIZE_MAP: Record<number, string> = { 1: '$5', 2: '$3', 3: '$2' };
-function getPrize(rank: number) { return PRIZE_MAP[rank] || '$0'; }
+const PRIZE_PCTS: Record<number, number> = { 1: 40, 2: 25, 3: 15, 4: 8, 5: 5, 6: 3, 7: 1, 8: 1, 9: 1, 10: 1 };
+function getPrize(rank: number, pool: number): string {
+  const pct = PRIZE_PCTS[rank];
+  if (!pct || pool <= 0) return '$0';
+  const amt = (pool * pct) / 100;
+  return `$${amt % 1 === 0 ? amt.toFixed(0) : amt.toFixed(2)}`;
+}
 
 function getWeekEnd(): Date {
   const now = new Date();
@@ -143,6 +148,11 @@ export default function Leaderboard() {
     refetchInterval: 60000,
   });
 
+  const { data: appSettings } = useQuery<any>({
+    queryKey: ['/api/app-settings'],
+  });
+  const prizePool: number = appSettings?.weeklyGiveawayAmount ?? 10;
+
   const lb = data?.leaderboard || [];
   const userRank = data?.userRank || null;
   const userStars = data?.userStars || 0;
@@ -213,7 +223,7 @@ export default function Leaderboard() {
                   <p style={{ margin: '7px 0 2px', fontSize: 12, fontWeight: 700, color: '#fff', textAlign: 'center' }}>
                     {shortName(p2, 'Player 2')}
                   </p>
-                  <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 900, color: '#4ADE80' }}>{getPrize(2)}</p>
+                  <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 900, color: '#4ADE80' }}>{getPrize(2, prizePool)}</p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
                     <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
                     <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p2.weeklyStars ?? 0).toLocaleString()} stars</span>
@@ -230,7 +240,7 @@ export default function Leaderboard() {
                   <p style={{ margin: '8px 0 2px', fontSize: 13, fontWeight: 800, color: '#fff', textAlign: 'center' }}>
                     {shortName(p1, 'Player 1')}
                   </p>
-                  <p style={{ margin: '0 0 2px', fontSize: 19, fontWeight: 900, color: '#4ADE80' }}>{getPrize(1)}</p>
+                  <p style={{ margin: '0 0 2px', fontSize: 19, fontWeight: 900, color: '#4ADE80' }}>{getPrize(1, prizePool)}</p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
                     <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
                     <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p1.weeklyStars ?? 0).toLocaleString()} stars</span>
@@ -247,7 +257,7 @@ export default function Leaderboard() {
                   <p style={{ margin: '7px 0 2px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'center' }}>
                     {shortName(p3, 'Player 3')}
                   </p>
-                  <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 900, color: '#4ADE80' }}>{getPrize(3)}</p>
+                  <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 900, color: '#4ADE80' }}>{getPrize(3, prizePool)}</p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
                     <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
                     <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p3.weeklyStars ?? 0).toLocaleString()} stars</span>
@@ -352,7 +362,7 @@ export default function Leaderboard() {
                 </div>
 
                 <span style={{ fontSize: 15, fontWeight: 800, color: '#4ADE80', flexShrink: 0 }}>
-                  {getPrize(i + 1)}
+                  {getPrize(i + 1, prizePool)}
                 </span>
               </div>
             );
