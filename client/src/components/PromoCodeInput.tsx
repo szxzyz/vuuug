@@ -8,7 +8,7 @@ import { Clock, Shield } from "lucide-react";
 
 declare global {
   interface Window {
-    show_10401872: (type?: string | { type: string; inAppSettings: any }) => Promise<void>;
+    show_11123429: (type?: string) => Promise<void>;
   }
 }
 
@@ -43,9 +43,9 @@ export default function PromoCodeInput() {
 
   const showMonetagAd = (): Promise<{ success: boolean; watchedFully: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
-      if (typeof window.show_10401872 === 'function') {
+      if (typeof window.show_11123429 === 'function') {
         monetagStartTimeRef.current = Date.now();
-        window.show_10401872()
+        window.show_11123429()
           .then(() => {
             const watchDuration = Date.now() - monetagStartTimeRef.current;
             const watchedAtLeast3Seconds = watchDuration >= 3000;
