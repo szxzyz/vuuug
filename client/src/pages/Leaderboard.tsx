@@ -1,343 +1,400 @@
-import { useAuth } from "@/hooks/useAuth";
-import Layout from "@/components/Layout";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Trophy, Users, Gem, UserPlus } from "lucide-react";
-import { formatCompactNumber } from "@shared/constants";
-import { formatCurrency } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { FaStar, FaUser, FaCrown, FaMedal, FaSync } from "react-icons/fa";
+import { ChevronLeft } from "lucide-react";
 
-// Helper function to format POW with compact notation
-const formatPADCompact = (value: string): string => {
-  const numValue = parseFloat(value || '0');
-  if (isNaN(numValue)) return '0 POW';
-  
-  const padValue = numValue < 1 ? Math.round(numValue * 10000000) : Math.round(numValue);
-  
-  return `${formatCompactNumber(padValue)} POW`;
-};
-import { useState } from "react";
-import type { User } from "@shared/schema";
-
-interface LeaderboardUser {
-  rank: number;
-  username: string;
-  firstName: string;
-  profileImage: string;
+interface LeaderboardEntry {
   userId: string;
-}
-
-interface EarnerUser extends LeaderboardUser {
-  totalEarnings: string;
-}
-
-interface ReferrerUser extends LeaderboardUser {
-  totalReferrals: number;
+  username: string | null;
+  firstName: string | null;
+  weeklyStars: number | null;
+  rank: number;
 }
 
 interface LeaderboardData {
-  topEarners: EarnerUser[];
-  topReferrers: ReferrerUser[];
-  userEarnerRank?: { rank: number; totalEarnings: string } | null;
-  userReferrerRank?: { rank: number; totalReferrals: number } | null;
+  leaderboard: LeaderboardEntry[];
+  userRank: { rank: number; weeklyStars: number } | null;
+  userStars: number;
+  userStarBalance: number;
+  currentWeek: string;
+}
+
+// Prize per rank
+const PRIZE_MAP: Record<number, string> = { 1: '$5', 2: '$3', 3: '$2' };
+function getPrize(rank: number) { return PRIZE_MAP[rank] || '$0'; }
+
+function getWeekEnd(): Date {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const end = new Date(now);
+  end.setUTCDate(end.getUTCDate() + (day === 0 ? 0 : 7 - day));
+  end.setUTCHours(23, 59, 59, 0);
+  return end;
+}
+
+function useCountdown(target: Date) {
+  const [t, setT] = useState({ d: 0, h: 0, m: 0, s: 0 });
+  useEffect(() => {
+    const calc = () => {
+      const diff = target.getTime() - Date.now();
+      if (diff <= 0) return setT({ d: 0, h: 0, m: 0, s: 0 });
+      setT({
+        d: Math.floor(diff / 86400000),
+        h: Math.floor((diff % 86400000) / 3600000),
+        m: Math.floor((diff % 3600000) / 60000),
+        s: Math.floor((diff % 60000) / 1000),
+      });
+    };
+    calc();
+    const id = setInterval(calc, 1000);
+    return () => clearInterval(id);
+  }, [target]);
+  return t;
+}
+
+function shortName(e: LeaderboardEntry, fb: string) {
+  const n = e.firstName || e.username || fb;
+  return n.length > 10 ? n.slice(0, 9) + '…' : n;
+}
+
+// Medal badge colors
+const MEDAL = [
+  { bg: '#FFD700', shadow: '#b8960088' },   // gold – 1st
+  { bg: '#C0C0C0', shadow: '#99999988' },   // silver – 2nd
+  { bg: '#CD7F32', shadow: '#9a5e2688' },   // bronze – 3rd
+];
+
+function Avatar({ size = 64, rank }: { size?: number; rank: number }) {
+  const m = MEDAL[rank - 1];
+  return (
+    <div style={{ position: 'relative', width: size, height: size }}>
+      <div style={{
+        width: size, height: size, borderRadius: '50%',
+        background: 'linear-gradient(145deg, #2C2C2E, #1C1C1E)',
+        border: `2.5px solid ${m?.bg || '#555'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: `0 0 12px ${m?.shadow || '#00000044'}`,
+      }}>
+        <FaUser style={{ fontSize: size * 0.42, color: 'rgba(255,255,255,0.35)' }} />
+      </div>
+      {/* Medal badge */}
+      {rank <= 3 && (
+        <div style={{
+          position: 'absolute', bottom: -2, right: -2,
+          width: size * 0.35, height: size * 0.35,
+          borderRadius: '50%', background: m.bg,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '2px solid #000',
+          boxShadow: `0 2px 6px ${m.shadow}`,
+        }}>
+          {rank === 1
+            ? <FaCrown style={{ fontSize: size * 0.17, color: '#000' }} />
+            : <FaMedal style={{ fontSize: size * 0.17, color: '#000' }} />}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Leaderboard() {
-  const { isLoading, user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'earners' | 'referrers'>('earners');
+  const [, navigate] = useLocation();
+  const { user } = useAuth() as any;
+  const weekEnd = useMemo(() => getWeekEnd(), []);
+  const { d, h, m, s } = useCountdown(weekEnd);
 
-  const { data: leaderboardData, isLoading: leaderboardLoading } = useQuery<LeaderboardData>({
-    queryKey: ["/api/leaderboard/monthly"],
-    retry: false,
-    refetchOnMount: true,
+  const { data, isLoading, refetch } = useQuery<LeaderboardData>({
+    queryKey: ['/api/leaderboard/weekly'],
+    refetchInterval: 60000,
   });
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin text-primary text-3xl mb-4">
-            <i className="fas fa-spinner"></i>
-          </div>
-          <div className="text-foreground font-medium">Loading...</div>
-        </div>
-      </div>
-    );
-  }
+  const lb = data?.leaderboard || [];
+  const userRank = data?.userRank || null;
+  const userStars = data?.userStars || 0;
+  const userStarBalance = data?.userStarBalance || 0;
 
-  const topEarners = leaderboardData?.topEarners || [];
-  const topReferrers = leaderboardData?.topReferrers || [];
-
-  const getRankEmoji = (rank: number) => {
-    switch (rank) {
-      case 1: return '🥇';
-      case 2: return '🥈';
-      case 3: return '🥉';
-      default: return `#${rank}`;
-    }
-  };
+  // For podium: show 2nd | 1st | 3rd
+  const p1 = lb[0], p2 = lb[1], p3 = lb[2];
+  const rest = lb.slice(3);
 
   return (
-    <Layout>
-      <div className="h-full flex flex-col max-w-md mx-auto">
-        {/* Sticky Header Section - Always visible below navigation */}
-        <div className="sticky top-0 z-20 bg-black border-b border-[#1A1A1A] px-4 pt-3 pb-2">
-          <div className="mb-2">
-            <h1 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-primary" />
-              Monthly Leaderboard
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Top performers this month
-            </p>
-          </div>
+    <div style={{ background: '#0A0A0A', minHeight: '100vh', paddingBottom: 100, overflowX: 'hidden' }}>
 
-          {/* Tab Switcher - Always visible */}
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              onClick={() => setActiveTab('earners')}
-              className={`h-9 text-sm ${
-                activeTab === 'earners'
-                  ? 'btn-primary'
-                  : 'bg-[#1C1C1E] border border-[#2A2A2A] text-muted-foreground hover:bg-[#2C2C2E]'
-              }`}
-            >
-              <Trophy className="w-3.5 h-3.5 mr-1.5" />
-              POW Earners
-            </Button>
-            <Button
-              onClick={() => setActiveTab('referrers')}
-              className={`h-9 text-sm ${
-                activeTab === 'referrers'
-                  ? 'btn-primary'
-                  : 'bg-[#1C1C1E] border border-[#2A2A2A] text-muted-foreground hover:bg-[#2C2C2E]'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 mr-1.5" />
-              Top Referrers
-            </Button>
-          </div>
+      {/* ── Header ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', padding: '14px 16px 12px', gap: 10,
+        position: 'sticky', top: 0, background: 'rgba(10,10,10,0.96)',
+        backdropFilter: 'blur(12px)', zIndex: 20,
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <button onClick={() => navigate('/')} style={{
+          background: '#1C1C1E', border: 'none', borderRadius: 10,
+          width: 36, height: 36, cursor: 'pointer', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <ChevronLeft size={20} color="#fff" />
+        </button>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff' }}>Weekly Contest</p>
+          <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
+            Ends in {String(d).padStart(2,'0')}d {String(h).padStart(2,'0')}h {String(m).padStart(2,'0')}m {String(s).padStart(2,'0')}s
+          </p>
         </div>
-
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto px-4 pt-3 pb-1">
-
-        {/* POW Earners Ranking */}
-        {activeTab === 'earners' && (
-          <div>
-            {leaderboardLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin text-primary text-2xl mb-2">
-                  <i className="fas fa-spinner"></i>
-                </div>
-                <p className="text-muted-foreground">Loading rankings...</p>
-              </div>
-            ) : topEarners.length === 0 ? (
-              <Card className="minimal-card">
-                <CardContent className="pt-6 pb-6 text-center">
-                  <Trophy className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
-                  <p className="text-muted-foreground">No earnings data available</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                {/* Header Row */}
-                <div className="flex items-center justify-between px-4 py-2 mb-2 text-xs font-semibold text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6">Rank</span>
-                    <span className="ml-8">Name</span>
-                  </div>
-                  <span>Balance</span>
-                </div>
-
-                <div className="space-y-2">
-                  {topEarners.map((earner) => (
-                    <Card key={earner.userId} className="minimal-card">
-                      <CardContent className="p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <div className="text-base font-bold text-primary w-6 flex-shrink-0">
-                              {getRankEmoji(earner.rank)}
-                            </div>
-                            {earner.profileImage ? (
-                              <img 
-                                src={earner.profileImage} 
-                                alt={earner.firstName || 'User'}
-                                className="w-9 h-9 rounded-full flex-shrink-0"
-                              />
-                            ) : (
-                              <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                {(earner.firstName || '?').charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-white font-medium text-sm truncate">
-                                {earner.firstName || 'Anonymous'}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-primary text-sm font-bold flex-shrink-0">
-                            {formatPADCompact(earner.totalEarnings)}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Top Referrers Ranking */}
-        {activeTab === 'referrers' && (
-          <div>
-            {leaderboardLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin text-primary text-2xl mb-2">
-                  <i className="fas fa-spinner"></i>
-                </div>
-                <p className="text-muted-foreground">Loading rankings...</p>
-              </div>
-            ) : topReferrers.length === 0 ? (
-              <Card className="minimal-card">
-                <CardContent className="pt-6 pb-6 text-center">
-                  <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
-                  <p className="text-muted-foreground">No referrals data available</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                {/* Header Row */}
-                <div className="flex items-center justify-between px-4 py-2 mb-2 text-xs font-semibold text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6">Rank</span>
-                    <span className="ml-8">Name</span>
-                  </div>
-                  <span>Referrals</span>
-                </div>
-
-                <div className="space-y-2 pb-4">
-                  {topReferrers.map((referrer) => (
-                    <Card key={referrer.userId} className="minimal-card">
-                      <CardContent className="p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <div className="text-base font-bold text-primary w-6 flex-shrink-0">
-                              {getRankEmoji(referrer.rank)}
-                            </div>
-                            {referrer.profileImage ? (
-                              <img 
-                                src={referrer.profileImage} 
-                                alt={referrer.firstName || 'User'}
-                                className="w-9 h-9 rounded-full flex-shrink-0"
-                              />
-                            ) : (
-                              <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                {(referrer.firstName || '?').charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-white font-medium text-sm truncate">
-                                {referrer.firstName || 'Anonymous'}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-primary text-sm font-bold flex-shrink-0">
-                            {referrer.totalReferrals} referrals
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        </div>
-
-        {/* Sticky "Your Rank" Section at Bottom */}
-        <div className="sticky bottom-0 z-20 border-t border-[#1A1A1A] bg-black/95 backdrop-blur-sm px-4 py-1.5">
-          {activeTab === 'earners' ? (
-            <Card className="minimal-card border-primary/30">
-              <CardContent className="p-2">
-                <div className="text-xs text-primary font-semibold mb-1">Your Rank</div>
-                {leaderboardData?.userEarnerRank ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className="text-base font-bold text-primary w-6 flex-shrink-0">
-                        #{leaderboardData.userEarnerRank.rank}
-                      </div>
-                      {(user as User)?.profileImageUrl ? (
-                        <img 
-                          src={(user as User).profileImageUrl!} 
-                          alt={(user as User).username || 'You'}
-                          className="w-8 h-8 rounded-full flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold flex-shrink-0">
-                          {(user as User)?.username?.[0]?.toUpperCase() || 'Y'}
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-white font-medium text-xs truncate">
-                          {(user as User)?.username || 'You'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-primary text-xs font-bold flex-shrink-0">
-                      {formatPADCompact(leaderboardData.userEarnerRank.totalEarnings)}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center text-muted-foreground text-xs py-1">
-                    Start earning POW to appear on the leaderboard
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="minimal-card border-primary/30">
-              <CardContent className="p-2">
-                <div className="text-xs text-primary font-semibold mb-1">Your Rank</div>
-                {leaderboardData?.userReferrerRank ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className="text-base font-bold text-primary w-6 flex-shrink-0">
-                        #{leaderboardData.userReferrerRank.rank}
-                      </div>
-                      {(user as User)?.profileImageUrl ? (
-                        <img 
-                          src={(user as User).profileImageUrl!} 
-                          alt={(user as User).username || 'You'}
-                          className="w-8 h-8 rounded-full flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold flex-shrink-0">
-                          {(user as User)?.username?.[0]?.toUpperCase() || 'Y'}
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-white font-medium text-xs truncate">
-                          {(user as User)?.username || 'You'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-primary text-xs font-bold flex-shrink-0">
-                      {leaderboardData.userReferrerRank.totalReferrals} referrals
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center text-muted-foreground text-xs py-1">
-                    Start inviting friends to appear on the leaderboard
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#1C1C1E', borderRadius: 10, padding: '6px 10px' }}>
+          <FaStar style={{ color: '#FFD700', fontSize: 12 }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#FFD700' }}>{userStarBalance}</span>
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>total</span>
         </div>
       </div>
-    </Layout>
+
+      {/* ── Loading ── */}
+      {isLoading && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[0,150,300].map(d => (
+              <div key={d} style={{ width: 8, height: 8, borderRadius: '50%', background: '#FFD700', animation: `pulse 1s ${d}ms infinite` }} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Empty ── */}
+      {!isLoading && lb.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <FaStar style={{ color: 'rgba(255,215,0,0.18)', fontSize: 60, marginBottom: 16 }} />
+          <p style={{ fontSize: 17, fontWeight: 700, color: 'rgba(255,255,255,0.45)', margin: '0 0 8px' }}>No participants yet</p>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', margin: '0 0 20px' }}>Watch ads to earn Stars and claim the top spot!</p>
+          <button onClick={() => navigate('/watch')} style={{ background: '#FFD700', border: 'none', borderRadius: 12, padding: '11px 30px', fontSize: 14, fontWeight: 800, color: '#000', cursor: 'pointer' }}>
+            Earn Stars Now
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════
+          PODIUM
+      ══════════════════════════════════════ */}
+      {!isLoading && lb.length > 0 && (
+        <div style={{ padding: '20px 16px 0' }}>
+
+          {/* Avatars row: 2nd | 1st | 3rd */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 0, marginBottom: 0 }}>
+
+            {/* ── 2nd Place ── */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 0 }}>
+              {p2 ? (
+                <>
+                  <Avatar size={58} rank={2} />
+                  <p style={{ margin: '7px 0 2px', fontSize: 12, fontWeight: 700, color: '#fff', textAlign: 'center' }}>
+                    {shortName(p2, 'Player 2')}
+                  </p>
+                  <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 900, color: '#4ADE80' }}>{getPrize(2)}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
+                    <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p2.weeklyStars ?? 0).toLocaleString()} stars</span>
+                  </div>
+                </>
+              ) : <div style={{ height: 120 }} />}
+            </div>
+
+            {/* ── 1st Place ── */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 0 }}>
+              {p1 ? (
+                <>
+                  <Avatar size={74} rank={1} />
+                  <p style={{ margin: '8px 0 2px', fontSize: 13, fontWeight: 800, color: '#fff', textAlign: 'center' }}>
+                    {shortName(p1, 'Player 1')}
+                  </p>
+                  <p style={{ margin: '0 0 2px', fontSize: 19, fontWeight: 900, color: '#4ADE80' }}>{getPrize(1)}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
+                    <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p1.weeklyStars ?? 0).toLocaleString()} stars</span>
+                  </div>
+                </>
+              ) : <div style={{ height: 140 }} />}
+            </div>
+
+            {/* ── 3rd Place ── */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 0 }}>
+              {p3 ? (
+                <>
+                  <Avatar size={52} rank={3} />
+                  <p style={{ margin: '7px 0 2px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'center' }}>
+                    {shortName(p3, 'Player 3')}
+                  </p>
+                  <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 900, color: '#4ADE80' }}>{getPrize(3)}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
+                    <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p3.weeklyStars ?? 0).toLocaleString()} stars</span>
+                  </div>
+                </>
+              ) : <div style={{ height: 110 }} />}
+            </div>
+          </div>
+
+          {/* ── Podium Platforms ── */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', height: 110, gap: 2 }}>
+
+            {/* 2nd platform */}
+            <div style={{
+              flex: 1, height: 86,
+              background: 'linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%)',
+              borderRadius: '10px 10px 0 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.07)',
+            }}>
+              <span style={{ fontSize: 36, fontWeight: 900, color: 'rgba(255,255,255,0.12)', userSelect: 'none' }}>2</span>
+            </div>
+
+            {/* 1st platform */}
+            <div style={{
+              flex: 1, height: 110,
+              background: 'linear-gradient(180deg, #333 0%, #1e1e1e 100%)',
+              borderRadius: '10px 10px 0 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.1)',
+            }}>
+              <span style={{ fontSize: 42, fontWeight: 900, color: 'rgba(255,255,255,0.15)', userSelect: 'none' }}>1</span>
+            </div>
+
+            {/* 3rd platform */}
+            <div style={{
+              flex: 1, height: 68,
+              background: 'linear-gradient(180deg, #252525 0%, #161616 100%)',
+              borderRadius: '10px 10px 0 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.05)',
+            }}>
+              <span style={{ fontSize: 32, fontWeight: 900, color: 'rgba(255,255,255,0.1)', userSelect: 'none' }}>3</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════
+          RANKED LIST
+      ══════════════════════════════════════ */}
+      {!isLoading && lb.length > 0 && (
+        <div style={{ background: '#141414', borderRadius: '20px 20px 0 0', marginTop: 0, padding: '20px 16px 16px' }}>
+
+          {/* List header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
+              TOP {lb.length} PLAYERS
+            </p>
+            <button
+              onClick={() => refetch()}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}
+            >
+              <FaSync style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }} />
+            </button>
+          </div>
+
+          {/* All entries */}
+          {lb.map((entry, i) => {
+            const isMe = entry.userId === user?.id;
+            const rankMedal = MEDAL[i]; // only first 3 have medal colors
+            return (
+              <div key={entry.userId} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 12px',
+                background: isMe ? 'rgba(255,215,0,0.06)' : i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'transparent',
+                borderRadius: 12,
+                marginBottom: 4,
+                border: isMe ? '1px solid rgba(255,215,0,0.2)' : '1px solid transparent',
+              }}>
+                {/* Medal or rank number */}
+                {i < 3 ? (
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    background: rankMedal.bg,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                    boxShadow: `0 2px 8px ${rankMedal.shadow}`,
+                  }}>
+                    {i === 0
+                      ? <FaCrown style={{ fontSize: 12, color: '#000' }} />
+                      : <FaMedal style={{ fontSize: 12, color: '#000' }} />}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.3)', width: 28, textAlign: 'center', flexShrink: 0 }}>
+                    {i < 49 ? `#${i + 1}` : '50+'}
+                  </span>
+                )}
+
+                {/* Small avatar */}
+                <div style={{
+                  width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                  background: '#2C2C2E',
+                  border: `1.5px solid ${i < 3 ? MEDAL[i].bg : 'rgba(255,255,255,0.08)'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <FaUser style={{ fontSize: 14, color: 'rgba(255,255,255,0.3)' }} />
+                </div>
+
+                {/* Name + stars */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isMe ? '#FFD700' : '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.firstName || entry.username || `Player ${i + 1}`}
+                    {isMe && <span style={{ fontSize: 9, background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderRadius: 4, padding: '1px 5px', marginLeft: 5, fontWeight: 700 }}>YOU</span>}
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                    <FaStar style={{ color: '#FFD700', fontSize: 9 }} />
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{(entry.weeklyStars ?? 0).toLocaleString()} stars</span>
+                  </div>
+                </div>
+
+                {/* Prize */}
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#4ADE80', flexShrink: 0 }}>
+                  {getPrize(i + 1)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Sticky Bottom Bar ── */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        background: 'rgba(20,20,20,0.97)', backdropFilter: 'blur(12px)',
+        borderTop: '1px solid rgba(255,255,255,0.07)',
+        padding: '12px 16px', zIndex: 30,
+      }}>
+        {userRank ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ background: '#2C2C2E', borderRadius: 10, padding: '7px 13px', textAlign: 'center', flexShrink: 0 }}>
+              <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>RANK</p>
+              <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#FFD700', lineHeight: 1.1 }}>#{userRank.rank}</p>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Your Position</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
+                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
+              </div>
+            </div>
+            <button onClick={() => navigate('/watch')} style={{ background: '#FFD700', border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 12, fontWeight: 800, color: '#000', cursor: 'pointer', flexShrink: 0 }}>
+              Earn More
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Not on leaderboard yet</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                <FaStar style={{ color: 'rgba(255,215,0,0.5)', fontSize: 10 }} />
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Watch ads to earn Stars</span>
+              </div>
+            </div>
+            <button onClick={() => navigate('/watch')} style={{ background: '#FFD700', border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 12, fontWeight: 800, color: '#000', cursor: 'pointer', flexShrink: 0 }}>
+              Start Earning
+            </button>
+          </div>
+        )}
+      </div>
+
+      <style>{`@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.6}}`}</style>
+    </div>
   );
 }

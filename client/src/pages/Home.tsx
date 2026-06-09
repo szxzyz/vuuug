@@ -9,6 +9,7 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
 import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Bug, DollarSign, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
+import { FaTrophy, FaMedal } from "react-icons/fa";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
@@ -783,26 +784,48 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Referral Contest Banner */}
+        {/* Daily Contest Banner */}
         <div
-          className="mt-4 mb-2 rounded-2xl overflow-hidden relative"
-          style={{ height: 90 }}
+          className="mt-4 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
+          style={{ height: 96 }}
+          onClick={() => window.location.href = '/leaderboard'}
         >
           <img
-            src="/referral-contest.jpg"
-            alt="Referral Contest"
+            src="/daily-contest-banner.jpg"
+            alt="Daily Contest"
             className="w-full h-full object-cover"
-            style={{ objectPosition: 'center' }}
+            style={{ objectPosition: 'center 85%' }}
           />
-          <div
-            className="absolute inset-0 flex items-center"
-            style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 60%, transparent 100%)' }}
-          >
-            <span
-              style={{ fontSize: 18, fontWeight: 900, color: '#fff', letterSpacing: '0.1em', textTransform: 'uppercase', paddingLeft: 16, textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
-            >
-              REFERRAL CONTEST
-            </span>
+          {/* Dark overlay stronger on left, fades to right so ninjas show */}
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.6) 45%, rgba(0,0,0,0.15) 100%)' }} />
+
+          {/* Left: title + subtitle */}
+          <div className="absolute inset-0 flex items-center justify-between" style={{ padding: '0 14px' }}>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                <FaMedal style={{ color: '#FFD700', fontSize: 13 }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#FFD700', letterSpacing: '0.18em', textTransform: 'uppercase', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                  Weekly Contest
+                </span>
+              </div>
+              <span style={{ fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: '-0.3px', textShadow: '0 2px 8px rgba(0,0,0,0.95)', lineHeight: 1.1 }}>
+                Watch & Win
+              </span>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
+                Top earners take the prize
+              </span>
+            </div>
+
+            {/* Right: prize block */}
+            <div className="flex flex-col items-center gap-0.5">
+              <FaTrophy style={{ color: '#FFD700', fontSize: 22, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))' }} />
+              <span style={{ fontSize: 20, fontWeight: 900, color: 'rgba(180,180,180,0.9)', textShadow: '0 2px 6px rgba(0,0,0,0.9)', lineHeight: 1 }}>
+                $10
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>
+                PRIZE POOL
+              </span>
+            </div>
           </div>
         </div>
 
