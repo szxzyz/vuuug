@@ -892,9 +892,18 @@ export class DatabaseStorage implements IStorage {
             });
           }
 
-          // Give USD reward if enabled
+          // Give USD reward if enabled — credit directly to usdBalance (not PAD balance)
           if (giveUSD && parseFloat(referralRewardUSD) > 0) {
-            await this.addEarning({
+            await db
+              .update(users)
+              .set({
+                usdBalance: sql`COALESCE(${users.usdBalance}, 0) + ${parseFloat(referralRewardUSD)}`,
+                totalEarned: sql`COALESCE(${users.totalEarned}, 0) + ${referralRewardUSD}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(users.id, referral.referrerId));
+            // Log earning for transaction history
+            await db.insert(earnings).values({
               userId: referral.referrerId,
               amount: referralRewardUSD,
               source: 'referral',

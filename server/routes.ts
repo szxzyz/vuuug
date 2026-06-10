@@ -2259,7 +2259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result_raw = await db.execute(sql`
         SELECT 
           TO_CHAR(DATE(created_at AT TIME ZONE 'UTC'), 'DD.MM') as date,
-          COALESCE(SUM(amount), 0)::float as amount
+          (COALESCE(SUM(amount), 0) / 10000000.0)::float as amount
         FROM earnings
         WHERE user_id = ${userId}
           AND created_at >= NOW() - INTERVAL '1 day' * ${days}
@@ -2290,7 +2290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result_raw2 = await db.execute(sql`
         SELECT 
           TO_CHAR(DATE(created_at AT TIME ZONE 'UTC'), 'DD.MM') as date,
-          COALESCE(SUM(amount), 0)::float as amount
+          (COALESCE(SUM(amount), 0) / 10000000.0)::float as amount
         FROM earnings
         WHERE user_id = ${userId}
           AND source IN ('referral', 'referral_commission', 'referral_commission_l2', 'referral_bonus')
