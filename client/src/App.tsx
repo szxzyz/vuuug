@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
+import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import AppNotification from "@/components/AppNotification";
 import { useEffect, lazy, Suspense, useState, memo, useCallback, useRef } from "react";
 import { setupDeviceTracking } from "@/lib/deviceId";
@@ -340,15 +341,21 @@ function App() {
     );
   }
 
+  const manifestUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/tonconnect-manifest.json`
+    : 'https://paidadz.xyz/tonconnect-manifest.json';
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <LanguageProvider>
-        <TooltipProvider>
-          <AppContent />
-          <Toaster />
-        </TooltipProvider>
-      </LanguageProvider>
-    </QueryClientProvider>
+    <TonConnectUIProvider manifestUrl={manifestUrl}>
+      <QueryClientProvider client={queryClient}>
+        <LanguageProvider>
+          <TooltipProvider>
+            <AppContent />
+            <Toaster />
+          </TooltipProvider>
+        </LanguageProvider>
+      </QueryClientProvider>
+    </TonConnectUIProvider>
   );
 }
 
