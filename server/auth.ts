@@ -259,11 +259,19 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
           bannedUser = newBannedUser;
         }
         
-        // Send warning to primary account
-        if (deviceValidation.primaryAccountId) {
-          await sendWarningToMainAccount(deviceValidation.primaryAccountId);
+        // Save deviceId for banned user so future logins are also caught
+        if (bannedUser && deviceInfo?.deviceId) {
+          try {
+            await db.update(users).set({
+              deviceId: deviceInfo.deviceId,
+              lastLoginIp: deviceInfo.ip,
+              isPrimaryAccount: false,
+            }).where(eq(users.id, bannedUser.id));
+          } catch (e) {
+            console.error('Failed to save deviceId for banned user:', e);
+          }
         }
-        
+
         console.log(`🚫 Duplicate account banned: ${bannedUser.id} (Telegram: ${telegramUser.id})`);
         
         return res.status(403).json({ 
@@ -304,11 +312,14 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
     
     // Update user tracking data on every login (IP, user agent, app version, etc.)
     try {
+      const trackingDeviceId = deviceId || deviceInfo?.deviceId;
       await db.update(users).set({
         lastLoginAt: new Date(),
         lastLoginIp: clientIP,
         lastLoginUserAgent: userAgent,
-        lastLoginDevice: deviceId || deviceInfo?.deviceId,
+        lastLoginDevice: trackingDeviceId,
+        deviceId: trackingDeviceId || undefined,
+        isPrimaryAccount: true,
         appVersion: appVersion || undefined,
         browserFingerprint: deviceInfo?.fingerprint ? JSON.stringify(deviceInfo.fingerprint) : undefined,
         updatedAt: new Date(),

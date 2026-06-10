@@ -61,6 +61,26 @@ const pendingRejections = new Map<string, {
   timestamp: number;
 }>();
 
+// Tracks which admin chats received the withdrawal notification, keyed by withdrawalId
+// Used to remove Approve/Reject buttons from all admins once any one acts on it
+export const withdrawalAdminMessages = new Map<string, Array<{ chatId: string; messageId: number }>>();
+
+// Removes Approve/Reject buttons from all admin copies of a withdrawal notification
+async function clearWithdrawalAdminButtons(withdrawalId: string): Promise<void> {
+  const entries = withdrawalAdminMessages.get(withdrawalId);
+  if (!entries || entries.length === 0) return;
+  await Promise.allSettled(
+    entries.map(({ chatId, messageId }) =>
+      fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } })
+      })
+    )
+  );
+  withdrawalAdminMessages.delete(withdrawalId);
+}
+
 // State management for admin broadcast flow
 const pendingBroadcasts = new Map<string, { timestamp: number }>();
 
@@ -470,6 +490,7 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
     const userTelegramUsername = user?.username ? `@${user.username}` : 'N/A';
     const currentDate = new Date().toUTCString();
 
+    const botUsername = await getBotUsername();
     const groupMessage = `✅ <b>Withdrawal Approved</b>
 
 🗣 User: <a href="tg://user?id=${userTelegramId}">${escapeHtml(userName)}</a>
@@ -478,7 +499,7 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
 💰 Wallet: <code>${walletAddress}</code>
 💸 Amount: <b>${netAmount.toFixed(2)} USD</b>
 📅 Date: ${currentDate}
-🤖 Bot: @MoneyAdzbot`;
+🤖 Bot: @${botUsername}`;
 
     const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -513,6 +534,7 @@ export async function sendWithdrawalRejectedNotification(withdrawal: any, reason
     const userTelegramId = user?.telegram_id || '';
     const userName = user?.firstName || user?.username || 'Unknown';
     
+    const botUsernameReject = await getBotUsername();
     const message = `❌ <b>Withdrawal Rejected</b>
 
 🗣 User: <a href="tg://user?id=${userTelegramId}">${escapeHtml(userName)}</a>
@@ -520,7 +542,7 @@ export async function sendWithdrawalRejectedNotification(withdrawal: any, reason
 💸 Amount: <b>${parseFloat(withdrawal.amount).toFixed(2)} USD</b>
 ⚠️ Reason: ${escapeHtml(reason)}
 📅 Date: ${new Date().toUTCString()}
-🤖 Bot: @MoneyAdzbot`;
+🤖 Bot: @${botUsernameReject}`;
 
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -980,13 +1002,6 @@ export async function handleTelegramMessage(update: any): Promise<boolean> {
       if (telegramId) {
         const user = await storage.getUserByTelegramId(telegramId);
         if (user?.banned) {
-          const banMessage = `Your account has been banned for violating our multi-account policy.\n\nReason: Self-referral attempt detected.\n\nPlease contact support if you believe this is a mistake.`;
-          const replyMarkup = {
-            inline_keyboard: [
-              [{ text: "Contact support", url: "https://t.me/szxzyz" }]
-            ]
-          };
-          await sendUserTelegramNotification(chatId, banMessage, replyMarkup);
           return true;
         }
 
@@ -1613,6 +1628,7 @@ ${walletAddress}
             const method = result.withdrawal.method || 'USD';
             const paymentSystemId = withdrawalDetails?.paymentSystemId || '';
             
+            const approvalBotUsername = await getBotUsername();
             const adminSuccessMessage = `✅ Withdrawal Successful
 
 🗣 User: <a href="tg://user?id=${userTelegramId}">${userName}</a>
@@ -1623,7 +1639,7 @@ ${walletAddress}
 💸 Amount: ${netAmount.toFixed(5)} USD
 🛂 Fee: ${feeAmount.toFixed(5)} (${feePercent}%)
 📅 Date: ${currentDate}
-🤖 Bot: @MoneyAdzbot`;
+🤖 Bot: @${approvalBotUsername}`;
             
             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
               method: 'POST',
@@ -1635,6 +1651,12 @@ ${walletAddress}
                 parse_mode: 'HTML'
               })
             });
+
+            // Remove Approve/Reject buttons from all other admins' copies
+            await clearWithdrawalAdminButtons(withdrawalId);
+
+            // Send group notification for approval
+            await sendWithdrawalApprovedNotification(result.withdrawal);
             
             if (userTelegramId) {
               // User confirmation message with Amount (net after fee) and Fee with percentage
@@ -1723,6 +1745,23 @@ ${walletAddress}
               });
             } catch (editError) {
               console.log('Could not edit original message:', editError);
+            }
+
+            // Remove Approve/Reject buttons from all other admins' copies
+            await clearWithdrawalAdminButtons(withdrawalId);
+
+            // Send group notification for rejection
+            await sendWithdrawalRejectedNotification(result.withdrawal, 'Rejected by admin');
+
+            // Send notification to user
+            const rejectedUser = await storage.getUser(result.withdrawal.userId);
+            if (rejectedUser?.telegram_id) {
+              const rejectedAmount = parseFloat((result.withdrawal.details as any)?.netAmount || result.withdrawal.amount).toFixed(3);
+              await sendUserTelegramNotification(
+                rejectedUser.telegram_id,
+                `❌ Your withdrawal request of <b>${rejectedAmount} USD</b> has been rejected.\n\nYour balance has been refunded. Please contact support if you have any questions.`,
+                { inline_keyboard: [[{ text: '📩 Contact Support', url: 'https://t.me/szxzyz' }]] }
+              );
             }
             
             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {

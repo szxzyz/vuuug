@@ -24,7 +24,7 @@ import {
 import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
 import crypto from "crypto";
-import { sendTelegramMessage, sendUserTelegramNotification, sendWelcomeMessage, handleTelegramMessage, setupTelegramWebhook, verifyChannelMembership, sendSharePhotoToChat } from "./telegram";
+import { sendTelegramMessage, sendUserTelegramNotification, sendWelcomeMessage, handleTelegramMessage, setupTelegramWebhook, verifyChannelMembership, sendSharePhotoToChat, withdrawalAdminMessages } from "./telegram";
 import { authenticateTelegram, requireAuth, optionalAuth } from "./auth";
 import { isAuthenticated } from "./replitAuth";
 import { config, getChannelConfig } from "./config";
@@ -317,6 +317,19 @@ async function getAdminRole(telegramId: string): Promise<{ role: string; permiss
   return null;
 }
 
+// Returns deduplicated Telegram IDs of all admins (super admin + env sub-admins + DB-added admins)
+async function getAllAdminTelegramIds(): Promise<string[]> {
+  const ids = new Set<string>();
+  const superAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
+  if (superAdminId) ids.add(superAdminId);
+  const envSubAdmins = (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  envSubAdmins.forEach(id => ids.add(id));
+  try {
+    const dbRecords = await db.select({ telegramId: adminRoles.telegramId }).from(adminRoles);
+    dbRecords.forEach(r => { if (r.telegramId) ids.add(r.telegramId); });
+  } catch { /* DB unavailable — fall back to env-only */ }
+  return Array.from(ids);
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('🔧 Registering API routes...');
@@ -7031,6 +7044,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const walletAddress = newWithdrawal.walletAddress || 'N/A';
       const feeAmount = newWithdrawal.fee;
       const feePercent = newWithdrawal.feePercent;
+
+      // Get bot username dynamically from API
+      const { getBotUsername: getBotUsernameForWithdrawal } = await import('./telegram');
+      const botUsernameForWithdrawal = await getBotUsernameForWithdrawal();
       
       const adminMessage = `💰 Withdrawal Request
 
@@ -7042,7 +7059,7 @@ ${walletAddress}
 💸 Amount: ${newWithdrawal.withdrawnAmount.toFixed(5)} USD
 🛂 Fee: ${feeAmount.toFixed(5)} (${feePercent}%)
 📅 Date: ${currentDate}
-🤖 Bot: @MoneyAdzbot`;
+🤖 Bot: @${botUsernameForWithdrawal}`;
 
       // Create inline keyboard with Approve and Reject buttons
       const inlineKeyboard = {
@@ -7052,50 +7069,35 @@ ${walletAddress}
         ]]
       };
 
-      // Send message with inline buttons to admin
-      if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_ADMIN_ID) {
-        fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: process.env.TELEGRAM_ADMIN_ID,
-            text: adminMessage,
-            parse_mode: 'HTML',
-            reply_markup: inlineKeyboard
-          })
+      // Send message with inline buttons to ALL admins
+      if (process.env.TELEGRAM_BOT_TOKEN) {
+        getAllAdminTelegramIds().then(allAdminIds => {
+          const withdrawalId = newWithdrawal.withdrawal.id;
+          allAdminIds.forEach(adminId => {
+            fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: adminId,
+                text: adminMessage,
+                parse_mode: 'HTML',
+                reply_markup: inlineKeyboard
+              })
+            }).then(r => r.json()).then((data: any) => {
+              if (data.ok && data.result?.message_id) {
+                const existing = withdrawalAdminMessages.get(withdrawalId) || [];
+                existing.push({ chatId: adminId, messageId: data.result.message_id });
+                withdrawalAdminMessages.set(withdrawalId, existing);
+              }
+            }).catch(err => {
+              console.error(`❌ Failed to send withdrawal notification to admin ${adminId}:`, err);
+            });
+          });
         }).catch(err => {
-          console.error('❌ Failed to send admin notification:', err);
+          console.error('❌ Failed to fetch admin list for withdrawal notification:', err);
         });
       }
       
-      // Send notification to PaidAdzGroup for withdrawal requests (same format as admin notification)
-      if (process.env.TELEGRAM_BOT_TOKEN) {
-        const PAIDADZ_GROUP_CHAT_ID = '-1003402950172';
-        // Use the exact same format as admin message
-        const groupMessage = `💰 Withdrawal Request
-
-🗣 User: <a href="tg://user?id=${userTelegramId}">${userName}</a>
-🆔 User ID: ${userTelegramId}
-💳 Username: ${userTelegramUsername}
-🌐 Address:
-${walletAddress}
-💸 Amount: ${newWithdrawal.withdrawnAmount.toFixed(5)} USD
-🛂 Fee: ${feeAmount.toFixed(5)} (${feePercent}%)
-📅 Date: ${currentDate}
-🤖 Bot: @MoneyAdzbot`;
-
-        fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: PAIDADZ_GROUP_CHAT_ID,
-            text: groupMessage,
-            parse_mode: 'HTML'
-          })
-        }).catch(err => {
-          console.error('❌ Failed to send group notification for withdrawal:', err);
-        });
-      }
 
       res.json({
         success: true,
