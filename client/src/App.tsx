@@ -36,11 +36,17 @@ const NotFound = lazy(() => import("@/pages/not-found"));
 
 const PageLoader = memo(function PageLoader() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-black">
-      <div className="flex gap-1">
-        <div className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '0ms' }}></div>
-        <div className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '150ms' }}></div>
-        <div className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '300ms' }}></div>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-black gap-4">
+      <img
+        src="/paidadz-logo.jpg"
+        alt="Paid Adz"
+        className="w-24 h-24 rounded-full object-cover animate-pulse"
+        style={{ boxShadow: '0 0 32px rgba(59,130,246,0.5)', animationDuration: '1.2s' }}
+      />
+      <div className="flex gap-1.5">
+        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
       </div>
     </div>
   );
@@ -75,7 +81,7 @@ function AppContent() {
 
   const isDevMode = import.meta.env.DEV || import.meta.env.MODE === 'development';
 
-  // Show AdsGram popup ONCE when app opens (blockId 34626)
+  // Show AdsGram popup ONCE when app opens (blockId 34708)
   useEffect(() => {
     if (isDevMode) return;
     if (adsgramOpenShown.current) return;
@@ -83,7 +89,7 @@ function AppContent() {
 
     const t = setTimeout(() => {
       if (window.Adsgram) {
-        window.Adsgram.init({ blockId: "34626" }).show().catch(() => {});
+        window.Adsgram.init({ blockId: "34708" }).show().catch(() => {});
       }
     }, 3000);
 
@@ -308,11 +314,17 @@ function App() {
 
   if (isCheckingCountry || isAuthenticating || isCheckingMembership) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black">
-        <div className="flex gap-1">
-          <div className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '0ms' }}></div>
-          <div className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '150ms' }}></div>
-          <div className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '300ms' }}></div>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black gap-4">
+        <img
+          src="/paidadz-logo.jpg"
+          alt="Paid Adz"
+          className="w-24 h-24 rounded-full object-cover animate-pulse"
+          style={{ boxShadow: '0 0 32px rgba(59,130,246,0.5)', animationDuration: '1.2s' }}
+        />
+        <div className="flex gap-1.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
         </div>
       </div>
     );
