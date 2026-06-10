@@ -1,10 +1,4 @@
 services:
-  # PostgreSQL Database
-  - type: pserv
-    name: cashwatch-database
-    env: docker
-    plan: free
-    
   # Web Service
   - type: web
     name: cashwatch-app
@@ -19,18 +13,17 @@ services:
         value: production
       - key: PORT
         value: 10000
-      - key: DATABASE_URL
-        fromDatabase:
-          name: cashwatch-database
-          property: connectionString
       - key: SESSION_SECRET
         generateValue: true
-      # Add these manually in Render dashboard:
-      # - TELEGRAM_BOT_TOKEN
-      # - TELEGRAM_ADMIN_ID
-      # - BOT_USERNAME
-      # - ARCPAY_API_KEY (optional)
-      # - ARCPAY_PRIVATE_KEY (optional)
-      # - ARCPAY_RETURN_URL (optional)
-      # - ARCPAY_WEBHOOK_URL (optional)
+      # Set these manually in Render dashboard → Environment:
+      # DATABASE_URL       — your PostgreSQL connection string
+      # TELEGRAM_BOT_TOKEN — your bot token from @BotFather
+      # SUPER_ADMIN_ID     — your Telegram numeric user ID
+      # BOT_USERNAME       — your bot username e.g. Paid_Adzbot
     autoDeploy: false
+
+databases:
+  - name: cashwatch-db
+    databaseName: cashwatch
+    user: cashwatch
+    plan: free
