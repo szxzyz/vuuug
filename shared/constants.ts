@@ -1,5 +1,5 @@
 export const APP_VERSION = "1.0.0";
-export const PAD_TO_USD = 10000; // 10,000 PAD = $1 USD
+export const PAD_TO_USD = 10000000; // 10,000,000 PAD = $1 USD
 export const APP_COLORS = {
   primary: "#4aa8ff", // light blue
   background: "#000000", // pure black
@@ -9,7 +9,7 @@ export const APP_COLORS = {
 /**
  * Convert PAD to USD
  * @param padAmount - Amount in PAD
- * @returns Amount in USD (PAD / 10,000)
+ * @returns Amount in USD (PAD / 10,000,000)
  */
 export function padToUSD(padAmount: number | string): number {
   const numValue = typeof padAmount === 'string' ? parseFloat(padAmount) : padAmount;
@@ -19,7 +19,7 @@ export function padToUSD(padAmount: number | string): number {
 /**
  * Convert USD to PAD
  * @param usdAmount - Amount in USD
- * @returns Amount in PAD (USD * 10,000)
+ * @returns Amount in PAD (USD * 10,000,000)
  */
 export function usdToPAD(usdAmount: number | string): number {
   const numValue = typeof usdAmount === 'string' ? parseFloat(usdAmount) : usdAmount;
