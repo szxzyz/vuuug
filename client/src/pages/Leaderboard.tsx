@@ -140,8 +140,6 @@ function SmallAvatar({ entry, index }: { entry: LeaderboardEntry; index: number 
 export default function Leaderboard() {
   const [, navigate] = useLocation();
   const { user } = useAuth() as any;
-  const weekEnd = useMemo(() => getWeekEnd(), []);
-  const { d, h, m, s } = useCountdown(weekEnd);
 
   const { data, isLoading, refetch } = useQuery<LeaderboardData>({
     queryKey: ['/api/leaderboard/weekly'],
@@ -153,6 +151,16 @@ export default function Leaderboard() {
   });
   const prizePool: number = appSettings?.weeklyGiveawayAmount ?? 10;
 
+  const weekEnd = useMemo(() => {
+    if (appSettings?.weeklyContestEndDate) {
+      const d = new Date(appSettings.weeklyContestEndDate);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return getWeekEnd();
+  }, [appSettings?.weeklyContestEndDate]);
+
+  const { d, h, m, s } = useCountdown(weekEnd);
+
   const lb = data?.leaderboard || [];
   const userRank = data?.userRank || null;
   const userStars = data?.userStars || 0;
@@ -163,24 +171,16 @@ export default function Leaderboard() {
   return (
     <div style={{ background: '#0A0A0A', minHeight: '100vh', paddingBottom: 160, overflowX: 'hidden' }}>
 
-      {/* ── Header ── */}
+      {/* ── Countdown Timer Strip ── */}
       <div style={{
-        display: 'flex', alignItems: 'center', padding: '14px 16px 12px', gap: 10,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 16px 8px', gap: 6,
         position: 'sticky', top: 0, background: 'rgba(10,10,10,0.96)',
         backdropFilter: 'blur(12px)', zIndex: 20,
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff' }}>Leaderboard</p>
-          <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
-            Top earners this week
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#1C1C1E', borderRadius: 10, padding: '6px 10px' }}>
-          <FaStar style={{ color: '#FFD700', fontSize: 12 }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#FFD700' }}>{userStarBalance}</span>
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>total</span>
-        </div>
+        <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>Ends in</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: '#FFD700' }}>{d}d {h}h {m}m {s}s</span>
       </div>
 
       {/* ── Loading ── */}

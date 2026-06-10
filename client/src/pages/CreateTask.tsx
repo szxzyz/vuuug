@@ -156,7 +156,7 @@ export default function CreateTask() {
   const totalCostTON = tonCostPerClick * clicksNum;
   const totalCost = isAdmin ? totalCostUSD : totalCostTON;
   const availableBalance = isAdmin ? usdBalance : tonBalance;
-  const hasSufficientBalance = availableBalance >= totalCost;
+  const hasSufficientBalance = isAdmin ? true : availableBalance >= totalCost;
 
   const { data: myTasksData, isLoading: myTasksLoading, refetch: refetchMyTasks } = useQuery<{
     success: boolean;
@@ -557,13 +557,15 @@ export default function CreateTask() {
                 <Button
                   type="submit"
                   className="w-full btn-primary"
-                  disabled={createTaskMutation.isPending || (taskType !== "partner" && !hasSufficientBalance) || (taskType === "channel" && !isVerified)}
+                  disabled={createTaskMutation.isPending || (taskType !== "partner" && !isAdmin && !hasSufficientBalance) || (taskType === "channel" && !isVerified)}
                 >
                   {createTaskMutation.isPending 
                     ? "Publishing..." 
                     : taskType === "partner" 
                       ? "Publish Partner Task" 
-                      : `Pay ${totalCost.toFixed(4)} ${paymentCurrency} & Publish`}
+                      : isAdmin
+                        ? "Publish Task (Free)"
+                        : `Pay ${totalCost.toFixed(4)} ${paymentCurrency} & Publish`}
                 </Button>
               </form>
             )}

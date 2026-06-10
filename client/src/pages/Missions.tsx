@@ -198,9 +198,11 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
 
 /* ─── Main Page ─── */
 export default function Missions() {
-  const { isLoading } = useAuth();
+  const { isLoading, user } = useAuth() as any;
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { data: adminData } = useQuery<{ isAdmin: boolean }>({ queryKey: ['/api/admin/check'], retry: false });
+  const isAdmin = adminData?.isAdmin || false;
   const [clickedTasks, setClickedTasks] = useState<Set<string>>(new Set());
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
@@ -363,7 +365,13 @@ export default function Missions() {
         <div
           style={{ borderRadius: 18, overflow: 'hidden', position: 'relative', height: 90, marginBottom: 20, cursor: 'pointer' }}
           className="active:scale-[0.98] transition-transform"
-          onClick={() => setLocation("/task/create")}
+          onClick={() => {
+            if (isAdmin) {
+              setLocation("/task/create");
+            } else {
+              showNotification("Coming Soon", "info");
+            }
+          }}
         >
           <img src="/spiderman-banner.jpg" alt="Create Task" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 35%' }} />
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 60%, rgba(0,0,0,0.1) 100%)' }} />
