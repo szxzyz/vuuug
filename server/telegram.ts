@@ -685,7 +685,7 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
     text += seg;
   };
 
-  addSegment('👋🏻', { emojiId: '531900728600' });
+  addSegment('👋🏻', { emojiId: '5319007286004299794' });
   addSegment(' ');
   addSegment('Welcome to Paid Adz', { bold: true });
   addSegment('\n\n');
@@ -724,7 +724,7 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
     inline_keyboard: [
       [
         {
-          text: "🚀 Let's GOO",
+          text: "Let's GOOO!!",
           url: `https://t.me/${botUsername}/MyWAdz`
         }
       ]
