@@ -22,77 +22,8 @@
     <!-- GiGaPub — app-open popup (shown once per session) -->
     <script src="https://ad.gigapub.tech/script?id=34626"></script>
 
-    <!-- Adexium Widget SDK -->
-    <script type="text/javascript">
-      window._adexiumWidget = null;
-      window._adexiumScriptLoaded = false;
-      window._adexiumScriptFailed = false;
-
-      function _initAdexium() {
-        if (window._adexiumWidget) return true;
-        if (typeof AdexiumWidget !== 'undefined') {
-          try {
-            window._adexiumWidget = new AdexiumWidget({
-              wid: '834b83d2-003e-4ece-a918-df6833aac001',
-              adFormat: 'interstitial'
-            });
-            return true;
-          } catch(e) {
-            console.warn('[Adexium] Init error:', e);
-          }
-        }
-        return false;
-      }
-
-      // Poll until AdexiumWidget is defined (max 5s), then show ad
-      window.showAdexium = function() {
-        return new Promise(function(resolve, reject) {
-          if (window._adexiumScriptFailed) {
-            reject(new Error('unavailable'));
-            return;
-          }
-          var attempts = 0;
-          var maxAttempts = 50; // 50 x 100ms = 5s
-          function tryShow() {
-            if (_initAdexium()) {
-              try {
-                var result = window._adexiumWidget.show();
-                if (result && typeof result.then === 'function') {
-                  result.then(resolve).catch(resolve);
-                } else {
-                  // Non-Promise show(): wait 5s for ad to complete
-                  setTimeout(resolve, 5000);
-                }
-              } catch(e) {
-                console.warn('[Adexium] show() error:', e);
-                reject(e);
-              }
-            } else if (attempts++ < maxAttempts) {
-              setTimeout(tryShow, 100);
-            } else {
-              console.warn('[Adexium] SDK not available after 5s');
-              reject(new Error('unavailable'));
-            }
-          }
-          tryShow();
-        });
-      };
-
-      // Load script dynamically so we can track success/failure
-      var adexiumScript = document.createElement('script');
-      adexiumScript.type = 'text/javascript';
-      adexiumScript.src = 'https://cdn.tgads.space/assets/js/adexium-widget.min.js';
-      adexiumScript.onload = function() {
-        window._adexiumScriptLoaded = true;
-        _initAdexium();
-        console.log('[Adexium] SDK loaded', typeof AdexiumWidget);
-      };
-      adexiumScript.onerror = function() {
-        window._adexiumScriptFailed = true;
-        console.warn('[Adexium] SDK failed to load');
-      };
-      document.head.appendChild(adexiumScript);
-    </script>
+    <!-- AdsGram SDK -->
+    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 
     <!-- Richads Telegram Ads (app-open popup) -->
     <script src="https://richinfo.co/richpartners/telegram/js/tg-ob.js"></script>
