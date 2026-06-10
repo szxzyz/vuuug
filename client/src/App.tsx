@@ -2,7 +2,6 @@ import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Toaster } from "@/components/ui/toaster";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import AppNotification from "@/components/AppNotification";
 import { useEffect, lazy, Suspense, useState, memo, useCallback, useRef } from "react";
@@ -351,7 +350,6 @@ function App() {
         <LanguageProvider>
           <TooltipProvider>
             <AppContent />
-            <Toaster />
           </TooltipProvider>
         </LanguageProvider>
       </QueryClientProvider>
