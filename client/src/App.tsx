@@ -36,17 +36,20 @@ const NotFound = lazy(() => import("@/pages/not-found"));
 
 const PageLoader = memo(function PageLoader() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black gap-4">
-      <img
-        src="/paidadz-logo.jpg"
-        alt="Paid Adz"
-        className="w-24 h-24 rounded-full object-cover animate-pulse"
-        style={{ boxShadow: '0 0 32px rgba(59,130,246,0.5)', animationDuration: '1.2s' }}
-      />
-      <div className="flex gap-1.5">
-        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#000', gap: 0 }}>
+      <style>{`
+        @keyframes logoFadeIn { 0%{opacity:0;transform:scale(0.85)} 100%{opacity:1;transform:scale(1)} }
+        @keyframes dotBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-8px)} }
+      `}</style>
+
+      <div style={{ marginBottom: 36, animation: 'logoFadeIn 0.5s ease both' }}>
+        <img src="/app-logo-loading.jpg" alt="Paid Ads" style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 7 }}>
+        {[0, 160, 320].map((d, i) => (
+          <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: '#3b82f6', animation: `dotBounce 1.1s ${d}ms infinite ease-in-out` }} />
+        ))}
       </div>
     </div>
   );
@@ -81,7 +84,7 @@ function AppContent() {
 
   const isDevMode = import.meta.env.DEV || import.meta.env.MODE === 'development';
 
-  // Show AdsGram popup ONCE when app opens (blockId 34708)
+  // Show AdsGram interstitial popup ONCE when app opens (blockId int-34709)
   useEffect(() => {
     if (isDevMode) return;
     if (adsgramOpenShown.current) return;
@@ -89,7 +92,7 @@ function AppContent() {
 
     const t = setTimeout(() => {
       if (window.Adsgram) {
-        window.Adsgram.init({ blockId: "34708" }).show().catch(() => {});
+        window.Adsgram.init({ blockId: "int-34709" }).show().catch(() => {});
       }
     }, 3000);
 
@@ -313,21 +316,7 @@ function App() {
   }
 
   if (isCheckingCountry || isAuthenticating || isCheckingMembership) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black gap-4">
-        <img
-          src="/paidadz-logo.jpg"
-          alt="Paid Adz"
-          className="w-24 h-24 rounded-full object-cover animate-pulse"
-          style={{ boxShadow: '0 0 32px rgba(59,130,246,0.5)', animationDuration: '1.2s' }}
-        />
-        <div className="flex gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-        </div>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (isCountryBlocked) {
