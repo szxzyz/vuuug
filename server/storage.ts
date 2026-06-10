@@ -849,13 +849,15 @@ export class DatabaseStorage implements IStorage {
         const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
         const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
         const referralRewardBUG = await this.getAppSetting('referral_reward_bug', '10');
-        // Default PAD reward to enabled so bonuses are paid even before admin configures anything
+        // Read per-reward flags. Default PAD to 'true' so new deployments work out of the box.
+        // If admin has explicitly set a flag (true or false), that value is used.
         const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
         const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
-        // Master enabled flag — also defaults to true so legacy deployments work out of the box
+        // Master switch — defaults to true for legacy deployments
         const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
-        // Give PAD if the PAD-specific flag is on OR if the master switch is on
-        const givePAD = referralRewardPADEnabled || referralRewardEnabled;
+        // Give PAD if PAD-specific flag is on.
+        // Fallback: if NEITHER specific flag is set (legacy), use master switch for PAD.
+        const givePAD = referralRewardPADEnabled || (!referralRewardPADEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
         const giveUSD = referralRewardUSDEnabled;
 
         // Find pending referrals where this user is the referee
