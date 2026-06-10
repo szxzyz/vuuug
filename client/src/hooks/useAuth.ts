@@ -303,6 +303,18 @@ const authenticateWithTelegram = async (initData: string) => {
   
   // Get device tracking information
   const { deviceId, fingerprint } = setupDeviceTracking();
+
+  // Always pass startParam so referral codes are saved on every auth attempt
+  const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
+  const startParam = tg?.initDataUnsafe?.start_param ||
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('tg_start_param') : null) ||
+    undefined;
+
+  const body: Record<string, unknown> = { initData };
+  if (startParam) {
+    body.startParam = startParam;
+    console.log('🔗 Including startParam in auth:', startParam);
+  }
   
   const response = await fetch('/api/auth/telegram', {
     method: 'POST',
@@ -311,7 +323,7 @@ const authenticateWithTelegram = async (initData: string) => {
       'x-device-id': deviceId,
       'x-device-fingerprint': JSON.stringify(fingerprint),
     },
-    body: JSON.stringify({ initData }),
+    body: JSON.stringify(body),
   });
   
   console.log(`📡 Auth response status: ${response.status}`);
@@ -408,6 +420,10 @@ export function useAuth() {
       queryClient.setQueryData(["/api/auth/user"], userData);
       // Cache user data for offline/quick loading
       cacheUserData(userData);
+      // If referral was processed, remove the stored startParam so it isn't re-sent
+      if (userData.referralProcessed) {
+        localStorage.removeItem('tg_start_param');
+      }
     },
     onError: (error) => {
       console.error('❌ Authentication error:', error);
