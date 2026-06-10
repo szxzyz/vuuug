@@ -669,45 +669,69 @@ function buildCustomEmojiMessage(parts: Array<{ text: string; emojiId?: string }
 
 export async function formatWelcomeMessage(userId: string): Promise<{ message: string; entities: any[]; inlineKeyboard: any }> {
   const botUsername = await getBotUsername();
-  const channelUrl = 'https://t.me/MoneyAdz';
 
-  const { text: message, entities } = buildCustomEmojiMessage([
-    { text: '👋', emojiId: '5258029071207505708' },
-    { text: ' Welcome to Paid Adz\n\n' },
-    { text: '🚀', emojiId: '5188481279963715781' },
-    { text: ' Earn POW Tokens by watching ads or completing tasks — your gateway to real rewards.\n\n' },
-    { text: '📈', emojiId: '5298614648138919107' },
-    { text: ' Start earning and growing your balance today!' },
-  ]);
+  const entities: any[] = [];
+  let text = '';
+
+  const addSegment = (seg: string, options?: { emojiId?: string; bold?: boolean }) => {
+    const offset = utf16Len(text);
+    const length = utf16Len(seg);
+    if (options?.emojiId) {
+      entities.push({ type: 'custom_emoji', offset, length, custom_emoji_id: options.emojiId });
+    }
+    if (options?.bold) {
+      entities.push({ type: 'bold', offset, length });
+    }
+    text += seg;
+  };
+
+  addSegment('👋🏻', { emojiId: '531900728600' });
+  addSegment(' ');
+  addSegment('Welcome to Paid Adz', { bold: true });
+  addSegment('\n\n');
+  addSegment('💎', { emojiId: '5359719332542718652' });
+  addSegment(' Earn ');
+  addSegment('POW Tokens', { bold: true });
+  addSegment(' by watching ');
+  addSegment('ads', { bold: true });
+  addSegment(' and completing ');
+  addSegment('tasks', { bold: true });
+  addSegment(' — your gateway to ');
+  addSegment('real rewards', { bold: true });
+  addSegment('.\n\n');
+  addSegment('💲', { emojiId: '5316711376876485361' });
+  addSegment(' Convert your ');
+  addSegment('earnings', { bold: true });
+  addSegment(' into ');
+  addSegment('USDT', { bold: true });
+  addSegment(' and enjoy a simple, rewarding experience.\n\n');
+  addSegment('⚡', { emojiId: '5323404142809467476' });
+  addSegment(' The ');
+  addSegment('more active', { bold: true });
+  addSegment(' you are, the more you can ');
+  addSegment('earn', { bold: true });
+  addSegment('.\n\n');
+  addSegment('👛', { emojiId: '5316979275461573049' });
+  addSegment(' Start ');
+  addSegment('earning', { bold: true });
+  addSegment(', grow your ');
+  addSegment('balance', { bold: true });
+  addSegment(' and unlock more ');
+  addSegment('opportunities', { bold: true });
+  addSegment(' today!');
 
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
-          text: "🚀 Let's Go",
+          text: "🚀 Let's GOO",
           url: `https://t.me/${botUsername}/MyWAdz`
-        }
-      ],
-      [
-        {
-          text: "🤝 Announcements",
-          url: channelUrl
-        },
-        {
-          text: "💬 Group Chat",
-          url: channelUrl
-        }
-      ],
-      [
-        {
-          text: "⁉️ FAQ",
-          url: channelUrl
         }
       ]
     ]
   };
 
-  return { message, entities, inlineKeyboard };
+  return { message: text, entities, inlineKeyboard };
 }
 
 export async function sendWelcomeMessage(userId: string): Promise<boolean> {

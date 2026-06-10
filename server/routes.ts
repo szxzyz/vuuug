@@ -33,6 +33,23 @@ import { config, getChannelConfig } from "./config";
 // Map: sessionId -> { socket: WebSocket, userId: string }
 const connectedUsers = new Map<string, { socket: WebSocket; userId: string }>();
 
+// ── Anti-Fake Ad Session Store ────────────────────────────────────────────────
+const adUsedSessions  = new Map<string, number>();  // sessionId  → usedAt timestamp
+const adUserCooldowns = new Map<string, number>();  // userId     → lastRewardAt (ms)
+const adAbuseStore    = new Map<string, { score: number; lockedUntil: number; failCount: number }>();
+
+const AD_MIN_BACKGROUND_MS  = 3000;   // 3 s minimum background engagement
+const AD_REWARD_COOLDOWN_MS = 5000;   // 5 s between rewards
+const AD_ABUSE_LOCK_SCORE   = 5;      // lock after 5 consecutive failures
+const AD_ABUSE_BASE_LOCK_MS = 60_000; // 1 min base lock, doubles per extra level
+
+// Prune stale sessions every 15 minutes (keep only last 15 min)
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [sid, ts] of adUsedSessions) if (ts < cutoff) adUsedSessions.delete(sid);
+}, 15 * 60 * 1000);
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Function to verify session token against PostgreSQL sessions table
 async function verifySessionToken(sessionToken: string): Promise<{ isValid: boolean; userId?: string }> {
   try {
@@ -1210,7 +1227,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error("⚠️ Ad watching abuse detection failed (non-critical):", abuseError);
         }
       }
-      
+
+      // ── Anti-Fake Session Validation ──────────────────────────────────────
+      const { sessionId, backgroundDuration, sessionStart } = req.body as {
+        sessionId?: string;
+        backgroundDuration?: number;
+        sessionStart?: number;
+      };
+      const userKey = String(userId);
+      const abuse   = adAbuseStore.get(userKey) || { score: 0, lockedUntil: 0, failCount: 0 };
+
+      // 1. Session ID must be present and well-formed
+      if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
+        return res.status(400).json({
+          message: "Invalid session. Please start a new ad session.",
+          errorType: 'invalid_session',
+        });
+      }
+
+      // 2. Replay attack — same session used twice
+      if (adUsedSessions.has(sessionId)) {
+        return res.status(400).json({
+          message: "Session already used. Please watch a new ad.",
+          errorType: 'duplicate_session',
+        });
+      }
+
+      // 3. Abuse lock — too many failures
+      if (abuse.lockedUntil > Date.now()) {
+        const secsLeft = Math.ceil((abuse.lockedUntil - Date.now()) / 1000);
+        return res.status(429).json({
+          message: `Too many failed attempts. Try again in ${secsLeft}s.`,
+          errorType: 'abuse_lock',
+          secsLeft,
+        });
+      }
+
+      // 4. Cooldown between rewards
+      const lastRewardAt       = adUserCooldowns.get(userKey) || 0;
+      const cooldownRemaining  = AD_REWARD_COOLDOWN_MS - (Date.now() - lastRewardAt);
+      if (cooldownRemaining > 0) {
+        return res.status(429).json({
+          message: `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before watching another ad.`,
+          errorType: 'cooldown',
+          secsLeft: Math.ceil(cooldownRemaining / 1000),
+        });
+      }
+
+      // 5. Background duration — must be ≥ AD_MIN_BACKGROUND_MS
+      const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
+      if (bgDuration < AD_MIN_BACKGROUND_MS) {
+        // Penalise: increment abuse score
+        const newScore     = abuse.score + 1;
+        const newFailCount = abuse.failCount + 1;
+        const lockLevel    = Math.max(0, newScore - AD_ABUSE_LOCK_SCORE + 1);
+        const lockedUntil  = newScore >= AD_ABUSE_LOCK_SCORE
+          ? Date.now() + AD_ABUSE_BASE_LOCK_MS * Math.min(lockLevel, 8)
+          : 0;
+        adAbuseStore.set(userKey, { score: newScore, lockedUntil, failCount: newFailCount });
+        console.log(`⚠️ Ad anti-fake rejected user ${userId}: bgDuration=${bgDuration}ms score=${newScore}`);
+        return res.status(400).json({
+          message: "Ad engagement not verified. Keep the ad open for at least 5 seconds.",
+          errorType: 'insufficient_background',
+          bgDuration,
+          required: AD_MIN_BACKGROUND_MS,
+        });
+      }
+
+      // ✅ All checks passed — mark session used, update cooldown, decay abuse score
+      adUsedSessions.set(sessionId, Date.now());
+      adUserCooldowns.set(userKey, Date.now());
+      if (abuse.score > 0) {
+        adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
+      }
+      console.log(`✅ Ad session valid for user ${userId}: bgDuration=${bgDuration}ms`);
+      // ─────────────────────────────────────────────────────────────────────
+
       // Fetch admin settings for limits and reward amounts
       const dailyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'daily_ad_limit')).limit(1);
       const hourlyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'hourly_ad_limit')).limit(1);
@@ -3632,63 +3724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Update admin settings
-  app.put('/api/admin/settings', authenticateAdmin, async (req: any, res) => {
-    try {
-      const settingsData = req.body;
-      console.log('📝 Updating admin settings:', settingsData);
-
-      // Proper camelCase → snake_case that handles acronyms (PAD, USD, BUG, etc.)
-      const toSnakeCase = (key: string): string =>
-        key
-          .replace(/([a-z\d])([A-Z])/g, '$1_$2')      // camelCase word boundary
-          .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')   // acronym before word (PADEnabled → PAD_Enabled)
-          .toLowerCase();
-      
-      const updatePromises = Object.entries(settingsData).map(async ([key, value]) => {
-        const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
-        
-        // Update or insert the setting
-        await db.insert(adminSettings)
-          .values({
-            settingKey: key,
-            settingValue: stringValue,
-            updatedAt: new Date()
-          })
-          .onConflictDoUpdate({
-            target: adminSettings.settingKey,
-            set: {
-              settingValue: stringValue,
-              updatedAt: new Date()
-            }
-          });
-          
-        // Also handle snake_case version for compatibility if key is camelCase
-        const snakeKey = toSnakeCase(key);
-        if (snakeKey !== key) {
-          await db.insert(adminSettings)
-            .values({
-              settingKey: snakeKey,
-              settingValue: stringValue,
-              updatedAt: new Date()
-            })
-            .onConflictDoUpdate({
-              target: adminSettings.settingKey,
-              set: {
-                settingValue: stringValue,
-                updatedAt: new Date()
-              }
-            });
-        }
-      });
-      
-      await Promise.all(updatePromises);
-      res.json({ success: true, message: "Settings updated successfully" });
-    } catch (error) {
-      console.error("Error updating admin settings:", error);
-      res.status(500).json({ message: "Failed to update settings" });
-    }
-  });
+  // Update admin settings (handled by the route below)
 
   // Mission Ads Watch endpoint — per-platform reward from admin settings
   app.post('/api/missions/ads/watch', authenticateTelegram, async (req: any, res) => {
@@ -3696,7 +3732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.user.id;
       const { platform } = req.body;
 
-      if (!['monetag', 'gigapub', 'adexium'].includes(platform)) {
+      if (!['monetag', 'gigapub'].includes(platform)) {
         return res.status(400).json({ success: false, message: 'Invalid platform' });
       }
 
@@ -3715,9 +3751,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
         case 'gigapub':
           reward = parseInt(getSetting('giga_pub_mission_reward', '50'));
-          break;
-        case 'adexium':
-          reward = parseInt(getSetting('adexium_mission_reward', '50'));
           break;
         default:
           reward = 50;
