@@ -2879,7 +2879,7 @@ function AdminManagementSection() {
 
   const openEdit = (admin: AdminRecord) => {
     setEditingAdmin(admin);
-    setForm({ telegramId: admin.telegramId, name: admin.name, role: admin.role, permissions: admin.permissions });
+    setForm({ telegramId: admin.telegramId, name: '', role: admin.role, permissions: admin.permissions });
     setShowAddForm(true);
   };
 
