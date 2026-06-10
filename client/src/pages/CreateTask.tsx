@@ -51,6 +51,33 @@ import {
 import TopUpPopup from "@/components/TopUpPopup";
 import { Plus } from "lucide-react";
 
+function BotInfoDrawerContent() {
+  const { data } = useQuery<{ username: string }>({
+    queryKey: ['/api/bot-info'],
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const botUsername = data?.username || 'PaidAdzbot';
+  return (
+    <div className="px-4 pb-2 space-y-3">
+      <p className="text-sm font-semibold text-white">
+        Subscription verification is available for Telegram channels and chats.
+      </p>
+      <p className="text-sm font-semibold text-white">
+        In order for verification to work,{' '}
+        <a
+          href={`https://t.me/${botUsername}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline font-bold"
+        >
+          add @{botUsername} to your group/channel.
+        </a>
+      </p>
+    </div>
+  );
+}
+
 interface Task {
   id: string;
   taskType: string;
@@ -799,14 +826,7 @@ export default function CreateTask() {
             <DrawerHeader className="text-left">
               <DrawerTitle className="text-lg font-bold text-white">Channel Verification</DrawerTitle>
             </DrawerHeader>
-            <div className="px-4 pb-2 space-y-3">
-              <p className="text-sm font-semibold text-white">
-                Subscription verification is available for Telegram channels and chats.
-              </p>
-              <p className="text-sm font-semibold text-white">
-                In order for verification to work, <a href="https://t.me/PaidAdzbot" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-bold">add our bot to your group/channel.</a>
-              </p>
-            </div>
+            <BotInfoDrawerContent />
             <DrawerFooter>
               <DrawerClose asChild>
                 <Button variant="outline" className="w-full">Got it</Button>

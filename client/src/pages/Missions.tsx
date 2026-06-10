@@ -363,7 +363,7 @@ export default function Missions() {
 
         {/* Banner — Create Task */}
         <div
-          style={{ borderRadius: 18, overflow: 'hidden', position: 'relative', height: 90, marginBottom: 20, cursor: 'pointer' }}
+          style={{ borderRadius: 18, overflow: 'hidden', position: 'relative', height: 90, marginBottom: 20, cursor: isAdmin ? 'pointer' : 'default' }}
           className="active:scale-[0.98] transition-transform"
           onClick={() => {
             if (isAdmin) {
@@ -377,8 +377,15 @@ export default function Missions() {
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 60%, rgba(0,0,0,0.1) 100%)' }} />
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 18px' }}>
             <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', lineHeight: 1.2 }}>I want my task here</span>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 }}>create your own task</span>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 }}>
+              {isAdmin ? 'create your own task' : '🔒 Coming Soon'}
+            </span>
           </div>
+          {!isAdmin && (
+            <div style={{ position: 'absolute', top: 10, right: 12, background: 'rgba(255,200,0,0.18)', border: '1px solid rgba(255,200,0,0.45)', borderRadius: 8, padding: '3px 10px' }}>
+              <span style={{ fontSize: 10, fontWeight: 900, color: '#ffd700', letterSpacing: '0.08em' }}>COMING SOON</span>
+            </div>
+          )}
         </div>
 
         {/* Earn with ADS */}
