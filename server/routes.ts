@@ -1179,6 +1179,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
         gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1500')),
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
+        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1500')),
+        monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
     } catch (error) {
@@ -3728,6 +3730,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
         gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1500')),
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
+        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1500')),
+        monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
     } catch (error) {
