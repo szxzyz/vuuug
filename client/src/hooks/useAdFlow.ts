@@ -3,7 +3,8 @@ import { useState, useCallback } from 'react';
 declare global {
   interface Window {
     show_11123429: (type?: string) => Promise<void>;
-    showGiga: (id?: number) => Promise<void>;
+    showGiga: () => Promise<void>;
+    showRewardAd: (callback: (res: { status: string }) => void) => void;
   }
 }
 
@@ -36,9 +37,30 @@ export function useAdFlow() {
   const showGigaPubAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
       if (typeof window.showGiga === 'function') {
-        window.showGiga(34625)
+        window.showGiga()
           .then(() => resolve({ success: true, unavailable: false }))
-          .catch(() => resolve({ success: false, unavailable: false }));
+          .catch((e) => {
+            console.error('GigaPub ad error:', e);
+            const msg = String(e?.message || e?.error || e || '').toLowerCase();
+            const noAds = msg.includes('no ad') || msg.includes('no fill') || msg.includes('unavailable') || msg.includes('empty');
+            resolve({ success: false, unavailable: noAds });
+          });
+      } else {
+        resolve({ success: false, unavailable: true });
+      }
+    });
+  }, []);
+
+  const showMonetixAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
+    return new Promise((resolve) => {
+      if (typeof window.showRewardAd === 'function') {
+        window.showRewardAd((res) => {
+          if (res.status === 'completed' || res.status === 'closed') {
+            resolve({ success: true, unavailable: false });
+          } else {
+            resolve({ success: false, unavailable: false });
+          }
+        });
       } else {
         resolve({ success: false, unavailable: true });
       }
@@ -80,5 +102,6 @@ export function useAdFlow() {
     runAdFlow,
     showMonetagAd,
     showGigaPubAd,
+    showMonetixAd,
   };
 }
