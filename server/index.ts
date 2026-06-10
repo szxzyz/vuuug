@@ -18,6 +18,14 @@ try {
   
   // CRITICAL FIX: Backfill BUG rewards for users who earned referrals before the update
   await storage.backfillExistingReferralBUGRewards();
+
+  // Repair any referral relationships that were missed:
+  // - users with referred_by set but no referrals table entry
+  // - pending referrals whose referee already watched enough ads
+  const repairStats = await storage.fullReferralRepair();
+  if (repairStats.referralsCreated > 0 || repairStats.referralsActivated > 0) {
+    console.log(`✅ Referral repair complete — created:${repairStats.referralsCreated} activated:${repairStats.referralsActivated}`);
+  }
 } catch (error) {
   console.log('⚠️ Could not ensure system setup:', error);
   // Continue server startup even if setup fails

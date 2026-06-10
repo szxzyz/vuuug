@@ -689,7 +689,7 @@ function buildCustomEmojiMessage(parts: Array<{ text: string; emojiId?: string }
   return { text, entities };
 }
 
-export async function formatWelcomeMessage(userId: string): Promise<{ message: string; entities: any[]; inlineKeyboard: any }> {
+export async function formatWelcomeMessage(userId: string, referralCode?: string): Promise<{ message: string; entities: any[]; inlineKeyboard: any }> {
   const botUsername = await getBotUsername();
 
   const entities: any[] = [];
@@ -742,12 +742,17 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
   addSegment('opportunities', { bold: true });
   addSegment(' today!');
 
+  // Include the referral code in the Open App button so start_param is set in initDataUnsafe
+  const appUrl = referralCode
+    ? `https://t.me/${botUsername}/MyWAdz?startapp=${referralCode}`
+    : `https://t.me/${botUsername}/MyWAdz`;
+
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
           text: "Let's GOOO!!",
-          url: `https://t.me/${botUsername}/MyWAdz`
+          url: appUrl
         }
       ]
     ]
@@ -756,7 +761,7 @@ export async function formatWelcomeMessage(userId: string): Promise<{ message: s
   return { message: text, entities, inlineKeyboard };
 }
 
-export async function sendWelcomeMessage(userId: string): Promise<boolean> {
+export async function sendWelcomeMessage(userId: string, referralCode?: string): Promise<boolean> {
   // Check if user is banned before sending welcome message
   try {
     const user = await storage.getUserByTelegramId(userId);
@@ -773,7 +778,7 @@ export async function sendWelcomeMessage(userId: string): Promise<boolean> {
     return false;
   }
 
-  const { message, entities, inlineKeyboard } = await formatWelcomeMessage(userId);
+  const { message, entities, inlineKeyboard } = await formatWelcomeMessage(userId, referralCode);
 
   try {
     const payload = {
@@ -1005,9 +1010,10 @@ export async function handleTelegramMessage(update: any): Promise<boolean> {
           return true;
         }
 
-        // Handle /start command
+        // Handle /start command — extract referral code so the Open App button carries it
         if (text.startsWith('/start')) {
-          await sendWelcomeMessage(telegramId);
+          const startCode = text.split(' ')[1]?.trim() || undefined;
+          await sendWelcomeMessage(telegramId, startCode);
           return true;
         }
 
@@ -2303,7 +2309,7 @@ ${walletAddress}
         }
       }
 
-      await sendWelcomeMessage(chatId);
+      await sendWelcomeMessage(chatId, referralCode || undefined);
       return true;
     }
 

@@ -843,20 +843,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralCode: '',
       });
       
-      // Send welcome message to new users
+      // Process referral if startParam (referral code) was provided
+      // CRITICAL FIX: Process referrals for BOTH new users AND existing users who don't have a referrer yet
+      let referralProcessed = false;
+      const finalStartParam = effectiveStartParam || startParam;
+
+      // Send welcome message to new users — include referral code so the Open App button keeps it
       if (isNewUser) {
         try {
-          await sendWelcomeMessage(telegramUser.id.toString());
+          await sendWelcomeMessage(telegramUser.id.toString(), finalStartParam || undefined);
         } catch (welcomeError) {
           console.error('Error sending welcome message:', welcomeError);
           // Don't fail authentication if welcome message fails
         }
       }
-      
-      // Process referral if startParam (referral code) was provided
-      // CRITICAL FIX: Process referrals for BOTH new users AND existing users who don't have a referrer yet
-      let referralProcessed = false;
-      const finalStartParam = effectiveStartParam || startParam;
       if (finalStartParam && finalStartParam !== telegramUser.id.toString()) {
         console.log(`🔄 Processing Mini App referral: referralCode=${finalStartParam}, user=${telegramUser.id}, isNewUser=${isNewUser}`);
         try {
@@ -1081,7 +1081,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const referralRewardEnabled = getSetting('referral_reward_enabled', 'false') === 'true';
       const referralRewardUSD = parseFloat(getSetting('referral_reward_usd', '0.0005'));
       const referralRewardPAD = parseInt(getSetting('referral_reward_pad', '50'));
-      const referralRewardPADEnabled = getSetting('referral_reward_pad_enabled', 'false') === 'true';
+      const referralRewardPADEnabled = getSetting('referral_reward_pad_enabled', 'true') === 'true';
       const referralRewardUSDEnabled = getSetting('referral_reward_usd_enabled', 'false') === 'true';
       const referralAdsRequired = parseInt(getSetting('referral_ads_required', '1')); // Ads needed for affiliate bonus
       const l1CommissionPercent = parseFloat(getSetting('l1_commission_percent', '20')); // Level 1: 20%
@@ -1363,7 +1363,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       try {
         // Process reward with error handling to ensure success response
-        await storage.addEarning({
+        // Capture the earning so we can reference its ID for referral commission tracking
+        const adWatchEarning = await storage.addEarning({
           userId,
           amount: String(adRewardPAD),
           source: 'ad_watch',
@@ -1427,14 +1428,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // L1 referrer — the person who directly invited this user (stored as referral code)
             const l1Referrer = await storage.getUserByReferralCode(user.referredBy);
             if (l1Referrer) {
-              const l1CommissionPAD = Math.round(adRewardPAD * l1Rate);
+              // Use Math.ceil and ensure minimum 1 PAD commission so small rewards never round to 0
+              const l1CommissionPAD = Math.max(1, Math.ceil(adRewardPAD * l1Rate));
               const l1RateDisplay = Math.round(l1Rate * 100);
-              await storage.addEarning({
+              const l1Earning = await storage.addEarning({
                 userId: l1Referrer.id,
                 amount: String(l1CommissionPAD),
                 source: 'referral_commission',
                 description: `${l1RateDisplay}% L1 commission from ${user.username || user.telegram_id}'s ad watch`,
               });
+              // Store in referralCommissions table for audit trail and affiliate statistics
+              try {
+                await db.insert(referralCommissions).values({
+                  referrerId: l1Referrer.id,
+                  referredUserId: userId,
+                  originalEarningId: adWatchEarning.id,
+                  commissionAmount: String(l1CommissionPAD),
+                });
+              } catch (rcErr) {
+                console.warn('⚠️ referralCommissions insert failed (non-critical):', rcErr);
+              }
               console.log(`💰 L1 commission: ${l1CommissionPAD} PAD (${l1RateDisplay}%) → ${l1Referrer.id}`);
 
               // L2 referrer — the person who invited the L1 referrer
@@ -1442,7 +1455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 try {
                   const l2Referrer = await storage.getUserByReferralCode(l1Referrer.referredBy);
                   if (l2Referrer) {
-                    const l2CommissionPAD = Math.round(adRewardPAD * l2Rate);
+                    const l2CommissionPAD = Math.max(1, Math.ceil(adRewardPAD * l2Rate));
                     const l2RateDisplay = Math.round(l2Rate * 100);
                     await storage.addEarning({
                       userId: l2Referrer.id,
@@ -1450,6 +1463,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       source: 'referral_commission_l2',
                       description: `${l2RateDisplay}% L2 commission from ${user.username || user.telegram_id}'s ad watch`,
                     });
+                    // Store L2 in referralCommissions table
+                    try {
+                      await db.insert(referralCommissions).values({
+                        referrerId: l2Referrer.id,
+                        referredUserId: userId,
+                        originalEarningId: adWatchEarning.id,
+                        commissionAmount: String(l2CommissionPAD),
+                      });
+                    } catch (rc2Err) {
+                      console.warn('⚠️ L2 referralCommissions insert failed (non-critical):', rc2Err);
+                    }
                     console.log(`💰 L2 commission: ${l2CommissionPAD} PAD → ${l2Referrer.id}`);
                   }
                 } catch (l2Error) {
@@ -1457,9 +1481,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               }
             } else {
-              // L1 referrer not found — orphaned reference
-              console.warn(`⚠️ L1 referrer with code ${user.referredBy} not found, clearing orphaned referral for user ${userId}`);
-              await storage.clearOrphanedReferral(userId);
+              // L1 referrer not found — log warning but do NOT clear the referral link
+              // (referrer may be temporarily unavailable; clearing is irreversible)
+              console.warn(`⚠️ L1 referrer with code ${user.referredBy} not found for user ${userId} — skipping commission this ad`);
             }
           } catch (commissionError) {
             console.error("⚠️ Referral commission processing failed (non-critical):", commissionError);
@@ -3691,7 +3715,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralRewardEnabled: getSetting('referral_reward_enabled', 'false') === 'true',
         referralRewardUSD: parseFloat(getSetting('referral_reward_usd', '0.0005')),
         referralRewardPAD: parseInt(getSetting('referral_reward_pad', '50')),
-        referralRewardPADEnabled: getSetting('referral_reward_pad_enabled', 'false') === 'true',
+        referralRewardPADEnabled: getSetting('referral_reward_pad_enabled', 'true') === 'true',
         referralRewardUSDEnabled: getSetting('referral_reward_usd_enabled', 'false') === 'true',
         referralAdsRequired: parseInt(getSetting('referral_ads_required', '1')),
         // Daily task rewards
@@ -4220,6 +4244,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching banned users details:", error);
       res.status(500).json({ success: false, message: "Failed to fetch banned users" });
+    }
+  });
+
+  // Admin: manually trigger full referral repair (sync + activate)
+  app.post('/api/admin/referrals/sync', authenticateAdmin, async (req: any, res) => {
+    try {
+      console.log('🔧 Admin triggered fullReferralRepair');
+      const stats = await storage.fullReferralRepair();
+      res.json({ success: true, stats });
+    } catch (error) {
+      console.error('Error in admin referral sync:', error);
+      res.status(500).json({ success: false, message: 'Referral sync failed' });
+    }
+  });
+
+  // Admin: manually link two users by referral code (recover missed referral links)
+  app.post('/api/admin/referrals/manual-link', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { referrerCode, refereeId } = req.body;
+      if (!referrerCode || !refereeId) {
+        return res.status(400).json({ success: false, message: 'referrerCode and refereeId are required' });
+      }
+      const referrer = await storage.getUserByReferralCode(referrerCode);
+      if (!referrer) {
+        return res.status(404).json({ success: false, message: `Referrer not found for code: ${referrerCode}` });
+      }
+      const referee = await storage.getUser(refereeId);
+      if (!referee) {
+        return res.status(404).json({ success: false, message: `Referee user not found: ${refereeId}` });
+      }
+      if (referrer.id === referee.id) {
+        return res.status(400).json({ success: false, message: 'Cannot self-refer' });
+      }
+      const existing = await storage.getReferralByUsers(referrer.id, referee.id);
+      if (existing) {
+        return res.json({ success: false, message: 'Referral relationship already exists', referral: existing });
+      }
+      const referral = await storage.createReferral(referrer.id, referee.id);
+      // Immediately try to activate if eligible
+      await storage.checkAndActivateReferralBonus(referee.id);
+      res.json({ success: true, message: `Linked ${referee.username || refereeId} under ${referrer.username || referrerCode}`, referral });
+    } catch (error: any) {
+      console.error('Error in manual referral link:', error);
+      res.status(500).json({ success: false, message: error.message || 'Manual link failed' });
+    }
+  });
+
+  // Admin: get referral overview stats
+  app.get('/api/admin/referrals/stats', authenticateAdmin, async (req: any, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'pending')   AS pending,
+          COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+          COUNT(*) AS total
+        FROM referrals
+      `);
+      const usersWithReferrer = await db.execute(sql`
+        SELECT COUNT(*) AS count FROM users
+        WHERE referred_by IS NOT NULL AND referred_by != ''
+      `);
+      res.json({
+        success: true,
+        referrals: result.rows[0],
+        usersWithReferrer: usersWithReferrer.rows[0],
+      });
+    } catch (error) {
+      console.error('Error in admin referral stats:', error);
+      res.status(500).json({ success: false, message: 'Failed to get referral stats' });
     }
   });
 

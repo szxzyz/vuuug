@@ -815,128 +815,130 @@ export class DatabaseStorage implements IStorage {
   // Uses admin-configured 'referral_ads_required' setting instead of hardcoded value
   async checkAndActivateReferralBonus(userId: string): Promise<void> {
     try {
-      // Check if this user has already received their referral bonus
       const [user] = await db.select().from(users).where(eq(users.id, userId));
-      if (!user || user.firstAdWatched) {
-        // Referral bonus already processed for this user
-        return;
-      }
+      if (!user) return;
 
-    // Get admin-configured referral ads requirement (no hardcoded values)
-    const referralAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
-    
-    // Count ads watched by this user
-    const [adCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(earnings)
-      .where(and(
-        eq(earnings.userId, userId),
-        eq(earnings.source, 'ad_watch')
-      ));
+      // Always check for pending referrals regardless of firstAdWatched flag.
+      // This ensures bonuses are credited even if a previous attempt failed mid-loop
+      // (bug fix: the old guard `if (user.firstAdWatched) return` permanently blocked
+      // re-processing when firstAdWatched was set before the loop completed).
+      const pendingReferrals = await db
+        .select()
+        .from(referrals)
+        .where(and(
+          eq(referrals.refereeId, userId),
+          eq(referrals.status, 'pending')
+        ));
 
-    const adsWatched = Number(adCount?.count || 0);
-    
-    // If user has watched the admin-configured required number of ads, activate referral bonuses
-    // FIX: Also activate if they've watched at least 1 ad to ensure rewards are processed
-    if (adsWatched >= referralAdsRequired || adsWatched >= 1) {
-        // Mark this user as having completed the referral ad requirement
+      // Get admin-configured referral ads requirement
+      const referralAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
+
+      // Count ads watched by this user
+      const [adCount] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(earnings)
+        .where(and(
+          eq(earnings.userId, userId),
+          eq(earnings.source, 'ad_watch')
+        ));
+      const adsWatched = Number(adCount?.count || 0);
+
+      // Mark first ad watched if not already done
+      if (!user.firstAdWatched && adsWatched >= 1) {
         await db
           .update(users)
           .set({ firstAdWatched: true })
           .where(eq(users.id, userId));
+      }
 
-        // Get referral reward settings from admin (no hardcoded values)
-        const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
-        const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
-        const referralRewardBUG = await this.getAppSetting('referral_reward_bug', '10');
-        // Read per-reward flags. Default PAD to 'true' so new deployments work out of the box.
-        // If admin has explicitly set a flag (true or false), that value is used.
-        const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
-        const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
-        // Master switch — defaults to true for legacy deployments
-        const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
-        // Give PAD if PAD-specific flag is on.
-        // Fallback: if NEITHER specific flag is set (legacy), use master switch for PAD.
-        const givePAD = referralRewardPADEnabled || (!referralRewardPADEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
-        const giveUSD = referralRewardUSDEnabled;
+      // No pending referrals — nothing to credit
+      if (pendingReferrals.length === 0) return;
 
-        // Find pending referrals where this user is the referee
-        const pendingReferrals = await db
-          .select()
-          .from(referrals)
-          .where(and(
-            eq(referrals.refereeId, userId),
-            eq(referrals.status, 'pending')
-          ));
+      // Not enough ads watched yet — check against admin-configured threshold
+      if (adsWatched < referralAdsRequired) return;
 
-        // Activate each pending referral
-        for (const referral of pendingReferrals) {
-          // Update referral status to completed AND STORE the reward amounts at time of earning
-          await db
-            .update(referrals)
-            .set({ 
-              status: 'completed',
-              rewardAmount: giveUSD ? referralRewardUSD : '0',
-              usdRewardAmount: giveUSD ? referralRewardUSD : '0',
-              bugRewardAmount: referralRewardBUG
-            })
-            .where(eq(referrals.id, referral.id));
+      // Get referral reward settings from admin (no hardcoded values)
+      const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
+      const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
+      const referralRewardBUG = await this.getAppSetting('referral_reward_bug', '10');
+      // Default PAD enabled to 'true' so rewards work out of the box on new deployments.
+      const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
+      const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
+      const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
+      // Give PAD if PAD flag is on. Fallback: if neither flag is set, use master switch for PAD.
+      const givePAD = referralRewardPADEnabled || (!referralRewardPADEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
+      const giveUSD = referralRewardUSDEnabled;
 
-          // Give PAD reward if enabled
-          if (givePAD && referralRewardPAD > 0) {
-            await this.addEarning({
-              userId: referral.referrerId,
-              amount: String(referralRewardPAD),
-              source: 'referral',
-              description: `Referral bonus (PAD) for inviting a friend`,
-            });
-          }
+      // Activate each pending referral — IMPORTANT: status updated per-referral BEFORE
+      // crediting rewards so a crash after partial credit doesn't re-pay the same referral.
+      for (const referral of pendingReferrals) {
+        // Mark as completed first to prevent double-payment on retry
+        await db
+          .update(referrals)
+          .set({
+            status: 'completed',
+            rewardAmount: givePAD ? String(referralRewardPAD) : '0',
+            usdRewardAmount: giveUSD ? referralRewardUSD : '0',
+            bugRewardAmount: referralRewardBUG
+          })
+          .where(eq(referrals.id, referral.id));
 
-          // Give USD reward if enabled — credit directly to usdBalance (not PAD balance)
-          if (giveUSD && parseFloat(referralRewardUSD) > 0) {
-            await db
-              .update(users)
-              .set({
-                usdBalance: sql`COALESCE(${users.usdBalance}, 0) + ${parseFloat(referralRewardUSD)}`,
-                totalEarned: sql`COALESCE(${users.totalEarned}, 0) + ${referralRewardUSD}`,
-                updatedAt: new Date(),
-              })
-              .where(eq(users.id, referral.referrerId));
-            // Log earning for transaction history
-            await db.insert(earnings).values({
-              userId: referral.referrerId,
-              amount: referralRewardUSD,
-              source: 'referral',
-              description: `Referral bonus (USD) for inviting a friend`,
-            });
-          }
+        // Give PAD reward if enabled
+        if (givePAD && referralRewardPAD > 0) {
+          await this.addEarning({
+            userId: referral.referrerId,
+            amount: String(referralRewardPAD),
+            source: 'referral',
+            description: `Referral bonus (PAD) for inviting a friend`,
+          });
+        }
 
-          // Add BUG rewards for withdrawal requirements
+        // Give USD reward if enabled — credit directly to usdBalance
+        if (giveUSD && parseFloat(referralRewardUSD) > 0) {
           await db
             .update(users)
             .set({
-              bugBalance: sql`COALESCE(${users.bugBalance}, 0) + ${referralRewardBUG}`,
+              usdBalance: sql`COALESCE(${users.usdBalance}, 0) + ${parseFloat(referralRewardUSD)}`,
+              totalEarned: sql`COALESCE(${users.totalEarned}, 0) + ${referralRewardUSD}`,
               updatedAt: new Date(),
             })
             .where(eq(users.id, referral.referrerId));
+          await db.insert(earnings).values({
+            userId: referral.referrerId,
+            amount: referralRewardUSD,
+            source: 'referral',
+            description: `Referral bonus (USD) for inviting a friend`,
+          });
+        }
 
-          // Notify the referrer via Telegram
-          const referrer = await this.getUser(referral.referrerId);
-          const referee = await this.getUser(userId);
+        // Give BUG rewards
+        await db
+          .update(users)
+          .set({
+            bugBalance: sql`COALESCE(${users.bugBalance}, 0) + ${referralRewardBUG}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, referral.referrerId));
 
-          if (referrer?.telegram_id && referee) {
-            const refereeName = referee.firstName || referee.username || 'A friend';
-            const bonusDesc = givePAD ? `${referralRewardPAD} PAD` : giveUSD ? `$${referralRewardUSD}` : '';
+        // Notify the referrer via Telegram
+        const referrer = await this.getUser(referral.referrerId);
+        const referee = await this.getUser(userId);
+
+        if (referrer?.telegram_id && referee) {
+          const refereeName = referee.firstName || referee.username || 'A friend';
+          try {
             const { sendReferralRewardNotification } = await import('./telegram');
             await sendReferralRewardNotification(
               referrer.telegram_id,
               refereeName,
               giveUSD ? referralRewardUSD : '0'
             );
+          } catch (notifyErr) {
+            console.warn('⚠️ Referral notification failed (non-critical):', notifyErr);
           }
-
-          console.log(`✅ Referral bonus activated: PAD=${givePAD ? referralRewardPAD : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardBUG} for user ${referral.referrerId}`);
         }
+
+        console.log(`✅ Referral bonus activated: PAD=${givePAD ? referralRewardPAD : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardBUG} → referrer ${referral.referrerId}`);
       }
     } catch (error) {
       console.error('❌ Error activating referral bonus:', error);
@@ -3508,6 +3510,105 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Backfill BUG rewards for existing referrals (fix for users who earned before the update)
+  /**
+   * fullReferralRepair — runs on every server startup.
+   * Pass 1: users whose `referred_by` is set but have no row in `referrals` → create the row.
+   * Pass 2: all pending referrals whose referee already watched enough ads → activate bonus.
+   * Returns a stats object so callers (admin endpoint / startup) can log results.
+   */
+  async fullReferralRepair(): Promise<{
+    usersLinked: number;
+    referralsCreated: number;
+    referralsActivated: number;
+    errors: number;
+  }> {
+    const stats = { usersLinked: 0, referralsCreated: 0, referralsActivated: 0, errors: 0 };
+
+    try {
+      console.log('🔧 fullReferralRepair: starting…');
+
+      // ── PASS 1: Sync referred_by → referrals table ──────────────────────────
+      const orphanedUsers = await db
+        .select({
+          userId: users.id,
+          referredBy: users.referredBy,
+        })
+        .from(users)
+        .where(and(
+          sql`${users.referredBy} IS NOT NULL`,
+          sql`${users.referredBy} != ''`,
+        ));
+
+      console.log(`🔧 Pass 1: ${orphanedUsers.length} users have referred_by set`);
+
+      for (const u of orphanedUsers) {
+        try {
+          if (!u.referredBy) continue;
+          const referrer = await this.getUserByReferralCode(u.referredBy);
+          if (!referrer) continue;
+          const existing = await this.getReferralByUsers(referrer.id, u.userId);
+          if (existing) continue;
+
+          await db.insert(referrals).values({
+            referrerId: referrer.id,
+            refereeId: u.userId,
+            rewardAmount: '0.01',
+            status: 'pending',
+          });
+          stats.referralsCreated++;
+          stats.usersLinked++;
+          console.log(`  ✅ Created missing referral: ${referrer.id} → ${u.userId}`);
+        } catch (err) {
+          stats.errors++;
+          console.error(`  ⚠️ Pass 1 error for user ${u.userId}:`, err);
+        }
+      }
+
+      // ── PASS 2: Activate pending referrals whose referee watched enough ads ─
+      const referralAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
+
+      const pendingRows = await db
+        .select({
+          id: referrals.id,
+          referrerId: referrals.referrerId,
+          refereeId: referrals.refereeId,
+        })
+        .from(referrals)
+        .where(eq(referrals.status, 'pending'));
+
+      console.log(`🔧 Pass 2: ${pendingRows.length} pending referrals to check`);
+
+      for (const ref of pendingRows) {
+        try {
+          const [adCount] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(earnings)
+            .where(and(
+              eq(earnings.userId, ref.refereeId),
+              eq(earnings.source, 'ad_watch'),
+            ));
+          const adsWatched = Number(adCount?.count || 0);
+          if (adsWatched < referralAdsRequired) continue;
+
+          // Use the existing per-user activation path so reward logic stays in one place
+          await this.checkAndActivateReferralBonus(ref.refereeId);
+          stats.referralsActivated++;
+          console.log(`  ✅ Activated referral ${ref.id} (referee ${ref.refereeId} has ${adsWatched} ads)`);
+        } catch (err) {
+          stats.errors++;
+          console.error(`  ⚠️ Pass 2 error for referral ${ref.id}:`, err);
+        }
+      }
+
+      console.log(`🔧 fullReferralRepair complete — linked:${stats.usersLinked} created:${stats.referralsCreated} activated:${stats.referralsActivated} errors:${stats.errors}`);
+    } catch (err) {
+      console.error('❌ fullReferralRepair fatal error:', err);
+      stats.errors++;
+    }
+
+    return stats;
+  }
+
   async backfillExistingReferralBUGRewards(): Promise<void> {
     try {
       console.log('🔄 Starting backfill of BUG rewards for existing referrals...');
