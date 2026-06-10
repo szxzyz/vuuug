@@ -38,7 +38,6 @@ const adUsedSessions  = new Map<string, number>();  // sessionId  → usedAt tim
 const adUserCooldowns = new Map<string, number>();  // userId     → lastRewardAt (ms)
 const adAbuseStore    = new Map<string, { score: number; lockedUntil: number; failCount: number }>();
 
-const AD_MIN_BACKGROUND_MS  = 3000;   // 3 s minimum background engagement
 const AD_REWARD_COOLDOWN_MS = 5000;   // 5 s between rewards
 const AD_ABUSE_LOCK_SCORE   = 5;      // lock after 5 consecutive failures
 const AD_ABUSE_BASE_LOCK_MS = 60_000; // 1 min base lock, doubles per extra level
@@ -1081,7 +1080,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const communityTaskReward = parseInt(getSetting('community_task_reward', '1000')); // Join community reward in PAD
       
       // Partner task reward
-      const partnerTaskReward = parseInt(getSetting('partner_task_reward', '5')); // Partner task reward in PAD
+      const partnerTaskReward = parseInt(getSetting('partner_task_reward', '1000')); // Partner task reward in PAD
       
       // Withdrawal requirement settings
       const withdrawalAdRequirementEnabled = getSetting('withdrawal_ad_requirement_enabled', 'true') === 'true';
@@ -1173,13 +1172,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Weekly giveaway
         weeklyGiveawayAmount: parseFloat(getSetting('weekly_giveaway_amount', '10')),
         // Mission page ad platform settings
-        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '1500')),
+        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '1000')),
         monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '25')),
-        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '1500')),
+        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '1000')),
         adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
-        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1500')),
+        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1000')),
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
-        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1500')),
+        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
@@ -1288,25 +1287,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 5. Background duration — must be ≥ AD_MIN_BACKGROUND_MS
+      // 5. Log background duration (no minimum required — AdsGram callback is the verification)
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
-      if (bgDuration < AD_MIN_BACKGROUND_MS) {
-        // Penalise: increment abuse score
-        const newScore     = abuse.score + 1;
-        const newFailCount = abuse.failCount + 1;
-        const lockLevel    = Math.max(0, newScore - AD_ABUSE_LOCK_SCORE + 1);
-        const lockedUntil  = newScore >= AD_ABUSE_LOCK_SCORE
-          ? Date.now() + AD_ABUSE_BASE_LOCK_MS * Math.min(lockLevel, 8)
-          : 0;
-        adAbuseStore.set(userKey, { score: newScore, lockedUntil, failCount: newFailCount });
-        console.log(`⚠️ Ad anti-fake rejected user ${userId}: bgDuration=${bgDuration}ms score=${newScore}`);
-        return res.status(400).json({
-          message: "Ad engagement not verified. Keep the ad open for at least 5 seconds.",
-          errorType: 'insufficient_background',
-          bgDuration,
-          required: AD_MIN_BACKGROUND_MS,
-        });
-      }
+      console.log(`ℹ️ Ad session bg time for user ${userId}: ${bgDuration}ms`);
 
       // ✅ All checks passed — mark session used, update cooldown, decay abuse score
       adUsedSessions.set(sessionId, Date.now());
@@ -2599,9 +2582,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(users.id, userId));
 
       // Get reward settings for advertiser task types from admin settings
-      const channelTaskReward = await storage.getAppSetting('channelTaskReward', '30');
-      const botTaskReward = await storage.getAppSetting('botTaskReward', '20');
-      const partnerTaskReward = await storage.getAppSetting('partnerTaskReward', '5');
+      const channelTaskReward = await storage.getAppSetting('channelTaskReward', '1000');
+      const botTaskReward = await storage.getAppSetting('botTaskReward', '1000');
+      const partnerTaskReward = await storage.getAppSetting('partnerTaskReward', '1000');
       const bugRewardPerTask = await storage.getAppSetting('bug_reward_per_task', '10');
 
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
@@ -3682,9 +3665,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCost: parseFloat(getSetting('bot_task_cost_usd', '0.003')), // NEW: Bot cost in USD (admin only)
         channelTaskCostTON: parseFloat(getSetting('channel_task_cost_ton', '0.0003')), // TON cost for regular users
         botTaskCostTON: parseFloat(getSetting('bot_task_cost_ton', '0.0003')), // TON cost for regular users
-        channelTaskReward: parseInt(getSetting('channel_task_reward', '30')), // NEW: Channel reward in PAD
-        botTaskReward: parseInt(getSetting('bot_task_reward', '20')), // NEW: Bot reward in PAD
-        partnerTaskReward: parseInt(getSetting('partner_task_reward', '5')), // NEW: Partner reward in PAD
+        channelTaskReward: parseInt(getSetting('channel_task_reward', '1000')), // NEW: Channel reward in PAD
+        botTaskReward: parseInt(getSetting('bot_task_reward', '1000')), // NEW: Bot reward in PAD
+        partnerTaskReward: parseInt(getSetting('partner_task_reward', '1000')), // NEW: Partner reward in PAD
         minimumConvertPAD: parseInt(getSetting('minimum_convert_pad', '100')), // NEW: Min convert in PAD (100 PAD = $0.01)
         minimumConvertUSD: parseInt(getSetting('minimum_convert_pad', '100')) / 10000, // Convert to USD
         minimumClicks: parseInt(getSetting('minimum_clicks', '500')), // NEW: Min clicks for task creation
@@ -3718,19 +3701,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
         // Legacy fields for backwards compatibility
         minimumWithdrawal: parseFloat(getSetting('minimum_withdrawal_ton', '0.5')),
-        taskPerClickReward: parseInt(getSetting('channel_task_reward', '30')),
+        taskPerClickReward: parseInt(getSetting('channel_task_reward', '1000')),
         taskCreationCost: parseFloat(getSetting('channel_task_cost_usd', '0.003')),
         minimumConvert: parseInt(getSetting('minimum_convert_pad', '100')) / 10000,
         // Weekly giveaway
         weeklyGiveawayAmount: parseFloat(getSetting('weekly_giveaway_amount', '10')),
         // Mission page ad platform settings
-        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '1500')),
+        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '1000')),
         monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '25')),
-        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '1500')),
+        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '1000')),
         adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
-        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1500')),
+        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1000')),
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
-        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1500')),
+        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
@@ -3748,7 +3731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.user.id;
       const { platform } = req.body;
 
-      if (!['monetag', 'gigapub'].includes(platform)) {
+      if (!['monetag', 'gigapub', 'monetix'].includes(platform)) {
         return res.status(400).json({ success: false, message: 'Invalid platform' });
       }
 
@@ -3763,13 +3746,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let reward: number;
       switch (platform) {
         case 'monetag':
-          reward = parseInt(getSetting('monetag_mission_reward', '1500'));
+          reward = parseInt(getSetting('monetag_mission_reward', '1000'));
           break;
         case 'gigapub':
-          reward = parseInt(getSetting('giga_pub_mission_reward', '1500'));
+          reward = parseInt(getSetting('giga_pub_mission_reward', '1000'));
+          break;
+        case 'monetix':
+          reward = parseInt(getSetting('monetix_mission_reward', '1000'));
           break;
         default:
-          reward = 50;
+          reward = 1000;
       }
 
       await storage.addEarning({
@@ -5255,7 +5241,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let convertedCurrency = convertTo;
         
         if (convertTo === 'USD') {
-          const conversionRateSetting = await storage.getAppSetting('pad_to_usd_rate', '10000');
+          const conversionRateSetting = await storage.getAppSetting('pad_to_usd_rate', '10000000');
           const PAD_TO_USD_RATE = parseFloat(conversionRateSetting);
           convertedAmount = convertAmount / PAD_TO_USD_RATE;
           const currentUsdBalance = parseFloat(user.usdBalance || '0');
@@ -6063,8 +6049,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const rewardPAD = parseInt(taskClick[0].rewardAmount || '0');
-      
-      // Mark as claimed
+
+      // Mark as claimed — reward was already added to balance when user clicked (recordTaskClick)
       await db
         .update(taskClicks)
         .set({ claimedAt: new Date() })
@@ -6073,39 +6059,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           eq(taskClicks.publisherId, userId)
         ));
 
-      // Add reward to user's balance
-      const [user] = await db
-        .select({ balance: users.balance })
-        .from(users)
-        .where(eq(users.id, userId));
-
-      const currentBalance = parseInt(user?.balance || '0');
-      const newBalance = currentBalance + rewardPAD;
-
-      await db
-        .update(users)
-        .set({
-          balance: newBalance.toString(),
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, userId));
-
-      // Record the earning
-      const task = await storage.getTaskById(taskId);
-      await db.insert(earnings).values({
-        userId: userId,
-        amount: rewardPAD.toString(),
-        source: 'task_completion',
-        description: `Completed ${task?.taskType || 'advertiser'} task: ${task?.title || 'Task'}`,
-      });
-
       console.log(`✅ Task reward claimed: ${taskId} by ${userId} - Reward: ${rewardPAD} PAD`);
 
       res.json({
         success: true,
         message: `Reward claimed! +${rewardPAD} PAD`,
         reward: rewardPAD,
-        newBalance: newBalance.toString()
       });
     } catch (error) {
       console.error("Error claiming task reward:", error);

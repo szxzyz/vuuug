@@ -1187,7 +1187,7 @@ export class DatabaseStorage implements IStorage {
 
     // Check usage limit (global limit reached)
     if (promoCode.usageLimit && (promoCode.usageCount || 0) >= promoCode.usageLimit) {
-      return { success: false, message: "Promo code not active", errorType: "not_active" };
+      return { success: false, message: "Promo code limit reached", errorType: "limit_reached" };
     }
 
     // Record usage
@@ -3130,7 +3130,7 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(advertiserTasks)
       .where(and(
-        eq(advertiserTasks.status, 'running'),
+        sql`${advertiserTasks.status} IN ('running', 'active')`,
         sql`${advertiserTasks.advertiserId} != ${userId}`,
         sql`${advertiserTasks.currentClicks} < ${advertiserTasks.totalClicksRequired}`,
         sql`NOT EXISTS (
@@ -3249,7 +3249,7 @@ export class DatabaseStorage implements IStorage {
       }
 
       // Check if task is active and running
-      if (task.status !== 'running') {
+      if (task.status !== 'running' && task.status !== 'active') {
         return { success: false, message: "Task is not active" };
       }
 

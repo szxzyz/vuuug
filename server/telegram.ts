@@ -995,6 +995,73 @@ export async function handleTelegramMessage(update: any): Promise<boolean> {
           await sendWelcomeMessage(telegramId);
           return true;
         }
+
+        // Handle /promo command (admin only)
+        // Usage: /promo AMOUNT  →  auto-generate code
+        //        /promo CODE AMOUNT  →  custom code
+        //        /promo CODE AMOUNT TYPE  →  custom code + type (PAD/TON/USD/BUG)
+        if (text.startsWith('/promo')) {
+          const adminCheck = await isAdminAsync(telegramId);
+          if (!adminCheck) {
+            await sendUserTelegramNotification(chatId, '⛔ Admin only command.');
+            return true;
+          }
+          const parts = text.trim().split(/\s+/).slice(1); // remove "/promo"
+          let code: string | null = null;
+          let amount: string | null = null;
+          let type = 'PAD';
+
+          if (parts.length === 1) {
+            // /promo AMOUNT
+            amount = parts[0];
+          } else if (parts.length === 2) {
+            // /promo CODE AMOUNT  OR  /promo AMOUNT TYPE
+            if (isNaN(Number(parts[0]))) {
+              code = parts[0].toUpperCase();
+              amount = parts[1];
+            } else {
+              amount = parts[0];
+              type = parts[1].toUpperCase();
+            }
+          } else if (parts.length >= 3) {
+            // /promo CODE AMOUNT TYPE
+            code = parts[0].toUpperCase();
+            amount = parts[1];
+            type = parts[2].toUpperCase();
+          }
+
+          if (!amount || isNaN(Number(amount))) {
+            await sendUserTelegramNotification(chatId,
+              '❌ Wrong format.\n\nUsage:\n<code>/promo 5000</code> — auto code, 5000 PAD\n<code>/promo SAVE10 5000</code> — custom code\n<code>/promo SAVE10 5000 PAD</code> — with type (PAD/TON/USD/BUG)',
+            );
+            return true;
+          }
+
+          const validTypes = ['PAD', 'TON', 'USD', 'BUG'];
+          if (!validTypes.includes(type)) type = 'PAD';
+
+          const finalCode = code || ('PROMO' + Math.random().toString(36).substring(2, 9).toUpperCase());
+
+          try {
+            const promo = await storage.createPromoCode({
+              code: finalCode,
+              rewardAmount: amount,
+              rewardType: type,
+              rewardCurrency: type,
+              usageLimit: null,
+              perUserLimit: 1,
+              isActive: true,
+              expiresAt: null,
+            });
+
+            await sendUserTelegramNotification(chatId,
+              `✅ <b>Promo Code Created!</b>\n\n🎟 Code: <code>${finalCode}</code>\n💰 Reward: <b>${amount} ${type}</b>\n👤 Per user: 1 time\n♾ Usage limit: Unlimited\n\nShare this code with users!`,
+            );
+          } catch (err: any) {
+            await sendUserTelegramNotification(chatId, `❌ Failed to create promo code: ${err.message}`);
+          }
+          return true;
+        }
       }
     }
 
