@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAdmin } from "@/hooks/useAdmin";
 import { motion, AnimatePresence } from "framer-motion";
-import { HeartHandshake, User, Play, ListTodo } from "lucide-react";
+import { HeartHandshake, User, Play, ListTodo, Trophy } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import { useSeasonEnd } from "@/lib/SeasonEndContext";
@@ -28,9 +28,10 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const navItems = [
+    { href: "/leaderboard", icon: Trophy, label: "RANK" },
     { href: "/watch", icon: Play, label: "WATCH" },
     { href: "/affiliates", icon: HeartHandshake, label: "INVITE" },
-    { href: "/missions", icon: ListTodo, label: "MISSIONS" },
+    { href: "/missions", icon: ListTodo, label: "MISSION" },
   ];
 
   // Get photo from Telegram WebApp first, then fallback to user data
