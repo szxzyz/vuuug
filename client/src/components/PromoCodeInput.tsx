@@ -25,7 +25,7 @@ export default function PromoCodeInput() {
       showNotification(data.message || "Promo applied successfully!", "success");
     },
     onError: (error: any) => {
-      setInlineError("Invalid Code");
+      setInlineError(error.message || "Invalid Code");
     },
   });
 

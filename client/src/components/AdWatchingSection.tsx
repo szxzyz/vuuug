@@ -19,7 +19,6 @@ declare global {
   }
 }
 
-const MIN_BACKGROUND_MS = 3000;
 
 interface AdWatchingSectionProps {
   user: any;
@@ -91,7 +90,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
     new Promise((resolve) => {
       if (window.Adsgram) {
-        window.Adsgram.init({ blockId: "int-34709" })
+        window.Adsgram.init({ blockId: "34708" })
           .show()
           .then(() => resolve({ success: true, unavailable: false }))
           .catch((err) => {
@@ -122,10 +121,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         return;
       }
       if (!adsgramResult.success) {
-        setShowFailurePopup(true);
-        return;
-      }
-      if (session.backgroundDuration < MIN_BACKGROUND_MS) {
         setShowFailurePopup(true);
         return;
       }
