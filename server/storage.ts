@@ -456,18 +456,14 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // Check and activate referral bonuses FIRST after ad watch (critical for referral system)
-    // This must happen BEFORE processing commissions so the referral status is updated to 'completed'
+    // Check and activate referral bonuses after ad watch (must happen before commission processing)
     if (earning.source === 'ad_watch') {
       await this.checkAndActivateReferralBonus(earning.userId);
     }
     
-    // Process referral commission (10% of user's earnings)
-    // Only process commissions for non-referral earnings to avoid recursion
-    // This runs AFTER activation so the referral is already 'completed' when checking
-    if (earning.source !== 'referral_commission' && earning.source !== 'referral') {
-      await this.processReferralCommission(earning.userId, newEarning.id, earning.amount);
-    }
+    // NOTE: Referral commissions are processed by the /api/ads/watch route handler
+    // using admin-configured L1/L2 rates. Do NOT call processReferralCommission here
+    // to avoid double-paying commission on every ad watch.
     
     return newEarning;
   }
@@ -853,11 +849,13 @@ export class DatabaseStorage implements IStorage {
         const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
         const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
         const referralRewardBUG = await this.getAppSetting('referral_reward_bug', '10');
-        const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'false')) === 'true';
+        // Default PAD reward to enabled so bonuses are paid even before admin configures anything
+        const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
         const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
-        // Legacy: if neither specific flag is set, fall back to the master enabled flag
-        const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'false')) === 'true';
-        const givePAD = referralRewardPADEnabled || (!referralRewardPADEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
+        // Master enabled flag — also defaults to true so legacy deployments work out of the box
+        const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
+        // Give PAD if the PAD-specific flag is on OR if the master switch is on
+        const givePAD = referralRewardPADEnabled || referralRewardEnabled;
         const giveUSD = referralRewardUSDEnabled;
 
         // Find pending referrals where this user is the referee
@@ -940,6 +938,48 @@ export class DatabaseStorage implements IStorage {
       }
     } catch (error) {
       console.error('❌ Error activating referral bonus:', error);
+    }
+  }
+
+  // Claim any accumulated pending referral bonus for a user.
+  // Bonuses are normally auto-credited, but this handles any leftover pendingReferralBonus.
+  async claimReferralBonus(userId: string): Promise<{ success: boolean; message: string; amount?: string }> {
+    try {
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user) {
+        return { success: false, message: 'User not found' };
+      }
+
+      const pendingAmount = parseFloat(user.pendingReferralBonus || '0');
+
+      if (pendingAmount <= 0) {
+        // Bonuses are auto-credited on activation — nothing extra to claim
+        return { success: true, message: 'No pending bonus to claim. Bonuses are credited automatically when your friends complete their first ad.', amount: '0' };
+      }
+
+      // Credit the pending bonus to the user's balance
+      await this.addEarning({
+        userId,
+        amount: String(pendingAmount),
+        source: 'referral',
+        description: 'Referral bonus claimed',
+      });
+
+      // Clear the pending amount and accumulate total claimed
+      await db
+        .update(users)
+        .set({
+          pendingReferralBonus: '0',
+          totalClaimedReferralBonus: sql`COALESCE(${users.totalClaimedReferralBonus}, 0) + ${pendingAmount}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+
+      console.log(`✅ Referral bonus claimed: ${pendingAmount} PAD for user ${userId}`);
+      return { success: true, message: `Successfully claimed ${pendingAmount} PAD referral bonus`, amount: String(pendingAmount) };
+    } catch (error) {
+      console.error('Error claiming referral bonus:', error);
+      return { success: false, message: 'Failed to claim referral bonus' };
     }
   }
 

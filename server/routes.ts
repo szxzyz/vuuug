@@ -1428,13 +1428,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const l1Referrer = await storage.getUserByReferralCode(user.referredBy);
             if (l1Referrer) {
               const l1CommissionPAD = Math.round(adRewardPAD * l1Rate);
+              const l1RateDisplay = Math.round(l1Rate * 100);
               await storage.addEarning({
                 userId: l1Referrer.id,
                 amount: String(l1CommissionPAD),
                 source: 'referral_commission',
-                description: `20% L1 commission from ${user.username || user.telegram_id}'s ad watch`,
+                description: `${l1RateDisplay}% L1 commission from ${user.username || user.telegram_id}'s ad watch`,
               });
-              console.log(`💰 L1 commission: ${l1CommissionPAD} PAD → ${l1Referrer.id}`);
+              console.log(`💰 L1 commission: ${l1CommissionPAD} PAD (${l1RateDisplay}%) → ${l1Referrer.id}`);
 
               // L2 referrer — the person who invited the L1 referrer
               if (l1Referrer.referredBy) {
@@ -1442,11 +1443,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   const l2Referrer = await storage.getUserByReferralCode(l1Referrer.referredBy);
                   if (l2Referrer) {
                     const l2CommissionPAD = Math.round(adRewardPAD * l2Rate);
+                    const l2RateDisplay = Math.round(l2Rate * 100);
                     await storage.addEarning({
                       userId: l2Referrer.id,
                       amount: String(l2CommissionPAD),
                       source: 'referral_commission_l2',
-                      description: `4% L2 commission from ${user.username || user.telegram_id}'s ad watch`,
+                      description: `${l2RateDisplay}% L2 commission from ${user.username || user.telegram_id}'s ad watch`,
                     });
                     console.log(`💰 L2 commission: ${l2CommissionPAD} PAD → ${l2Referrer.id}`);
                   }
