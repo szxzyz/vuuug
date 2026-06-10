@@ -6,6 +6,7 @@ import { FiCheck } from "react-icons/fi";
 
 export default function PromoCodeInput() {
   const [promoCode, setPromoCode] = useState("");
+  const [inlineError, setInlineError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const redeemPromoMutation = useMutation({
@@ -20,18 +21,20 @@ export default function PromoCodeInput() {
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       setPromoCode("");
+      setInlineError(null);
       showNotification(data.message || "Promo applied successfully!", "success");
     },
     onError: (error: any) => {
-      showNotification(error.message || "Invalid promo code", "error");
+      setInlineError("Invalid Code");
     },
   });
 
   const handleSubmit = () => {
     if (!promoCode.trim()) {
-      showNotification("Please enter a promo code", "error");
+      setInlineError("Please enter a promo code");
       return;
     }
+    setInlineError(null);
     redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
   };
 
@@ -39,10 +42,14 @@ export default function PromoCodeInput() {
   const disabled = busy || !promoCode.trim();
 
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {inlineError && (
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171', letterSpacing: '0.04em' }}>{inlineError}</span>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
       <input
         value={promoCode}
-        onChange={e => setPromoCode(e.target.value.toUpperCase())}
+        onChange={e => { setPromoCode(e.target.value.toUpperCase()); setInlineError(null); }}
         onKeyDown={e => e.key === "Enter" && !disabled && handleSubmit()}
         placeholder="Enter promo code"
         disabled={busy}
@@ -99,6 +106,7 @@ export default function PromoCodeInput() {
         )}
         {busy ? "Applying…" : "APPLY"}
       </button>
+    </div>
     </div>
   );
 }
