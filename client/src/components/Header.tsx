@@ -49,14 +49,14 @@ export default function Header() {
           )}
         </button>
 
-        <div className="flex items-center gap-1">
-          <img src="/star-bug.png" alt="STAR" className="w-5 h-5 object-contain flex-shrink-0" />
-          <span className="text-[13px] font-bold text-white leading-none">{bugFormatted}</span>
+        <div className="flex items-center gap-1.5">
+          <img src="/star-bug.png" alt="STAR" className="w-7 h-7 object-contain flex-shrink-0" />
+          <span className="text-[15px] font-bold text-white leading-none">{bugFormatted}</span>
         </div>
 
-        <div className="flex items-center gap-1">
-          <img src="/usdt.png" alt="USDT" className="w-4 h-4 object-contain flex-shrink-0" />
-          <span className="text-[13px] font-bold text-white leading-none">{usdFormatted}</span>
+        <div className="flex items-center gap-1.5">
+          <img src="/usdt.png" alt="USDT" className="w-6 h-6 object-contain flex-shrink-0" />
+          <span className="text-[15px] font-bold text-white leading-none">{usdFormatted}</span>
         </div>
       </div>
 
