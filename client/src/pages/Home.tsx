@@ -8,14 +8,12 @@ import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
-import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
+import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
 import { FaTrophy, FaMedal } from "react-icons/fa";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
 import { apiRequest, getTelegramInitData } from "@/lib/queryClient";
-import { Input } from "@/components/ui/input";
-import { AnimatePresence, motion } from "framer-motion";
 
 // Unified Task Interface
 interface UnifiedTask {
@@ -66,10 +64,7 @@ export default function Home() {
   const [timeUntilNextClaim, setTimeUntilNextClaim] = useState<string>("");
   
   const [promoPopupOpen, setPromoPopupOpen] = useState(false);
-  const [convertPopupOpen, setConvertPopupOpen] = useState(false);
   const [boosterPopupOpen, setBoosterPopupOpen] = useState(false);
-  const [selectedConvertType, setSelectedConvertType] = useState<'USD' | 'BUG'>('USD');
-  const [convertAmount, setConvertAmount] = useState<string>("");
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
   
   const [shareWithFriendsStep, setShareWithFriendsStep] = useState<'idle' | 'sharing' | 'countdown' | 'ready' | 'claiming'>('idle');
@@ -398,51 +393,17 @@ export default function Home() {
   };
 
   const handleConvertClick = () => {
-    setConvertPopupOpen(true);
-  };
-
-  const handleConvertConfirm = async () => {
-    const amount = parseFloat(convertAmount);
-    if (isNaN(amount) || amount <= 0) {
-      showNotification("Please enter a valid amount", "error");
+    if (convertMutation.isPending) return;
+    const minimumConvertPAD = appSettings?.minimumConvertPAD || 10000;
+    if (balancePAD <= 0) {
+      showNotification("No POW balance to swap.", "error");
       return;
     }
-
-    const minimumConvertPAD = selectedConvertType === 'USD' 
-      ? (appSettings?.minimumConvertPAD || 10000)
-      : (appSettings?.minimumConvertPadToBug || 1000);
-    
-    if (amount < minimumConvertPAD) {
-      showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} POW required.`, "error");
+    if (balancePAD < minimumConvertPAD) {
+      showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} POW required to swap.`, "error");
       return;
     }
-
-    if (balancePAD < amount) {
-      showNotification("Insufficient POW balance", "error");
-      return;
-    }
-
-    if (isConverting || convertMutation.isPending) return;
-    
-    setIsConverting(true);
-    
-    try {
-      const monetagResult = await showMonetagRewardedAd();
-      
-      if (!monetagResult.unavailable && !monetagResult.success) {
-        showNotification("Please watch the ad to convert.", "error");
-        setIsConverting(false);
-        return;
-      }
-
-      convertMutation.mutate({ amount, convertTo: selectedConvertType });
-      
-    } catch (error) {
-      console.error('Convert error:', error);
-      showNotification("Something went wrong. Please try again.", "error");
-    } finally {
-      setIsConverting(false);
-    }
+    convertMutation.mutate({ amount: balancePAD, convertTo: 'USD' });
   };
 
   const handleClaimStreak = async () => {
@@ -1030,100 +991,6 @@ export default function Home() {
 
 
 
-      <AnimatePresence>
-        {convertPopupOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setConvertPopupOpen(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative w-[90%] max-w-[320px] bg-[#1C1C1E] border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
-            >
-              <div className="p-5 space-y-5">
-                <div className="text-center space-y-0.5">
-                  <h2 className="text-lg font-bold text-white">Convert Currency</h2>
-                  <p className="text-xs text-white/50">Convert your POW to other currencies</p>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex p-0.5 bg-white/5 rounded-lg border border-white/5">
-                    <button
-                      onClick={() => setSelectedConvertType('USD')}
-                      className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md transition-all ${
-                        selectedConvertType === 'USD'
-                          ? 'bg-blue-500 text-white shadow-md'
-                          : 'text-white/60 hover:text-white'
-                      }`}
-                    >
-                      <img src="/usdt.png" alt="USDT" className="w-3.5 h-3.5 object-contain" />
-                      <span className="text-xs font-bold">USD</span>
-                    </button>
-                    <button
-                      onClick={() => setSelectedConvertType('BUG')}
-                      className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md transition-all ${
-                        selectedConvertType === 'BUG'
-                          ? 'bg-blue-500 text-white shadow-md'
-                          : 'text-white/60 hover:text-white'
-                      }`}
-                    >
-                      <img src="/star-bug.png" alt="STAR" className="w-3.5 h-3.5 object-contain" />
-                      <span className="text-xs font-bold">BUG</span>
-                    </button>
-                  </div>
-
-                  <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2">
-                      <Coins className="w-4 h-4 text-blue-400" />
-                    </div>
-                    <Input
-                      type="number"
-                      placeholder="Enter POW amount"
-                      value={convertAmount}
-                      onChange={(e) => setConvertAmount(e.target.value)}
-                      className="w-full bg-white/5 border-white/10 h-11 pl-10 pr-16 text-sm font-bold text-white rounded-xl focus:ring-1 focus:ring-blue-500/50 transition-all"
-                    />
-                    <button
-                      onClick={() => setConvertAmount(balancePAD.toString())}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 bg-blue-500/10 text-blue-400 text-[10px] font-bold rounded-md hover:bg-blue-500/20 transition-colors"
-                    >
-                      MAX
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between px-1 text-[9px] font-medium uppercase tracking-wider text-white/40">
-                    <span>Min: {selectedConvertType === 'USD'
-                        ? (appSettings?.minimumConvertPAD || 100).toLocaleString()
-                        : (appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} POW</span>
-                    <span>Bal: {balancePAD.toLocaleString()} POW</span>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleConvertConfirm}
-                  disabled={isConverting || convertMutation.isPending || !convertAmount || parseFloat(convertAmount) <= 0}
-                  className="w-full h-11 bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-500/10 transition-all disabled:opacity-50"
-                >
-                  {isConverting || convertMutation.isPending ? (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Processing...</span>
-                    </div>
-                  ) : (
-                    "Convert Now"
-                  )}
-                </Button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </Layout>
   );
 }
