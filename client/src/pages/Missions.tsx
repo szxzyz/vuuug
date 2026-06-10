@@ -36,6 +36,8 @@ interface AppSettings {
   monetagMissionLimit?: number;
   gigaPubMissionReward?: number;
   gigaPubMissionLimit?: number;
+  monetixMissionReward?: number;
+  monetixMissionLimit?: number;
   [key: string]: any;
 }
 
@@ -78,6 +80,7 @@ function EmptyRow({ label }: { label: string }) {
 const PLATFORM_LOGOS: Record<string, string> = {
   monetag: '/monetag-logo.jpg',
   gigapub: '/gigapub-logo.jpg',
+  monetix: '/monetix-logo.png',
 };
 function AdIcon({ platform, done }: { platform: string; done: boolean }) {
   if (done) {
@@ -88,8 +91,16 @@ function AdIcon({ platform, done }: { platform: string; done: boolean }) {
     );
   }
   const src = PLATFORM_LOGOS[platform];
+  if (!src) {
+    return (
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.1)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>{platform[0].toUpperCase()}</span>
+      </div>
+    );
+  }
   return (
-    <img src={src} alt={platform} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+    <img src={src} alt={platform} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
+      onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
   );
 }
 
@@ -212,9 +223,10 @@ export default function Missions() {
   const [platformCounts, setPlatformCounts] = useState({
     monetag: getPlatformCount('monetag'),
     gigapub: getPlatformCount('gigapub'),
+    monetix: getPlatformCount('monetix'),
   });
 
-  const { showMonetagAd, showGigaPubAd } = useAdFlow();
+  const { showMonetagAd, showGigaPubAd, showMonetixAd } = useAdFlow();
 
   const { data: appSettings } = useQuery<AppSettings>({ queryKey: ['/api/app-settings'], retry: false });
   const { data: tasksData } = useQuery<{ success: boolean; tasks: Task[] }>({ queryKey: ["/api/advertiser-tasks"], retry: false });
@@ -223,6 +235,8 @@ export default function Missions() {
   const monetagLimit  = appSettings?.monetagMissionLimit  ?? 10;
   const gigaPubReward = appSettings?.gigaPubMissionReward ?? 50;
   const gigaPubLimit  = appSettings?.gigaPubMissionLimit  ?? 10;
+  const monetixReward = appSettings?.monetixMissionReward ?? 1500;
+  const monetixLimit  = appSettings?.monetixMissionLimit  ?? 25;
   const channelReward = appSettings?.channelTaskReward || 30;
   const botReward     = appSettings?.botTaskReward     || 20;
   const partnerReward = appSettings?.partnerTaskReward  || 5;
@@ -246,8 +260,9 @@ export default function Missions() {
     onError: (error: Error) => showNotification(error.message, 'error'),
   });
 
-  const handleWatchAd = useCallback(async (platform: 'monetag' | 'gigapub') => {
-    const limit = platform === 'monetag' ? monetagLimit : gigaPubLimit;
+  const handleWatchAd = useCallback(async (platform: 'monetag' | 'gigapub' | 'monetix') => {
+    const limitMap = { monetag: monetagLimit, gigapub: gigaPubLimit, monetix: monetixLimit };
+    const limit = limitMap[platform];
     if (getPlatformCount(platform) >= limit) { showNotification(`Daily limit reached (${limit}/day)`, 'info'); return; }
     if (adLoadingPlatform) return;
     setAdLoadingPlatform(platform);
@@ -256,18 +271,20 @@ export default function Missions() {
       if (platform === 'monetag') {
         const r = await showMonetagAd();
         result = { success: r.success, unavailable: r.unavailable };
-      } else {
+      } else if (platform === 'gigapub') {
         result = await showGigaPubAd();
+      } else {
+        result = await showMonetixAd();
       }
       if (result.unavailable) { showNotification('No ad available right now, try again later', 'info'); return; }
-      if (!result.success)    { showNotification(platform === 'gigapub' ? 'GigaPub ad failed, try again' : 'Please watch the full ad to earn', 'error'); return; }
+      if (!result.success)    { showNotification('Please watch the full ad to earn', 'error'); return; }
       await claimMissionAdMutation.mutateAsync(platform);
     } catch (err: any) {
       showNotification(err?.message || 'Something went wrong', 'error');
     } finally {
       setAdLoadingPlatform(null);
     }
-  }, [monetagLimit, gigaPubLimit, adLoadingPlatform, showMonetagAd, showGigaPubAd, claimMissionAdMutation]);
+  }, [monetagLimit, gigaPubLimit, monetixLimit, adLoadingPlatform, showMonetagAd, showGigaPubAd, showMonetixAd, claimMissionAdMutation]);
 
   const clickTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -342,6 +359,7 @@ export default function Missions() {
   const adPlatforms = [
     { id: 'monetag' as const, name: 'Monetag',  reward: monetagReward, limit: monetagLimit,  count: platformCounts.monetag },
     { id: 'gigapub' as const, name: 'GiGaPub',  reward: gigaPubReward, limit: gigaPubLimit,  count: platformCounts.gigapub },
+    { id: 'monetix' as const, name: 'Monetix',  reward: monetixReward, limit: monetixLimit,  count: platformCounts.monetix },
   ];
 
   const cardStyle = {

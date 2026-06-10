@@ -26,7 +26,12 @@ export default function Affiliates() {
 
   const [isSharing, setIsSharing] = useState(false);
 
-  const botUsername = import.meta.env.VITE_BOT_USERNAME || 'MoneyAdzbot';
+  const { data: botInfo } = useQuery<{ username: string }>({
+    queryKey: ['/api/bot-info'],
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const botUsername = botInfo?.username || import.meta.env.VITE_BOT_USERNAME || 'PaidAdzbot';
   const referralLink = user?.referralCode
     ? `https://t.me/${botUsername}?start=${user.referralCode}`
     : '';

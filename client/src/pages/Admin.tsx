@@ -155,33 +155,21 @@ export default function AdminPage() {
 
         {/* Tabs Navigation - Move to Top */}
         <Tabs defaultValue="summary" className="w-full">
-          <TabsList className={`grid w-full mb-3 ${can('manage_admins') ? 'grid-cols-8' : 'grid-cols-7'}`}>
-            <TabsTrigger value="summary" className="text-xs">
-              Summary
-            </TabsTrigger>
-            <TabsTrigger value="tasks" className="text-xs">
-              Tasks
-            </TabsTrigger>
-            <TabsTrigger value="users" className="text-xs">
-              Users
-            </TabsTrigger>
-            <TabsTrigger value="promos" className="text-xs">
-              Promos
-            </TabsTrigger>
-            <TabsTrigger value="payouts" className="text-xs">
-              Payouts
-            </TabsTrigger>
-            <TabsTrigger value="bans" className="text-xs">
-              Bans
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="text-xs">
-              Settings
-            </TabsTrigger>
-            {can('manage_admins') && (
-              <TabsTrigger value="admins" className="text-xs">
-                Admins
+          <TabsList className="flex w-full overflow-x-auto mb-3 h-auto p-1 gap-0.5 [&::-webkit-scrollbar]:hidden">
+            {[
+              { value: 'summary', label: '📊 Summary' },
+              { value: 'tasks', label: '📋 Tasks' },
+              { value: 'users', label: '👥 Users' },
+              { value: 'promos', label: '🎫 Promos' },
+              { value: 'payouts', label: '💸 Payouts' },
+              { value: 'bans', label: '🚫 Bans' },
+              { value: 'settings', label: '⚙️ Settings' },
+              ...(can('manage_admins') ? [{ value: 'admins', label: '🛡 Admins' }] : []),
+            ].map(tab => (
+              <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap">
+                {tab.label}
               </TabsTrigger>
-            )}
+            ))}
           </TabsList>
 
           {/* Summary Tab - Clean Minimal Design */}
@@ -1486,6 +1474,8 @@ function SettingsSection() {
     adexiumMissionLimit: '10',
     gigaPubMissionReward: '50',
     gigaPubMissionLimit: '10',
+    monetixMissionReward: '1500',
+    monetixMissionLimit: '25',
   });
   
   useEffect(() => {
@@ -1543,6 +1533,8 @@ function SettingsSection() {
         adexiumMissionLimit: settingsData.adexiumMissionLimit?.toString() || '10',
         gigaPubMissionReward: settingsData.gigaPubMissionReward?.toString() || '50',
         gigaPubMissionLimit: settingsData.gigaPubMissionLimit?.toString() || '10',
+        monetixMissionReward: settingsData.monetixMissionReward?.toString() || '1500',
+        monetixMissionLimit: settingsData.monetixMissionLimit?.toString() || '25',
       });
     }
   }, [settingsData]);
@@ -1640,6 +1632,8 @@ function SettingsSection() {
         adexiumMissionLimit: parseInt(settings.adexiumMissionLimit) || 10,
         gigaPubMissionReward: parseInt(settings.gigaPubMissionReward) || 50,
         gigaPubMissionLimit: parseInt(settings.gigaPubMissionLimit) || 10,
+        monetixMissionReward: parseInt(settings.monetixMissionReward) || 1500,
+        monetixMissionLimit: parseInt(settings.monetixMissionLimit) || 25,
       });
       
       const result = await response.json();
@@ -2343,6 +2337,38 @@ function SettingsSection() {
               </div>
               <p className="text-xs text-muted-foreground">Current: {settingsData?.gigaPubMissionReward || 50} POW · {settingsData?.gigaPubMissionLimit || 10} ads/day</p>
             </div>
+
+            {/* Monetix */}
+            <div className="space-y-2 p-3 border rounded-lg border-green-500/20 bg-green-500/5">
+              <Label className="text-sm font-semibold text-green-400">
+                <i className="fas fa-coins mr-2"></i>Monetix
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Reward (POW/ad)</Label>
+                  <Input
+                    type="number"
+                    value={settings.monetixMissionReward}
+                    onChange={(e) => setSettings({ ...settings, monetixMissionReward: e.target.value })}
+                    placeholder="1500"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Daily Limit</Label>
+                  <Input
+                    type="number"
+                    value={settings.monetixMissionLimit}
+                    onChange={(e) => setSettings({ ...settings, monetixMissionLimit: e.target.value })}
+                    placeholder="25"
+                    min="1"
+                    className="h-8"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Current: {settingsData?.monetixMissionReward || 1500} POW · {settingsData?.monetixMissionLimit || 25} ads/day</p>
+            </div>
           </div>
         )}
 
@@ -2859,7 +2885,7 @@ function AdminManagementSection() {
 
   const handleSave = async () => {
     if (!form.telegramId.trim()) {
-      showNotification('Telegram ID is required', variant: 'destructive');
+      showNotification('Telegram ID is required', 'destructive');
       return;
     }
     setSaving(true);
@@ -2878,7 +2904,7 @@ function AdminManagementSection() {
       setShowAddForm(false);
       queryClient.invalidateQueries({ queryKey: ['/api/admin/admins'] });
     } catch (e: any) {
-      showNotification(e.message || 'Error saving admin', variant: 'destructive');
+      showNotification(e.message || 'Error saving admin', 'destructive');
     } finally {
       setSaving(false);
     }
@@ -2895,7 +2921,7 @@ function AdminManagementSection() {
       showNotification('Admin removed');
       queryClient.invalidateQueries({ queryKey: ['/api/admin/admins'] });
     } catch (e: any) {
-      showNotification(e.message || 'Error removing admin', variant: 'destructive');
+      showNotification(e.message || 'Error removing admin', 'destructive');
     } finally {
       setRemoving(null);
     }
