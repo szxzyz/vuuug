@@ -5873,62 +5873,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = userData;
       const isAdmin = userIsAdmin;
 
-      // Admin users: use USD balance and USD-based costs
+      // Admin users: free task creation
       // Regular users: use TON tokens
       if (isAdmin) {
-        // Fetch USD-based costs for admin
-        const channelCostSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'channel_task_cost_usd')).limit(1);
-        const botCostSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'bot_task_cost_usd')).limit(1);
-        
-        const channelCostPerClickUSD = parseFloat(channelCostSetting[0]?.settingValue || "0.003");
-        const botCostPerClickUSD = parseFloat(botCostSetting[0]?.settingValue || "0.003");
-        
-        const costPerClickUSD = taskType === "channel" ? channelCostPerClickUSD : botCostPerClickUSD;
-        const totalCostUSD = costPerClickUSD * totalClicksRequired;
+        console.log('🔑 Admin task creation - FREE (no charge)');
 
-        console.log('🔑 Admin task creation - using USD balance');
-        const currentUSDBalance = parseFloat(user.usdBalance || '0');
-
-        console.log('💰 Payment check (USD):', { currentUSDBalance, totalCostUSD, sufficient: currentUSDBalance >= totalCostUSD });
-
-        if (currentUSDBalance < totalCostUSD) {
-          return res.status(400).json({
-            success: false,
-            message: `Insufficient USD balance. You need $${totalCostUSD.toFixed(2)} USD to create this task.`
-          });
-        }
-
-        // Deduct USD balance
-        const newUSDBalance = (currentUSDBalance - totalCostUSD).toFixed(10);
-        await db
-          .update(users)
-          .set({ usdBalance: newUSDBalance })
-          .where(eq(users.id, userId));
-
-        console.log('✅ Payment deducted (USD):', { oldBalance: currentUSDBalance, newBalance: newUSDBalance, deducted: totalCostUSD });
-
-        await storage.logTransaction({
-          userId,
-          amount: totalCostUSD.toFixed(10),
-          type: "deduction",
-          source: "task_creation",
-          description: `Created ${taskType} task: ${title}`,
-          metadata: { taskId: null, taskType, totalClicksRequired, paymentMethod: 'USD' }
-        });
-
-        // Create task with USD cost
+        // Create task for free (admin always gets 0 cost)
         const task = await storage.createTask({
           advertiserId: userId,
           taskType,
           title,
           link,
           totalClicksRequired,
-          costPerClick: costPerClickUSD.toFixed(10),
-          totalCost: totalCostUSD.toFixed(10),
+          costPerClick: "0",
+          totalCost: "0",
           status: "running",
         });
 
-        console.log('✅ Task saved to database:', task);
+        console.log('✅ Admin task saved to database:', task);
 
         broadcastUpdate({
           type: 'task:created',
@@ -6524,17 +6486,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Check if our bot is in the admin list
-        const botUsername = process.env.BOT_USERNAME || 'MoneyAdzbot';
-        const isAdmin = data.result.some((admin: any) => 
-          admin.user?.username?.toLowerCase() === botUsername.toLowerCase()
-        );
+        // Get bot username dynamically from Telegram API
+        let botUsername = process.env.BOT_USERNAME || '';
+        if (!botUsername) {
+          try {
+            const meResponse = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+            const meData = await meResponse.json();
+            if (meData.ok && meData.result?.username) {
+              botUsername = meData.result.username;
+            }
+          } catch (e) {
+            console.warn('⚠️ Could not fetch bot username from Telegram API');
+          }
+        }
 
-        if (!isAdmin) {
-          return res.status(400).json({
-            success: false,
-            message: `@${botUsername} is not an administrator in this channel. Please add the bot as admin first.`
-          });
+        // Check if our bot is in the admin list (only if we know the bot username)
+        if (botUsername) {
+          const isBotAdmin = data.result.some((admin: any) => 
+            admin.user?.username?.toLowerCase() === botUsername.toLowerCase()
+          );
+
+          if (!isBotAdmin) {
+            return res.status(400).json({
+              success: false,
+              message: `@${botUsername} is not an administrator in this channel. Please add the bot as admin first.`
+            });
+          }
         }
 
         console.log('✅ Channel verified:', channelUsername);
