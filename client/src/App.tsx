@@ -16,6 +16,9 @@ import ChannelJoinPopup from "@/components/ChannelJoinPopup";
 declare global {
   interface Window {
     show_11123429: (type?: string) => Promise<void>;
+    Adsgram: {
+      init: (params: { blockId: string; debug?: boolean }) => { show: () => Promise<void>; destroy: () => void };
+    };
   }
 }
 
@@ -68,60 +71,24 @@ function AppContent() {
   const [showSeasonEnd, setShowSeasonEnd] = useState(false);
   const [seasonLockActive, setSeasonLockActive] = useState(false);
   const { isAdmin } = useAdmin();
-  const inAppAdIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const inAppAdInitialized = useRef(false);
-  const [popupAdsEnabled, setPopupAdsEnabled] = useState(true);
-  const [popupAdInterval, setPopupAdInterval] = useState(60);
-  
+  const adsgramOpenShown = useRef(false);
+
   const isDevMode = import.meta.env.DEV || import.meta.env.MODE === 'development';
 
+  // Show AdsGram popup ONCE when app opens (blockId 34626)
   useEffect(() => {
     if (isDevMode) return;
-    // Fetch popup ad settings
-    fetch("/api/app-settings")
-      .then(res => res.json())
-      .then(settings => {
-        setPopupAdsEnabled(settings.popupAdsEnabled !== false);
-        setPopupAdInterval(settings.popupAdInterval || 60);
-      })
-      .catch(() => {});
+    if (adsgramOpenShown.current) return;
+    adsgramOpenShown.current = true;
+
+    const t = setTimeout(() => {
+      if (window.Adsgram) {
+        window.Adsgram.init({ blockId: "34626" }).show().catch(() => {});
+      }
+    }, 3000);
+
+    return () => clearTimeout(t);
   }, [isDevMode]);
-
-  useEffect(() => {
-    if (isDevMode) return;
-    if (inAppAdInitialized.current) return;
-    if (!popupAdsEnabled) return;
-    inAppAdInitialized.current = true;
-
-    const showInAppAd = () => {
-      if (typeof window.show_11123429 === 'function') {
-        console.log('🎬 Showing Monetag Interstitial ad...');
-        window.show_11123429().then(() => {
-          console.log('✅ Monetag Interstitial ad shown');
-        }).catch((error) => {
-          console.log('⚠️ Monetag Interstitial ad error:', error);
-        });
-      } else {
-        console.log('⚠️ Monetag SDK not available for In-App ads');
-      }
-    };
-
-    const intervalMs = popupAdInterval * 1000;
-    const initialDelay = setTimeout(() => {
-      showInAppAd();
-      
-      inAppAdIntervalRef.current = setInterval(() => {
-        showInAppAd();
-      }, intervalMs);
-    }, 5000);
-
-    return () => {
-      clearTimeout(initialDelay);
-      if (inAppAdIntervalRef.current) {
-        clearInterval(inAppAdIntervalRef.current);
-      }
-    };
-  }, [popupAdsEnabled, popupAdInterval]);
 
   useEffect(() => {
     const checkSeasonStatus = () => {
