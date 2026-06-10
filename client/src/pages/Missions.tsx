@@ -80,7 +80,7 @@ function EmptyRow({ label }: { label: string }) {
 const PLATFORM_LOGOS: Record<string, string> = {
   monetag: '/monetag-logo.jpg',
   gigapub: '/gigapub-logo.jpg',
-  monetix: '/monetix-logo.png',
+  monetix: '/monetix-logo-loading.jpg',
 };
 function AdIcon({ platform, done }: { platform: string; done: boolean }) {
   if (done) {

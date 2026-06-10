@@ -189,7 +189,6 @@ export default function Home() {
       showNotification("Convert successful.", "success");
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
-      setConvertPopupOpen(false);
     },
     onError: (error: Error) => {
       showNotification(error.message, "error");
@@ -855,6 +854,60 @@ export default function Home() {
             apiEndpoint="/api/earnings/chart"
           />
         </div>
+
+        {/* Task Feed */}
+        {(() => {
+          const feedTasks = (unifiedTasksData?.tasks || []).filter(t => !completedTasks.has(t.id));
+          if (isLoadingTasks || feedTasks.length === 0) return null;
+          return (
+            <div className="mt-5">
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
+                Tasks Feed
+              </p>
+              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 18, overflow: 'hidden' }}>
+                {feedTasks.map((task: UnifiedTask, idx: number) => {
+                  const isClicked = clickedTasks.has(task.id);
+                  const isLast = idx === feedTasks.length - 1;
+                  return (
+                    <div key={task.id}>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+                        onClick={() => handleUnifiedTask(task)}
+                      >
+                        <div style={{ width: 38, height: 38, borderRadius: 10, background: task.taskType === 'channel' ? 'rgba(59,130,246,0.15)' : 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {getTaskIcon(task)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{task.title}</p>
+                          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '2px 0 0', fontWeight: 500 }}>
+                            {task.taskType === 'channel' ? 'Join channel' : task.taskType === 'bot' ? 'Visit bot' : 'Visit link'}
+                          </p>
+                        </div>
+                        <div style={{ flexShrink: 0 }}>
+                          {isClicked ? (
+                            <button
+                              onClick={e => { e.stopPropagation(); handleUnifiedTask(task); }}
+                              disabled={claimAdvertiserTaskMutation.isPending}
+                              style={{ background: 'linear-gradient(135deg,#16a34a,#22c55e)', border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 12, fontWeight: 800, color: '#fff', cursor: 'pointer', boxShadow: '0 2px 10px rgba(34,197,94,0.35)' }}
+                            >
+                              CLAIM
+                            </button>
+                          ) : (
+                            <div style={{ background: 'rgba(59,130,246,0.15)', borderRadius: 8, padding: '5px 9px', textAlign: 'center' }}>
+                              <span style={{ color: '#3b82f6', fontSize: 11, fontWeight: 800, display: 'block' }}>+{task.rewardPAD.toLocaleString()}</span>
+                              <span style={{ color: 'rgba(59,130,246,0.6)', fontSize: 9, fontWeight: 700 }}>POW</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {!isLast && <div style={{ height: 1, background: 'rgba(255,255,255,0.04)', margin: '0 16px' }} />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
       </main>
 
