@@ -690,7 +690,11 @@ export default function Home() {
     return Math.round(n).toLocaleString();
   };
 
-  const usdFormatted = balanceUSD.toFixed(3);
+  const usdFormatted = balanceUSD >= 0.01
+    ? balanceUSD.toFixed(2)
+    : balanceUSD >= 0.0001
+      ? balanceUSD.toFixed(4)
+      : balanceUSD.toFixed(6);
   const [usdInt, usdDec] = usdFormatted.split('.');
 
   return (
