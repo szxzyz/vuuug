@@ -6,6 +6,7 @@ import { useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import PromoCodeInput from "@/components/PromoCodeInput";
+import { FaBullhorn, FaRobot, FaHandshake } from "react-icons/fa";
 
 const BLUE   = '#3b82f6';
 const BLUE_D = '#2563eb';
@@ -67,11 +68,24 @@ function SectionLabel({ title }: { title: string }) {
 /* ─── Empty state ─── */
 function EmptyRow({ label }: { label: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px' }}>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
       <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 12 }}>{label}</span>
+    </div>
+  );
+}
+
+/* ─── Loading Row ─── */
+function LoadingRow() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.06)', flexShrink: 0, animation: 'pulse 1.5s ease-in-out infinite' }} />
+      <div style={{ flex: 1 }}>
+        <div style={{ height: 12, width: '60%', background: 'rgba(255,255,255,0.06)', borderRadius: 6, marginBottom: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
+        <div style={{ height: 10, width: '40%', background: 'rgba(255,255,255,0.04)', borderRadius: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
+      </div>
     </div>
   );
 }
@@ -149,6 +163,7 @@ function AdRow({ platform, name, reward, limit, count, loading, disabled, onWatc
   );
 }
 
+
 /* ─── Advertiser Task Row ─── */
 function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdownTasks, onGo, onClaim, isLast }: {
   task: Task; reward: number; loading: boolean;
@@ -160,19 +175,17 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
   const countdown = countdownTasks.get(task.id);
 
   const iconSvg = task.taskType === 'channel' ? (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-    </svg>
+    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <FaBullhorn size={16} color="#3b82f6" />
+    </div>
   ) : task.taskType === 'partner' ? (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-      <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-    </svg>
+    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(236,72,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <FaHandshake size={16} color="#ec4899" />
+    </div>
   ) : (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-    </svg>
+    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <FaRobot size={16} color="#8b5cf6" />
+    </div>
   );
 
   return (
@@ -184,6 +197,13 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
         {iconSvg}
         <div style={{ flex: 1, minWidth: 0 }}>
           <span style={{ color: TEXT, fontSize: 14, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, display: 'block' }}>{task.title}</span>
+          <span style={{ color: TEXT_DIM, fontSize: 11, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+            {task.taskType === 'channel'
+              ? <><FaBullhorn size={10} color="#3b82f6" /> Channel</>
+              : task.taskType === 'partner'
+              ? <><FaHandshake size={10} color="#ec4899" /> Partner</>
+              : <><FaRobot size={10} color="#8b5cf6" /> Bot / Website</>}
+          </span>
         </div>
         <div style={{ flexShrink: 0 }}>
           {!isClicked ? (
@@ -207,6 +227,58 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
   );
 }
 
+/* ─── Category Tabs ─── */
+type CategoryTab = 'channel' | 'bot' | 'partner';
+
+const CATEGORY_TABS: { id: CategoryTab; label: string; Icon: React.ElementType; color: string }[] = [
+  { id: 'channel', label: 'Channels',  Icon: FaBullhorn,  color: '#3b82f6' },
+  { id: 'bot',     label: 'Bots & Web', Icon: FaRobot,    color: '#8b5cf6' },
+  { id: 'partner', label: 'Partners',  Icon: FaHandshake, color: '#ec4899' },
+];
+
+function CategoryTabs({ active, onChange, counts }: {
+  active: CategoryTab;
+  onChange: (tab: CategoryTab) => void;
+  counts: Record<CategoryTab, number>;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      {CATEGORY_TABS.map(tab => {
+        const isActive = active === tab.id;
+        const count = counts[tab.id];
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column' as const,
+              alignItems: 'center',
+              gap: 4,
+              padding: '10px 6px',
+              borderRadius: 12,
+              border: isActive ? `1px solid ${tab.color}55` : '1px solid rgba(255,255,255,0.06)',
+              background: isActive ? `${tab.color}18` : 'rgba(255,255,255,0.04)',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            className="active:scale-95 transition-transform"
+          >
+            <tab.Icon size={17} color={isActive ? tab.color : 'rgba(255,255,255,0.4)'} />
+            <span style={{ fontSize: 10, fontWeight: 800, color: isActive ? '#fff' : 'rgba(255,255,255,0.45)', letterSpacing: '0.04em' }}>{tab.label}</span>
+            {count > 0 && (
+              <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? tab.color : 'rgba(255,255,255,0.3)', background: isActive ? `${tab.color}22` : 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '1px 6px' }}>
+                {count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 export default function Missions() {
   const { isLoading, user } = useAuth() as any;
@@ -214,6 +286,7 @@ export default function Missions() {
   const [, setLocation] = useLocation();
   const { data: adminData } = useQuery<{ isAdmin: boolean }>({ queryKey: ['/api/admin/check'], retry: false });
   const isAdmin = adminData?.isAdmin || false;
+  const [activeCategory, setActiveCategory] = useState<CategoryTab>('channel');
   const [clickedTasks, setClickedTasks] = useState<Set<string>>(new Set());
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
@@ -229,7 +302,12 @@ export default function Missions() {
   const { showMonetagAd, showGigaPubAd, showMonetixAd } = useAdFlow();
 
   const { data: appSettings } = useQuery<AppSettings>({ queryKey: ['/api/app-settings'], retry: false });
-  const { data: tasksData } = useQuery<{ success: boolean; tasks: Task[] }>({ queryKey: ["/api/advertiser-tasks"], retry: false });
+  const { data: tasksData, isLoading: tasksLoading } = useQuery<{ success: boolean; tasks: Task[] }>({
+    queryKey: ["/api/advertiser-tasks"],
+    retry: false,
+    refetchOnMount: true,
+    staleTime: 10000,
+  });
 
   const monetagReward = appSettings?.monetagMissionReward ?? 50;
   const monetagLimit  = appSettings?.monetagMissionLimit  ?? 10;
@@ -302,8 +380,8 @@ export default function Missions() {
       setClickedTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
       setClaimReadyTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
       setLoadingTaskId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/advertiser-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/advertiser-tasks'] });
     },
     onError: (error: Error) => { showNotification(error.message, "error"); setLoadingTaskId(null); },
   });
@@ -348,13 +426,29 @@ export default function Missions() {
   }
 
   const allTasks    = (tasksData?.tasks || []).filter(t => !completedTaskIds.has(t.id));
-  const socialTasks = allTasks.filter(t => t.taskType === 'channel');
+  const channelTasks = allTasks.filter(t => t.taskType === 'channel');
   const botTasks    = allTasks.filter(t => t.taskType === 'bot');
   const partnerTasks = allTasks.filter(t => t.taskType === 'partner');
-  const combinedTasks = [...socialTasks, ...botTasks, ...partnerTasks];
+
+  const categoryCounts: Record<CategoryTab, number> = {
+    channel: channelTasks.length,
+    bot: botTasks.length,
+    partner: partnerTasks.length,
+  };
+
+  const activeTasks =
+    activeCategory === 'channel' ? channelTasks :
+    activeCategory === 'bot'     ? botTasks     :
+    partnerTasks;
 
   const getReward = (t: Task) =>
     t.taskType === 'partner' ? partnerReward : t.taskType === 'channel' ? channelReward : botReward;
+
+  const emptyMessages: Record<CategoryTab, string> = {
+    channel: 'No channel tasks available right now',
+    bot: 'No bot or website tasks available right now',
+    partner: 'No partner tasks available right now',
+  };
 
   const adPlatforms = [
     { id: 'monetag' as const, name: 'Monetag',  reward: monetagReward, limit: monetagLimit,  count: platformCounts.monetag },
@@ -433,13 +527,28 @@ export default function Missions() {
           </div>
         </div>
 
-        {/* Tasks */}
+        {/* Tasks — Categorized */}
         <SectionLabel title="Tasks" />
+
+        {/* Category Tabs */}
+        <CategoryTabs
+          active={activeCategory}
+          onChange={setActiveCategory}
+          counts={categoryCounts}
+        />
+
+        {/* Task List for Active Category */}
         <div style={cardStyle}>
-          {combinedTasks.length === 0 ? (
-            <EmptyRow label="No tasks available right now" />
+          {tasksLoading ? (
+            <>
+              <LoadingRow />
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
+              <LoadingRow />
+            </>
+          ) : activeTasks.length === 0 ? (
+            <EmptyRow label={emptyMessages[activeCategory]} />
           ) : (
-            combinedTasks.map((task, i) => (
+            activeTasks.map((task, i) => (
               <TaskRow
                 key={task.id}
                 task={task}
@@ -450,7 +559,7 @@ export default function Missions() {
                 countdownTasks={countdownTasks}
                 onGo={handleTaskGo}
                 onClaim={id => clickTaskMutation.mutate(id)}
-                isLast={i === combinedTasks.length - 1}
+                isLast={i === activeTasks.length - 1}
               />
             ))
           )}

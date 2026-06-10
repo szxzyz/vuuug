@@ -60,14 +60,8 @@ export default function Withdraw() {
   const connectedAddress = useTonAddress();
   const isWalletConnected = !!connectedAddress;
   
-  const [activeTab, setActiveTab] = useState<'withdraw' | 'wallet-setup'>('withdraw');
-  
   const [selectedMethod, setSelectedMethod] = useState<string>('TON');
   const [selectedPackage, setSelectedPackage] = useState<number | 'FULL'>('FULL');
-  
-  const [tonWalletId, setTonWalletId] = useState('');
-  const [newTonWalletId, setNewTonWalletId] = useState('');
-  const [isChangingTonWallet, setIsChangingTonWallet] = useState(false);
 
   const { data: user, refetch: refetchUser } = useQuery<User>({
     queryKey: ['/api/auth/user'],
@@ -101,7 +95,6 @@ export default function Withdraw() {
     staleTime: 0,
   });
 
-  const walletChangeFee = appSettings?.walletChangeFee || 5000;
   const padBalance = parseFloat(user?.balance || "0");
   const usdBalance = parseFloat(user?.usdBalance || "0");
   const bugBalance = parseFloat(user?.bugBalance || "0");
@@ -227,54 +220,10 @@ export default function Withdraw() {
   const withdrawalsData = withdrawalsResponse?.withdrawals || [];
   const hasPendingWithdrawal = withdrawalsData.some(w => w.status === 'pending');
 
-  const isTonWalletSet = !!user?.cwalletId;
-
-  useEffect(() => {
-    if (user) {
-      if (user.cwalletId) setTonWalletId(user.cwalletId);
-    }
-  }, [user]);
-
   useEffect(() => {
     refetchUser();
     refetchWithdrawals();
   }, [refetchUser, refetchWithdrawals]);
-
-  const saveTonWalletMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/wallet/cwallet', {
-        cwalletId: tonWalletId.trim()
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      showNotification("Cwallet ID saved successfully.", "success");
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/user'] });
-    },
-    onError: (error: Error) => {
-      showNotification(error.message, "error");
-    },
-  });
-
-  const changeTonWalletMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/wallet/change', {
-        newWalletId: newTonWalletId.trim()
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      showNotification("Cwallet ID updated successfully", "success");
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/user'] });
-      setIsChangingTonWallet(false);
-      setNewTonWalletId('');
-    },
-    onError: (error: Error) => {
-      showNotification(error.message, "error");
-    },
-  });
 
   const withdrawMutation = useMutation({
     mutationFn: async () => {
@@ -325,30 +274,6 @@ export default function Withdraw() {
     },
   });
 
-  const handleSaveTonWallet = () => {
-    if (!tonWalletId.trim()) {
-      showNotification("Please enter your Cwallet ID", "error");
-      return;
-    }
-    if (!/^\d+$/.test(tonWalletId.trim())) {
-      showNotification("Invalid Cwallet ID", "error");
-      return;
-    }
-    saveTonWalletMutation.mutate();
-  };
-
-  const handleChangeTonWallet = () => {
-    if (!newTonWalletId.trim()) {
-      showNotification("Please enter a new Cwallet ID", "error");
-      return;
-    }
-    if (!/^\d+$/.test(newTonWalletId.trim())) {
-      showNotification("Invalid Cwallet ID", "error");
-      return;
-    }
-    changeTonWalletMutation.mutate();
-  };
-
   const handleWithdraw = () => {
     if (!hasEnoughReferrals) {
       const remaining = MINIMUM_VALID_REFERRALS_REQUIRED - validReferralCount;
@@ -373,11 +298,22 @@ export default function Withdraw() {
       return;
     }
 
+    if (selectedMethod === 'TON' && !connectedAddress) {
+      showNotification("Please connect your TON wallet first using the Connect button at the top.", "error");
+      return;
+    }
+
     const withdrawAmount = getWithdrawalUsdAmount();
     if (withdrawAmount <= 0 || usdBalance < withdrawAmount) {
       showNotification("Insufficient balance for this withdrawal package", "error");
       return;
     }
+
+    console.log('💸 Submitting withdrawal:', {
+      method: selectedMethod,
+      package: selectedPackage,
+      tonWalletAddress: connectedAddress ? `${connectedAddress.slice(0, 8)}...` : 'not connected',
+    });
 
     withdrawMutation.mutate();
   };
@@ -466,6 +402,24 @@ export default function Withdraw() {
 
             {!isLoadingRequirements && (
             <>
+            {/* Wallet Status Banner */}
+            {selectedMethod === 'TON' && !isWalletConnected && (
+              <div className="p-3 bg-orange-500/10 border border-orange-500/25 rounded-xl flex items-start gap-3">
+                <Wallet className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-orange-400">Wallet Not Connected</p>
+                  <p className="text-xs text-orange-300/70 mt-0.5">Tap the <strong>Connect</strong> button at the top to link your TON wallet before withdrawing.</p>
+                </div>
+              </div>
+            )}
+            {selectedMethod === 'TON' && isWalletConnected && (
+              <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center gap-3">
+                <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <p className="text-xs text-green-400 font-medium">
+                  Wallet connected: {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
+                </p>
+              </div>
+            )}
             <div className="space-y-3">
               <div className="space-y-2">
                 {paymentSystems.map((system) => (

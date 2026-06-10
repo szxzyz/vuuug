@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import Header from "@/components/Header";
 import IncomeChart from "@/components/IncomeChart";
+import IncomeStatistics from "@/components/IncomeStatistics";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -790,61 +791,7 @@ export default function Home() {
         </div>
 
         {/* Statistics Section */}
-        <div className="mt-5 px-1">
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
-            Income Statistics
-          </p>
-
-          {/* Money earned */}
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 6 }}>Money earned</p>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>Today</p>
-              <p style={{ fontSize: 17, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
-                {formatBalance(parseFloat((user as User)?.dailyEarnings || '0') * 10000000)} POW
-              </p>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginTop: 2 }}>
-                ≈${parseFloat((user as User)?.dailyEarnings || '0').toFixed(5)}
-              </p>
-            </div>
-            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 4 }}>All time</p>
-              <p style={{ fontSize: 17, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
-                {formatBalance(parseFloat((user as User)?.totalEarned || '0') * 10000000)} POW
-              </p>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginTop: 2 }}>
-                ≈${parseFloat((user as User)?.totalEarned || '0').toFixed(5)}
-              </p>
-            </div>
-          </div>
-
-          {/* Watched videos */}
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500, marginBottom: 6 }}>Watched videos</p>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 6 }}>Today</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 22, height: 22, background: '#000', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Play style={{ width: 10, height: 10, color: '#fff', fill: '#fff' }} />
-                </div>
-                <span style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>
-                  {(user as User)?.adsWatchedToday ?? (user as User)?.dailyAdsWatched ?? 0}
-                </span>
-              </div>
-            </div>
-            <div style={{ flex: 1, background: '#1C1C1E', borderRadius: 12, padding: '12px 14px' }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginBottom: 6 }}>All time</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 22, height: 22, background: '#000', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Play style={{ width: 10, height: 10, color: '#fff', fill: '#fff' }} />
-                </div>
-                <span style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>
-                  {(user as User)?.adsWatched ?? 0}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <IncomeStatistics />
 
         {/* Total Income Chart */}
         <div className="mt-3 pb-0">
