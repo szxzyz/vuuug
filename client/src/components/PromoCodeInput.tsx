@@ -1,31 +1,18 @@
-import { useState, useRef } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
-import { Clock, Shield } from "lucide-react";
-
-declare global {
-  interface Window {
-    show_11123429: (type?: string) => Promise<void>;
-  }
-}
+import { FiCheck } from "react-icons/fi";
 
 export default function PromoCodeInput() {
   const [promoCode, setPromoCode] = useState("");
-  const [isShowingAd, setIsShowingAd] = useState(false);
-  const [currentAdStep, setCurrentAdStep] = useState<'idle' | 'monetag' | 'verifying'>('idle');
-  const monetagStartTimeRef = useRef<number>(0);
   const queryClient = useQueryClient();
 
   const redeemPromoMutation = useMutation({
     mutationFn: async (code: string) => {
       const response = await apiRequest("POST", "/api/promo-codes/redeem", { code });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || "Invalid promo code");
-      }
+      if (!response.ok) throw new Error(data.message || "Invalid promo code");
       return data;
     },
     onSuccess: (data) => {
@@ -36,101 +23,82 @@ export default function PromoCodeInput() {
       showNotification(data.message || "Promo applied successfully!", "success");
     },
     onError: (error: any) => {
-      const message = error.message || "Invalid promo code";
-      showNotification(message, "error");
+      showNotification(error.message || "Invalid promo code", "error");
     },
   });
 
-  const showMonetagAd = (): Promise<{ success: boolean; watchedFully: boolean; unavailable: boolean }> => {
-    return new Promise((resolve) => {
-      if (typeof window.show_11123429 === 'function') {
-        monetagStartTimeRef.current = Date.now();
-        window.show_11123429()
-          .then(() => {
-            const watchDuration = Date.now() - monetagStartTimeRef.current;
-            const watchedAtLeast3Seconds = watchDuration >= 3000;
-            resolve({ success: true, watchedFully: watchedAtLeast3Seconds, unavailable: false });
-          })
-          .catch((error) => {
-            console.error('Monetag ad error:', error);
-            const watchDuration = Date.now() - monetagStartTimeRef.current;
-            const watchedAtLeast3Seconds = watchDuration >= 3000;
-            resolve({ success: false, watchedFully: watchedAtLeast3Seconds, unavailable: false });
-          });
-      } else {
-        resolve({ success: false, watchedFully: false, unavailable: true });
-      }
-    });
-  };
-
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!promoCode.trim()) {
       showNotification("Please enter a promo code", "error");
       return;
     }
-
-    if (isShowingAd) return;
-    setIsShowingAd(true);
-
-    try {
-      setCurrentAdStep('monetag');
-      const monetagResult = await showMonetagAd();
-
-      if (monetagResult.unavailable) {
-        showNotification("Monetag ads not available. Please try again later.", "error");
-        return;
-      }
-
-      if (!monetagResult.watchedFully) {
-        showNotification("Claimed too fast!", "error");
-        return;
-      }
-
-      if (!monetagResult.success) {
-        showNotification("Ad failed. Please try again.", "error");
-        return;
-      }
-
-      setCurrentAdStep('verifying');
-      redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
-    } finally {
-      setCurrentAdStep('idle');
-      setIsShowingAd(false);
-    }
+    redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
   };
 
-  const getButtonText = () => {
-    if (currentAdStep === 'monetag') return "Loading...";
-    if (currentAdStep === 'verifying') return "Verifying...";
-    if (redeemPromoMutation.isPending) return "Applying...";
-    return "Apply";
-  };
+  const busy     = redeemPromoMutation.isPending;
+  const disabled = busy || !promoCode.trim();
 
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex-1">
-        <Input
-          placeholder="Enter promo code"
-          value={promoCode}
-          onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-          disabled={redeemPromoMutation.isPending || isShowingAd}
-          className="bg-[#0d0d0d] border border-[#333] rounded-lg text-white placeholder:text-gray-500 px-[14px] py-[12px] h-[48px] focus:border-[#4cd3ff] focus:ring-1 focus:ring-[#4cd3ff]"
-        />
-      </div>
-      <Button
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <input
+        value={promoCode}
+        onChange={e => setPromoCode(e.target.value.toUpperCase())}
+        onKeyDown={e => e.key === "Enter" && !disabled && handleSubmit()}
+        placeholder="Enter promo code"
+        disabled={busy}
+        style={{
+          flex: 1,
+          height: 42,
+          background: "rgba(255,255,255,0.05)",
+          border: "1px solid rgba(255,255,255,0.09)",
+          borderRadius: 10,
+          padding: "0 12px",
+          color: "#fff",
+          fontSize: 13,
+          fontWeight: 600,
+          outline: "none",
+          letterSpacing: "0.05em",
+          transition: "border-color 0.15s",
+        }}
+        onFocus={e => (e.target.style.borderColor = "rgba(255,255,255,0.25)")}
+        onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.09)")}
+      />
+      <button
         onClick={handleSubmit}
-        disabled={redeemPromoMutation.isPending || isShowingAd || !promoCode.trim()}
-        className="min-h-[48px] px-6 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black rounded-lg transition-all active:scale-[0.97] shadow-[0_0_20px_rgba(76,211,255,0.4)] font-bold flex items-center gap-2"
+        disabled={disabled}
+        style={{
+          height: 42,
+          padding: "0 16px",
+          borderRadius: 10,
+          border: "none",
+          background: disabled ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.10)",
+          color: disabled ? "rgba(255,255,255,0.2)" : "#fff",
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: disabled ? "not-allowed" : "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          flexShrink: 0,
+          letterSpacing: "0.04em",
+          whiteSpace: "nowrap",
+          transition: "all 0.15s ease",
+        }}
+        className={disabled ? "" : "active:scale-95 transition-transform"}
       >
-        {isShowingAd && currentAdStep !== 'idle' && (
-          currentAdStep === 'verifying' ? (
-            <Shield size={14} className="animate-pulse text-green-600" />
-          ) : (
-            <Clock size={14} className="animate-spin" />
-          )
+        {busy ? (
+          <span style={{
+            width: 12, height: 12, borderRadius: "50%",
+            border: "2px solid rgba(255,255,255,0.2)",
+            borderTopColor: "#fff",
+            display: "inline-block",
+            animation: "spin 0.7s linear infinite",
+          }} />
+        ) : (
+          <FiCheck size={13} />
         )}
-        {getButtonText()}
-      </Button>
+        {busy ? "Applying…" : "APPLY"}
+      </button>
     </div>
   );
 }

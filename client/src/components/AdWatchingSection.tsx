@@ -2,11 +2,11 @@ import { useState, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Play, Clock, Shield } from "lucide-react";
+import { FaPlay } from "react-icons/fa";
+import { FiClock, FiShield } from "react-icons/fi";
 import { showNotification } from "@/components/AppNotification";
 import { useAdSession } from "@/hooks/useAdSession";
 import AdFailurePopup from "@/components/AdFailurePopup";
-import WatchInstructionPopup from "@/components/WatchInstructionPopup";
 
 declare global {
   interface Window {
@@ -29,18 +29,16 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const { startSession, endSession, cancelSession } = useAdSession();
 
-  // Popup shows on first load; dismissed via checkbox confirm
-  const [showInstructionPopup, setShowInstructionPopup] = useState(true);
-  const [isShowingAds, setIsShowingAds]                 = useState(false);
-  const [currentAdStep, setCurrentAdStep]               = useState<'idle' | 'adsgram' | 'verifying'>('idle');
-  const [showFailurePopup, setShowFailurePopup]         = useState(false);
-  const sessionRewardedRef                              = useRef(false);
+  const [isShowingAds, setIsShowingAds]         = useState(false);
+  const [currentAdStep, setCurrentAdStep]       = useState<"idle" | "adsgram" | "verifying">("idle");
+  const [showFailurePopup, setShowFailurePopup] = useState(false);
+  const sessionRewardedRef                      = useRef(false);
 
   const { data: appSettings } = useQuery({
     queryKey: ["/api/app-settings"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/app-settings");
-      return response.json();
+      const r = await apiRequest("GET", "/api/app-settings");
+      return r.json();
     },
     staleTime: 30000,
     refetchInterval: 60000,
@@ -53,12 +51,12 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       backgroundDuration: number;
       sessionStart: number;
     }) => {
-      const response = await apiRequest("POST", "/api/ads/watch", payload);
-      if (!response.ok) {
-        const error = await response.json();
-        throw { status: response.status, ...error };
+      const r = await apiRequest("POST", "/api/ads/watch", payload);
+      if (!r.ok) {
+        const err = await r.json();
+        throw { status: r.status, ...err };
       }
-      return response.json();
+      return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
@@ -70,25 +68,18 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     onError: (error: any) => {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-
       if (error.errorType === "insufficient_background") {
         setShowFailurePopup(true);
       } else if (error.errorType === "duplicate_session") {
         showNotification("Session already used. Please watch a new ad.", "error");
       } else if (error.errorType === "cooldown") {
-        const secs = error.secsLeft || 5;
-        showNotification(`Please wait ${secs}s before watching another ad.`, "error");
+        showNotification(`Please wait ${error.secsLeft || 5}s before watching another ad.`, "error");
       } else if (error.errorType === "abuse_lock") {
-        const secs = error.secsLeft || 60;
-        showNotification(`Too many failed attempts. Try again in ${secs}s.`, "error");
+        showNotification(`Too many failed attempts. Try again in ${error.secsLeft || 60}s.`, "error");
       } else if (error.limitType === "hourly") {
         showNotification("Hourly limit reached. Refills in ~1 hour.", "error");
       } else if (error.limitType === "daily") {
         showNotification("Daily limit reached. Come back tomorrow.", "error");
-      } else if (error.status === 429) {
-        showNotification("Limit reached. Please wait before watching more ads.", "error");
-      } else if (error.status === 401 || error.status === 403) {
-        showNotification("Authentication error. Please refresh the page.", "error");
       } else if (error.message) {
         showNotification(`Error: ${error.message}`, "error");
       } else {
@@ -100,11 +91,11 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
     new Promise((resolve) => {
       if (window.Adsgram) {
-        window.Adsgram.init({ blockId: "int-20374" })
+        window.Adsgram.init({ blockId: "int-34672" })
           .show()
           .then(() => resolve({ success: true, unavailable: false }))
           .catch((err) => {
-            console.error("AdsGram ad error:", err);
+            console.error("AdsGram error:", err);
             resolve({ success: false, unavailable: false });
           });
       } else {
@@ -112,17 +103,13 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }
     });
 
-  // Session starts ONLY when this function is called (from Start Earning button)
   const handleStartEarning = async () => {
     if (isShowingAds) return;
-
     setIsShowingAds(true);
     sessionRewardedRef.current = false;
 
-    // ── Session tracking begins HERE ─────────────────────────────────────
     const sessionId    = startSession();
     const sessionStart = Date.now();
-    // ─────────────────────────────────────────────────────────────────────
 
     try {
       setCurrentAdStep("adsgram");
@@ -134,12 +121,10 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         showNotification("Ads not available. Please try again later.", "error");
         return;
       }
-
       if (!adsgramResult.success) {
         setShowFailurePopup(true);
         return;
       }
-
       if (session.backgroundDuration < MIN_BACKGROUND_MS) {
         setShowFailurePopup(true);
         return;
@@ -149,7 +134,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
-
         const rewardAmount = appSettings?.rewardPerAd || 2;
         queryClient.setQueryData(["/api/auth/user"], (old: any) => ({
           ...old,
@@ -158,12 +142,11 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           hourlyAdsWatched: (old?.hourlyAdsWatched || 0) + 1,
         }));
         showNotification(`+${rewardAmount} POW earned!`, "success");
-
         watchAdMutation.mutate({
-          adType:             "adsgram",
-          sessionId:          session.sessionId,
+          adType: "adsgram",
+          sessionId: session.sessionId,
           backgroundDuration: session.backgroundDuration,
-          sessionStart:       session.sessionStart,
+          sessionStart: session.sessionStart,
         });
       }
     } catch (err) {
@@ -177,33 +160,23 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     }
   };
 
-  // User confirmed the instruction popup — just dismiss it, ad does NOT start yet
-  const handleInstructionContinue = () => {
-    setShowInstructionPopup(false);
-    // ad starts only when user presses Start Earning
-  };
-
   const DAILY_LIMIT  = appSettings?.dailyAdLimit  || 510;
   const HOURLY_LIMIT = appSettings?.hourlyAdLimit  || 63;
-
   const dailyWatched    = user?.adsWatchedToday   || 0;
   const hourlyWatched   = user?.hourlyAdsWatched   || 0;
   const lastHourlyReset = user?.lastHourlyReset ? new Date(user.lastHourlyReset) : null;
-  const hoursSinceReset = lastHourlyReset
-    ? (Date.now() - lastHourlyReset.getTime()) / (1000 * 60 * 60)
-    : 2;
+  const hoursSinceReset = lastHourlyReset ? (Date.now() - lastHourlyReset.getTime()) / 3_600_000 : 2;
   const effectiveHourly = hoursSinceReset >= 1 ? 0 : hourlyWatched;
   const adsAvailable    = Math.min(
     Math.max(0, HOURLY_LIMIT - effectiveHourly),
     Math.max(0, DAILY_LIMIT  - dailyWatched),
   );
-  const isLimitReached  = adsAvailable === 0;
+  const isLimitReached = adsAvailable === 0;
 
   return (
     <>
       <Card className="rounded-2xl minimal-card mb-3 border-0">
         <CardContent className="p-5">
-          {/* Header */}
           <div className="text-center mb-5">
             <h2 className="text-lg font-extrabold text-white mb-1 tracking-widest uppercase">
               Viewing Ads
@@ -213,21 +186,19 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
             </p>
           </div>
 
-          {/* Start Earning button */}
           <div className="flex justify-center mb-4">
             <button
               onClick={handleStartEarning}
               disabled={isShowingAds || isLimitReached}
-              className="btn-primary px-6 py-3 flex items-center gap-2 min-w-[160px] justify-center text-base disabled:opacity-50"
+              className="btn-primary px-6 py-3 flex items-center gap-2 min-w-[160px] justify-center disabled:opacity-50"
               data-testid="button-watch-ad"
             >
               {isShowingAds ? (
                 <>
-                  {currentAdStep === "verifying" ? (
-                    <Shield size={16} className="animate-pulse text-green-400" />
-                  ) : (
-                    <Clock size={16} className="animate-spin" />
-                  )}
+                  {currentAdStep === "verifying"
+                    ? <FiShield size={15} className="animate-pulse text-green-400" />
+                    : <FiClock size={15} className="animate-spin" />
+                  }
                   <span className="text-sm font-semibold">
                     {currentAdStep === "adsgram"   ? "Loading Ad..."  :
                      currentAdStep === "verifying" ? "Verifying..."   : "Loading..."}
@@ -235,14 +206,13 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                 </>
               ) : (
                 <>
-                  <Play size={16} />
+                  <FaPlay size={13} />
                   <span className="text-sm font-semibold">Start Earning</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Availability info */}
           <div className="text-center">
             {isLimitReached && dailyWatched >= DAILY_LIMIT ? (
               <p className="text-xs text-red-400/80">Daily limit reached. Resets tomorrow.</p>
@@ -257,12 +227,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         </CardContent>
       </Card>
 
-      {/* Instruction Popup — shown on page open, dismissed via checkbox */}
-      {showInstructionPopup && (
-        <WatchInstructionPopup onContinue={handleInstructionContinue} />
-      )}
-
-      {/* Failure Popup */}
       {showFailurePopup && (
         <AdFailurePopup onClose={() => setShowFailurePopup(false)} />
       )}
