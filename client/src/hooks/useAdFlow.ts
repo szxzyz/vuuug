@@ -36,7 +36,7 @@ export function useAdFlow() {
   const showGigaPubAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
       if (typeof window.showGiga === 'function') {
-        window.showGiga()
+        window.showGiga(34625)
           .then(() => resolve({ success: true, unavailable: false }))
           .catch(() => resolve({ success: false, unavailable: false }));
       } else {
