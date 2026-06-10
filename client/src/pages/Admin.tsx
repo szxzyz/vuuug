@@ -7,7 +7,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
 import { useAdmin } from "@/hooks/useAdmin";
 import Layout from "@/components/Layout";
 import { Link } from "wouter";
@@ -72,7 +71,6 @@ function StatCard({ icon, label, value, iconColor }: {
 }
 
 export default function AdminPage() {
-  const { toast } = useToast();
   const { isAdmin, isLoading: adminLoading, role, can } = useAdmin();
   const queryClient = useQueryClient();
 
@@ -147,7 +145,7 @@ export default function AdminPage() {
             variant="outline"
             onClick={() => {
               queryClient.invalidateQueries();
-              toast({ title: "Refreshed" });
+              showNotification("Refreshed");
             }}
             className="h-8 px-3 text-xs"
           >
@@ -397,7 +395,6 @@ function AnalyticsSection({ stats }: { stats: AdminStats | undefined }) {
 
 // Ban User Button Component
 function BanUserButton({ user, onSuccess }: { user: any; onSuccess: () => void }) {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [banReason, setBanReason] = useState('');
@@ -415,21 +412,14 @@ function BanUserButton({ user, onSuccess }: { user: any; onSuccess: () => void }
       const result = await response.json();
       
       if (result.success) {
-        toast({
-          title: user.banned ? "User Unbanned" : "User Banned",
-          description: result.message,
-        });
+        showNotification(result.message);
         queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
         onSuccess();
       } else {
         throw new Error(result.message || 'Failed to update ban status');
       }
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update user status",
-        variant: "destructive",
-      });
+      showNotification(error.message || "Failed to update user status", "error");
     } finally {
       setIsLoading(false);
       setShowConfirmDialog(false);
@@ -892,7 +882,6 @@ function UserManagementSection({ usersData }: { usersData: any }) {
 type PromoTab = 'create' | 'manage';
 
 function PromoCreatorSection() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<PromoTab>('create');
   const [formData, setFormData] = useState({
@@ -908,7 +897,7 @@ function PromoCreatorSection() {
   const handleGenerateCode = () => {
     const randomCode = 'PROMO' + Math.random().toString(36).substring(2, 10).toUpperCase();
     setFormData({ ...formData, code: randomCode });
-    toast({ title: "Code Generated", description: randomCode });
+    showNotification(randomCode);
   };
 
   const { data: promoCodesData } = useQuery({
@@ -919,12 +908,12 @@ function PromoCreatorSection() {
 
   const handleCreate = async () => {
     if (!formData.code.trim() || !formData.rewardAmount) {
-      toast({ title: "Error", description: "Code and amount required", variant: "destructive" });
+      showNotification("Code and amount required", "error");
       return;
     }
     const rewardAmount = parseFloat(formData.rewardAmount);
     if (isNaN(rewardAmount) || rewardAmount <= 0) {
-      toast({ title: "Error", description: "Amount must be positive", variant: "destructive" });
+      showNotification("Amount must be positive", "error");
       return;
     }
 
@@ -940,7 +929,7 @@ function PromoCreatorSection() {
       });
       const result = await response.json();
       if (result.success) {
-        toast({ title: "Created", description: `${rewardAmount} ${formData.rewardType}` });
+        showNotification(`${rewardAmount} ${formData.rewardType}`);
         setFormData({ code: '', rewardAmount: '', rewardType: 'TON', usageLimit: '', perUserLimit: '1', expiresAt: '' });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/promo-codes"] });
         setActiveTab('manage');
@@ -948,7 +937,7 @@ function PromoCreatorSection() {
         throw new Error(result.message);
       }
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      showNotification(error.message, "error");
     } finally {
       setIsCreating(false);
     }
@@ -966,7 +955,7 @@ function PromoCreatorSection() {
 
   const copyToClipboard = (code: string) => {
     navigator.clipboard.writeText(code);
-    toast({ title: "Copied", description: code });
+    showNotification(code);
   };
 
   return (
@@ -1137,7 +1126,6 @@ function PayoutLogsSection({ data }: { data: any }) {
 type BanViewTab = 'logs' | 'users';
 
 function BanLogsSection() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [currentPage, setCurrentPage] = useState(1);
   const [activeView, setActiveView] = useState<BanViewTab>('users');
@@ -1207,10 +1195,7 @@ function BanLogsSection() {
       const result = await response.json();
       
       if (result.success) {
-        toast({
-          title: "User Unbanned",
-          description: "The user has been successfully unbanned",
-        });
+        showNotification("The user has been successfully unbanned");
         queryClient.invalidateQueries({ queryKey: ["/api/admin/banned-users-details"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/ban-logs"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
@@ -1218,11 +1203,7 @@ function BanLogsSection() {
         throw new Error(result.message || 'Failed to unban user');
       }
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to unban user",
-        variant: "destructive",
-      });
+      showNotification(error.message || "Failed to unban user", "error");
     } finally {
       setUnbanningId(null);
     }
@@ -1443,7 +1424,6 @@ function BanLogsSection() {
 type SettingsCategory = 'ads' | 'affiliates' | 'withdrawals' | 'tasks' | 'bug' | 'missions' | 'other';
 
 function SettingsSection() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isSaving, setIsSaving] = useState(false);
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('ads');
@@ -1598,20 +1578,12 @@ function SettingsSection() {
     const refRewardPAD = parseInt(settings.referralRewardPAD);
     
     if (isNaN(adLimit) || adLimit <= 0) {
-      toast({
-        title: "Validation Error",
-        description: "Daily ad limit must be a positive number",
-        variant: "destructive",
-      });
+      showNotification("Daily ad limit must be a positive number", "error");
       return;
     }
     
     if (isNaN(reward) || reward <= 0) {
-      toast({
-        title: "Validation Error",
-        description: "Reward per ad must be a positive number",
-        variant: "destructive",
-      });
+      showNotification("Reward per ad must be a positive number", "error");
       return;
     }
     
@@ -2528,7 +2500,6 @@ interface AdminTask {
 }
 
 function TaskManagementSection() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTaskFilter, setActiveTaskFilter] = useState<'pending' | 'all'>('pending');
 
@@ -2549,14 +2520,14 @@ function TaskManagementSection() {
       const res = await apiRequest("POST", `/api/admin/tasks/${taskId}/approve`);
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Task approved", description: "Task is now running" });
+        showNotification("Task is now running");
         queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-tasks"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/all-tasks"] });
       } else {
-        toast({ title: "Error", description: data.message, variant: "destructive" });
+        showNotification(data.message, "error");
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to approve task", variant: "destructive" });
+      showNotification("Failed to approve task", "error");
     }
   };
 
@@ -2565,14 +2536,14 @@ function TaskManagementSection() {
       const res = await apiRequest("POST", `/api/admin/tasks/${taskId}/reject`);
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Task rejected" });
+        showNotification("Task rejected");
         queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-tasks"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/all-tasks"] });
       } else {
-        toast({ title: "Error", description: data.message, variant: "destructive" });
+        showNotification(data.message, "error");
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to reject task", variant: "destructive" });
+      showNotification("Failed to reject task", "error");
     }
   };
 
@@ -2581,13 +2552,13 @@ function TaskManagementSection() {
       const res = await apiRequest("POST", `/api/admin/tasks/${taskId}/pause`);
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Task paused" });
+        showNotification("Task paused");
         queryClient.invalidateQueries({ queryKey: ["/api/admin/all-tasks"] });
       } else {
-        toast({ title: "Error", description: data.message, variant: "destructive" });
+        showNotification(data.message, "error");
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to pause task", variant: "destructive" });
+      showNotification("Failed to pause task", "error");
     }
   };
 
@@ -2596,13 +2567,13 @@ function TaskManagementSection() {
       const res = await apiRequest("POST", `/api/admin/tasks/${taskId}/resume`);
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Task resumed" });
+        showNotification("Task resumed");
         queryClient.invalidateQueries({ queryKey: ["/api/admin/all-tasks"] });
       } else {
-        toast({ title: "Error", description: data.message, variant: "destructive" });
+        showNotification(data.message, "error");
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to resume task", variant: "destructive" });
+      showNotification("Failed to resume task", "error");
     }
   };
 
@@ -2611,14 +2582,14 @@ function TaskManagementSection() {
       const res = await apiRequest("DELETE", `/api/admin/tasks/${taskId}`);
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Task deleted" });
+        showNotification("Task deleted");
         queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-tasks"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/all-tasks"] });
       } else {
-        toast({ title: "Error", description: data.message, variant: "destructive" });
+        showNotification(data.message, "error");
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to delete task", variant: "destructive" });
+      showNotification("Failed to delete task", "error");
     }
   };
 
@@ -2841,7 +2812,6 @@ interface AdminRecord {
 }
 
 function AdminManagementSection() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<AdminRecord | null>(null);
@@ -2889,7 +2859,7 @@ function AdminManagementSection() {
 
   const handleSave = async () => {
     if (!form.telegramId.trim()) {
-      toast({ title: 'Telegram ID is required', variant: 'destructive' });
+      showNotification('Telegram ID is required', variant: 'destructive');
       return;
     }
     setSaving(true);
@@ -2904,11 +2874,11 @@ function AdminManagementSection() {
         const err = await res.json();
         throw new Error(err.message || 'Failed');
       }
-      toast({ title: editingAdmin ? 'Admin updated' : 'Admin added' });
+      showNotification(editingAdmin ? 'Admin updated' : 'Admin added');
       setShowAddForm(false);
       queryClient.invalidateQueries({ queryKey: ['/api/admin/admins'] });
     } catch (e: any) {
-      toast({ title: e.message || 'Error saving admin', variant: 'destructive' });
+      showNotification(e.message || 'Error saving admin', variant: 'destructive');
     } finally {
       setSaving(false);
     }
@@ -2922,10 +2892,10 @@ function AdminManagementSection() {
         const err = await res.json();
         throw new Error(err.message || 'Failed');
       }
-      toast({ title: 'Admin removed' });
+      showNotification('Admin removed');
       queryClient.invalidateQueries({ queryKey: ['/api/admin/admins'] });
     } catch (e: any) {
-      toast({ title: e.message || 'Error removing admin', variant: 'destructive' });
+      showNotification(e.message || 'Error removing admin', variant: 'destructive');
     } finally {
       setRemoving(null);
     }

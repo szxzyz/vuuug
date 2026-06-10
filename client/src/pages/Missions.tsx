@@ -259,8 +259,8 @@ export default function Missions() {
       } else {
         result = await showGigaPubAd();
       }
-      if (result.unavailable) { showNotification('Ad not available right now', 'info'); return; }
-      if (!result.success)    { showNotification('Please watch the full ad to earn', 'error'); return; }
+      if (result.unavailable) { showNotification('No ad available right now, try again later', 'info'); return; }
+      if (!result.success)    { showNotification(platform === 'gigapub' ? 'GigaPub ad failed, try again' : 'Please watch the full ad to earn', 'error'); return; }
       await claimMissionAdMutation.mutateAsync(platform);
     } catch (err: any) {
       showNotification(err?.message || 'Something went wrong', 'error');
