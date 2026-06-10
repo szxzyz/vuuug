@@ -65,14 +65,14 @@ export default function Header() {
         onClick={() => tonConnectUI.openModal()}
         className="flex items-center gap-1.5 h-8 px-3 rounded-full active:scale-95 transition-all"
         style={isWalletConnected
-          ? { background: 'rgba(0,152,234,0.18)', border: '1px solid rgba(0,152,234,0.45)' }
+          ? { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }
           : { background: '#0098EA' }
         }
       >
         <img src="/images/ton.png" alt="TON" className="w-4 h-4 object-contain flex-shrink-0" />
         {isWalletConnected ? (
           <>
-            <span className="text-[11px] font-bold text-[#0098EA] leading-none">
+            <span className="text-[11px] font-bold text-white leading-none">
               {connectedAddress.slice(0, 4)}…{connectedAddress.slice(-4)}
             </span>
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />

@@ -91,7 +91,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
     new Promise((resolve) => {
       if (window.Adsgram) {
-        window.Adsgram.init({ blockId: "int-34672" })
+        window.Adsgram.init({ blockId: "int-34709" })
           .show()
           .then(() => resolve({ success: true, unavailable: false }))
           .catch((err) => {
