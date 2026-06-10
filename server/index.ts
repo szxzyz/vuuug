@@ -64,21 +64,7 @@ app.use(express.urlencoded({ extended: false }));
 // Country blocking middleware - must be early to block requests before any other processing
 app.use(countryBlockingMiddleware);
 
-// Add webhook route BEFORE any other middleware to ensure it works
-app.post('/api/telegram/webhook', async (req: any, res) => {
-  try {
-    console.log('📨 Direct webhook called!', JSON.stringify(req.body, null, 2));
-    
-    const { handleTelegramMessage } = await import('./telegram');
-    const handled = await handleTelegramMessage(req.body);
-    console.log('✅ Message handled:', handled);
-    
-    res.status(200).json({ ok: true, handled });
-  } catch (error) {
-    console.error('❌ Direct webhook error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// Webhook is handled in routes.ts to avoid duplicate processing
 
 // Emergency referral fix endpoint - SECURED for production
 app.post('/api/emergency-fix-referrals', async (req: any, res) => {
