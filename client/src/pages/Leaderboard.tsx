@@ -163,7 +163,7 @@ export default function Leaderboard() {
   return (
     <div style={{ background: '#0A0A0A', minHeight: '100vh', paddingBottom: 160, overflowX: 'hidden' }}>
 
-      {/* ── Header (no back arrow) ── */}
+      {/* ── Header ── */}
       <div style={{
         display: 'flex', alignItems: 'center', padding: '14px 16px 12px', gap: 10,
         position: 'sticky', top: 0, background: 'rgba(10,10,10,0.96)',
@@ -171,9 +171,9 @@ export default function Leaderboard() {
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
         <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff' }}>Weekly Contest</p>
+          <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff' }}>Leaderboard</p>
           <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
-            Ends in {String(d).padStart(2,'0')}d {String(h).padStart(2,'0')}h {String(m).padStart(2,'0')}m {String(s).padStart(2,'0')}s
+            Top earners this week
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#1C1C1E', borderRadius: 10, padding: '6px 10px' }}>
@@ -390,9 +390,6 @@ export default function Leaderboard() {
                 <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
               </div>
             </div>
-            <button onClick={() => navigate('/watch')} style={{ background: '#FFD700', border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 12, fontWeight: 800, color: '#000', cursor: 'pointer', flexShrink: 0 }}>
-              Earn More
-            </button>
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -403,9 +400,6 @@ export default function Leaderboard() {
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Watch ads to earn Stars</span>
               </div>
             </div>
-            <button onClick={() => navigate('/watch')} style={{ background: '#FFD700', border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 12, fontWeight: 800, color: '#000', cursor: 'pointer', flexShrink: 0 }}>
-              Start Earning
-            </button>
           </div>
         )}
 

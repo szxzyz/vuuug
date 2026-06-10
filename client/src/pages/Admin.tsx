@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Crown } from "lucide-react";
+import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
   if (isNaN(num) || !isFinite(num)) {
@@ -1672,21 +1673,14 @@ function SettingsSection() {
       const result = await response.json();
       
       if (result.success) {
-        toast({
-          title: "Settings Updated",
-          description: "App settings have been updated successfully",
-        });
+        showNotification("Settings updated successfully", "success");
         queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
         queryClient.invalidateQueries({ queryKey: ["/api/app-settings"] });
       } else {
         throw new Error(result.message || 'Failed to update settings');
       }
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update settings",
-        variant: "destructive",
-      });
+      showNotification(error.message || "Failed to update settings", "error");
     } finally {
       setIsSaving(false);
     }
@@ -2344,38 +2338,6 @@ function SettingsSection() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagMissionReward || 50} POW · {settingsData?.monetagMissionLimit || 10} ads/day</p>
-            </div>
-
-            {/* Adexium */}
-            <div className="space-y-2 p-3 border rounded-lg border-blue-500/20 bg-blue-500/5">
-              <Label className="text-sm font-semibold text-blue-400">
-                <i className="fas fa-tv mr-2"></i>Adexium
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Reward (POW/ad)</Label>
-                  <Input
-                    type="number"
-                    value={settings.adexiumMissionReward}
-                    onChange={(e) => setSettings({ ...settings, adexiumMissionReward: e.target.value })}
-                    placeholder="50"
-                    min="1"
-                    className="h-8"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Daily Limit</Label>
-                  <Input
-                    type="number"
-                    value={settings.adexiumMissionLimit}
-                    onChange={(e) => setSettings({ ...settings, adexiumMissionLimit: e.target.value })}
-                    placeholder="10"
-                    min="1"
-                    className="h-8"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Current: {settingsData?.adexiumMissionReward || 50} POW · {settingsData?.adexiumMissionLimit || 10} ads/day</p>
             </div>
 
             {/* GiGaPub */}

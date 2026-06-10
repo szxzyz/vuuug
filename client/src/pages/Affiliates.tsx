@@ -78,37 +78,42 @@ export default function Affiliates() {
       <main className="max-w-md mx-auto px-4 pt-4 bg-black">
 
         {/* Header */}
-        <div className="mb-4">
+        <div className="mb-6">
           <h1 className="text-2xl font-black text-white tracking-tight mb-2">
             Affiliates Program
           </h1>
           <p className="text-[#888] text-sm leading-relaxed">
-            Earn <span className="text-white font-semibold">{l1Percent}%</span> from your direct referrals and{' '}
-            <span className="text-white font-semibold">{l2Percent}%</span> from their referrals.
+            We pay out up to{' '}
+            <span className="text-white font-semibold">{l1Percent}%</span>{' '}
+            from the income of referrals of the 1st level and up to{' '}
+            <span className="text-white font-semibold">{l2Percent}%</span>{' '}
+            from the income of referrals of the 2nd level.
           </p>
         </div>
 
         {/* Copy + Share buttons */}
-        <div className="mb-4 flex items-center justify-end gap-3">
-          {/* Copy icon button */}
+        <div className="mb-4 flex items-center gap-3">
+          {/* Wide pill Copy button */}
           <button
             onClick={copyLink}
             disabled={!user?.referralCode}
-            className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 btn-primary"
+            className="flex-1 h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform disabled:opacity-50"
+            style={{ background: 'rgba(255,255,255,0.12)' }}
             title="Copy referral link"
           >
-            <Copy className="w-5 h-5" />
+            <Copy className="w-5 h-5 text-white/70" />
+            <span className="text-white font-bold tracking-widest text-sm">COPY</span>
           </button>
 
-          {/* Share circle icon button */}
+          {/* Circle Share button */}
           <button
             onClick={shareLink}
             disabled={isSharing || !user?.referralCode}
-            className="w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50"
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)' }}
+            className="w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 flex-shrink-0"
+            style={{ background: 'rgba(255,255,255,0.12)' }}
             title="Share referral link"
           >
-            <Share2 className="w-5 h-5" />
+            <Share2 className="w-5 h-5 text-white/70" />
           </button>
         </div>
 
