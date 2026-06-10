@@ -1008,6 +1008,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bot info endpoint - returns real bot username from Telegram API
+  app.get('/api/bot-info', async (req: any, res) => {
+    try {
+      const { getBotUsername } = await import('./telegram');
+      const username = await getBotUsername();
+      res.json({ username: username || 'PaidAdzbot' });
+    } catch (error) {
+      res.json({ username: process.env.TELEGRAM_BOT_TOKEN ? 'unknown' : 'PaidAdzbot' });
+    }
+  });
+
   // Get current app settings (public endpoint for frontend to fetch ad limits and all dynamic settings)
   app.get('/api/app-settings', async (req: any, res) => {
     try {
@@ -1023,7 +1034,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Parse all settings with NEW defaults
       const dailyAdLimit = parseInt(getSetting('daily_ad_limit', '510'));
       const hourlyAdLimit = parseInt(getSetting('hourly_ad_limit', '63'));
-      const rewardPerAd = parseInt(getSetting('reward_per_ad', '2')); // Default 2 PAD per ad
+      const rewardPerAd = parseInt(getSetting('reward_per_ad', '3000')); // Default 3000 POW per ad
       const seasonBroadcastActive = getSetting('season_broadcast_active', 'false') === 'true';
       const affiliateCommission = parseFloat(getSetting('affiliate_commission', '10'));
       const walletChangeFeePAD = parseInt(getSetting('wallet_change_fee', '100')); // Default 100 PAD
@@ -1041,12 +1052,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const botTaskCostTON = parseFloat(getSetting('bot_task_cost_ton', '0.0003')); // Default 0.0003 TON per click
       
       // Separate channel and bot task rewards (in PAD)
-      const channelTaskRewardPAD = parseInt(getSetting('channel_task_reward', '30')); // Default 30 PAD per click
-      const botTaskRewardPAD = parseInt(getSetting('bot_task_reward', '20')); // Default 20 PAD per click
+      const channelTaskRewardPAD = parseInt(getSetting('channel_task_reward', '1000')); // Default 1000 POW per click
+      const botTaskRewardPAD = parseInt(getSetting('bot_task_reward', '1000')); // Default 1000 POW per click
       
-      // Minimum convert amount in PAD (100 PAD = $0.01)
+      // Currency conversion: 10,000,000 POW = 1 USD
+      const padPerUsd = parseInt(getSetting('pad_per_usd', '10000000')); // Default 10M POW = 1 USD
       const minimumConvertPAD = parseInt(getSetting('minimum_convert_pad', '100')); // Default 100 PAD
-      const minimumConvertUSD = minimumConvertPAD / 10000; // Convert to USD (10,000 PAD = $1)
+      const minimumConvertUSD = minimumConvertPAD / padPerUsd; // Convert to USD
       
       // Minimum clicks for task creation
       const minimumClicks = parseInt(getSetting('minimum_clicks', '500')); // Default 500 clicks
@@ -1060,8 +1072,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const referralRewardPADEnabled = getSetting('referral_reward_pad_enabled', 'false') === 'true';
       const referralRewardUSDEnabled = getSetting('referral_reward_usd_enabled', 'false') === 'true';
       const referralAdsRequired = parseInt(getSetting('referral_ads_required', '1')); // Ads needed for affiliate bonus
-      const l1CommissionPercent = parseFloat(getSetting('l1_commission_percent', '20'));
-      const l2CommissionPercent = parseFloat(getSetting('l2_commission_percent', '4'));
+      const l1CommissionPercent = parseFloat(getSetting('l1_commission_percent', '20')); // Level 1: 20%
+      const l2CommissionPercent = parseFloat(getSetting('l2_commission_percent', '4')); // Level 2: 4%
       
       // Daily task rewards (for TaskSection.tsx)
       const streakReward = parseInt(getSetting('streak_reward', '100')); // Daily streak claim reward in PAD
@@ -1161,12 +1173,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Weekly giveaway
         weeklyGiveawayAmount: parseFloat(getSetting('weekly_giveaway_amount', '10')),
         // Mission page ad platform settings
-        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '50')),
-        monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '10')),
-        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '50')),
-        adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '10')),
-        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '50')),
-        gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '10')),
+        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '1500')),
+        monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '25')),
+        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '1500')),
+        adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
+        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1500')),
+        gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
     } catch (error) {
@@ -3710,12 +3722,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Weekly giveaway
         weeklyGiveawayAmount: parseFloat(getSetting('weekly_giveaway_amount', '10')),
         // Mission page ad platform settings
-        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '50')),
-        monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '10')),
-        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '50')),
-        adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '10')),
-        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '50')),
-        gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '10')),
+        monetagMissionReward: parseInt(getSetting('monetag_mission_reward', '1500')),
+        monetagMissionLimit: parseInt(getSetting('monetag_mission_limit', '25')),
+        adexiumMissionReward: parseInt(getSetting('adexium_mission_reward', '1500')),
+        adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
+        gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1500')),
+        gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
       });
     } catch (error) {
@@ -3747,10 +3759,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let reward: number;
       switch (platform) {
         case 'monetag':
-          reward = parseInt(getSetting('monetag_mission_reward', '50'));
+          reward = parseInt(getSetting('monetag_mission_reward', '1500'));
           break;
         case 'gigapub':
-          reward = parseInt(getSetting('giga_pub_mission_reward', '50'));
+          reward = parseInt(getSetting('giga_pub_mission_reward', '1500'));
           break;
         default:
           reward = 50;
@@ -5871,11 +5883,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Use the userData already fetched for partner task validation
       const user = userData;
-      const isAdmin = userIsAdmin;
 
       // Admin users: free task creation
       // Regular users: use TON tokens
-      if (isAdmin) {
+      if (userIsAdmin) {
         console.log('🔑 Admin task creation - FREE (no charge)');
 
         // Create task for free (admin always gets 0 cost)
