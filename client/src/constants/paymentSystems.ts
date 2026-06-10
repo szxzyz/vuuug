@@ -38,4 +38,4 @@ export function getPaymentSystems(appSettings?: any): PaymentSystem[] {
 
 export const PAYMENT_SYSTEMS = DEFAULT_PAYMENT_SYSTEMS;
 
-export const PAD_TO_USD_RATE = 10000; // 10,000 PAD = $1
+export const PAD_TO_USD_RATE = 10000000; // 10,000,000 PAD = $1
