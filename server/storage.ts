@@ -3131,7 +3131,6 @@ export class DatabaseStorage implements IStorage {
       .from(advertiserTasks)
       .where(and(
         sql`${advertiserTasks.status} IN ('running', 'active')`,
-        sql`${advertiserTasks.advertiserId} != ${userId}`,
         sql`${advertiserTasks.currentClicks} < ${advertiserTasks.totalClicksRequired}`,
         sql`NOT EXISTS (
           SELECT 1 FROM task_clicks 
@@ -3253,10 +3252,7 @@ export class DatabaseStorage implements IStorage {
         return { success: false, message: "Task is not active" };
       }
 
-      // Check if user is clicking their own task
-      if (task.advertiserId === publisherId) {
-        return { success: false, message: "You cannot click your own task" };
-      }
+
 
       // Check if user already clicked this task
       const existingClick = await db

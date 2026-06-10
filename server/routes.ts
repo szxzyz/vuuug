@@ -6612,7 +6612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
       
-      const { method, starPackage, amount: requestedAmount, withdrawalPackage } = req.body;
+      const { method, starPackage, amount: requestedAmount, withdrawalPackage, tonWalletAddress } = req.body;
 
       console.log('📝 Withdrawal request received:', { userId, method, starPackage, withdrawalPackage });
 
@@ -6842,10 +6842,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Check if user has appropriate wallet address based on method
         let walletAddress: string;
         if (method === 'TON') {
-          if (!user.cwalletId) {
-            throw new Error('TON address not set');
+          if (!tonWalletAddress) {
+            throw new Error('Please connect your TON wallet before withdrawing.');
           }
-          walletAddress = user.cwalletId;
+          walletAddress = tonWalletAddress;
         } else if (method === 'USD' || method === 'USDT') {
           if (!user.usdtWalletAddress) {
             throw new Error('USD address not set');
