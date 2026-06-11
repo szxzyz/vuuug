@@ -8,11 +8,11 @@ export const APP_COLORS = {
 
 /**
  * Convert PAD to USD
- * @param powAmount - Amount in PAD
+ * @param padAmount - Amount in PAD
  * @returns Amount in USD (PAD / 10,000,000)
  */
-export function padToUSD(powAmount: number | string): number {
-  const numValue = typeof powAmount === 'string' ? parseFloat(powAmount) : powAmount;
+export function padToUSD(padAmount: number | string): number {
+  const numValue = typeof padAmount === 'string' ? parseFloat(padAmount) : padAmount;
   return numValue / PAD_TO_USD;
 }
 

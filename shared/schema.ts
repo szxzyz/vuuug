@@ -41,7 +41,7 @@ export const users = pgTable("users", {
   usdBalance: decimal("usd_balance", { precision: 30, scale: 10 }).default("0"), // USD with high precision to prevent overflow
   tonBalance: decimal("ton_balance", { precision: 30, scale: 10 }).default("0"),
   pdzBalance: decimal("pdz_balance", { precision: 30, scale: 10 }).default("0"),
-  starBalance: decimal("bug_balance", { precision: 30, scale: 10 }).default("0"), // BUG currency for withdrawal requirements
+  bugBalance: decimal("bug_balance", { precision: 30, scale: 10 }).default("0"), // BUG currency for withdrawal requirements
   withdrawBalance: decimal("withdraw_balance", { precision: 30, scale: 10 }),
   totalEarnings: decimal("total_earnings", { precision: 30, scale: 10 }),
   totalEarned: decimal("total_earned", { precision: 30, scale: 10 }).default("0"),
@@ -158,7 +158,7 @@ export const referrals = pgTable("referrals", {
   refereeId: varchar("referee_id").references(() => users.id).notNull(),
   rewardAmount: decimal("reward_amount", { precision: 30, scale: 10 }).default("0.50"),
   usdRewardAmount: decimal("usd_reward_amount", { precision: 30, scale: 10 }).default("0"),
-  starRewardAmount: decimal("bug_reward_amount", { precision: 30, scale: 10 }).default("0"),
+  bugRewardAmount: decimal("bug_reward_amount", { precision: 30, scale: 10 }).default("0"),
   status: varchar("status").default('pending'),
   createdAt: timestamp("created_at").defaultNow(),
 });
