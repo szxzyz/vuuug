@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { FaStar, FaCrown, FaMedal, FaSync } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
+import Layout from "@/components/Layout";
 
 interface LeaderboardEntry {
   userId: string;
@@ -163,275 +164,256 @@ export default function Leaderboard() {
   const p1 = top10[0], p2 = top10[1], p3 = top10[2];
 
   return (
-    <div style={{ background: '#0A0A0A', minHeight: '100%', paddingBottom: 200 }}>
+    <Layout>
+      <div style={{ background: '#0A0A0A', minHeight: '100%' }}>
 
-      {/* ── Countdown Timer ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '10px 16px 8px', gap: 6,
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>Contest ends in</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: '#FFD700' }}>{d}d {h}h {m}m {s}s</span>
-      </div>
-
-      {/* ── Prize Pool Banner ── */}
-      <div style={{
-        margin: '12px 16px 0',
-        background: 'linear-gradient(135deg, #1a1200 0%, #2a1f00 50%, #1a1200 100%)',
-        border: '1px solid rgba(255,215,0,0.25)',
-        borderRadius: 16, padding: '12px 16px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div>
-            <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,215,0,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Weekly Prize Pool</p>
-            <p style={{ margin: '2px 0 0', fontSize: 26, fontWeight: 900, color: '#FFD700', lineHeight: 1 }}>${prizePool}</p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>Top 10 winners</p>
-            <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,215,0,0.5)', fontWeight: 700 }}>Earn Stars by watching ads</p>
-          </div>
+        {/* ── Countdown Timer ── */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '10px 16px 8px', gap: 6,
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+        }}>
+          <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>Contest ends in</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: '#FFD700' }}>{d}d {h}h {m}m {s}s</span>
         </div>
 
-        {/* Prize distribution row */}
-        <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
-          {PRIZE_PCTS.map(([rank, pct]) => {
-            const amt = (prizePool * pct) / 100;
-            const amtStr = amt % 1 === 0 ? amt.toFixed(0) : amt.toFixed(2);
-            const isTop3 = rank <= 3;
-            return (
-              <div key={rank} style={{
-                flex: '0 0 auto',
-                background: isTop3 ? 'rgba(255,215,0,0.12)' : 'rgba(255,255,255,0.04)',
-                border: `1px solid ${isTop3 ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.06)'}`,
-                borderRadius: 8, padding: '5px 7px', textAlign: 'center', minWidth: 42,
-              }}>
-                <p style={{ margin: 0, fontSize: 9, color: isTop3 ? '#FFD700' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>#{rank}</p>
-                <p style={{ margin: '1px 0 0', fontSize: 11, fontWeight: 800, color: isTop3 ? '#4ADE80' : 'rgba(255,255,255,0.5)' }}>${amtStr}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Loading ── */}
-      {isLoading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[0, 150, 300].map(delay => (
-              <div key={delay} style={{ width: 8, height: 8, borderRadius: '50%', background: '#FFD700', animation: `pulse 1s ${delay}ms infinite` }} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Empty ── */}
-      {!isLoading && top10.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-          <FaStar style={{ color: 'rgba(255,215,0,0.18)', fontSize: 60, marginBottom: 16 }} />
-          <p style={{ fontSize: 17, fontWeight: 700, color: 'rgba(255,255,255,0.45)', margin: '0 0 8px' }}>No participants yet</p>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', margin: '0 0 20px' }}>Watch ads to earn Stars and claim the top spot!</p>
-          <button onClick={() => navigate('/watch')} style={{ background: '#FFD700', border: 'none', borderRadius: 12, padding: '11px 30px', fontSize: 14, fontWeight: 800, color: '#000', cursor: 'pointer' }}>
-            Earn Stars Now
-          </button>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════
-          PODIUM
-      ══════════════════════════════════════ */}
-      {!isLoading && top10.length > 0 && (
-        <div style={{ padding: '16px 16px 0' }}>
-
-          {/* Avatars row: 2nd | 1st | 3rd */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 0, marginBottom: 0 }}>
-
-            {/* 2nd Place */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              {p2 ? (
-                <>
-                  <Avatar size={58} rank={2} profileImageUrl={p2.profileImageUrl} name={p2.firstName || p2.username || 'Player 2'} />
-                  <p style={{ margin: '7px 0 2px', fontSize: 12, fontWeight: 700, color: '#fff', textAlign: 'center' }}>{shortName(p2, 'Player 2')}</p>
-                  <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 900, color: '#4ADE80' }}>{getPrize(2, prizePool)}</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
-                    <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p2.weeklyStars ?? 0).toLocaleString()}</span>
-                  </div>
-                </>
-              ) : <div style={{ height: 120 }} />}
+        {/* ── Prize Pool Banner ── */}
+        <div style={{
+          margin: '12px 16px 0',
+          background: 'linear-gradient(135deg, #1a1200 0%, #2a1f00 50%, #1a1200 100%)',
+          border: '1px solid rgba(255,215,0,0.25)',
+          borderRadius: 16, padding: '12px 16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,215,0,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Weekly Prize Pool</p>
+              <p style={{ margin: '2px 0 0', fontSize: 26, fontWeight: 900, color: '#FFD700', lineHeight: 1 }}>${prizePool}</p>
             </div>
-
-            {/* 1st Place */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              {p1 ? (
-                <>
-                  <Avatar size={74} rank={1} profileImageUrl={p1.profileImageUrl} name={p1.firstName || p1.username || 'Player 1'} />
-                  <p style={{ margin: '8px 0 2px', fontSize: 13, fontWeight: 800, color: '#fff', textAlign: 'center' }}>{shortName(p1, 'Player 1')}</p>
-                  <p style={{ margin: '0 0 2px', fontSize: 19, fontWeight: 900, color: '#4ADE80' }}>{getPrize(1, prizePool)}</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
-                    <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p1.weeklyStars ?? 0).toLocaleString()}</span>
-                  </div>
-                </>
-              ) : <div style={{ height: 140 }} />}
-            </div>
-
-            {/* 3rd Place */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              {p3 ? (
-                <>
-                  <Avatar size={52} rank={3} profileImageUrl={p3.profileImageUrl} name={p3.firstName || p3.username || 'Player 3'} />
-                  <p style={{ margin: '7px 0 2px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'center' }}>{shortName(p3, 'Player 3')}</p>
-                  <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 900, color: '#4ADE80' }}>{getPrize(3, prizePool)}</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
-                    <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p3.weeklyStars ?? 0).toLocaleString()}</span>
-                  </div>
-                </>
-              ) : <div style={{ height: 110 }} />}
-            </div>
-          </div>
-
-          {/* Podium Platforms */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', height: 110, gap: 2 }}>
-            <div style={{ flex: 1, height: 86, background: 'linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%)', borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.07)' }}>
-              <span style={{ fontSize: 36, fontWeight: 900, color: 'rgba(255,255,255,0.12)', userSelect: 'none' }}>2</span>
-            </div>
-            <div style={{ flex: 1, height: 110, background: 'linear-gradient(180deg, #333 0%, #1e1e1e 100%)', borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.1)' }}>
-              <span style={{ fontSize: 42, fontWeight: 900, color: 'rgba(255,255,255,0.15)', userSelect: 'none' }}>1</span>
-            </div>
-            <div style={{ flex: 1, height: 68, background: 'linear-gradient(180deg, #252525 0%, #161616 100%)', borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.05)' }}>
-              <span style={{ fontSize: 32, fontWeight: 900, color: 'rgba(255,255,255,0.1)', userSelect: 'none' }}>3</span>
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>Top 10 winners</p>
+              <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,215,0,0.5)', fontWeight: 700 }}>Earn Stars by watching ads</p>
             </div>
           </div>
         </div>
-      )}
 
-      {/* ══════════════════════════════════════
-          TOP 10 RANKED LIST
-      ══════════════════════════════════════ */}
-      {!isLoading && top10.length > 0 && (
-        <div style={{ background: '#141414', borderRadius: '20px 20px 0 0', marginTop: 0, padding: '20px 16px 16px' }}>
+        {/* ── Loading ── */}
+        {isLoading && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[0, 150, 300].map(delay => (
+                <div key={delay} style={{ width: 8, height: 8, borderRadius: '50%', background: '#FFD700', animation: `pulse 1s ${delay}ms infinite` }} />
+              ))}
+            </div>
+          </div>
+        )}
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
-              TOP 10 PLAYERS
-            </p>
-            <button onClick={() => refetch()} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}>
-              <FaSync style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }} />
+        {/* ── Empty ── */}
+        {!isLoading && top10.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <FaStar style={{ color: 'rgba(255,215,0,0.18)', fontSize: 60, marginBottom: 16 }} />
+            <p style={{ fontSize: 17, fontWeight: 700, color: 'rgba(255,255,255,0.45)', margin: '0 0 8px' }}>No participants yet</p>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', margin: '0 0 20px' }}>Watch ads to earn Stars and claim the top spot!</p>
+            <button onClick={() => navigate('/watch')} style={{ background: '#FFD700', border: 'none', borderRadius: 12, padding: '11px 30px', fontSize: 14, fontWeight: 800, color: '#000', cursor: 'pointer' }}>
+              Earn Stars Now
             </button>
           </div>
+        )}
 
-          {top10.map((entry, i) => {
-            const isMe = entry.userId === user?.id;
-            const rankMedal = MEDAL[i];
-            const prize = getPrize(i + 1, prizePool);
-            return (
-              <div key={entry.userId} style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '10px 12px',
-                background: isMe ? 'rgba(255,215,0,0.06)' : i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'transparent',
-                borderRadius: 12, marginBottom: 4,
-                border: isMe ? '1px solid rgba(255,215,0,0.2)' : '1px solid transparent',
-              }}>
-                {i < 3 ? (
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%', background: rankMedal.bg,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    boxShadow: `0 2px 8px ${rankMedal.shadow}`,
-                  }}>
-                    {i === 0
-                      ? <FaCrown style={{ fontSize: 12, color: '#000' }} />
-                      : <FaMedal style={{ fontSize: 12, color: '#000' }} />}
-                  </div>
-                ) : (
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.3)', width: 28, textAlign: 'center', flexShrink: 0 }}>
-                    #{i + 1}
-                  </span>
-                )}
+        {/* ══════════════════════════════════════
+            PODIUM
+        ══════════════════════════════════════ */}
+        {!isLoading && top10.length > 0 && (
+          <div style={{ padding: '16px 16px 0' }}>
 
-                <SmallAvatar entry={entry} index={i} />
+            {/* Avatars row: 2nd | 1st | 3rd */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 0, marginBottom: 0 }}>
 
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isMe ? '#FFD700' : '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {entry.firstName || entry.username || `Player ${i + 1}`}
-                    {isMe && <span style={{ fontSize: 9, background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderRadius: 4, padding: '1px 5px', marginLeft: 5, fontWeight: 700 }}>YOU</span>}
-                  </p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
-                    <FaStar style={{ color: '#FFD700', fontSize: 9 }} />
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{(entry.weeklyStars ?? 0).toLocaleString()} stars</span>
-                  </div>
-                </div>
-
-                {prize && (
-                  <span style={{ fontSize: 15, fontWeight: 800, color: '#4ADE80', flexShrink: 0 }}>
-                    {prize}
-                  </span>
-                )}
+              {/* 2nd Place */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                {p2 ? (
+                  <>
+                    <Avatar size={58} rank={2} profileImageUrl={p2.profileImageUrl} name={p2.firstName || p2.username || 'Player 2'} />
+                    <p style={{ margin: '7px 0 2px', fontSize: 12, fontWeight: 700, color: '#fff', textAlign: 'center' }}>{shortName(p2, 'Player 2')}</p>
+                    <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 900, color: '#4ADE80' }}>{getPrize(2, prizePool)}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
+                      <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p2.weeklyStars ?? 0).toLocaleString()}</span>
+                    </div>
+                  </>
+                ) : <div style={{ height: 120 }} />}
               </div>
-            );
-          })}
-        </div>
-      )}
 
-      {/* ── User's own rank (if outside top 10) ── */}
-      {!isLoading && userRank && userRank.rank > 10 && (
-        <div style={{ margin: '8px 16px 0', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ background: '#2C2C2E', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flexShrink: 0 }}>
-            <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>YOUR RANK</p>
-            <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#FFD700', lineHeight: 1.1 }}>#{userRank.rank}</p>
-          </div>
-          <div>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Keep watching to climb!</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
-              <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-              <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
+              {/* 1st Place */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                {p1 ? (
+                  <>
+                    <Avatar size={74} rank={1} profileImageUrl={p1.profileImageUrl} name={p1.firstName || p1.username || 'Player 1'} />
+                    <p style={{ margin: '8px 0 2px', fontSize: 13, fontWeight: 800, color: '#fff', textAlign: 'center' }}>{shortName(p1, 'Player 1')}</p>
+                    <p style={{ margin: '0 0 2px', fontSize: 19, fontWeight: 900, color: '#4ADE80' }}>{getPrize(1, prizePool)}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
+                      <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p1.weeklyStars ?? 0).toLocaleString()}</span>
+                    </div>
+                  </>
+                ) : <div style={{ height: 140 }} />}
+              </div>
+
+              {/* 3rd Place */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                {p3 ? (
+                  <>
+                    <Avatar size={52} rank={3} profileImageUrl={p3.profileImageUrl} name={p3.firstName || p3.username || 'Player 3'} />
+                    <p style={{ margin: '7px 0 2px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'center' }}>{shortName(p3, 'Player 3')}</p>
+                    <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 900, color: '#4ADE80' }}>{getPrize(3, prizePool)}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
+                      <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p3.weeklyStars ?? 0).toLocaleString()}</span>
+                    </div>
+                  </>
+                ) : <div style={{ height: 110 }} />}
+              </div>
+            </div>
+
+            {/* Podium Platforms */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', height: 110, gap: 2 }}>
+              <div style={{ flex: 1, height: 86, background: 'linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%)', borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.07)' }}>
+                <span style={{ fontSize: 36, fontWeight: 900, color: 'rgba(255,255,255,0.12)', userSelect: 'none' }}>2</span>
+              </div>
+              <div style={{ flex: 1, height: 110, background: 'linear-gradient(180deg, #333 0%, #1e1e1e 100%)', borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.1)' }}>
+                <span style={{ fontSize: 42, fontWeight: 900, color: 'rgba(255,255,255,0.15)', userSelect: 'none' }}>1</span>
+              </div>
+              <div style={{ flex: 1, height: 68, background: 'linear-gradient(180deg, #252525 0%, #161616 100%)', borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.05)' }}>
+                <span style={{ fontSize: 32, fontWeight: 900, color: 'rgba(255,255,255,0.1)', userSelect: 'none' }}>3</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Your rank (if in top 10) ── */}
-      {!isLoading && userRank && userRank.rank <= 10 && (
-        <div style={{ margin: '8px 16px 0', background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ background: '#2C2C2E', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flexShrink: 0 }}>
-            <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>YOUR RANK</p>
-            <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#4ADE80', lineHeight: 1.1 }}>#{userRank.rank}</p>
+        {/* ══════════════════════════════════════
+            TOP 10 RANKED LIST
+        ══════════════════════════════════════ */}
+        {!isLoading && top10.length > 0 && (
+          <div style={{ background: '#141414', borderRadius: '20px 20px 0 0', marginTop: 0, padding: '20px 16px 16px' }}>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
+                TOP 10 PLAYERS
+              </p>
+              <button onClick={() => refetch()} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <FaSync style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }} />
+              </button>
+            </div>
+
+            {top10.map((entry, i) => {
+              const isMe = entry.userId === user?.id;
+              const rankMedal = MEDAL[i];
+              const prize = getPrize(i + 1, prizePool);
+              return (
+                <div key={entry.userId} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '10px 12px',
+                  background: isMe ? 'rgba(255,215,0,0.06)' : i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'transparent',
+                  borderRadius: 12, marginBottom: 4,
+                  border: isMe ? '1px solid rgba(255,215,0,0.2)' : '1px solid transparent',
+                }}>
+                  {i < 3 ? (
+                    <div style={{
+                      width: 28, height: 28, borderRadius: '50%', background: rankMedal.bg,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      boxShadow: `0 2px 8px ${rankMedal.shadow}`,
+                    }}>
+                      {i === 0
+                        ? <FaCrown style={{ fontSize: 12, color: '#000' }} />
+                        : <FaMedal style={{ fontSize: 12, color: '#000' }} />}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.3)', width: 28, textAlign: 'center', flexShrink: 0 }}>
+                      #{i + 1}
+                    </span>
+                  )}
+
+                  <SmallAvatar entry={entry} index={i} />
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isMe ? '#FFD700' : '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {entry.firstName || entry.username || `Player ${i + 1}`}
+                      {isMe && <span style={{ fontSize: 9, background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderRadius: 4, padding: '1px 5px', marginLeft: 5, fontWeight: 700 }}>YOU</span>}
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                      <FaStar style={{ color: '#FFD700', fontSize: 9 }} />
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{(entry.weeklyStars ?? 0).toLocaleString()} stars</span>
+                    </div>
+                  </div>
+
+                  {prize && (
+                    <span style={{ fontSize: 15, fontWeight: 800, color: '#4ADE80', flexShrink: 0 }}>
+                      {prize}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#4ADE80' }}>You're winning {getPrize(userRank.rank, prizePool)}! 🎉</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
-              <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-              <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
+        )}
+
+        {/* ── User's own rank (if outside top 10) ── */}
+        {!isLoading && userRank && userRank.rank > 10 && (
+          <div style={{ margin: '8px 16px 0', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ background: '#2C2C2E', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flexShrink: 0 }}>
+              <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>YOUR RANK</p>
+              <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#FFD700', lineHeight: 1.1 }}>#{userRank.rank}</p>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Keep watching to climb!</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
+                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Not on leaderboard ── */}
-      {!isLoading && !userRank && (
-        <div style={{ margin: '8px 16px 0', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '10px 14px' }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Not ranked yet</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
-            <FaStar style={{ color: 'rgba(255,215,0,0.5)', fontSize: 10 }} />
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Watch ads to earn Stars and enter the contest</span>
+        {/* ── Your rank (if in top 10) ── */}
+        {!isLoading && userRank && userRank.rank <= 10 && (
+          <div style={{ margin: '8px 16px 0', background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ background: '#2C2C2E', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flexShrink: 0 }}>
+              <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>YOUR RANK</p>
+              <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#4ADE80', lineHeight: 1.1 }}>#{userRank.rank}</p>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#4ADE80' }}>You're winning {getPrize(userRank.rank, prizePool)}! 🎉</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
+                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Back button ── */}
-      <div style={{ padding: '16px 16px 0' }}>
-        <Button
-          onClick={() => navigate('/')}
-          className="w-full h-12 font-bold rounded-xl"
-          style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#fff' }}
-        >
-          Back
-        </Button>
+        {/* ── Not on leaderboard ── */}
+        {!isLoading && !userRank && (
+          <div style={{ margin: '8px 16px 0', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '10px 14px' }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Not ranked yet</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+              <FaStar style={{ color: 'rgba(255,215,0,0.5)', fontSize: 10 }} />
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Watch ads to earn Stars and enter the contest</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ padding: '16px 16px 0' }}>
+          <Button
+            onClick={() => navigate('/watch')}
+            className="w-full h-12 font-bold rounded-xl"
+            style={{ background: '#FFD700', border: 'none', color: '#000' }}
+          >
+            Earn Stars Now
+          </Button>
+        </div>
+
+        <style>{`@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.6}}`}</style>
       </div>
-
-      <style>{`@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.6}}`}</style>
-    </div>
+    </Layout>
   );
 }
