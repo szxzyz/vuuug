@@ -128,7 +128,7 @@ export function useWebSocket() {
                   tonBalance: (message as any).tonBalance ?? oldUser.tonBalance,
                   balance: (message as any).balance ?? oldUser.balance,
                   usdBalance: (message as any).usdBalance ?? oldUser.usdBalance,
-                  starBalance: (message as any).starBalance ?? oldUser.starBalance,
+                  bugBalance: (message as any).bugBalance ?? oldUser.bugBalance,
                 };
               });
               
