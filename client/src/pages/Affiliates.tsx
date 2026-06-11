@@ -39,8 +39,11 @@ export default function Affiliates() {
   const l1Percent = appSettings?.l1CommissionPercent ?? 20;
   const l2Percent = appSettings?.l2CommissionPercent ?? 4;
 
-  const referralRewardPADEnabled = appSettings?.referralRewardPADEnabled;
+  const referralRewardPOWEnabled = appSettings?.referralRewardPOWEnabled;
   const referralRewardUSDEnabled = appSettings?.referralRewardUSDEnabled;
+
+  const totalUsdEarned: number = stats?.totalUsdEarned ?? 0;
+  const totalStarEarned: number = stats?.totalStarEarned ?? 0;
 
   const copyLink = () => {
     if (!referralLink) return;
@@ -69,12 +72,12 @@ export default function Affiliates() {
   const l1Count = stats?.totalInvites ?? 0;
   const l2Count = stats?.l2Count ?? 0;
 
-  const rewardPAD = appSettings?.referralRewardPAD ?? 0;
+  const rewardPOW = appSettings?.referralRewardPOW ?? 0;
   const rewardUSD = appSettings?.referralRewardUSD ?? 0;
-  const padActive = referralRewardPADEnabled;
+  const powActive = referralRewardPOWEnabled;
   const usdActive = referralRewardUSDEnabled;
-  const bonusLabel = (padActive || usdActive)
-    ? [padActive && rewardPAD > 0 ? `${rewardPAD} POW` : null, usdActive && rewardUSD > 0 ? `$${rewardUSD}` : null]
+  const bonusLabel = (powActive || usdActive)
+    ? [powActive && rewardPOW > 0 ? `${rewardPOW} PAD` : null, usdActive && rewardUSD > 0 ? `$${rewardUSD}` : null]
         .filter(Boolean).join(' + ') || null
     : null;
 
@@ -150,6 +153,29 @@ export default function Affiliates() {
             ) : (
               <span className="text-white/30 text-sm font-semibold">Disabled</span>
             )}
+          </div>
+        </div>
+
+        {/* Total Affiliate Earnings */}
+        <div className="bg-[#1C1C1E] rounded-2xl p-4 mb-3 border border-white/5">
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Total Affiliate Earnings</p>
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
+            <div>
+              <p className="text-white text-sm font-semibold">USD Earned</p>
+              <p className="text-[#888] text-xs mt-0.5">Total from all referrals</p>
+            </div>
+            <span className="text-green-400 text-lg font-black">
+              ${totalUsdEarned > 0 ? totalUsdEarned.toFixed(5) : '0.00000'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              <p className="text-white text-sm font-semibold">POW Earned</p>
+              <p className="text-[#888] text-xs mt-0.5">Total POW from commissions</p>
+            </div>
+            <span className="text-white text-lg font-black">
+              {totalStarEarned > 0 ? totalStarEarned.toLocaleString() : '0'} <span className="text-xs text-[#888] font-normal">PAD</span>
+            </span>
           </div>
         </div>
 

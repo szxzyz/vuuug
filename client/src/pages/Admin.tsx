@@ -520,7 +520,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
     { id: 'bans' as const, label: 'Ban History' },
   ];
 
-  const formatPAD = (value: any) => {
+  const formatPOW = (value: any) => {
     const num = parseFloat(value || '0');
     if (isNaN(num) || !isFinite(num)) return '0';
     return Math.round(num).toLocaleString();
@@ -566,7 +566,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           <div className="bg-white/5 border border-white/10 p-3 rounded">
             <p className="text-xs text-muted-foreground mb-2">Balances</p>
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div><p className="text-xs text-muted-foreground">PAD</p><p className="font-bold text-[#4cd3ff]">{formatPAD(user.balance)}</p></div>
+              <div><p className="text-xs text-muted-foreground">PAD</p><p className="font-bold text-[#4cd3ff]">{formatPOW(user.balance)}</p></div>
               <div><p className="text-xs text-muted-foreground">TON</p><p className="font-bold text-purple-400">{parseFloat(user.tonBalance || '0').toFixed(4)}</p></div>
               <div><p className="text-xs text-muted-foreground">USD</p><p className="font-bold text-green-400">${parseFloat(user.usdBalance || '0').toFixed(2)}</p></div>
             </div>
@@ -575,7 +575,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           <div className="bg-white/5 border border-white/10 p-3 rounded">
             <p className="text-xs text-muted-foreground mb-2">Earnings</p>
             <div className="grid grid-cols-2 gap-2">
-              <div><p className="text-xs text-muted-foreground">Total Earned</p><p className="font-bold text-emerald-400">{formatPAD(user.totalEarned)} PAD</p></div>
+              <div><p className="text-xs text-muted-foreground">Total Earned</p><p className="font-bold text-emerald-400">{formatPOW(user.totalEarned)} PAD</p></div>
               <div><p className="text-xs text-muted-foreground">Total Withdrawn</p><p className="font-bold text-amber-400">${parseFloat(user.totalWithdrawn || '0').toFixed(2)} USD</p></div>
             </div>
           </div>
@@ -630,7 +630,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
                 <div key={task.id} className="bg-white/5 p-2 rounded border border-white/10">
                   <p className="text-sm font-medium">{task.title || 'Task'}</p>
                   <p className="text-xs text-muted-foreground">Completed: {task.completedAt ? new Date(task.completedAt).toLocaleDateString() : 'N/A'}</p>
-                  <p className="text-xs text-green-400">Reward: {formatPAD(task.reward)} PAD</p>
+                  <p className="text-xs text-green-400">Reward: {formatPOW(task.reward)} PAD</p>
                 </div>
               ))}
             </div>
@@ -1440,14 +1440,14 @@ function SettingsSection() {
     channelTaskReward: '30',
     botTaskReward: '20',
     partnerTaskReward: '5',
-    minimumConvertPAD: '100',
+    minimumConvertPOW: '100',
     minimumClicks: '500',
     seasonBroadcastActive: false,
     referralRewardEnabled: false,
-    referralRewardPADEnabled: false,
+    referralRewardPOWEnabled: false,
     referralRewardUSDEnabled: false,
     referralRewardUSD: '0.0005',
-    referralRewardPAD: '50',
+    referralRewardPOW: '50',
     referralAdsRequired: '1',
     // Withdrawal requirements
     withdrawalAdRequirementEnabled: true,
@@ -1459,14 +1459,14 @@ function SettingsSection() {
     shareTaskReward: '1000',
     communityTaskReward: '1000',
     // BUG currency settings
-    bugRewardPerAd: '1',
-    bugRewardPerTask: '10',
-    bugRewardPerReferral: '50',
-    minimumBugForWithdrawal: '1000',
-    padToBugRate: '1',
-    minimumConvertPadToBug: '1000',
-    bugPerUsd: '10000',
-    withdrawalBugRequirementEnabled: true,
+    starRewardPerAd: '1',
+    starRewardPerTask: '10',
+    starRewardPerReferral: '50',
+    minimumStarForWithdrawal: '1000',
+    powToStarRate: '1',
+    minimumConvertPowToStar: '1000',
+    starPerUsd: '10000',
+    withdrawalStarRequirementEnabled: true,
     weeklyGiveawayAmount: '10',
     weeklyContestEndDate: '',
     monetagMissionReward: '50',
@@ -1500,14 +1500,14 @@ function SettingsSection() {
         channelTaskReward: settingsData.channelTaskReward?.toString() || '30',
         botTaskReward: settingsData.botTaskReward?.toString() || '20',
         partnerTaskReward: settingsData.partnerTaskReward?.toString() || '5',
-        minimumConvertPAD: settingsData.minimumConvertPAD?.toString() || '100',
+        minimumConvertPOW: settingsData.minimumConvertPOW?.toString() || '100',
         minimumClicks: settingsData.minimumClicks?.toString() || '500',
         seasonBroadcastActive: settingsData.seasonBroadcastActive || false,
         referralRewardEnabled: settingsData.referralRewardEnabled || false,
-        referralRewardPADEnabled: settingsData.referralRewardPADEnabled || false,
+        referralRewardPOWEnabled: settingsData.referralRewardPOWEnabled || false,
         referralRewardUSDEnabled: settingsData.referralRewardUSDEnabled || false,
         referralRewardUSD: settingsData.referralRewardUSD?.toString() || '0.0005',
-        referralRewardPAD: settingsData.referralRewardPAD?.toString() || '50',
+        referralRewardPOW: settingsData.referralRewardPOW?.toString() || '50',
         referralAdsRequired: settingsData.referralAdsRequired?.toString() || '1',
         // Withdrawal requirements
         withdrawalAdRequirementEnabled: settingsData.withdrawalAdRequirementEnabled !== false,
@@ -1519,14 +1519,14 @@ function SettingsSection() {
         shareTaskReward: settingsData.shareTaskReward?.toString() || '1000',
         communityTaskReward: settingsData.communityTaskReward?.toString() || '1000',
         // BUG currency settings
-        bugRewardPerAd: settingsData.bugRewardPerAd?.toString() || '1',
-        bugRewardPerTask: settingsData.bugRewardPerTask?.toString() || '10',
-        bugRewardPerReferral: settingsData.bugRewardPerReferral?.toString() || '50',
-        minimumBugForWithdrawal: settingsData.minimumBugForWithdrawal?.toString() || '1000',
-        padToBugRate: settingsData.padToBugRate?.toString() || '1',
-        minimumConvertPadToBug: settingsData.minimumConvertPadToBug?.toString() || '1000',
-        bugPerUsd: settingsData.bugPerUsd?.toString() || '10000',
-        withdrawalBugRequirementEnabled: settingsData.withdrawalBugRequirementEnabled !== false,
+        starRewardPerAd: settingsData.starRewardPerAd?.toString() || '1',
+        starRewardPerTask: settingsData.starRewardPerTask?.toString() || '10',
+        starRewardPerReferral: settingsData.starRewardPerReferral?.toString() || '50',
+        minimumStarForWithdrawal: settingsData.minimumStarForWithdrawal?.toString() || '1000',
+        powToStarRate: settingsData.powToStarRate?.toString() || '1',
+        minimumConvertPowToStar: settingsData.minimumConvertPowToStar?.toString() || '1000',
+        starPerUsd: settingsData.starPerUsd?.toString() || '10000',
+        withdrawalStarRequirementEnabled: settingsData.withdrawalStarRequirementEnabled !== false,
         weeklyGiveawayAmount: settingsData.weeklyGiveawayAmount?.toString() || '10',
         weeklyContestEndDate: settingsData.weeklyContestEndDate?.toString() || '',
         monetagMissionReward: settingsData.monetagMissionReward?.toString() || '50',
@@ -1566,10 +1566,10 @@ function SettingsSection() {
     const channelReward = parseInt(settings.channelTaskReward);
     const botReward = parseInt(settings.botTaskReward);
     const partnerReward = parseInt(settings.partnerTaskReward);
-    const minConvertPAD = parseInt(settings.minimumConvertPAD);
+    const minConvertPAD = parseInt(settings.minimumConvertPOW);
     const minClicks = parseInt(settings.minimumClicks);
     const refRewardUSD = parseFloat(settings.referralRewardUSD);
-    const refRewardPAD = parseInt(settings.referralRewardPAD);
+    const refRewardPAD = parseInt(settings.referralRewardPOW);
     
     if (isNaN(adLimit) || adLimit <= 0) {
       showNotification("Daily ad limit must be a positive number", "error");
@@ -1602,14 +1602,14 @@ function SettingsSection() {
         channelTaskReward: channelReward,
         botTaskReward: botReward,
         partnerTaskReward: partnerReward,
-        minimumConvertPAD: minConvertPAD,
+        minimumConvertPOW: minConvertPAD,
         minimumClicks: minClicks,
         seasonBroadcastActive: settings.seasonBroadcastActive,
-        referralRewardEnabled: settings.referralRewardPADEnabled || settings.referralRewardUSDEnabled,
-        referralRewardPADEnabled: settings.referralRewardPADEnabled,
+        referralRewardEnabled: settings.referralRewardPOWEnabled || settings.referralRewardUSDEnabled,
+        referralRewardPOWEnabled: settings.referralRewardPOWEnabled,
         referralRewardUSDEnabled: settings.referralRewardUSDEnabled,
         referralRewardUSD: refRewardUSD,
-        referralRewardPAD: refRewardPAD,
+        referralRewardPOW: refRewardPAD,
         referralAdsRequired: parseInt(settings.referralAdsRequired) || 1,
         withdrawalAdRequirementEnabled: settings.withdrawalAdRequirementEnabled,
         minimumAdsForWithdrawal: parseInt(settings.minimumAdsForWithdrawal) || 100,
@@ -1619,14 +1619,14 @@ function SettingsSection() {
         shareTaskReward: parseInt(settings.shareTaskReward) || 1000,
         communityTaskReward: parseInt(settings.communityTaskReward) || 1000,
         // BUG currency settings
-        bugRewardPerAd: parseInt(settings.bugRewardPerAd) || 1,
-        bugRewardPerTask: parseInt(settings.bugRewardPerTask) || 10,
-        bugRewardPerReferral: parseInt(settings.bugRewardPerReferral) || 50,
-        minimumBugForWithdrawal: parseInt(settings.minimumBugForWithdrawal) || 1000,
-        padToBugRate: parseInt(settings.padToBugRate) || 1,
-        minimumConvertPadToBug: parseInt(settings.minimumConvertPadToBug) || 1000,
-        bugPerUsd: parseInt(settings.bugPerUsd) || 10000,
-        withdrawalBugRequirementEnabled: settings.withdrawalBugRequirementEnabled,
+        starRewardPerAd: parseInt(settings.starRewardPerAd) || 1,
+        starRewardPerTask: parseInt(settings.starRewardPerTask) || 10,
+        starRewardPerReferral: parseInt(settings.starRewardPerReferral) || 50,
+        minimumStarForWithdrawal: parseInt(settings.minimumStarForWithdrawal) || 1000,
+        powToStarRate: parseInt(settings.powToStarRate) || 1,
+        minimumConvertPowToStar: parseInt(settings.minimumConvertPowToStar) || 1000,
+        starPerUsd: parseInt(settings.starPerUsd) || 10000,
+        withdrawalStarRequirementEnabled: settings.withdrawalStarRequirementEnabled,
         weeklyGiveawayAmount: parseFloat(settings.weeklyGiveawayAmount) || 10,
         weeklyContestEndDate: settings.weeklyContestEndDate || '',
         monetagMissionReward: parseInt(settings.monetagMissionReward) || 50,
@@ -1736,7 +1736,7 @@ function SettingsSection() {
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.rewardPerAd || 1000} PAD per ad
+                Current: {settingsData?.rewardPerAd || 1000} POW per ad
               </p>
             </div>
           </div>
@@ -1789,31 +1789,31 @@ function SettingsSection() {
                 <i className="fas fa-gift mr-2 text-green-500"></i>
                 Referral Bonus — When friend watches 1 ad
               </Label>
-              <p className="text-xs text-muted-foreground mb-3">Enable PAD and/or USD independently. Users receive whichever are enabled. Affiliate page shows accordingly.</p>
+              <p className="text-xs text-muted-foreground mb-3">Enable POW and/or USD independently. Users receive whichever are enabled. Affiliate page shows accordingly.</p>
 
               <div className="grid grid-cols-1 gap-3">
                 {/* PAD Toggle */}
                 <div className="flex items-start gap-3 p-2 rounded-lg bg-white/5">
                   <button
                     type="button"
-                    onClick={() => setSettings({ ...settings, referralRewardPADEnabled: !settings.referralRewardPADEnabled })}
+                    onClick={() => setSettings({ ...settings, referralRewardPOWEnabled: !settings.referralRewardPOWEnabled })}
                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors mt-0.5 flex-shrink-0 ${
-                      settings.referralRewardPADEnabled ? 'bg-green-500' : 'bg-gray-600'
+                      settings.referralRewardPOWEnabled ? 'bg-green-500' : 'bg-gray-600'
                     }`}
                   >
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${settings.referralRewardPADEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${settings.referralRewardPOWEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
                   </button>
                   <div className="flex-1">
                     <Label className="text-xs font-semibold text-green-400">PAD Reward</Label>
                     <Input
                       type="number"
-                      value={settings.referralRewardPAD}
-                      onChange={(e) => setSettings({ ...settings, referralRewardPAD: e.target.value })}
+                      value={settings.referralRewardPOW}
+                      onChange={(e) => setSettings({ ...settings, referralRewardPOW: e.target.value })}
                       placeholder="50"
-                      disabled={!settings.referralRewardPADEnabled}
-                      className={`h-8 mt-1 ${!settings.referralRewardPADEnabled ? 'opacity-50' : ''}`}
+                      disabled={!settings.referralRewardPOWEnabled}
+                      className={`h-8 mt-1 ${!settings.referralRewardPOWEnabled ? 'opacity-50' : ''}`}
                     />
-                    <p className="text-xs text-muted-foreground mt-1">Current: {settingsData?.referralRewardPAD || 50} PAD per referral</p>
+                    <p className="text-xs text-muted-foreground mt-1">Current: {settingsData?.referralRewardPOW || 50} PAD per referral</p>
                   </div>
                 </div>
 
@@ -2124,7 +2124,7 @@ function SettingsSection() {
                 placeholder="5"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.partnerTaskReward || 5} PAD
+                Current: {settingsData?.partnerTaskReward || 5} POW
               </p>
             </div>
 
@@ -2158,13 +2158,13 @@ function SettingsSection() {
               <Input
                 id="bug-reward-per-ad"
                 type="number"
-                value={settings.bugRewardPerAd}
-                onChange={(e) => setSettings({ ...settings, bugRewardPerAd: e.target.value })}
+                value={settings.starRewardPerAd}
+                onChange={(e) => setSettings({ ...settings, starRewardPerAd: e.target.value })}
                 placeholder="1"
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.bugRewardPerAd || 1} STAR
+                Current: {settingsData?.starRewardPerAd || 1} STAR
               </p>
             </div>
 
@@ -2176,13 +2176,13 @@ function SettingsSection() {
               <Input
                 id="bug-reward-per-task"
                 type="number"
-                value={settings.bugRewardPerTask}
-                onChange={(e) => setSettings({ ...settings, bugRewardPerTask: e.target.value })}
+                value={settings.starRewardPerTask}
+                onChange={(e) => setSettings({ ...settings, starRewardPerTask: e.target.value })}
                 placeholder="10"
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.bugRewardPerTask || 10} STAR
+                Current: {settingsData?.starRewardPerTask || 10} STAR
               </p>
             </div>
 
@@ -2194,13 +2194,13 @@ function SettingsSection() {
               <Input
                 id="bug-reward-per-referral"
                 type="number"
-                value={settings.bugRewardPerReferral}
-                onChange={(e) => setSettings({ ...settings, bugRewardPerReferral: e.target.value })}
+                value={settings.starRewardPerReferral}
+                onChange={(e) => setSettings({ ...settings, starRewardPerReferral: e.target.value })}
                 placeholder="50"
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.bugRewardPerReferral || 50} STAR
+                Current: {settingsData?.starRewardPerReferral || 50} STAR
               </p>
             </div>
 
@@ -2212,13 +2212,13 @@ function SettingsSection() {
               <Input
                 id="minimum-bug-for-withdrawal"
                 type="number"
-                value={settings.minimumBugForWithdrawal}
-                onChange={(e) => setSettings({ ...settings, minimumBugForWithdrawal: e.target.value })}
+                value={settings.minimumStarForWithdrawal}
+                onChange={(e) => setSettings({ ...settings, minimumStarForWithdrawal: e.target.value })}
                 placeholder="1000"
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumBugForWithdrawal || 1000} STAR (1000 STAR = $0.1)
+                Current: {settingsData?.minimumStarForWithdrawal || 1000} STAR (1000 STAR = $0.1)
               </p>
             </div>
 
@@ -2230,13 +2230,13 @@ function SettingsSection() {
               <Input
                 id="pad-to-bug-rate"
                 type="number"
-                value={settings.padToBugRate}
-                onChange={(e) => setSettings({ ...settings, padToBugRate: e.target.value })}
+                value={settings.powToStarRate}
+                onChange={(e) => setSettings({ ...settings, powToStarRate: e.target.value })}
                 placeholder="1"
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                1 POW = {settingsData?.padToBugRate || 1} STAR
+                1 POW = {settingsData?.powToStarRate || 1} STAR
               </p>
             </div>
 
@@ -2248,13 +2248,13 @@ function SettingsSection() {
               <Input
                 id="minimum-convert-pad-to-bug"
                 type="number"
-                value={settings.minimumConvertPadToBug}
-                onChange={(e) => setSettings({ ...settings, minimumConvertPadToBug: e.target.value })}
+                value={settings.minimumConvertPowToStar}
+                onChange={(e) => setSettings({ ...settings, minimumConvertPowToStar: e.target.value })}
                 placeholder="1000"
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumConvertPadToBug || 1000} POW
+                Current: {settingsData?.minimumConvertPowToStar || 1000} POW
               </p>
             </div>
 
@@ -2266,13 +2266,13 @@ function SettingsSection() {
               <Input
                 id="bug-per-usd"
                 type="number"
-                value={settings.bugPerUsd}
-                onChange={(e) => setSettings({ ...settings, bugPerUsd: e.target.value })}
+                value={settings.starPerUsd}
+                onChange={(e) => setSettings({ ...settings, starPerUsd: e.target.value })}
                 placeholder="10000"
                 min="1"
               />
               <p className="text-xs text-muted-foreground">
-                1 USD = {settingsData?.bugPerUsd || 10000} STAR required for withdrawal
+                1 USD = {settingsData?.starPerUsd || 10000} STAR required for withdrawal
               </p>
             </div>
 
@@ -2284,20 +2284,20 @@ function SettingsSection() {
                 </Label>
                 <button
                   type="button"
-                  onClick={() => setSettings({ ...settings, withdrawalBugRequirementEnabled: !settings.withdrawalBugRequirementEnabled })}
+                  onClick={() => setSettings({ ...settings, withdrawalStarRequirementEnabled: !settings.withdrawalStarRequirementEnabled })}
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    settings.withdrawalBugRequirementEnabled ? 'bg-lime-500' : 'bg-gray-600'
+                    settings.withdrawalStarRequirementEnabled ? 'bg-lime-500' : 'bg-gray-600'
                   }`}
                 >
                   <span
                     className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                      settings.withdrawalBugRequirementEnabled ? 'translate-x-5' : 'translate-x-1'
+                      settings.withdrawalStarRequirementEnabled ? 'translate-x-5' : 'translate-x-1'
                     }`}
                   />
                 </button>
               </div>
               <p className="text-xs text-muted-foreground">
-                {settings.withdrawalBugRequirementEnabled 
+                {settings.withdrawalStarRequirementEnabled 
                   ? 'Users must have enough STAR (based on USD amount × STAR per USD) to withdraw' 
                   : 'STAR requirement disabled - users can withdraw without STAR'}
               </p>
@@ -2309,7 +2309,7 @@ function SettingsSection() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2 p-3 border rounded-lg bg-[#4cd3ff]/5 border-[#4cd3ff]/20">
               <p className="text-xs text-[#4cd3ff] font-semibold mb-1">📺 Mission Page — Ad Platforms</p>
-              <p className="text-xs text-muted-foreground">Set reward (PAD per ad) and daily ad limit for each platform shown on the Missions page.</p>
+              <p className="text-xs text-muted-foreground">Set reward (POW per ad) and daily ad limit for each platform shown on the Missions page.</p>
             </div>
 
             {/* Monetag */}
@@ -2458,7 +2458,7 @@ function SettingsSection() {
                 placeholder="5000"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.walletChangeFee || 5000} PAD
+                Current: {settingsData?.walletChangeFee || 5000} POW
               </p>
             </div>
 
@@ -2470,12 +2470,12 @@ function SettingsSection() {
               <Input
                 id="minimum-convert-pad"
                 type="number"
-                value={settings.minimumConvertPAD}
-                onChange={(e) => setSettings({ ...settings, minimumConvertPAD: e.target.value })}
+                value={settings.minimumConvertPOW}
+                onChange={(e) => setSettings({ ...settings, minimumConvertPOW: e.target.value })}
                 placeholder="100"
               />
               <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumConvertPAD || 100} PAD
+                Current: {settingsData?.minimumConvertPOW || 100} POW
               </p>
             </div>
 

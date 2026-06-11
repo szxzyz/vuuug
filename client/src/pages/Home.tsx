@@ -23,8 +23,8 @@ interface UnifiedTask {
   taskType: string;
   title: string;
   link: string | null;
-  rewardPAD: number;
-  rewardBUG?: number;
+  rewardPOW: number;
+  rewardSTAR?: number;
   rewardType: string;
   isAdminTask: boolean;
   isAdvertiserTask?: boolean;
@@ -42,7 +42,7 @@ interface User {
   telegramId?: string;
   balance?: string;
   usdBalance?: string;
-  bugBalance?: string;
+  starBalance?: string;
   lastStreakDate?: string;
   username?: string;
   firstName?: string;
@@ -178,7 +178,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ padAmount: amount, convertTo }),
+        body: JSON.stringify({ powAmount: amount, convertTo }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -217,8 +217,8 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       const rewardAmount = parseFloat(data.rewardEarned || '0');
       if (rewardAmount > 0) {
-        const earnedPAD = Math.round(rewardAmount);
-        showNotification(`You've claimed +${earnedPAD} POW!`, "success");
+        const earnedPOW = Math.round(rewardAmount);
+        showNotification(`You've claimed +${earnedPOW} POW!`, "success");
       } else {
         showNotification("You've claimed your streak bonus!", "success");
       }
@@ -322,8 +322,8 @@ export default function Home() {
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       await queryClient.refetchQueries({ queryKey: ['/api/tasks/home/unified'] });
-      const padReward = Number(data.reward ?? 0);
-      showNotification(`+${padReward.toLocaleString()} POW earned!`, 'success');
+      const powReward = Number(data.reward ?? 0);
+      showNotification(`+${powReward.toLocaleString()} POW earned!`, 'success');
     },
     onError: (error: any) => {
       showNotification(error.message || 'Failed to claim reward', 'error');
@@ -394,16 +394,16 @@ export default function Home() {
 
   const handleConvertClick = () => {
     if (convertMutation.isPending) return;
-    const minimumConvertPAD = appSettings?.minimumConvertPAD || 10000;
-    if (balancePAD <= 0) {
+    const minimumConvertPOW = appSettings?.minimumConvertPOW || 10000;
+    if (balancePOW <= 0) {
       showNotification("No POW balance to swap.", "error");
       return;
     }
-    if (balancePAD < minimumConvertPAD) {
-      showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} POW required to swap.`, "error");
+    if (balancePOW < minimumConvertPOW) {
+      showNotification(`Minimum ${minimumConvertPOW.toLocaleString()} POW required to swap.`, "error");
       return;
     }
-    convertMutation.mutate({ amount: balancePAD, convertTo: 'USD' });
+    convertMutation.mutate({ amount: balancePOW, convertTo: 'USD' });
   };
 
   const handleClaimStreak = async () => {
@@ -484,9 +484,9 @@ export default function Home() {
   }
 
   const rawBalance = parseFloat((user as User)?.balance || "0");
-  const balancePAD = rawBalance < 1 ? Math.round(rawBalance * 10000000) : Math.round(rawBalance);
+  const balancePOW = rawBalance < 1 ? Math.round(rawBalance * 10000000) : Math.round(rawBalance);
   const balanceUSD = parseFloat((user as User)?.usdBalance || "0");
-  const balanceBUG = parseFloat((user as User)?.bugBalance || "0");
+  const balanceSTAR = parseFloat((user as User)?.starBalance || "0");
   
   const userUID = (user as User)?.telegramId || (user as User)?.referralCode || "00000";
 
@@ -726,7 +726,7 @@ export default function Home() {
 
           {/* PAD sub-value */}
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginBottom: 16 }}>
-            {formatBalance(balancePAD)} POW
+            {formatBalance(balancePOW)} POW
           </p>
 
           {/* Equal-width buttons */}
@@ -826,7 +826,7 @@ export default function Home() {
                     <p className="text-white text-sm font-medium truncate">Share with Friends</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.referralRewardPAD || '5'} POW</span></p>
+                    <p>Reward: <span className="text-white font-medium">{appSettings?.referralRewardPOW || '5'} POW</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">

@@ -19,7 +19,7 @@ interface User {
   id: string;
   balance: string;
   usdBalance?: string;
-  bugBalance?: string;
+  starBalance?: string;
   friendsInvited?: number;
   cwalletId?: string;
   adsWatched?: number;
@@ -95,9 +95,9 @@ export default function Withdraw() {
     staleTime: 0,
   });
 
-  const padBalance = parseFloat(user?.balance || "0");
+  const powBalance = parseFloat(user?.balance || "0");
   const usdBalance = parseFloat(user?.usdBalance || "0");
-  const bugBalance = parseFloat(user?.bugBalance || "0");
+  const starBalance = parseFloat(user?.starBalance || "0");
   const validReferralCount = validReferralData?.validReferralCount ?? 0;
   
   const withdrawalAdRequirementEnabled = appSettings?.withdrawalAdRequirementEnabled === true;
@@ -106,10 +106,10 @@ export default function Withdraw() {
   const MINIMUM_VALID_REFERRALS_REQUIRED = appSettings?.minimumInvitesForWithdrawal ?? 3;
   
   // Dynamic BUG requirement: scales with selected package or full balance
-  const withdrawalBugRequirementEnabled = appSettings?.withdrawalBugRequirementEnabled !== false;
-  const bugPerUsd = appSettings?.bugPerUsd ?? 10000;
+  const withdrawalStarRequirementEnabled = appSettings?.withdrawalStarRequirementEnabled !== false;
+  const starPerUsd = appSettings?.starPerUsd ?? 10000;
   
-  // Withdrawal packages from admin settings - compute BUG requirements using bugPerUsd
+  // Withdrawal packages from admin settings - compute BUG requirements using starPerUsd
   const defaultPackages = [
     {usd: 0.2},
     {usd: 0.4},
@@ -118,7 +118,7 @@ export default function Withdraw() {
   const rawPackages = appSettings?.withdrawalPackages || defaultPackages;
   const withdrawalPackages = rawPackages.map((pkg: {usd: number, bug?: number}) => ({
     usd: pkg.usd,
-    bug: pkg.bug ?? Math.ceil(pkg.usd * bugPerUsd)
+    bug: pkg.bug ?? Math.ceil(pkg.usd * starPerUsd)
   }));
   
   // Get the withdrawal amount based on selected package
@@ -129,9 +129,9 @@ export default function Withdraw() {
     return selectedPackage;
   };
   
-  // Calculate BUG requirement based on selected package - always use bugPerUsd for consistency
+  // Calculate BUG requirement based on selected package - always use starPerUsd for consistency
   const getBugRequirementForAmount = (usdAmount: number) => {
-    return Math.ceil(usdAmount * bugPerUsd);
+    return Math.ceil(usdAmount * starPerUsd);
   };
   
   const getPackageBugRequirement = () => {
@@ -141,7 +141,7 @@ export default function Withdraw() {
     return getBugRequirementForAmount(selectedPackage as number);
   };
   
-  const minimumBugForWithdrawal = getPackageBugRequirement();
+  const minimumStarForWithdrawal = getPackageBugRequirement();
   
   const { data: withdrawalEligibility, isLoading: isLoadingEligibility, isFetched: isEligibilityFetched } = useQuery<{ adsWatchedSinceLastWithdrawal: number; canWithdraw: boolean }>({
     queryKey: ['/api/withdrawal-eligibility'],
@@ -160,7 +160,7 @@ export default function Withdraw() {
   
   const hasWatchedEnoughAds = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
   const hasEnoughReferrals = !withdrawalInviteRequirementEnabled || validReferralCount >= MINIMUM_VALID_REFERRALS_REQUIRED;
-  const hasEnoughBug = !withdrawalBugRequirementEnabled || bugBalance >= minimumBugForWithdrawal;
+  const hasEnoughBug = !withdrawalStarRequirementEnabled || starBalance >= minimumStarForWithdrawal;
 
   const botUsername = import.meta.env.VITE_BOT_USERNAME || '';
   // Use bot deep link format (?start=) for reliable referral tracking
@@ -288,7 +288,7 @@ export default function Withdraw() {
     }
     
     if (!hasEnoughBug) {
-      const remaining = Math.ceil(minimumBugForWithdrawal - bugBalance);
+      const remaining = Math.ceil(minimumStarForWithdrawal - starBalance);
       showNotification(`You need ${remaining.toLocaleString()} more STAR to withdraw. Watch ads or complete tasks to earn STAR.`, "error");
       return;
     }
@@ -333,12 +333,12 @@ export default function Withdraw() {
     return usdBalance >= pkgUsd;
   };
   
-  // Check if user has enough BUG for a package - use consistent bugPerUsd calculation
+  // Check if user has enough BUG for a package - use consistent starPerUsd calculation
   const hasEnoughBugForPackage = (pkgUsd: number | 'FULL') => {
-    if (!withdrawalBugRequirementEnabled) return true;
+    if (!withdrawalStarRequirementEnabled) return true;
     const usdAmount = pkgUsd === 'FULL' ? usdBalance : pkgUsd;
     const required = getBugRequirementForAmount(usdAmount);
-    return bugBalance >= required;
+    return starBalance >= required;
   };
 
   const getStatusIcon = (status: string) => {
@@ -478,7 +478,7 @@ export default function Withdraw() {
                           </div>
                         )}
                         <div className="text-sm font-bold text-white">${pkg.usd.toFixed(2)}</div>
-                        {withdrawalBugRequirementEnabled && (
+                        {withdrawalStarRequirementEnabled && (
                           <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasBug ? 'text-green-400' : 'text-red-400'}`}>
                             <div className="w-3 h-3 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
                               <img src="/star-bug.png" alt="STAR" className="w-3 h-3 object-cover" />
@@ -509,12 +509,12 @@ export default function Withdraw() {
                   )}
                   <div className="text-sm font-bold text-white">FULL BALANCE</div>
                   <div className="text-[10px] text-gray-400">${usdBalance.toFixed(2)}</div>
-                  {withdrawalBugRequirementEnabled && (
+                  {withdrawalStarRequirementEnabled && (
                     <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasEnoughBugForPackage('FULL') ? 'text-green-400' : 'text-red-400'}`}>
                       <div className="w-3 h-3 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
                         <img src="/star-bug.png" alt="STAR" className="w-3 h-3 object-cover" />
                       </div>
-                      {Math.ceil(usdBalance * bugPerUsd).toLocaleString()} STAR
+                      {Math.ceil(usdBalance * starPerUsd).toLocaleString()} STAR
                     </div>
                   )}
                 </button>
@@ -531,12 +531,12 @@ export default function Withdraw() {
                     Withdrawal method: {selectedMethod}
                   </div>
                   
-                  {withdrawalBugRequirementEnabled && getWithdrawalUsdAmount() > 0 && (
+                  {withdrawalStarRequirementEnabled && getWithdrawalUsdAmount() > 0 && (
                     <div className={`flex items-center gap-2 text-xs ${hasEnoughBug ? 'text-green-400' : 'text-red-400'}`}>
                       <div className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
                         <img src="/star-bug.png" alt="STAR" className="w-4 h-4 object-cover" />
                       </div>
-                      <span>STAR Required: {minimumBugForWithdrawal.toLocaleString()} (You have: {Math.floor(bugBalance).toLocaleString()})</span>
+                      <span>STAR Required: {minimumStarForWithdrawal.toLocaleString()} (You have: {Math.floor(starBalance).toLocaleString()})</span>
                       {hasEnoughBug && <Check className="w-3 h-3" />}
                     </div>
                   )}

@@ -163,7 +163,7 @@ export default function CreateTask() {
     ? 5
     : taskType === 'bot'
       ? (appSettings?.botTaskRewardPAD || 20)
-      : (appSettings?.channelTaskRewardPAD || 30);
+      : (appSettings?.channelTaskRewardPOW || 30);
   const minimumClicks = taskType === 'partner' ? 1 : (appSettings?.minimumClicks || 500);
   
   const clicksNum = parseInt(totalClicks) || 0;
