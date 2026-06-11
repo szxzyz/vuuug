@@ -78,6 +78,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-bonus/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });
       const m = MILESTONES[data.milestoneIndex];
       if (m) {
         showNotification(
