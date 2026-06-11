@@ -1432,6 +1432,7 @@ function SettingsSection() {
     minimumWithdrawalTON: '0.5',
     withdrawalFeeTON: '5',
     withdrawalFeeUSD: '3',
+    withdrawalGroupChatId: '-1002480439556',
     channelTaskCost: '0.003',
     botTaskCost: '0.003',
     channelTaskCostTON: '0.0003',
@@ -1491,6 +1492,7 @@ function SettingsSection() {
         minimumWithdrawalTON: settingsData.minimumWithdrawalTON?.toString() || '0.5',
         withdrawalFeeTON: settingsData.withdrawalFeeTON?.toString() || '5',
         withdrawalFeeUSD: settingsData.withdrawalFeeUSD?.toString() || '3',
+        withdrawalGroupChatId: settingsData.withdrawalGroupChatId?.toString() || '-1002480439556',
         channelTaskCost: settingsData.channelTaskCost?.toString() || '0.003',
         botTaskCost: settingsData.botTaskCost?.toString() || '0.003',
         channelTaskCostTON: settingsData.channelTaskCostTON?.toString() || '0.0003',
@@ -1592,6 +1594,7 @@ function SettingsSection() {
         minimumWithdrawalTON: minWithdrawalTON,
         withdrawalFeeTON: withdrawalFeeTON,
         withdrawalFeeUSD: withdrawalFeeUSD,
+        withdrawalGroupChatId: settings.withdrawalGroupChatId,
         channelTaskCost: channelCost,
         botTaskCost: botCost,
         channelTaskCostTON: channelCostTON,
@@ -1864,6 +1867,41 @@ function SettingsSection() {
 
         {activeCategory === 'withdrawals' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+            <div className="space-y-2 md:col-span-2 p-3 border rounded-lg bg-blue-50/5 border-blue-500/20">
+              <Label htmlFor="withdrawal-group-chat-id" className="text-sm font-semibold">
+                <i className="fab fa-telegram mr-2 text-blue-500"></i>
+                Withdrawal Group Chat ID
+              </Label>
+              <Input
+                id="withdrawal-group-chat-id"
+                type="text"
+                value={settings.withdrawalGroupChatId}
+                onChange={(e) => setSettings({ ...settings, withdrawalGroupChatId: e.target.value })}
+                placeholder="-1002480439556"
+              />
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-xs text-muted-foreground flex-1">
+                  Telegram group/channel ID jahan withdrawal approvals post hoein. Current: {settingsData?.withdrawalGroupChatId || '-1002480439556'}
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const r = await fetch('/api/admin/withdrawals/test-group-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                      const d = await r.json();
+                      alert(d.message);
+                    } catch (e) {
+                      alert('Error: ' + String(e));
+                    }
+                  }}
+                  className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
+                >
+                  Test Post
+                </button>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="minimum-withdrawal-ton" className="text-sm font-semibold">
                 <i className="fas fa-gem mr-2 text-blue-600"></i>
