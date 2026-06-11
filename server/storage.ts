@@ -867,12 +867,12 @@ export class DatabaseStorage implements IStorage {
 
       // Get referral reward settings from admin (no hardcoded values)
       const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
-      const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
+      const referralRewardPOW = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
       const referralRewardBUG = await this.getAppSetting('bug_reward_per_referral', '50');
-      const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
+      const referralRewardPOWEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
       const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
       const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
-      const givePAD = referralRewardPADEnabled || (!referralRewardPADEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
+      const givePAD = referralRewardPOWEnabled || (!referralRewardPOWEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
       const giveUSD = referralRewardUSDEnabled;
 
       // Activate each pending referral — mark completed FIRST to prevent double-payment on retry
@@ -881,16 +881,16 @@ export class DatabaseStorage implements IStorage {
           .update(referrals)
           .set({
             status: 'completed',
-            rewardAmount: givePAD ? String(referralRewardPAD) : '0',
+            rewardAmount: givePAD ? String(referralRewardPOW) : '0',
             usdRewardAmount: giveUSD ? referralRewardUSD : '0',
-            bugRewardAmount: referralRewardBUG
+            starRewardAmount: referralRewardBUG
           })
           .where(eq(referrals.id, referral.id));
 
-        if (givePAD && referralRewardPAD > 0) {
+        if (givePAD && referralRewardPOW > 0) {
           await this.addEarning({
             userId: referral.referrerId,
-            amount: String(referralRewardPAD),
+            amount: String(referralRewardPOW),
             source: 'referral',
             description: `Referral bonus (PAD) for inviting a friend`,
           });
@@ -916,7 +916,7 @@ export class DatabaseStorage implements IStorage {
         await db
           .update(users)
           .set({
-            bugBalance: sql`COALESCE(${users.bugBalance}, 0) + ${referralRewardBUG}`,
+            starBalance: sql`COALESCE(${users.starBalance}, 0) + ${referralRewardBUG}`,
             updatedAt: new Date(),
           })
           .where(eq(users.id, referral.referrerId));
@@ -942,7 +942,7 @@ export class DatabaseStorage implements IStorage {
           }
         }
 
-        console.log(`✅ Referral bonus activated: PAD=${givePAD ? referralRewardPAD : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardBUG} → referrer ${referral.referrerId}`);
+        console.log(`✅ Referral bonus activated: PAD=${givePAD ? referralRewardPOW : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardBUG} → referrer ${referral.referrerId}`);
       }
     } catch (error) {
       console.error('❌ Error activating referral bonus:', error);
@@ -1552,8 +1552,8 @@ export class DatabaseStorage implements IStorage {
       // Handle balance deduction with support for legacy withdrawals
       // Legacy withdrawals (created before the fix) already had balance deducted at request time
       // New withdrawals have balance deducted only on approval
-      const bugDeducted = withdrawalDetails?.bugDeducted ? parseFloat(withdrawalDetails.bugDeducted) : 0;
-      const currentBugBalance = parseFloat(user.bugBalance || '0');
+      const starDeducted = withdrawalDetails?.starDeducted ? parseFloat(withdrawalDetails.starDeducted) : 0;
+      const currentStarBalance = parseFloat(user.starBalance || '0');
       
       if (userBalance >= totalToDeduct) {
         // User has sufficient balance - this is a NEW withdrawal (or user earned more since request)
@@ -1563,19 +1563,19 @@ export class DatabaseStorage implements IStorage {
         console.log(`💰 Previous USD balance: ${userBalance}, New balance: ${(userBalance - totalToDeduct).toFixed(10)}`);
 
         const newUsdBalance = (userBalance - totalToDeduct).toFixed(10);
-        const newBugBalance = Math.max(0, currentBugBalance - bugDeducted).toFixed(10);
+        const newStarBalance = Math.max(0, currentStarBalance - starDeducted).toFixed(10);
         
         await db
           .update(users)
           .set({
             usdBalance: newUsdBalance,
-            bugBalance: newBugBalance,
+            starBalance: newStarBalance,
             updatedAt: new Date()
           })
           .where(eq(users.id, withdrawal.userId));
         console.log(`✅ USD balance deducted: ${userBalance} → ${newUsdBalance}`);
-        if (bugDeducted > 0) {
-          console.log(`✅ BUG balance deducted: ${currentBugBalance} → ${newBugBalance}`);
+        if (starDeducted > 0) {
+          console.log(`✅ BUG balance deducted: ${currentStarBalance} → ${newStarBalance}`);
         }
       } else {
         // User doesn't have sufficient balance - this is a LEGACY withdrawal
@@ -1649,9 +1649,9 @@ export class DatabaseStorage implements IStorage {
       const totalToRefund = withdrawalDetails?.totalDeducted 
         ? parseFloat(withdrawalDetails.totalDeducted) 
         : withdrawalAmount;
-      const bugToRefund = withdrawalDetails?.bugDeducted ? parseFloat(withdrawalDetails.bugDeducted) : 0;
+      const bugToRefund = withdrawalDetails?.starDeducted ? parseFloat(withdrawalDetails.starDeducted) : 0;
       const currentUsdBalance = parseFloat(user.usdBalance || '0');
-      const currentBugBalance = parseFloat(user.bugBalance || '0');
+      const currentStarBalance = parseFloat(user.starBalance || '0');
       
       // Check if this is a LEGACY withdrawal (balance was already deducted at request time)
       // Legacy withdrawals have insufficient balance because it was already taken
@@ -1661,19 +1661,19 @@ export class DatabaseStorage implements IStorage {
         // LEGACY withdrawal - refund the balance that was already deducted
         console.log(`⚠️ Legacy withdrawal detected - refunding balance that was deducted at request time`);
         const newUsdBalance = (currentUsdBalance + totalToRefund).toFixed(10);
-        const newBugBalance = (currentBugBalance + bugToRefund).toFixed(10);
+        const newStarBalance = (currentStarBalance + bugToRefund).toFixed(10);
         
         await db
           .update(users)
           .set({
             usdBalance: newUsdBalance,
-            bugBalance: newBugBalance,
+            starBalance: newStarBalance,
             updatedAt: new Date()
           })
           .where(eq(users.id, withdrawal.userId));
         console.log(`💰 USD balance refunded: ${currentUsdBalance} → ${newUsdBalance}`);
         if (bugToRefund > 0) {
-          console.log(`💰 BUG balance refunded: ${currentBugBalance} → ${newBugBalance}`);
+          console.log(`💰 BUG balance refunded: ${currentStarBalance} → ${newStarBalance}`);
         }
       } else {
         // NEW withdrawal - balance was never deducted, nothing to refund
@@ -3341,14 +3341,14 @@ export class DatabaseStorage implements IStorage {
         .limit(1);
       const partnerReward = parseInt(partnerRewardSetting[0]?.settingValue || '5');
       
-      const rewardPAD = task.taskType === 'partner' ? partnerReward : 
+      const rewardPOW = task.taskType === 'partner' ? partnerReward : 
                         parseInt(rewardSetting[0]?.settingValue || (task.taskType === 'bot' ? '20' : '30'));
 
       // Insert click record
       await db.insert(taskClicks).values({
         taskId: taskId,
         publisherId: publisherId,
-        rewardAmount: rewardPAD.toString(),
+        rewardAmount: rewardPOW.toString(),
       });
 
       // Increment current clicks on the task
@@ -3372,7 +3372,7 @@ export class DatabaseStorage implements IStorage {
         .where(eq(users.id, publisherId));
 
       const currentBalance = parseInt(publisher?.balance || '0');
-      const newBalance = currentBalance + rewardPAD;
+      const newBalance = currentBalance + rewardPOW;
 
       await db
         .update(users)
@@ -3385,17 +3385,17 @@ export class DatabaseStorage implements IStorage {
       // Record the earning
       await db.insert(earnings).values({
         userId: publisherId,
-        amount: rewardPAD.toString(),
+        amount: rewardPOW.toString(),
         source: 'task_completion',
         description: `Completed ${task.taskType} task: ${task.title}`,
       });
 
-      console.log(`✅ Task click recorded: ${taskId} by ${publisherId} - Reward: ${rewardPAD} PAD`);
+      console.log(`✅ Task click recorded: ${taskId} by ${publisherId} - Reward: ${rewardPOW} PAD`);
 
       return {
         success: true,
         message: "Task click recorded successfully",
-        reward: rewardPAD,
+        reward: rewardPOW,
         task: {
           ...task,
           currentClicks: newClickCount,
@@ -3469,7 +3469,7 @@ export class DatabaseStorage implements IStorage {
 
       // Get current BUG balance
       const [user] = await db
-        .select({ bugBalance: users.bugBalance })
+        .select({ starBalance: users.starBalance })
         .from(users)
         .where(eq(users.id, userId));
 
@@ -3477,14 +3477,14 @@ export class DatabaseStorage implements IStorage {
         throw new Error('User not found');
       }
 
-      const currentBugBalance = parseFloat(user.bugBalance || '0');
-      const newBugBalance = (currentBugBalance + amountNum).toFixed(10);
+      const currentStarBalance = parseFloat(user.starBalance || '0');
+      const newStarBalance = (currentStarBalance + amountNum).toFixed(10);
 
       // Update user's BUG balance
       await db
         .update(users)
         .set({
-          bugBalance: newBugBalance,
+          starBalance: newStarBalance,
           updatedAt: new Date()
         })
         .where(eq(users.id, userId));
@@ -3496,10 +3496,10 @@ export class DatabaseStorage implements IStorage {
         type: 'credit',
         source: source,
         description: description,
-        metadata: { rewardType: 'BUG' }
+        metadata: { rewardType: 'STAR' }
       });
 
-      console.log(`✅ Added ${amountNum} BUG to user ${userId}. New balance: ${newBugBalance}`);
+      console.log(`✅ Added ${amountNum} BUG to user ${userId}. New balance: ${newStarBalance}`);
     } catch (error) {
       console.error(`Error adding BUG balance:`, error);
       throw error;
@@ -3620,7 +3620,7 @@ export class DatabaseStorage implements IStorage {
         console.log('ℹ️ Referral columns already exist');
       }
       
-      // Get all completed referrals that don't have bugRewardAmount set
+      // Get all completed referrals that don't have starRewardAmount set
       const referralsNeedingBugCredit = await db.execute(sql`
         SELECT id, referrer_id, status, usd_reward_amount, bug_reward_amount 
         FROM referrals 
@@ -3647,28 +3647,28 @@ export class DatabaseStorage implements IStorage {
           }
 
           // Calculate BUG from USD amount (50 BUG per USD)
-          const bugAmount = usdAmount * 50;
-          if (isNaN(bugAmount) || bugAmount <= 0) {
-            console.log(`⏭️ Skipping referral ${ref.id} - calculated BUG amount is invalid: ${bugAmount}`);
+          const starAmount = usdAmount * 50;
+          if (isNaN(starAmount) || starAmount <= 0) {
+            console.log(`⏭️ Skipping referral ${ref.id} - calculated BUG amount is invalid: ${starAmount}`);
             continue;
           }
 
           // Update referral record with BUG amount
           await db.execute(sql`
             UPDATE referrals 
-            SET bug_reward_amount = ${bugAmount.toFixed(10)}
+            SET bug_reward_amount = ${starAmount.toFixed(10)}
             WHERE id = ${ref.id}
           `);
 
           // Credit BUG to referrer's balance
           await this.addBUGBalance(
             ref.referrer_id,
-            bugAmount.toFixed(10),
+            starAmount.toFixed(10),
             'referral_backfill',
-            `Backfilled BUG from referral reward (+${bugAmount.toFixed(2)} BUG)`
+            `Backfilled BUG from referral reward (+${starAmount.toFixed(2)} BUG)`
           );
 
-          console.log(`✅ Backfilled ${bugAmount.toFixed(2)} BUG for referral ${ref.id} to user ${ref.referrer_id}`);
+          console.log(`✅ Backfilled ${starAmount.toFixed(2)} BUG for referral ${ref.id} to user ${ref.referrer_id}`);
         } catch (error) {
           console.error(`⚠️ Failed to backfill referral ${ref.id}:`, error);
         }
@@ -3808,7 +3808,7 @@ export class DatabaseStorage implements IStorage {
       .map(task => ({
         ...task,
         isAdminTask: true,
-        rewardPAD: Math.round(parseFloat(task.costPerClick || '0.0001750') * 10000000),
+        rewardPOW: Math.round(parseFloat(task.costPerClick || '0.0001750') * 10000000),
       }));
   }
 }

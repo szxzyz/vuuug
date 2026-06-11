@@ -1012,7 +1012,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         balance: user.balance,
         tonBalance: user.tonBalance,
-        padBalance: user.balance
+        powBalance: user.balance
       });
     } catch (error) {
       console.error("Error refreshing balance:", error);
@@ -1064,13 +1064,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const botTaskCostTON = parseFloat(getSetting('bot_task_cost_ton', '0.0003')); // Default 0.0003 TON per click
       
       // Separate channel and bot task rewards (in PAD)
-      const channelTaskRewardPAD = parseInt(getSetting('channel_task_reward', '1000')); // Default 1000 POW per click
+      const channelTaskRewardPOW = parseInt(getSetting('channel_task_reward', '1000')); // Default 1000 POW per click
       const botTaskRewardPAD = parseInt(getSetting('bot_task_reward', '1000')); // Default 1000 POW per click
       
       // Currency conversion: 10,000,000 POW = 1 USD
       const padPerUsd = parseInt(getSetting('pad_per_usd', '10000000')); // Default 10M POW = 1 USD
-      const minimumConvertPAD = parseInt(getSetting('minimum_convert_pad', '100')); // Default 100 PAD
-      const minimumConvertUSD = minimumConvertPAD / padPerUsd; // Convert to USD
+      const minimumConvertPOW = parseInt(getSetting('minimum_convert_pad', '100')); // Default 100 PAD
+      const minimumConvertUSD = minimumConvertPOW / padPerUsd; // Convert to USD
       
       // Minimum clicks for task creation
       const minimumClicks = parseInt(getSetting('minimum_clicks', '500')); // Default 500 clicks
@@ -1080,8 +1080,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Referral reward settings
       const referralRewardEnabled = getSetting('referral_reward_enabled', 'false') === 'true';
       const referralRewardUSD = parseFloat(getSetting('referral_reward_usd', '0.0005'));
-      const referralRewardPAD = parseInt(getSetting('referral_reward_pad', '50'));
-      const referralRewardPADEnabled = getSetting('referral_reward_pad_enabled', 'true') === 'true';
+      const referralRewardPOW = parseInt(getSetting('referral_reward_pad', '50'));
+      const referralRewardPOWEnabled = getSetting('referral_reward_pad_enabled', 'true') === 'true';
       const referralRewardUSDEnabled = getSetting('referral_reward_usd_enabled', 'false') === 'true';
       const referralAdsRequired = parseInt(getSetting('referral_ads_required', '1')); // Ads needed for affiliate bonus
       const l1CommissionPercent = parseFloat(getSetting('l1_commission_percent', '20')); // Level 1: 20%
@@ -1103,20 +1103,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // BUG currency settings
       const minimumConvertPadToTon = parseInt(getSetting('minimum_convert_pad_to_ton', '10000'));
-      const minimumConvertPadToBug = parseInt(getSetting('minimum_convert_pad_to_bug', '1000'));
+      const minimumConvertPowToStar = parseInt(getSetting('minimum_convert_pad_to_bug', '1000'));
       const padToTonRate = parseInt(getSetting('pad_to_ton_rate', '10000000')); // 10M PAD = 1 TON
-      const padToBugRate = parseInt(getSetting('pad_to_bug_rate', '1')); // 1 PAD = 1 BUG
-      const bugRewardPerAd = parseInt(getSetting('bug_reward_per_ad', '1')); // BUG per ad watched
-      const bugRewardPerTask = parseInt(getSetting('bug_reward_per_task', '10')); // BUG per task completed
-      const bugRewardPerReferral = parseInt(getSetting('bug_reward_per_referral', '50')); // BUG per referral
-      const minimumBugForWithdrawal = parseInt(getSetting('minimum_bug_for_withdrawal', '1000')); // Default: $0.1 = 1000 BUG
-      const bugPerUsd = parseInt(getSetting('bug_per_usd', '10000')); // Default: 1 USD = 10000 BUG
-      const withdrawalBugRequirementEnabled = getSetting('withdrawal_bug_requirement_enabled', 'true') === 'true';
+      const powToStarRate = parseInt(getSetting('pad_to_bug_rate', '1')); // 1 PAD = 1 BUG
+      const starRewardPerAd = parseInt(getSetting('bug_reward_per_ad', '1')); // BUG per ad watched
+      const starRewardPerTask = parseInt(getSetting('bug_reward_per_task', '10')); // BUG per task completed
+      const starRewardPerReferral = parseInt(getSetting('bug_reward_per_referral', '50')); // BUG per referral
+      const minimumStarForWithdrawal = parseInt(getSetting('minimum_bug_for_withdrawal', '1000')); // Default: $0.1 = 1000 BUG
+      const starPerUsd = parseInt(getSetting('bug_per_usd', '10000')); // Default: 1 USD = 10000 BUG
+      const withdrawalStarRequirementEnabled = getSetting('withdrawal_bug_requirement_enabled', 'true') === 'true';
       const activePromoCode = getSetting('active_promo_code', ''); // Current active promo code
       
       // Legacy compatibility - keep old values for backwards compatibility
       const taskCostPerClick = channelTaskCostUSD; // Use channel cost as default
-      const taskRewardPerClick = channelTaskRewardPAD / 10000000; // Legacy TON format for compatibility
+      const taskRewardPerClick = channelTaskRewardPOW / 10000000; // Legacy TON format for compatibility
       const minimumWithdrawal = minimumWithdrawalTON; // Legacy field
       
       res.json({
@@ -1138,20 +1138,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCostUSD,
         channelTaskCostTON,
         botTaskCostTON,
-        channelTaskRewardPAD,
+        channelTaskRewardPOW,
         botTaskRewardPAD,
         taskCostPerClick,
         taskRewardPerClick,
-        taskRewardPAD: channelTaskRewardPAD, // Use channel reward as default
+        taskRewardPAD: channelTaskRewardPOW, // Use channel reward as default
         minimumConvert: minimumConvertUSD,
-        minimumConvertPAD,
+        minimumConvertPOW,
         minimumConvertUSD,
         minimumClicks,
         withdrawalCurrency,
         referralRewardEnabled,
         referralRewardUSD,
-        referralRewardPAD,
-        referralRewardPADEnabled,
+        referralRewardPOW,
+        referralRewardPOWEnabled,
         referralRewardUSDEnabled,
         referralAdsRequired,
         l1CommissionPercent,
@@ -1161,7 +1161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         shareTaskReward,
         communityTaskReward,
         partnerTaskReward,
-        channelTaskReward: channelTaskRewardPAD,
+        channelTaskReward: channelTaskRewardPOW,
         botTaskReward: botTaskRewardPAD,
         // Withdrawal requirement settings
         withdrawalAdRequirementEnabled,
@@ -1170,15 +1170,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumInvitesForWithdrawal,
         // BUG currency settings
         minimumConvertPadToTon,
-        minimumConvertPadToBug,
+        minimumConvertPowToStar,
         padToTonRate,
-        padToBugRate,
-        bugRewardPerAd,
-        bugRewardPerTask,
-        bugRewardPerReferral,
-        minimumBugForWithdrawal,
-        bugPerUsd,
-        withdrawalBugRequirementEnabled,
+        powToStarRate,
+        starRewardPerAd,
+        starRewardPerTask,
+        starRewardPerReferral,
+        minimumStarForWithdrawal,
+        starPerUsd,
+        withdrawalStarRequirementEnabled,
         activePromoCode,
         // Withdrawal packages (JSON array of {usd, bug} objects)
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
@@ -1317,12 +1317,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dailyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'daily_ad_limit')).limit(1);
       const hourlyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'hourly_ad_limit')).limit(1);
       const rewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'reward_per_ad')).limit(1);
-      const bugRewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'bug_reward_per_ad')).limit(1);
+      const starRewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'bug_reward_per_ad')).limit(1);
       
       const DAILY_AD_LIMIT = dailyAdLimitSetting[0]?.settingValue ? parseInt(dailyAdLimitSetting[0].settingValue) : 510;
       const HOURLY_AD_LIMIT = hourlyAdLimitSetting[0]?.settingValue ? parseInt(hourlyAdLimitSetting[0].settingValue) : 63;
       const rewardPerAdPAD = rewardPerAdSetting[0]?.settingValue ? parseInt(rewardPerAdSetting[0].settingValue) : 1000;
-      const bugRewardPerAd = bugRewardPerAdSetting[0]?.settingValue ? parseInt(bugRewardPerAdSetting[0].settingValue) : 1;
+      const starRewardPerAd = starRewardPerAdSetting[0]?.settingValue ? parseInt(starRewardPerAdSetting[0].settingValue) : 1;
 
       // Hourly refill logic: 63 ads/hour, 510 ads/day
       const now = new Date();
@@ -1384,15 +1384,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(users.id, userId));
         
         // Add BUG reward for watching ad
-        if (bugRewardPerAd > 0) {
+        if (starRewardPerAd > 0) {
           await db
             .update(users)
             .set({
-              bugBalance: sql`COALESCE(${users.bugBalance}, '0')::numeric + ${bugRewardPerAd}`,
+              starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starRewardPerAd}`,
               updatedAt: new Date()
             })
             .where(eq(users.id, userId));
-          console.log(`🐛 Added ${bugRewardPerAd} BUG to user ${userId} for ad watch`);
+          console.log(`🐛 Added ${starRewardPerAd} BUG to user ${userId} for ad watch`);
         }
 
         // Track 1 STAR per ad watched for weekly leaderboard
@@ -1552,10 +1552,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // ALWAYS return success response to ensure reward notification shows
       res.json({ 
         success: true, 
-        rewardPAD: adRewardPAD,
-        rewardBUG: bugRewardPerAd,
+        rewardPOW: adRewardPAD,
+        rewardSTAR: starRewardPerAd,
         newBalance: updatedUser?.balance || user.balance || "0",
-        newBugBalance: updatedUser?.bugBalance || "0",
+        newStarBalance: updatedUser?.starBalance || "0",
         adsWatchedToday: newAdsWatched
       });
     } catch (error) {
@@ -1568,7 +1568,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const adRewardPAD = Math.round(parseFloat("0.00010000") * 10000000);
       res.json({ 
         success: true, 
-        rewardPAD: adRewardPAD,
+        rewardPOW: adRewardPAD,
         newBalance: "0",
         adsWatchedToday: 0,
         warning: "Reward processing encountered an issue but was acknowledged"
@@ -1578,11 +1578,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Daily Activity Bonus endpoints
   const DAILY_BONUS_MILESTONES = [
-    { ads: 100, bugReward: 100,  usdReward: null  },
-    { ads: 200, bugReward: 500,  usdReward: null  },
-    { ads: 300, bugReward: 1000, usdReward: null  },
-    { ads: 400, bugReward: null, usdReward: 0.005 },
-    { ads: 500, bugReward: null, usdReward: 0.01  },
+    { ads: 100, starReward: 100,  usdReward: null  },
+    { ads: 200, starReward: 500,  usdReward: null  },
+    { ads: 300, starReward: 1000, usdReward: null  },
+    { ads: 400, starReward: null, usdReward: 0.005 },
+    { ads: 500, starReward: null, usdReward: 0.01  },
   ];
 
   function getISOWeek(): string {
@@ -1667,17 +1667,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const milestone = DAILY_BONUS_MILESTONES[milestoneIndex];
 
-      if (milestone.bugReward) {
+      if (milestone.starReward) {
         await db.update(users).set({
-          bugBalance: sql`COALESCE(${users.bugBalance}, '0')::numeric + ${milestone.bugReward}`,
+          starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${milestone.starReward}`,
           lastBonusClaimedDate: today,
           updatedAt: new Date(),
         } as any).where(eq(users.id, userId));
       } else if (milestone.usdReward) {
-        const padReward = Math.round(milestone.usdReward * 10000000); // convert USD to PAD
+        const powReward = Math.round(milestone.usdReward * 10000000); // convert USD to PAD
         await storage.addEarning({
           userId,
-          amount: String(padReward),
+          amount: String(powReward),
           source: 'daily_bonus',
           description: `Daily activity bonus: $${milestone.usdReward}`,
         });
@@ -1743,7 +1743,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (currentUser as any)?.weeklyStarWeek === currentWeek
           ? ((currentUser as any)?.weeklyStars || 0)
           : 0;
-      const userStarBalance = Number((currentUser as any)?.bugBalance || 0);
+      const userStarBalance = Number((currentUser as any)?.starBalance || 0);
 
       let userRank: { rank: number; weeklyStars: number } | null = null;
       const myEntry = leaderboard.find((e) => e.userId === userId);
@@ -2054,7 +2054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalClaimed: '0', 
           availableBonus: '0', 
           readyToClaim: '0',
-          totalBugEarned: 0,
+          totalStarEarned: 0,
           totalUsdEarned: 0
         });
       }
@@ -2078,10 +2078,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Sum all historical USD rewards stored at time of earning
       let totalUsdEarned = 0;
-      let totalBugEarned = 0;
+      let totalStarEarned = 0;
       for (const ref of completedReferrals) {
         totalUsdEarned += parseFloat(ref.usdRewardAmount || '0');
-        totalBugEarned += parseFloat(ref.bugRewardAmount || '0');
+        totalStarEarned += parseFloat(ref.starRewardAmount || '0');
       }
       
       // Fallback to admin settings for pending referrals (not yet earned)
@@ -2121,7 +2121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalClaimed: user?.totalClaimedReferralBonus || '0',
         availableBonus: user?.pendingReferralBonus || '0',
         readyToClaim: user?.pendingReferralBonus || '0',
-        totalBugEarned: totalBugEarned,
+        totalStarEarned: totalStarEarned,
         totalUsdEarned: totalUsdEarned
       });
     } catch (error) {
@@ -2230,8 +2230,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check BUG balance requirement
-      const currentBugBalance = parseFloat(user.bugBalance || '0');
-      const hasSufficientBug = currentBugBalance >= MINIMUM_BUG_FOR_WITHDRAWAL;
+      const currentStarBalance = parseFloat(user.starBalance || '0');
+      const hasSufficientBug = currentStarBalance >= MINIMUM_BUG_FOR_WITHDRAWAL;
       
       // If ad requirement is disabled, user can always withdraw (regarding ads)
       const canWithdrawAds = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
@@ -2242,7 +2242,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         canWithdraw,
         canWithdrawAds,
         hasSufficientBug,
-        bugBalance: currentBugBalance,
+        starBalance: currentStarBalance,
         requiredBug: MINIMUM_BUG_FOR_WITHDRAWAL,
         requiredAds: MINIMUM_ADS_FOR_WITHDRAWAL,
         adRequirementEnabled: withdrawalAdRequirementEnabled
@@ -2658,7 +2658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channelTaskReward = await storage.getAppSetting('channelTaskReward', '1000');
       const botTaskReward = await storage.getAppSetting('botTaskReward', '1000');
       const partnerTaskReward = await storage.getAppSetting('partnerTaskReward', '1000');
-      const bugRewardPerTask = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starRewardPerTask = await storage.getAppSetting('bug_reward_per_task', '10');
 
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
@@ -2666,15 +2666,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Format advertiser tasks with PAD and BUG rewards from admin settings
       const formattedTasks = advertiserTasks.map(task => {
-        let rewardPAD = 0;
+        let rewardPOW = 0;
         if (task.taskType === 'channel') {
-          rewardPAD = parseInt(channelTaskReward);
+          rewardPOW = parseInt(channelTaskReward);
         } else if (task.taskType === 'bot') {
-          rewardPAD = parseInt(botTaskReward);
+          rewardPOW = parseInt(botTaskReward);
         } else if (task.taskType === 'partner') {
-          rewardPAD = parseInt(partnerTaskReward);
+          rewardPOW = parseInt(partnerTaskReward);
         } else {
-          rewardPAD = 20;
+          rewardPOW = 20;
         }
         
         return {
@@ -2683,8 +2683,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taskType: task.taskType,
           title: task.title,
           link: task.link,
-          rewardPAD,
-          rewardBUG: parseInt(bugRewardPerTask),
+          rewardPOW,
+          rewardSTAR: parseInt(starRewardPerTask),
           rewardType: 'PAD',
           isAdminTask: false,
           isAdvertiserTask: true,
@@ -2732,15 +2732,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardAmount = '0.0001';
       
       // Get BUG reward setting
-      const bugRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
-      const bugReward = parseInt(bugRewardSetting);
+      const starRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starReward = parseInt(starRewardSetting);
       
       await db.transaction(async (tx) => {
         // Update balance, BUG balance, and mark task complete
         await tx.update(users)
           .set({ 
             balance: sql`${users.balance} + ${rewardAmount}`,
-            bugBalance: sql`COALESCE(${users.bugBalance}, '0')::numeric + ${bugReward}`,
+            starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starReward}`,
             taskShareCompletedToday: true,
             updatedAt: new Date()
           })
@@ -2755,13 +2755,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${bugReward} BUG to user ${userId} for share task`);
+      console.log(`🐛 Added ${starReward} BUG to user ${userId} for share task`);
       
       res.json({
         success: true,
         message: 'Task completed!',
         rewardAmount,
-        rewardBUG: bugReward
+        rewardSTAR: starReward
       });
       
     } catch (error) {
@@ -2911,14 +2911,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardAmount = '0.0001';
       
       // Get BUG reward setting
-      const bugRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
-      const bugReward = parseInt(bugRewardSetting);
+      const starRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starReward = parseInt(starRewardSetting);
       
       await db.transaction(async (tx) => {
         await tx.update(users)
           .set({ 
             balance: sql`${users.balance} + ${rewardAmount}`,
-            bugBalance: sql`COALESCE(${users.bugBalance}, '0')::numeric + ${bugReward}`,
+            starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starReward}`,
             taskChannelCompletedToday: true,
             updatedAt: new Date()
           })
@@ -2932,13 +2932,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${bugReward} BUG to user ${userId} for channel task`);
+      console.log(`🐛 Added ${starReward} BUG to user ${userId} for channel task`);
       
       res.json({
         success: true,
         message: 'Task completed!',
         rewardAmount,
-        rewardBUG: bugReward
+        rewardSTAR: starReward
       });
       
     } catch (error) {
@@ -3005,14 +3005,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardAmount = '0.0001';
       
       // Get BUG reward setting
-      const bugRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
-      const bugReward = parseInt(bugRewardSetting);
+      const starRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starReward = parseInt(starRewardSetting);
       
       await db.transaction(async (tx) => {
         await tx.update(users)
           .set({ 
             balance: sql`${users.balance} + ${rewardAmount}`,
-            bugBalance: sql`COALESCE(${users.bugBalance}, '0')::numeric + ${bugReward}`,
+            starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starReward}`,
             taskCommunityCompletedToday: true,
             updatedAt: new Date()
           })
@@ -3026,13 +3026,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${bugReward} BUG to user ${userId} for community task`);
+      console.log(`🐛 Added ${starReward} BUG to user ${userId} for community task`);
       
       res.json({
         success: true,
         message: 'Task completed!',
         rewardAmount,
-        rewardBUG: bugReward
+        rewardSTAR: starReward
       });
       
     } catch (error) {
@@ -3741,15 +3741,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         channelTaskReward: parseInt(getSetting('channel_task_reward', '1000')), // NEW: Channel reward in PAD
         botTaskReward: parseInt(getSetting('bot_task_reward', '1000')), // NEW: Bot reward in PAD
         partnerTaskReward: parseInt(getSetting('partner_task_reward', '1000')), // NEW: Partner reward in PAD
-        minimumConvertPAD: parseInt(getSetting('minimum_convert_pad', '100')), // NEW: Min convert in PAD (100 PAD = $0.01)
+        minimumConvertPOW: parseInt(getSetting('minimum_convert_pad', '100')), // NEW: Min convert in PAD (100 PAD = $0.01)
         minimumConvertUSD: parseInt(getSetting('minimum_convert_pad', '100')) / 10000, // Convert to USD
         minimumClicks: parseInt(getSetting('minimum_clicks', '500')), // NEW: Min clicks for task creation
         seasonBroadcastActive: getSetting('season_broadcast_active', 'false') === 'true',
         hourlyAdLimit: parseInt(getSetting('hourly_ad_limit', '63')),
         referralRewardEnabled: getSetting('referral_reward_enabled', 'false') === 'true',
         referralRewardUSD: parseFloat(getSetting('referral_reward_usd', '0.0005')),
-        referralRewardPAD: parseInt(getSetting('referral_reward_pad', '50')),
-        referralRewardPADEnabled: getSetting('referral_reward_pad_enabled', 'true') === 'true',
+        referralRewardPOW: parseInt(getSetting('referral_reward_pad', '50')),
+        referralRewardPOWEnabled: getSetting('referral_reward_pad_enabled', 'true') === 'true',
         referralRewardUSDEnabled: getSetting('referral_reward_usd_enabled', 'false') === 'true',
         referralAdsRequired: parseInt(getSetting('referral_ads_required', '1')),
         // Daily task rewards
@@ -3762,14 +3762,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         withdrawalInviteRequirementEnabled: getSetting('withdrawal_invite_requirement_enabled', 'true') === 'true',
         minimumInvitesForWithdrawal: parseInt(getSetting('minimum_invites_for_withdrawal', '3')),
         // BUG currency settings
-        bugRewardPerAd: parseInt(getSetting('bug_reward_per_ad', '1')),
-        bugRewardPerTask: parseInt(getSetting('bug_reward_per_task', '10')),
-        bugRewardPerReferral: parseInt(getSetting('bug_reward_per_referral', '50')),
-        minimumBugForWithdrawal: parseInt(getSetting('minimum_bug_for_withdrawal', '1000')),
-        padToBugRate: parseInt(getSetting('pad_to_bug_rate', '1')),
-        minimumConvertPadToBug: parseInt(getSetting('minimum_convert_pad_to_bug', '1000')),
-        bugPerUsd: parseInt(getSetting('bug_per_usd', '10000')),
-        withdrawalBugRequirementEnabled: getSetting('withdrawal_bug_requirement_enabled', 'true') === 'true',
+        starRewardPerAd: parseInt(getSetting('bug_reward_per_ad', '1')),
+        starRewardPerTask: parseInt(getSetting('bug_reward_per_task', '10')),
+        starRewardPerReferral: parseInt(getSetting('bug_reward_per_referral', '50')),
+        minimumStarForWithdrawal: parseInt(getSetting('minimum_bug_for_withdrawal', '1000')),
+        powToStarRate: parseInt(getSetting('pad_to_bug_rate', '1')),
+        minimumConvertPowToStar: parseInt(getSetting('minimum_convert_pad_to_bug', '1000')),
+        starPerUsd: parseInt(getSetting('bug_per_usd', '10000')),
+        withdrawalStarRequirementEnabled: getSetting('withdrawal_bug_requirement_enabled', 'true') === 'true',
         // Withdrawal packages
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
         // Legacy fields for backwards compatibility
@@ -5337,12 +5337,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { padAmount, convertTo = 'USD' } = req.body;
+      const { powAmount, convertTo = 'USD' } = req.body;
       
-      console.log('💵 PAD conversion request:', { userId, padAmount, convertTo });
+      console.log('💵 PAD conversion request:', { userId, powAmount, convertTo });
       
-      const convertAmount = parseFloat(padAmount);
-      if (!padAmount || isNaN(convertAmount) || convertAmount <= 0) {
+      const convertAmount = parseFloat(powAmount);
+      if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
         return res.status(400).json({
           success: false,
           message: 'Please enter a valid PAD amount'
@@ -5357,7 +5357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             balance: users.balance,
             usdBalance: users.usdBalance,
             tonBalance: users.tonBalance,
-            bugBalance: users.bugBalance
+            starBalance: users.starBalance
           })
           .from(users)
           .where(eq(users.id, userId))
@@ -5367,15 +5367,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           throw new Error('User not found');
         }
         
-        const currentPadBalance = parseFloat(user.balance || '0');
+        const currentPowBalance = parseFloat(user.balance || '0');
         
-        if (currentPadBalance < convertAmount) {
+        if (currentPowBalance < convertAmount) {
           throw new Error('Insufficient PAD balance');
         }
         
-        const newPadBalance = currentPadBalance - convertAmount;
+        const newPowBalance = currentPowBalance - convertAmount;
         let updateData: any = {
-          balance: String(Math.round(newPadBalance)),
+          balance: String(Math.round(newPowBalance)),
           updatedAt: new Date()
         };
         
@@ -5397,21 +5397,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updateData.tonBalance = (currentTonBalance + convertedAmount).toFixed(10);
           console.log(`✅ PAD to TON: ${convertAmount} PAD → ${convertedAmount.toFixed(6)} TON`);
         } else if (convertTo === 'BUG') {
-          const padToBugRateSetting = await storage.getAppSetting('pad_to_bug_rate', '1');
-          const PAD_TO_BUG_RATE = parseFloat(padToBugRateSetting);
+          const powToStarRateSetting = await storage.getAppSetting('pad_to_bug_rate', '1');
+          const PAD_TO_BUG_RATE = parseFloat(powToStarRateSetting);
           convertedAmount = convertAmount * PAD_TO_BUG_RATE;
-          const currentBugBalance = parseFloat(user.bugBalance || '0');
-          updateData.bugBalance = (currentBugBalance + convertedAmount).toFixed(10);
+          const currentStarBalance = parseFloat(user.starBalance || '0');
+          updateData.starBalance = (currentStarBalance + convertedAmount).toFixed(10);
           console.log(`✅ PAD to BUG: ${convertAmount} PAD → ${convertedAmount.toFixed(0)} BUG`);
         }
         
         await tx.update(users).set(updateData).where(eq(users.id, userId));
         
         return {
-          padAmount: convertAmount,
+          powAmount: convertAmount,
           convertedAmount,
           convertedCurrency,
-          newPadBalance
+          newPowBalance
         };
       });
       
@@ -5443,12 +5443,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { padAmount } = req.body;
+      const { powAmount } = req.body;
       
-      console.log('💎 PAD to TON conversion request:', { userId, padAmount });
+      console.log('💎 PAD to TON conversion request:', { userId, powAmount });
       
-      const convertAmount = parseFloat(padAmount);
-      if (!padAmount || isNaN(convertAmount) || convertAmount <= 0) {
+      const convertAmount = parseFloat(powAmount);
+      if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
         return res.status(400).json({
           success: false,
           message: 'Please enter a valid PAD amount'
@@ -5457,12 +5457,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get minimum conversion from admin settings
       const minConvertSetting = await storage.getAppSetting('minimum_convert_pad_to_ton', '10000');
-      const minimumConvertPAD = parseFloat(minConvertSetting);
+      const minimumConvertPOW = parseFloat(minConvertSetting);
 
-      if (convertAmount < minimumConvertPAD) {
+      if (convertAmount < minimumConvertPOW) {
         return res.status(400).json({
           success: false,
-          message: `Minimum ${minimumConvertPAD.toLocaleString()} PAD required for TON conversion`
+          message: `Minimum ${minimumConvertPOW.toLocaleString()} PAD required for TON conversion`
         });
       }
       
@@ -5488,20 +5488,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           throw new Error('User not found');
         }
         
-        const currentPadBalance = parseFloat(user.balance || '0');
+        const currentPowBalance = parseFloat(user.balance || '0');
         const currentTonBalance = parseFloat(user.tonBalance || '0');
         
-        if (currentPadBalance < convertAmount) {
+        if (currentPowBalance < convertAmount) {
           throw new Error('Insufficient PAD balance');
         }
         
-        const newPadBalance = currentPadBalance - convertAmount;
+        const newPowBalance = currentPowBalance - convertAmount;
         const newTonBalance = currentTonBalance + tonAmount;
         
         await tx
           .update(users)
           .set({
-            balance: String(Math.round(newPadBalance)),
+            balance: String(Math.round(newPowBalance)),
             tonBalance: newTonBalance.toFixed(10),
             updatedAt: new Date()
           })
@@ -5510,16 +5510,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`✅ PAD to TON conversion successful: ${convertAmount} PAD → ${tonAmount.toFixed(6)} TON`);
         
         return {
-          padAmount: convertAmount,
+          powAmount: convertAmount,
           tonAmount,
-          newPadBalance,
+          newPowBalance,
           newTonBalance
         };
       });
       
       sendRealtimeUpdate(userId, {
         type: 'balance_update',
-        balance: String(result.newPadBalance),
+        balance: String(result.newPowBalance),
         tonBalance: result.newTonBalance.toFixed(10)
       });
       
@@ -5550,12 +5550,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { padAmount } = req.body;
+      const { powAmount } = req.body;
       
-      console.log('🐛 PAD to BUG conversion request:', { userId, padAmount });
+      console.log('🐛 PAD to BUG conversion request:', { userId, powAmount });
       
-      const convertAmount = parseFloat(padAmount);
-      if (!padAmount || isNaN(convertAmount) || convertAmount <= 0) {
+      const convertAmount = parseFloat(powAmount);
+      if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
         return res.status(400).json({
           success: false,
           message: 'Please enter a valid PAD amount'
@@ -5564,19 +5564,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get minimum conversion from admin settings
       const minConvertSetting = await storage.getAppSetting('minimum_convert_pad_to_bug', '1000');
-      const minimumConvertPAD = parseFloat(minConvertSetting);
+      const minimumConvertPOW = parseFloat(minConvertSetting);
 
-      if (convertAmount < minimumConvertPAD) {
+      if (convertAmount < minimumConvertPOW) {
         return res.status(400).json({
           success: false,
-          message: `Minimum ${minimumConvertPAD.toLocaleString()} PAD required for BUG conversion`
+          message: `Minimum ${minimumConvertPOW.toLocaleString()} PAD required for BUG conversion`
         });
       }
       
       // Get conversion rate from admin settings (default: 1 PAD = 1 BUG)
       const conversionRateSetting = await storage.getAppSetting('pad_to_bug_rate', '1');
       const PAD_TO_BUG_RATE = parseFloat(conversionRateSetting);
-      const bugAmount = convertAmount / PAD_TO_BUG_RATE;
+      const starAmount = convertAmount / PAD_TO_BUG_RATE;
       
       console.log(`📊 Using conversion rate: ${PAD_TO_BUG_RATE} PAD = 1 BUG`);
       
@@ -5585,7 +5585,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const [user] = await tx
           .select({ 
             balance: users.balance,
-            bugBalance: users.bugBalance
+            starBalance: users.starBalance
           })
           .from(users)
           .where(eq(users.id, userId))
@@ -5595,39 +5595,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
           throw new Error('User not found');
         }
         
-        const currentPadBalance = parseFloat(user.balance || '0');
-        const currentBugBalance = parseFloat(user.bugBalance || '0');
+        const currentPowBalance = parseFloat(user.balance || '0');
+        const currentStarBalance = parseFloat(user.starBalance || '0');
         
-        if (currentPadBalance < convertAmount) {
+        if (currentPowBalance < convertAmount) {
           throw new Error('Insufficient PAD balance');
         }
         
-        const newPadBalance = currentPadBalance - convertAmount;
-        const newBugBalance = currentBugBalance + bugAmount;
+        const newPowBalance = currentPowBalance - convertAmount;
+        const newStarBalance = currentStarBalance + starAmount;
         
         await tx
           .update(users)
           .set({
-            balance: String(Math.round(newPadBalance)),
-            bugBalance: newBugBalance.toFixed(10),
+            balance: String(Math.round(newPowBalance)),
+            starBalance: newStarBalance.toFixed(10),
             updatedAt: new Date()
           })
           .where(eq(users.id, userId));
         
-        console.log(`✅ PAD to BUG conversion successful: ${convertAmount} PAD → ${bugAmount.toFixed(0)} BUG`);
+        console.log(`✅ PAD to BUG conversion successful: ${convertAmount} PAD → ${starAmount.toFixed(0)} BUG`);
         
         return {
-          padAmount: convertAmount,
-          bugAmount,
-          newPadBalance,
-          newBugBalance
+          powAmount: convertAmount,
+          starAmount,
+          newPowBalance,
+          newStarBalance
         };
       });
       
       sendRealtimeUpdate(userId, {
         type: 'balance_update',
-        balance: String(result.newPadBalance),
-        bugBalance: result.newBugBalance.toFixed(10)
+        balance: String(result.newPowBalance),
+        starBalance: result.newStarBalance.toFixed(10)
       });
       
       res.json({
@@ -6190,7 +6190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const rewardPAD = parseInt(taskClick[0].rewardAmount || '0');
+      const rewardPOW = parseInt(taskClick[0].rewardAmount || '0');
 
       // Mark as claimed — reward was already added to balance when user clicked (recordTaskClick)
       await db
@@ -6201,12 +6201,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           eq(taskClicks.publisherId, userId)
         ));
 
-      console.log(`✅ Task reward claimed: ${taskId} by ${userId} - Reward: ${rewardPAD} PAD`);
+      console.log(`✅ Task reward claimed: ${taskId} by ${userId} - Reward: ${rewardPOW} PAD`);
 
       res.json({
         success: true,
-        message: `Reward claimed! +${rewardPAD} PAD`,
-        reward: rewardPAD,
+        message: `Reward claimed! +${rewardPOW} PAD`,
+        reward: rewardPOW,
       });
     } catch (error) {
       console.error("Error claiming task reward:", error);
@@ -6791,7 +6791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .select({ 
             balance: users.balance,
             usdBalance: users.usdBalance,
-            bugBalance: users.bugBalance,
+            starBalance: users.starBalance,
             cwalletId: users.cwalletId,
             usdtWalletAddress: users.usdtWalletAddress,
             telegramStarsUsername: users.telegramStarsUsername,
@@ -6942,18 +6942,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from(adminSettings)
           .where(eq(adminSettings.settingKey, 'withdrawal_bug_requirement_enabled'))
           .limit(1);
-        const withdrawalBugRequirementEnabled = bugRequirementEnabledSetting?.settingValue !== 'false';
+        const withdrawalStarRequirementEnabled = bugRequirementEnabledSetting?.settingValue !== 'false';
         
-        const [bugPerUsdSetting] = await tx
+        const [starPerUsdSetting] = await tx
           .select({ settingValue: adminSettings.settingValue })
           .from(adminSettings)
           .where(eq(adminSettings.settingKey, 'bug_per_usd'))
           .limit(1);
-        const bugPerUsd = parseInt(bugPerUsdSetting?.settingValue || '10000'); // Default: 1 USD = 10000 BUG
+        const starPerUsd = parseInt(starPerUsdSetting?.settingValue || '10000'); // Default: 1 USD = 10000 BUG
         
         // Determine BUG requirement based on package or FULL withdrawal
         const currentUsdBalanceForBug = parseFloat(user.usdBalance || '0');
-        let minimumBugForWithdrawal: number;
+        let minimumStarForWithdrawal: number;
         let packageUsdAmount: number | null = null;
         
         if (withdrawalPackage && withdrawalPackage !== 'FULL') {
@@ -6962,7 +6962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!selectedPkg) {
             throw new Error('Invalid withdrawal package selected');
           }
-          minimumBugForWithdrawal = selectedPkg.bug;
+          minimumStarForWithdrawal = selectedPkg.bug;
           packageUsdAmount = selectedPkg.usd;
           
           // Check if user has enough USD balance for this package
@@ -6971,14 +6971,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         } else {
           // FULL withdrawal: dynamic BUG requirement based on full USD balance
-          minimumBugForWithdrawal = Math.ceil(currentUsdBalanceForBug * bugPerUsd);
+          minimumStarForWithdrawal = Math.ceil(currentUsdBalanceForBug * starPerUsd);
         }
         
-        const currentBugBalance = parseFloat(user.bugBalance || '0');
-        if (withdrawalBugRequirementEnabled && currentBugBalance < minimumBugForWithdrawal) {
-          const remaining = minimumBugForWithdrawal - currentBugBalance;
+        const currentStarBalance = parseFloat(user.starBalance || '0');
+        if (withdrawalStarRequirementEnabled && currentStarBalance < minimumStarForWithdrawal) {
+          const remaining = minimumStarForWithdrawal - currentStarBalance;
           const amountStr = packageUsdAmount ? `$${packageUsdAmount.toFixed(2)}` : `$${currentUsdBalanceForBug.toFixed(2)}`;
-          throw new Error(`Earn ${remaining.toFixed(0)} more BUG to unlock your ${amountStr} withdrawal. Required: ${minimumBugForWithdrawal.toLocaleString()} BUG.`);
+          throw new Error(`Earn ${remaining.toFixed(0)} more STAR to unlock your ${amountStr} withdrawal. Required: ${minimumStarForWithdrawal.toLocaleString()} STAR.`);
         }
 
         // Check if user has appropriate wallet address based on method
@@ -7104,7 +7104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             withdrawalDetails.withdrawalPackage = packageUsdAmount;
           }
           // Only store BUG deduction if requirement is enabled — if disabled, no BUG should be cut on approval
-          withdrawalDetails.bugDeducted = withdrawalBugRequirementEnabled ? minimumBugForWithdrawal : 0;
+          withdrawalDetails.starDeducted = withdrawalStarRequirementEnabled ? minimumStarForWithdrawal : 0;
           
           // Store wallet address based on method
           if (method === 'TON') {
@@ -7647,6 +7647,28 @@ ${walletAddress}
   });
 
   // Test withdrawal group notification (admin only)
+  // Admin: manually trigger weekly contest reset (send winner notification + reset all stars)
+  app.post('/api/admin/contest/reset', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { weekLabel } = req.body;
+      const { resetWeeklyContest } = await import('./telegram');
+      const result = await resetWeeklyContest(weekLabel || undefined);
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.message,
+          usersReset: result.usersReset,
+          winnersNotified: result.winnersNotified,
+        });
+      } else {
+        res.status(500).json({ success: false, message: result.message });
+      }
+    } catch (error: any) {
+      console.error('❌ Error triggering contest reset:', error);
+      res.status(500).json({ success: false, message: `Error: ${error.message}` });
+    }
+  });
+
   app.post('/api/admin/withdrawals/test-group-notification', authenticateAdmin, async (req: any, res) => {
     try {
       const { sendWithdrawalApprovedNotification } = await import('./telegram');
@@ -8139,16 +8161,16 @@ ${walletAddress}
       } else if (rewardType === 'BUG') {
         // Add BUG balance
         const [currentUser] = await db
-          .select({ bugBalance: users.bugBalance })
+          .select({ starBalance: users.starBalance })
           .from(users)
           .where(eq(users.id, userId));
         
-        const currentBugBalance = parseFloat(currentUser?.bugBalance || '0');
-        const newBugBalance = (currentBugBalance + parseFloat(rewardAmount || '0')).toFixed(2);
+        const currentStarBalance = parseFloat(currentUser?.starBalance || '0');
+        const newStarBalance = (currentStarBalance + parseFloat(rewardAmount || '0')).toFixed(2);
         
         await db
           .update(users)
-          .set({ bugBalance: newBugBalance, updatedAt: new Date() })
+          .set({ starBalance: newStarBalance, updatedAt: new Date() })
           .where(eq(users.id, userId));
         
         // Log transaction for tracking
@@ -8158,14 +8180,14 @@ ${walletAddress}
           type: "credit",
           source: "promo_code",
           description: `Redeemed promo code: ${code}`,
-          metadata: { code, rewardType: 'BUG' }
+          metadata: { code, rewardType: 'STAR' }
         });
         
         res.json({ 
           success: true, 
-          message: `${rewardAmount} BUG added to your balance!`,
+          message: `${rewardAmount} STAR added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'BUG'
+          rewardType: 'STAR'
         });
       } else {
         // Default: Add PAD balance

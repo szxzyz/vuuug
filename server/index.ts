@@ -32,7 +32,7 @@ try {
 }
 
 // One-time migration: fix admin settings keys that were incorrectly snake_cased
-// (e.g. referralRewardPADEnabled was saved as referral_reward_p_a_d_enabled instead of referral_reward_pad_enabled)
+// (e.g. referralRewardPOWEnabled was saved as referral_reward_p_a_d_enabled instead of referral_reward_pad_enabled)
 try {
   const { db } = await import('./db');
   const { adminSettings } = await import('../shared/schema');
