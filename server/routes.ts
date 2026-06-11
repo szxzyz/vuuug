@@ -1409,11 +1409,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error("⚠️ Weekly star tracking failed (non-critical):", starError);
         }
         
-        // Check and activate referral bonuses (anti-fraud: requires 10 ads)
+        // Check and activate referral bonuses
         try {
-          await storage.checkAndActivateReferralBonus(userId);
+          const activatedReferrerIds = await storage.checkAndActivateReferralBonus(userId);
+          // Push live balance update to any referrer who just received the USD signup bonus
+          for (const referrerId of activatedReferrerIds) {
+            try {
+              const referrerData = await storage.getUser(referrerId);
+              sendRealtimeUpdate(referrerId, {
+                type: 'balance_update',
+                balance: referrerData?.balance,
+                withdrawBalance: referrerData?.withdrawBalance,
+                usdBalance: referrerData?.usdBalance,
+                totalEarnings: referrerData?.totalEarnings,
+              });
+            } catch (_) {}
+          }
         } catch (bonusError) {
-          // Log but don't fail the request if bonus processing fails
           console.error("⚠️ Referral bonus processing failed (non-critical):", bonusError);
         }
         
@@ -1449,6 +1461,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.warn('⚠️ referralCommissions insert failed (non-critical):', rcErr);
               }
               console.log(`💰 L1 commission: ${l1CommissionPAD} PAD (${l1RateDisplay}%) → ${l1Referrer.id}`);
+              // Push live balance update to L1 referrer's open session
+              try {
+                const l1Updated = await storage.getUser(l1Referrer.id);
+                sendRealtimeUpdate(l1Referrer.id, {
+                  type: 'balance_update',
+                  balance: l1Updated?.balance,
+                  withdrawBalance: l1Updated?.withdrawBalance,
+                  usdBalance: l1Updated?.usdBalance,
+                  totalEarnings: l1Updated?.totalEarnings,
+                });
+              } catch (_) {}
 
               // L2 referrer — the person who invited the L1 referrer
               if (l1Referrer.referredBy) {
@@ -1475,6 +1498,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       console.warn('⚠️ L2 referralCommissions insert failed (non-critical):', rc2Err);
                     }
                     console.log(`💰 L2 commission: ${l2CommissionPAD} PAD → ${l2Referrer.id}`);
+                    // Push live balance update to L2 referrer
+                    try {
+                      const l2Updated = await storage.getUser(l2Referrer.id);
+                      sendRealtimeUpdate(l2Referrer.id, {
+                        type: 'balance_update',
+                        balance: l2Updated?.balance,
+                        withdrawBalance: l2Updated?.withdrawBalance,
+                        usdBalance: l2Updated?.usdBalance,
+                        totalEarnings: l2Updated?.totalEarnings,
+                      });
+                    } catch (_) {}
                   }
                 } catch (l2Error) {
                   console.error("⚠️ L2 commission failed (non-critical):", l2Error);
@@ -7069,8 +7103,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (packageUsdAmount !== null) {
             withdrawalDetails.withdrawalPackage = packageUsdAmount;
           }
-          // Always store BUG deduction amount for approval processing (both package and FULL withdrawals)
-          withdrawalDetails.bugDeducted = minimumBugForWithdrawal;
+          // Only store BUG deduction if requirement is enabled — if disabled, no BUG should be cut on approval
+          withdrawalDetails.bugDeducted = withdrawalBugRequirementEnabled ? minimumBugForWithdrawal : 0;
           
           // Store wallet address based on method
           if (method === 'TON') {
@@ -7609,6 +7643,33 @@ ${walletAddress}
         success: false, 
         message: 'Failed to reject withdrawal' 
       });
+    }
+  });
+
+  // Test withdrawal group notification (admin only)
+  app.post('/api/admin/withdrawals/test-group-notification', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { sendWithdrawalApprovedNotification } = await import('./telegram');
+      const fakeWithdrawal = {
+        id: 'test-000',
+        userId: req.user.user.id,
+        amount: '0.50',
+        method: 'TON',
+        details: {
+          netAmount: '0.50',
+          paymentDetails: 'TEST_WALLET_ADDRESS',
+          walletAddress: 'TEST_WALLET_ADDRESS'
+        }
+      };
+      const success = await sendWithdrawalApprovedNotification(fakeWithdrawal);
+      if (success) {
+        res.json({ success: true, message: '✅ Test message sent to withdrawal group successfully' });
+      } else {
+        res.status(500).json({ success: false, message: '❌ Failed to send test message — check server logs for the Telegram API error' });
+      }
+    } catch (error: any) {
+      console.error('❌ Error sending test group notification:', error);
+      res.status(500).json({ success: false, message: `Error: ${error.message}` });
     }
   });
 

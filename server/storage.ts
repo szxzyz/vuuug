@@ -789,6 +789,15 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, referredId));
     
     console.log(`✅ Referral relationship created (pending): ${referrerId} referred ${referredId}, referred_by updated to: ${referrer.referralCode}`);
+
+    // Immediate activation: if the referee has already watched enough ads, activate right now.
+    // This handles the race condition where a referral is created after the friend's first ad.
+    try {
+      await this.checkAndActivateReferralBonus(referredId);
+    } catch (e) {
+      console.warn('⚠️ Immediate referral activation check failed (non-critical):', e);
+    }
+
     return referral;
   }
 
@@ -813,15 +822,14 @@ export class DatabaseStorage implements IStorage {
 
   // Check and activate referral bonus when friend watches required number of ads (PAD + USD rewards)
   // Uses admin-configured 'referral_ads_required' setting instead of hardcoded value
-  async checkAndActivateReferralBonus(userId: string): Promise<void> {
+  // Returns list of referrer IDs that received rewards (so caller can push WebSocket updates)
+  async checkAndActivateReferralBonus(userId: string): Promise<string[]> {
+    const activatedReferrerIds: string[] = [];
     try {
       const [user] = await db.select().from(users).where(eq(users.id, userId));
-      if (!user) return;
+      if (!user) return activatedReferrerIds;
 
       // Always check for pending referrals regardless of firstAdWatched flag.
-      // This ensures bonuses are credited even if a previous attempt failed mid-loop
-      // (bug fix: the old guard `if (user.firstAdWatched) return` permanently blocked
-      // re-processing when firstAdWatched was set before the loop completed).
       const pendingReferrals = await db
         .select()
         .from(referrals)
@@ -833,7 +841,7 @@ export class DatabaseStorage implements IStorage {
       // Get admin-configured referral ads requirement
       const referralAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
 
-      // Count ads watched by this user
+      // Count ads watched by this user (from earnings table so timing is always accurate)
       const [adCount] = await db
         .select({ count: sql<number>`count(*)` })
         .from(earnings)
@@ -852,27 +860,23 @@ export class DatabaseStorage implements IStorage {
       }
 
       // No pending referrals — nothing to credit
-      if (pendingReferrals.length === 0) return;
+      if (pendingReferrals.length === 0) return activatedReferrerIds;
 
       // Not enough ads watched yet — check against admin-configured threshold
-      if (adsWatched < referralAdsRequired) return;
+      if (adsWatched < referralAdsRequired) return activatedReferrerIds;
 
       // Get referral reward settings from admin (no hardcoded values)
       const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
       const referralRewardPAD = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
-      const referralRewardBUG = await this.getAppSetting('referral_reward_bug', '10');
-      // Default PAD enabled to 'true' so rewards work out of the box on new deployments.
+      const referralRewardBUG = await this.getAppSetting('bug_reward_per_referral', '50');
       const referralRewardPADEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
       const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
       const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
-      // Give PAD if PAD flag is on. Fallback: if neither flag is set, use master switch for PAD.
       const givePAD = referralRewardPADEnabled || (!referralRewardPADEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
       const giveUSD = referralRewardUSDEnabled;
 
-      // Activate each pending referral — IMPORTANT: status updated per-referral BEFORE
-      // crediting rewards so a crash after partial credit doesn't re-pay the same referral.
+      // Activate each pending referral — mark completed FIRST to prevent double-payment on retry
       for (const referral of pendingReferrals) {
-        // Mark as completed first to prevent double-payment on retry
         await db
           .update(referrals)
           .set({
@@ -883,7 +887,6 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(referrals.id, referral.id));
 
-        // Give PAD reward if enabled
         if (givePAD && referralRewardPAD > 0) {
           await this.addEarning({
             userId: referral.referrerId,
@@ -893,7 +896,6 @@ export class DatabaseStorage implements IStorage {
           });
         }
 
-        // Give USD reward if enabled — credit directly to usdBalance
         if (giveUSD && parseFloat(referralRewardUSD) > 0) {
           await db
             .update(users)
@@ -911,7 +913,6 @@ export class DatabaseStorage implements IStorage {
           });
         }
 
-        // Give BUG rewards
         await db
           .update(users)
           .set({
@@ -919,6 +920,9 @@ export class DatabaseStorage implements IStorage {
             updatedAt: new Date(),
           })
           .where(eq(users.id, referral.referrerId));
+
+        // Track this referrer so caller can push WebSocket update
+        activatedReferrerIds.push(referral.referrerId);
 
         // Notify the referrer via Telegram
         const referrer = await this.getUser(referral.referrerId);
@@ -943,6 +947,7 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('❌ Error activating referral bonus:', error);
     }
+    return activatedReferrerIds;
   }
 
   // Claim any accumulated pending referral bonus for a user.
@@ -1613,14 +1618,6 @@ export class DatabaseStorage implements IStorage {
       const [updatedWithdrawal] = await db.update(withdrawals).set(updateData).where(eq(withdrawals.id, withdrawalId)).returning();
       
       console.log(`✅ Withdrawal #${withdrawalId} approved with balance deduction — ${currency} balance updated ✅`);
-      
-      // Send group notification for approval
-      try {
-        const { sendWithdrawalApprovedNotification } = require('./telegram');
-        await sendWithdrawalApprovedNotification(updatedWithdrawal);
-      } catch (notifyError) {
-        console.error('⚠️ Failed to send withdrawal approval notification:', notifyError);
-      }
       
       return { success: true, message: 'Withdrawal approved and processed', withdrawal: updatedWithdrawal };
     } catch (error) {

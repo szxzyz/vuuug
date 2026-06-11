@@ -478,7 +478,8 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
   }
 
   try {
-    const WITHDRAWAL_CHANNEL_ID = '-1002480439556';
+    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1002480439556');
+    const WITHDRAWAL_CHANNEL_ID = groupSetting || '-1002480439556';
     const user = await storage.getUser(withdrawal.userId);
     
     const withdrawalDetails = withdrawal.details as any;
@@ -529,7 +530,8 @@ export async function sendWithdrawalRejectedNotification(withdrawal: any, reason
   if (!TELEGRAM_BOT_TOKEN) return false;
   
   try {
-    const WITHDRAWAL_CHANNEL_ID = '-1002480439556';
+    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1002480439556');
+    const WITHDRAWAL_CHANNEL_ID = groupSetting || '-1002480439556';
     const user = await storage.getUser(withdrawal.userId);
     const userTelegramId = user?.telegram_id || '';
     const userName = user?.firstName || user?.username || 'Unknown';
