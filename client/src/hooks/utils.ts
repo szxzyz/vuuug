@@ -40,8 +40,8 @@ export function formatTaskReward(value: string | number, includeSymbol: boolean 
  * Convert PAD to USD
  * 100,000 PAD = $1.00
  */
-export function formatPADtoUSD(padAmount: number | string): string {
-  const usd = padToUSD(padAmount);
+export function formatPOWtoUSD(powAmount: number | string): string {
+  const usd = padToUSD(powAmount);
   return usd.toFixed(2);
 }
 
