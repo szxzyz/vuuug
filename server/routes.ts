@@ -1395,13 +1395,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`🐛 Added ${starRewardPerAd} BUG to user ${userId} for ad watch`);
         }
 
-        // Track 1 STAR per ad watched for weekly leaderboard
+        // Track STAR per ad watched for weekly leaderboard (same as starBalance reward)
         try {
           const currentWeek = getISOWeek();
           const userWeekStarWeek = (user as any).weeklyStarWeek;
           const weeklyReset = userWeekStarWeek !== currentWeek;
+          const starsToAdd = starRewardPerAd > 0 ? starRewardPerAd : 1;
           await db.update(users).set({
-            weeklyStars: weeklyReset ? 1 : sql`COALESCE(${users.weeklyStars}, 0) + 1`,
+            weeklyStars: weeklyReset ? starsToAdd : sql`COALESCE(${users.weeklyStars}, 0) + ${starsToAdd}`,
             weeklyStarWeek: currentWeek,
             updatedAt: new Date(),
           } as any).where(eq(users.id, userId));
@@ -1687,19 +1688,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } as any).where(eq(users.id, userId));
       }
 
-      // Track bonus Stars for milestone on weekly leaderboard: +10 per milestone level
+      // Track full STAR reward for milestone on weekly leaderboard (same as starBalance reward)
       try {
-        const bonusStars = (milestoneIndex + 1) * 10;
-        const currentWeek = getISOWeek();
-        const freshUser = await storage.getUser(userId);
-        const userWeek = (freshUser as any)?.weeklyStarWeek;
-        const weeklyReset = userWeek !== currentWeek;
-        await db.update(users).set({
-          weeklyStars: weeklyReset ? bonusStars : sql`COALESCE(${users.weeklyStars}, 0) + ${bonusStars}`,
-          weeklyStarWeek: currentWeek,
-          updatedAt: new Date(),
-        } as any).where(eq(users.id, userId));
-        console.log(`⭐ Added ${bonusStars} weekly stars to ${userId} for milestone ${milestoneIndex + 1}`);
+        const fullStarReward = milestone.starReward || 0;
+        if (fullStarReward > 0) {
+          const currentWeek = getISOWeek();
+          const freshUser = await storage.getUser(userId);
+          const userWeek = (freshUser as any)?.weeklyStarWeek;
+          const weeklyReset = userWeek !== currentWeek;
+          await db.update(users).set({
+            weeklyStars: weeklyReset ? fullStarReward : sql`COALESCE(${users.weeklyStars}, 0) + ${fullStarReward}`,
+            weeklyStarWeek: currentWeek,
+            updatedAt: new Date(),
+          } as any).where(eq(users.id, userId));
+          console.log(`⭐ Added ${fullStarReward} weekly stars to ${userId} for milestone ${milestoneIndex + 1}`);
+        }
       } catch (starError) {
         console.error("⚠️ Milestone weekly star tracking failed (non-critical):", starError);
       }
@@ -5337,12 +5340,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { powAmount, convertTo = 'USD' } = req.body;
+      const { padAmount, convertTo = 'USD' } = req.body;
       
-      console.log('💵 PAD conversion request:', { userId, powAmount, convertTo });
+      console.log('💵 PAD conversion request:', { userId, padAmount, convertTo });
       
-      const convertAmount = parseFloat(powAmount);
-      if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
+      const convertAmount = parseFloat(padAmount);
+      if (!padAmount || isNaN(convertAmount) || convertAmount <= 0) {
         return res.status(400).json({
           success: false,
           message: 'Please enter a valid PAD amount'
@@ -5443,9 +5446,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { powAmount } = req.body;
+      const { padAmount: powAmount } = req.body;
       
-      console.log('💎 PAD to TON conversion request:', { userId, powAmount });
+      console.log('💎 PAD to TON conversion request:', { userId, padAmount: powAmount });
       
       const convertAmount = parseFloat(powAmount);
       if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
@@ -5550,9 +5553,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { powAmount } = req.body;
+      const { padAmount: powAmount } = req.body;
       
-      console.log('🐛 PAD to BUG conversion request:', { userId, powAmount });
+      console.log('🐛 PAD to BUG conversion request:', { userId, padAmount: powAmount });
       
       const convertAmount = parseFloat(powAmount);
       if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {

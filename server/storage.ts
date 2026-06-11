@@ -1552,31 +1552,24 @@ export class DatabaseStorage implements IStorage {
       // Handle balance deduction with support for legacy withdrawals
       // Legacy withdrawals (created before the fix) already had balance deducted at request time
       // New withdrawals have balance deducted only on approval
-      const starDeducted = withdrawalDetails?.starDeducted ? parseFloat(withdrawalDetails.starDeducted) : 0;
-      const currentStarBalance = parseFloat(user.starBalance || '0');
-      
       if (userBalance >= totalToDeduct) {
         // User has sufficient balance - this is a NEW withdrawal (or user earned more since request)
-        // Deduct balance now on approval
+        // Deduct USD balance now on approval — STAR balance is NOT deducted (it is only a gate requirement)
         console.log(`💰 Deducting USD balance now for approved withdrawal`);
         console.log(`💰 Net amount: $${withdrawalAmount}, Total to deduct (with fee): $${totalToDeduct}`);
         console.log(`💰 Previous USD balance: ${userBalance}, New balance: ${(userBalance - totalToDeduct).toFixed(10)}`);
 
         const newUsdBalance = (userBalance - totalToDeduct).toFixed(10);
-        const newStarBalance = Math.max(0, currentStarBalance - starDeducted).toFixed(10);
         
         await db
           .update(users)
           .set({
             usdBalance: newUsdBalance,
-            starBalance: newStarBalance,
             updatedAt: new Date()
           })
           .where(eq(users.id, withdrawal.userId));
         console.log(`✅ USD balance deducted: ${userBalance} → ${newUsdBalance}`);
-        if (starDeducted > 0) {
-          console.log(`✅ BUG balance deducted: ${currentStarBalance} → ${newStarBalance}`);
-        }
+        console.log(`✅ STAR balance preserved (not deducted — STAR is gate only, not consumed)`);
       } else {
         // User doesn't have sufficient balance - this is a LEGACY withdrawal
         // Balance was already deducted at request time (old flow), so just approve without deducting again
