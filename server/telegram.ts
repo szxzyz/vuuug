@@ -356,12 +356,127 @@ export async function sendWeeklyLeaderboardReport(weekLabel?: string): Promise<b
 export async function checkAndSendWeeklyLeaderboardReport(): Promise<void> {
   try {
     const now = new Date();
-    // Send report on Monday UTC (day 1), first check of the new week
+    // Send report and reset on Monday UTC (day 1), first check of the new week
     if (now.getUTCDay() === 1) {
       await sendWeeklyLeaderboardReport();
+      await resetWeeklyContest();
     }
   } catch (error) {
     console.error('❌ Error in weekly leaderboard check:', error);
+  }
+}
+
+export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ success: boolean; message: string; winnersNotified: boolean; usersReset: number }> {
+  try {
+    const { db } = await import('./db');
+    const { users, adminSettings } = await import('../shared/schema');
+    const { sql } = await import('drizzle-orm');
+
+    const reportWeek = forcedWeekLabel || getPreviousISOWeekString();
+
+    // Check if this week's reset has already been done
+    const resetKey = 'weekly_contest_reset_' + reportWeek;
+    const alreadyReset = await db.select().from(adminSettings)
+      .where(sql`${adminSettings.settingKey} = ${resetKey}`);
+    if (alreadyReset.length > 0 && alreadyReset[0].settingValue === 'true') {
+      console.log(`⏭️ Weekly contest for ${reportWeek} already reset`);
+      return { success: true, message: 'Already reset', winnersNotified: false, usersReset: 0 };
+    }
+
+    // Fetch top 10 participants for the week before reset
+    const top10 = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        firstName: users.firstName,
+        weeklyStars: users.weeklyStars,
+        weeklyStarWeek: users.weeklyStarWeek,
+      })
+      .from(users)
+      .where(sql`COALESCE(${users.weeklyStarWeek}, '') = ${reportWeek} AND COALESCE(${users.weeklyStars}, 0) > 0`)
+      .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+      .limit(10);
+
+    // Send admin notification with full winner details
+    let winnersNotified = false;
+    if (TELEGRAM_BOT_TOKEN) {
+      const rankEmojis: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
+      const prizePcts: [number, number][] = [
+        [1, 40], [2, 25], [3, 15], [4, 8], [5, 5],
+        [6, 3], [7, 1], [8, 1], [9, 1], [10, 1],
+      ];
+      const prizePool = 10;
+
+      let winnerLines = top10.length > 0
+        ? top10.map((u, i) => {
+            const rank = i + 1;
+            const emoji = rankEmojis[rank] || `${rank}.`;
+            const name = (u.firstName || u.username || `Player ${rank}`).slice(0, 16);
+            const stars = (u.weeklyStars ?? 0).toLocaleString();
+            const pct = prizePcts.find(([r]) => r === rank)?.[1] ?? 0;
+            const prizeAmt = ((prizePool * pct) / 100).toFixed(2);
+            return `${emoji} <b>${name}</b>\n   🆔 <code>${u.id}</code>\n   ⭐ ${stars} stars  💰 $${prizeAmt}`;
+          }).join('\n\n')
+        : 'No participants this week.';
+
+      const message =
+        `🏆 <b>Weekly Contest Ended — ${reportWeek}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `<b>Winners:</b>\n\n` +
+        winnerLines +
+        `\n\n━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🔄 All Star balances have been reset to 0.\n` +
+        `🆕 New contest has started automatically.\n` +
+        `🕐 ${new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC`;
+
+      try {
+        // Collect all admin IDs
+        const adminIds = new Set<string>();
+        const superAdmin = (process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_ID || '').trim();
+        if (superAdmin) adminIds.add(superAdmin);
+        (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean).forEach(id => adminIds.add(id));
+        try {
+          const { adminRoles } = await import('../shared/schema');
+          const dbAdmins = await db.select({ telegramId: adminRoles.telegramId }).from(adminRoles);
+          dbAdmins.forEach(r => { if (r.telegramId) adminIds.add(r.telegramId); });
+        } catch { }
+
+        for (const adminId of adminIds) {
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: adminId, text: message, parse_mode: 'HTML' }),
+          });
+        }
+        winnersNotified = true;
+        console.log(`✅ Weekly contest winner notification sent to all admins for ${reportWeek}`);
+      } catch (notifyErr) {
+        console.error('❌ Failed to send winner notification:', notifyErr);
+      }
+    }
+
+    // Reset weekly_stars to 0 and clear weekly_star_week for ALL users who participated this week
+    const resetResult = await db.update(users)
+      .set({
+        weeklyStars: 0,
+        weeklyStarWeek: '',
+        updatedAt: new Date(),
+      })
+      .where(sql`COALESCE(${users.weeklyStarWeek}, '') = ${reportWeek}`)
+      .returning({ id: users.id });
+
+    const usersReset = resetResult.length;
+    console.log(`✅ Weekly contest reset complete — ${usersReset} users' Star balances reset to 0 for week ${reportWeek}`);
+
+    // Mark reset as done
+    await db.insert(adminSettings)
+      .values({ settingKey: resetKey, settingValue: 'true', updatedAt: new Date() })
+      .onConflictDoUpdate({ target: adminSettings.settingKey, set: { settingValue: 'true', updatedAt: new Date() } });
+
+    return { success: true, message: `Reset complete — ${usersReset} users reset`, winnersNotified, usersReset };
+  } catch (error) {
+    console.error('❌ Error resetting weekly contest:', error);
+    return { success: false, message: String(error), winnersNotified: false, usersReset: 0 };
   }
 }
 
