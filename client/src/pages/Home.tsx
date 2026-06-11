@@ -1,30 +1,28 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
-import Header from "@/components/Header";
-import IncomeChart from "@/components/IncomeChart";
-import IncomeStatistics from "@/components/IncomeStatistics";
+import AdWatchingSection from "@/components/AdWatchingSection";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
-import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
-import { FaTrophy, FaMedal } from "react-icons/fa";
+import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Bug, DollarSign, Coins, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell } from "lucide-react";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
-import { apiRequest, getTelegramInitData } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
+import { Input } from "@/components/ui/input";
+import { AnimatePresence, motion } from "framer-motion";
 
-// Unified Task Interface
 interface UnifiedTask {
   id: string;
   type: 'advertiser';
   taskType: string;
   title: string;
   link: string | null;
-  rewardPOW: number;
-  rewardSTAR?: number;
+  rewardPAD: number;
+  rewardBUG?: number;
   rewardType: string;
   isAdminTask: boolean;
   isAdvertiserTask?: boolean;
@@ -34,6 +32,11 @@ interface UnifiedTask {
 declare global {
   interface Window {
     show_10401872: (type?: string | { type: string; inAppSettings: any }) => Promise<void>;
+    Adsgram: {
+      init: (config: { blockId: string }) => {
+        show: () => Promise<void>;
+      };
+    };
   }
 }
 
@@ -42,7 +45,7 @@ interface User {
   telegramId?: string;
   balance?: string;
   usdBalance?: string;
-  starBalance?: string;
+  bugBalance?: string;
   lastStreakDate?: string;
   username?: string;
   firstName?: string;
@@ -65,7 +68,10 @@ export default function Home() {
   const [timeUntilNextClaim, setTimeUntilNextClaim] = useState<string>("");
   
   const [promoPopupOpen, setPromoPopupOpen] = useState(false);
+  const [convertPopupOpen, setConvertPopupOpen] = useState(false);
   const [boosterPopupOpen, setBoosterPopupOpen] = useState(false);
+  const [selectedConvertType, setSelectedConvertType] = useState<'USD' | 'TON' | 'BUG'>('USD');
+  const [convertAmount, setConvertAmount] = useState<string>("");
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
   
   const [shareWithFriendsStep, setShareWithFriendsStep] = useState<'idle' | 'sharing' | 'countdown' | 'ready' | 'claiming'>('idle');
@@ -178,7 +184,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ powAmount: amount, convertTo }),
+        body: JSON.stringify({ padAmount: amount, convertTo }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -190,6 +196,7 @@ export default function Home() {
       showNotification("Convert successful.", "success");
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
+      setConvertPopupOpen(false);
     },
     onError: (error: Error) => {
       showNotification(error.message, "error");
@@ -217,8 +224,8 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       const rewardAmount = parseFloat(data.rewardEarned || '0');
       if (rewardAmount > 0) {
-        const earnedPOW = Math.round(rewardAmount);
-        showNotification(`You've claimed +${earnedPOW} POW!`, "success");
+        const earnedPAD = Math.round(rewardAmount);
+        showNotification(`You've claimed +${earnedPAD} PAD!`, "success");
       } else {
         showNotification("You've claimed your streak bonus!", "success");
       }
@@ -264,8 +271,6 @@ export default function Home() {
     },
   });
 
-  const [clickedTasks, setClickedTasks] = useState<Set<string>>(new Set());
-
   const advertiserTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       const res = await fetch(`/api/advertiser-tasks/${taskId}/click`, {
@@ -274,73 +279,31 @@ export default function Home() {
         credentials: 'include',
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.message || 'Failed to start task');
-      return data;
-    },
-    onSuccess: async (data, taskId) => {
-      setClickedTasks(prev => new Set(prev).add(taskId));
-      showNotification("Task started! Click the claim button to earn your reward.", "info");
-    },
-    onError: (error: any) => {
-      showNotification(error.message || 'Failed to start task', 'error');
-    },
-  });
-
-  const claimAdvertiserTaskMutation = useMutation({
-    mutationFn: async ({ taskId, taskType, link }: { taskId: string, taskType: string, link: string | null }) => {
-      // Step 1: Real-time verification for channel tasks
-      if (taskType === 'channel' && link) {
-        const username = link.replace('https://t.me/', '').split('?')[0];
-        const currentTelegramData = getTelegramInitData();
-        
-        const resVerify = await fetch('/api/tasks/verify/channel', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-telegram-data': currentTelegramData || ''
-          },
-          body: JSON.stringify({ channelId: `@${username}` }),
-          credentials: 'include',
-        });
-        
-        const verifyData = await resVerify.json();
-        if (!resVerify.ok || !verifyData.isJoined) {
-          throw new Error('Please join the channel to complete this task.');
-        }
-      }
-
-      // Step 2: Claim reward
-      const res = await fetch(`/api/advertiser-tasks/${taskId}/claim`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message || 'Failed to claim reward');
+      if (!data.success) throw new Error(data.message || 'Failed to complete task');
       return data;
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       await queryClient.refetchQueries({ queryKey: ['/api/tasks/home/unified'] });
-      const powReward = Number(data.reward ?? 0);
-      showNotification(`+${powReward.toLocaleString()} POW earned!`, 'success');
+      const padReward = Number(data.reward ?? 0);
+      const bugReward = Number(data.bugReward ?? 0);
+      if (bugReward > 0) {
+        showNotification(`+${padReward.toLocaleString()} PAD, +${bugReward} BUG`, 'success');
+      } else {
+        showNotification(`+${padReward.toLocaleString()} PAD`, 'success');
+      }
     },
     onError: (error: any) => {
-      showNotification(error.message || 'Failed to claim reward', 'error');
+      showNotification(error.message || 'Failed to complete task', 'error');
     },
   });
 
   const handleUnifiedTask = (task: UnifiedTask) => {
     if (!task) return;
     
-    if (clickedTasks.has(task.id)) {
-      claimAdvertiserTaskMutation.mutate({ taskId: task.id, taskType: task.taskType, link: task.link });
-      return;
-    }
-
     if (task.link) {
       window.open(task.link, '_blank');
-      advertiserTaskMutation.mutate(task.id);
+      setTimeout(() => advertiserTaskMutation.mutate(task.id), 2000);
     } else {
       advertiserTaskMutation.mutate(task.id);
     }
@@ -353,6 +316,22 @@ export default function Home() {
   };
 
   const isTaskPending = advertiserTaskMutation.isPending;
+
+  const showAdsgramAd = (): Promise<boolean> => {
+    return new Promise(async (resolve) => {
+      if (window.Adsgram) {
+        try {
+          await window.Adsgram.init({ blockId: "int-20373" }).show();
+          resolve(true);
+        } catch (error) {
+          console.error('Adsgram ad error:', error);
+          resolve(false);
+        }
+      } else {
+        resolve(false);
+      }
+    });
+  };
 
   const showMonetagAd = (): Promise<{ success: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
@@ -393,17 +372,73 @@ export default function Home() {
   };
 
   const handleConvertClick = () => {
-    if (convertMutation.isPending) return;
-    const minimumConvertPOW = appSettings?.minimumConvertPOW || 10000;
-    if (balancePOW <= 0) {
-      showNotification("No POW balance to swap.", "error");
+    setConvertPopupOpen(true);
+  };
+
+  const handleConvertConfirm = async () => {
+    const amount = parseFloat(convertAmount);
+    if (isNaN(amount) || amount <= 0) {
+      showNotification("Please enter a valid amount", "error");
       return;
     }
-    if (balancePOW < minimumConvertPOW) {
-      showNotification(`Minimum ${minimumConvertPOW.toLocaleString()} POW required to swap.`, "error");
+
+    const minimumConvertPAD = selectedConvertType === 'USD' 
+      ? (appSettings?.minimumConvertPAD || 10000)
+      : selectedConvertType === 'TON'
+        ? (appSettings?.minimumConvertPadToTon || 10000)
+        : (appSettings?.minimumConvertPadToBug || 1000);
+    
+    if (amount < minimumConvertPAD) {
+      showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} PAD required.`, "error");
       return;
     }
-    convertMutation.mutate({ amount: balancePOW, convertTo: 'USD' });
+
+    if (balancePAD < amount) {
+      showNotification("Insufficient PAD balance", "error");
+      return;
+    }
+
+    if (isConverting || convertMutation.isPending) return;
+    
+    setIsConverting(true);
+    console.log('💱 Convert started, showing AdsGram ad first...');
+    
+    try {
+      // Show AdsGram int-20373 first
+      const adsgramSuccess = await showAdsgramAd();
+      
+      if (!adsgramSuccess) {
+        showNotification("Please watch the ad to convert.", "error");
+        setIsConverting(false);
+        return;
+      }
+      
+      // Then show Monetag rewarded ad
+      console.log('🎬 AdsGram complete, showing Monetag rewarded...');
+      const monetagResult = await showMonetagRewardedAd();
+      
+      if (monetagResult.unavailable) {
+        // If Monetag unavailable, proceed with just AdsGram
+        console.log('⚠️ Monetag unavailable, proceeding with convert');
+        convertMutation.mutate({ amount, convertTo: selectedConvertType });
+        return;
+      }
+      
+      if (!monetagResult.success) {
+        showNotification("Please watch the ad to convert.", "error");
+        setIsConverting(false);
+        return;
+      }
+      
+      console.log('✅ Both ads watched, converting');
+      convertMutation.mutate({ amount, convertTo: selectedConvertType });
+      
+    } catch (error) {
+      console.error('Convert error:', error);
+      showNotification("Something went wrong. Please try again.", "error");
+    } finally {
+      setIsConverting(false);
+    }
   };
 
   const handleClaimStreak = async () => {
@@ -412,14 +447,30 @@ export default function Home() {
     setIsClaimingStreak(true);
     
     try {
-      const monetagResult = await showMonetagRewardedAd();
+      // Show AdsGram int-20373 first
+      const adsgramSuccess = await showAdsgramAd();
       
-      if (!monetagResult.unavailable && !monetagResult.success) {
+      if (!adsgramSuccess) {
         showNotification("Please watch the ad completely to claim your bonus.", "error");
         setIsClaimingStreak(false);
         return;
       }
-
+      
+      // Then show Monetag rewarded ad
+      const monetagResult = await showMonetagRewardedAd();
+      
+      if (monetagResult.unavailable) {
+        // If Monetag unavailable, proceed with just AdsGram
+        claimStreakMutation.mutate();
+        return;
+      }
+      
+      if (!monetagResult.success) {
+        showNotification("Please watch the ad completely to claim your bonus.", "error");
+        setIsClaimingStreak(false);
+        return;
+      }
+      
       claimStreakMutation.mutate();
     } catch (error) {
       console.error('Streak claim failed:', error);
@@ -427,15 +478,6 @@ export default function Home() {
       setIsClaimingStreak(false);
     }
   };
-
-  useEffect(() => {
-    if (checkForUpdatesStep === 'countdown' && checkForUpdatesCountdown > 0) {
-      const timer = setTimeout(() => setCheckForUpdatesCountdown(prev => prev - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (checkForUpdatesStep === 'countdown' && checkForUpdatesCountdown === 0) {
-      setCheckForUpdatesStep('ready');
-    }
-  }, [checkForUpdatesStep, checkForUpdatesCountdown]);
 
   const handleApplyPromo = async () => {
     if (!promoCode.trim()) {
@@ -446,16 +488,36 @@ export default function Home() {
     if (isApplyingPromo || redeemPromoMutation.isPending) return;
     
     setIsApplyingPromo(true);
+    console.log('🎫 Promo code claim started, showing AdsGram ad first...');
     
     try {
-      const monetagResult = await showMonetagRewardedAd();
+      // Show AdsGram int-20373 first
+      const adsgramSuccess = await showAdsgramAd();
       
-      if (!monetagResult.unavailable && !monetagResult.success) {
+      if (!adsgramSuccess) {
         showNotification("Please watch the ad to claim your promo code.", "error");
         setIsApplyingPromo(false);
         return;
       }
       
+      // Then show Monetag rewarded ad
+      console.log('🎬 AdsGram complete, showing Monetag rewarded...');
+      const monetagResult = await showMonetagRewardedAd();
+      
+      if (monetagResult.unavailable) {
+        // If Monetag unavailable, proceed with just AdsGram
+        console.log('⚠️ Monetag unavailable, proceeding with promo claim');
+        redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
+        return;
+      }
+      
+      if (!monetagResult.success) {
+        showNotification("Please watch the ad to claim your promo code.", "error");
+        setIsApplyingPromo(false);
+        return;
+      }
+      
+      console.log('✅ Both ads watched, claiming promo code');
       redeemPromoMutation.mutate(promoCode.trim().toUpperCase());
     } catch (error) {
       console.error('Promo claim error:', error);
@@ -484,11 +546,11 @@ export default function Home() {
   }
 
   const rawBalance = parseFloat((user as User)?.balance || "0");
-  const balancePOW = rawBalance < 1 ? Math.round(rawBalance * 10000000) : Math.round(rawBalance);
+  const balancePAD = rawBalance < 1 ? Math.round(rawBalance * 10000000) : Math.round(rawBalance);
   const balanceUSD = parseFloat((user as User)?.usdBalance || "0");
-  const balanceSTAR = parseFloat((user as User)?.starBalance || "0");
+  const balanceBUG = parseFloat((user as User)?.bugBalance || "0");
   
-  const userUID = (user as User)?.telegramId || (user as User)?.referralCode || "00000";
+  const userUID = (user as User)?.referralCode || "00000";
 
   const photoUrl = typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.photo_url;
   
@@ -521,7 +583,7 @@ export default function Home() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} POW claimed!`, 'success');
+      showNotification(`+${data.reward} PAD claimed!`, 'success');
       setShareWithFriendsStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -542,7 +604,7 @@ export default function Home() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} POW claimed!`, 'success');
+      showNotification(`+${data.reward} PAD claimed!`, 'success');
       setDailyCheckinStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -555,20 +617,6 @@ export default function Home() {
 
   const checkForUpdatesMutation = useMutation({
     mutationFn: async () => {
-      // Step 1: Real-time verification via Telegram Bot API
-      const resVerify = await fetch('/api/tasks/verify/channel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelId: '@MoneyAdz' }),
-        credentials: 'include',
-      });
-      
-      const verifyData = await resVerify.json();
-      if (!resVerify.ok || !verifyData.isJoined) {
-        throw new Error('Please join the channel to complete this task.');
-      }
-
-      // Step 2: Claim reward if verified
       const response = await fetch('/api/missions/check-for-updates/claim', {
         method: 'POST',
         credentials: 'include',
@@ -577,7 +625,7 @@ export default function Home() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} POW claimed!`, 'success');
+      showNotification(`+${data.reward} PAD claimed!`, 'success');
       setCheckForUpdatesStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -615,7 +663,7 @@ export default function Home() {
           console.error('Prepare message error:', error);
         }
       }
-      const shareTitle = `💵 Get paid for completing tasks and watching ads.`;
+      const shareTitle = `💸 Start earning money just by completing tasks & watching ads!`;
       const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareTitle)}`;
       if (tgWebApp?.openTelegramLink) {
         tgWebApp.openTelegramLink(shareUrl);
@@ -684,149 +732,203 @@ export default function Home() {
     checkForUpdatesMutation.mutate();
   }, [checkForUpdatesMutation]);
 
-  const formatBalance = (n: number) => {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-    return Math.round(n).toLocaleString();
-  };
-
-  const usdFormatted = balanceUSD >= 0.01
-    ? balanceUSD.toFixed(2)
-    : balanceUSD >= 0.0001
-      ? balanceUSD.toFixed(4)
-      : balanceUSD.toFixed(6);
-  const [usdInt, usdDec] = usdFormatted.split('.');
-
   return (
     <Layout>
-      <Header />
-      <main className="max-w-md mx-auto px-4 pt-0 bg-black text-white">
-        {/* Balance Section — left aligned */}
-        <div className="mb-4 pt-2 px-1">
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4 }}>
-            Balance
-          </p>
-
-          {/* Main USD balance */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 2 }}>
-            <span style={{ fontSize: 32, fontWeight: 700, color: 'rgba(255,255,255,0.65)', lineHeight: 1 }}>$</span>
-            <span style={{
-              fontSize: balanceUSD >= 1000 ? 38 : 44,
-              fontWeight: 800,
-              color: '#fff',
-              fontFamily: "'Space Grotesk', sans-serif",
-              letterSpacing: '-1.5px',
-              fontVariantNumeric: 'tabular-nums',
-              lineHeight: 1,
-            }}>
-              {usdInt}
-            </span>
-            <span style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.45)', lineHeight: 1 }}>.{usdDec}</span>
-          </div>
-
-          {/* PAD sub-value */}
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginBottom: 16 }}>
-            {formatBalance(balancePOW)} POW
-          </p>
-
-          {/* Equal-width buttons */}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => setLocation('/withdraw')}
-              className="btn-primary active:scale-95 transition-transform"
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
+      <main className="max-w-md mx-auto px-4 pt-[14px]">
+        <div className="flex flex-col items-center mb-3">
+          {photoUrl ? (
+            <img 
+              src={photoUrl} 
+              alt="Profile" 
+              className={`w-24 h-24 rounded-full border-4 border-[#4cd3ff] shadow-[0_0_20px_rgba(76,211,255,0.5)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              onClick={() => isAdmin && setLocation("/admin")}
+            />
+          ) : (
+            <div 
+              className={`w-24 h-24 rounded-full bg-gradient-to-br from-[#4cd3ff] to-[#b8b8b8] flex items-center justify-center border-4 border-[#4cd3ff] shadow-[0_0_20px_rgba(76,211,255,0.5)] ${isAdmin ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              onClick={() => isAdmin && setLocation("/admin")}
             >
-              WITHDRAW
-            </button>
-
-            <button
-              onClick={handleConvertClick}
-              className="active:scale-95 transition-transform"
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)', border: 'none' }}
-            >
-              SWAP
-            </button>
-          </div>
+              <span className="text-black font-bold text-3xl">
+                {displayName.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          )}
+          
+          {userRank && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-[#4cd3ff]/20 to-[#b8b8b8]/20 border border-[#4cd3ff]/30 -mt-2">
+              <Award className="w-3 h-3 text-[#4cd3ff]" />
+              <span className="text-[10px] font-bold text-[#4cd3ff]">#{userRank}</span>
+            </div>
+          )}
+          
+          <h1 className="text-lg font-bold text-white mt-1">{displayName}</h1>
+          <p className="text-xs text-gray-400 -mt-0.5">UID: {userUID}</p>
         </div>
 
-        {/* Weekly Contest Banner */}
-        <div
-          className="mt-4 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
-          style={{ height: 96 }}
-          onClick={() => window.location.href = '/leaderboard'}
-        >
-          <img
-            src="/daily-contest-banner.jpg"
-            alt="Weekly Contest"
-            className="w-full h-full object-cover"
-            style={{ objectPosition: 'center 85%' }}
-          />
-          {/* Dark overlay stronger on left, fades to right so ninjas show */}
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.6) 45%, rgba(0,0,0,0.15) 100%)' }} />
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <Button
+            onClick={handleConvertClick}
+            disabled={isConverting || convertMutation.isPending}
+            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-[#4cd3ff]/30 hover:border-[#4cd3ff] hover:bg-[#4cd3ff]/10 transition-all rounded-full flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+          >
+            {isConverting || convertMutation.isPending ? (
+              <>
+                <Clock className="w-4 h-4 text-[#4cd3ff] animate-spin" />
+                <span className="text-white font-medium text-xs">Converting...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 text-[#4cd3ff]" />
+                <span className="text-white font-medium text-xs">Convert</span>
+              </>
+            )}
+          </Button>
 
-          {/* Left: title + subtitle */}
-          <div className="absolute inset-0 flex items-center justify-between" style={{ padding: '0 14px' }}>
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-1.5">
-                <FaMedal style={{ color: '#FFD700', fontSize: 13 }} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#FFD700', letterSpacing: '0.18em', textTransform: 'uppercase', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
-                  Weekly Contest
-                </span>
+          <Button
+            onClick={handleClaimStreak}
+            disabled={isClaimingStreak || !canClaimStreak}
+            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-[#4cd3ff]/30 hover:border-[#4cd3ff] hover:bg-[#4cd3ff]/10 transition-all rounded-full flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+          >
+            {isClaimingStreak ? (
+              <>
+                <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
+                <span className="text-white font-medium text-xs">Claiming...</span>
+              </>
+            ) : canClaimStreak ? (
+              <>
+                <Flame className="w-4 h-4 text-[#4cd3ff]" />
+                <span className="text-white font-medium text-xs">Claim Bonus</span>
+              </>
+            ) : (
+              <>
+                <Flame className="w-4 h-4 text-[#4cd3ff] opacity-50" />
+                <span className="text-white font-medium text-xs opacity-70">{timeUntilNextClaim}</span>
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <Button
+            onClick={() => setPromoPopupOpen(true)}
+            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/10 transition-all rounded-full flex items-center justify-center gap-2 shadow-lg"
+          >
+            <Gift className="w-4 h-4 text-purple-400" />
+            <span className="text-white font-medium text-xs">Promo</span>
+          </Button>
+
+          <Button
+            onClick={handleBoosterClick}
+            className="h-12 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 transition-all rounded-full flex items-center justify-center gap-2 shadow-lg"
+          >
+            <CalendarCheck className="w-4 h-4 text-orange-400" />
+            <span className="text-white font-medium text-xs">Daily Task</span>
+          </Button>
+        </div>
+
+        <div className="mt-3">
+          <AdWatchingSection user={user as User} />
+        </div>
+
+        <div className="mt-3 px-0">
+          <div className="bg-[#0d0d0d] rounded-xl border border-[#1a1a1a] p-3">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-6 h-6 rounded-lg bg-[#4cd3ff]/20 flex items-center justify-center">
+                <Flame className="w-3.5 h-3.5 text-[#4cd3ff]" />
               </div>
-              <span style={{ fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: '-0.3px', textShadow: '0 2px 8px rgba(0,0,0,0.95)', lineHeight: 1.15 }}>
-                Top Earners
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textShadow: '0 1px 4px rgba(0,0,0,0.9)', lineHeight: 1.2 }}>
-                take the prize
-              </span>
+              <span className="text-sm font-semibold text-white">Tasks</span>
             </div>
-
-            {/* Right: prize block */}
-            <div className="flex flex-col items-center gap-0.5">
-              <FaTrophy style={{ color: '#FFD700', fontSize: 22, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))' }} />
-              <span style={{ fontSize: 20, fontWeight: 900, color: 'rgba(180,180,180,0.9)', textShadow: '0 2px 6px rgba(0,0,0,0.9)', lineHeight: 1 }}>
-                ${appSettings?.weeklyGiveawayAmount ?? 10}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>
-                PRIZE POOL
-              </span>
-            </div>
+            
+            <AnimatePresence mode="wait">
+              {isLoadingTasks ? (
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="bg-[#1a1a1a] rounded-lg p-4 text-center"
+                >
+                  <Loader2 className="w-5 h-5 text-[#4cd3ff] animate-spin mx-auto" />
+                </motion.div>
+              ) : currentTask ? (
+                <motion.div
+                  key={currentTask.id}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-[#1a1a1a] rounded-lg p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-green-500/20">
+                        <span className="text-green-400">
+                          {getTaskIcon(currentTask)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-white font-medium text-sm truncate">{currentTask.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <DiamondIcon size={12} />
+                            <span className="text-xs font-semibold text-[#4cd3ff]">+{currentTask.rewardPAD.toLocaleString()}</span>
+                          </div>
+                          {currentTask.rewardBUG && currentTask.rewardBUG > 0 && (
+                            <div className="flex items-center gap-1">
+                              <Bug className="w-3 h-3 text-purple-400" />
+                              <span className="text-xs font-semibold text-purple-400">+{currentTask.rewardBUG}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => handleUnifiedTask(currentTask)}
+                      disabled={isTaskPending}
+                      className="h-8 px-4 text-xs font-semibold rounded-lg text-black bg-green-400 hover:bg-green-300"
+                    >
+                      {isTaskPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        "Start"
+                      )}
+                    </Button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="no-tasks"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-[#1a1a1a] rounded-lg p-4 text-center"
+                >
+                  <span className="text-gray-400 text-sm">No tasks available</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
-
-        {/* Statistics Section */}
-        <IncomeStatistics />
-
-        {/* Total Income Chart */}
-        <div className="mt-3 pb-0">
-          <IncomeChart
-            title="TOTAL INCOME"
-            subtitle="Earnings statistics from all sources"
-            apiEndpoint="/api/earnings/chart"
-          />
-        </div>
-
-
       </main>
-
 
       {boosterPopupOpen && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4">
-          <div className="bg-[#1C1C1E] rounded-2xl p-6 w-full max-w-sm border border-[#2C2C2E] relative">
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <CalendarCheck className="w-6 h-6 text-blue-400" />
-              <h2 className="text-xl font-bold text-white tracking-tight">Daily Missions</h2>
+          <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a] relative">
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <CalendarCheck className="w-5 h-5 text-[#4cd3ff]" />
+              <h2 className="text-lg font-bold text-white">Daily Tasks</h2>
             </div>
             
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
-              <div className="flex items-center justify-between bg-[#1C1C1E] rounded-lg p-3 hover:bg-[#2C2C2E] transition">
+              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-3 hover:bg-[#222] transition">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <Users className="w-4 h-4 text-[#4cd3ff]" />
                     <p className="text-white text-sm font-medium truncate">Share with Friends</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.referralRewardPOW || '5'} POW</span></p>
+                    <p>Reward: <span className="text-white font-medium">5 PAD</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -846,7 +948,7 @@ export default function Home() {
                     <Button
                       onClick={handleShareWithFriends}
                       disabled={!referralLink}
-                      className="h-8 w-20 text-xs font-bold rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-sm"
+                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
                     >
                       Share
                     </Button>
@@ -854,14 +956,14 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-[#1C1C1E] rounded-lg p-3 hover:bg-[#2C2C2E] transition">
+              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-3 hover:bg-[#222] transition">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <CalendarCheck className="w-4 h-4 text-[#4cd3ff]" />
                     <p className="text-white text-sm font-medium truncate">Daily Check-in</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.dailyCheckinReward || '5'} POW</span></p>
+                    <p>Reward: <span className="text-white font-medium">5 PAD</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -887,7 +989,7 @@ export default function Home() {
                   ) : (
                     <Button
                       onClick={handleDailyCheckin}
-                      className="h-8 w-20 text-xs font-bold rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-sm"
+                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
                     >
                       Go
                     </Button>
@@ -895,14 +997,14 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-[#1C1C1E] rounded-lg p-3 hover:bg-[#2C2C2E] transition">
+              <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg p-3 hover:bg-[#222] transition">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <Bell className="w-4 h-4 text-[#4cd3ff]" />
                     <p className="text-white text-sm font-medium truncate">Check for Updates</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.checkForUpdatesReward || '5'} POW</span></p>
+                    <p>Reward: <span className="text-white font-medium">5 PAD</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -916,32 +1018,175 @@ export default function Home() {
                       disabled={checkForUpdatesMutation.isPending}
                       className="h-8 w-20 text-xs font-bold rounded-lg bg-green-500 hover:bg-green-600 text-white"
                     >
-                      {checkForUpdatesMutation.isPending || checkForUpdatesStep === 'claiming' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Claim'}
-                    </Button>
-                  ) : checkForUpdatesStep === 'opened' || checkForUpdatesStep === 'countdown' ? (
-                    <Button
-                      disabled={true}
-                      className="h-8 w-20 text-xs font-bold rounded-lg bg-blue-500/50 text-white"
-                    >
-                      {checkForUpdatesStep === 'countdown' ? `${checkForUpdatesCountdown}s` : <Loader2 className="w-3 h-3 animate-spin" />}
+                      {checkForUpdatesMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Claim'}
                     </Button>
                   ) : (
                     <Button
                       onClick={handleCheckForUpdates}
-                      className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
+                      className="h-8 w-16 text-xs font-bold rounded-lg bg-orange-500 hover:bg-orange-600 text-white"
                     >
-                      Go
+                      Check
                     </Button>
                   )}
                 </div>
               </div>
             </div>
+
+            <Button
+              onClick={() => setBoosterPopupOpen(false)}
+              className="w-full mt-6 h-11 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold rounded-xl border border-[#2a2a2a]"
+            >
+              Close
+            </Button>
           </div>
         </div>
       )}
 
+      {/* Static Create Task Button - Only on Home Page */}
+      <div className="fixed bottom-6 right-4 z-50">
+        <button
+          onClick={() => setLocation('/task/create')}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black text-white font-semibold text-sm border border-gray-700"
+        >
+          <Plus className="w-4 h-4" />
+          Create Task
+        </button>
+      </div>
 
+      {promoPopupOpen && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4">
+          <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a]">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <Gift className="w-5 h-5 text-[#4cd3ff]" />
+              <h2 className="text-lg font-bold text-white">Enter Promo Code</h2>
+            </div>
+            
+            <Input
+              placeholder="Enter code here"
+              value={promoCode}
+              onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+              disabled={redeemPromoMutation.isPending || isApplyingPromo}
+              className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white placeholder:text-gray-500 px-4 py-3 h-12 text-center text-lg font-semibold tracking-wider focus:border-[#4cd3ff] focus:ring-0 mb-4"
+            />
+            
+            <div className="flex gap-3">
+              <Button
+                onClick={() => {
+                  setPromoPopupOpen(false);
+                  setPromoCode("");
+                }}
+                className="flex-1 h-11 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold rounded-xl border border-[#2a2a2a]"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={handleApplyPromo}
+                disabled={redeemPromoMutation.isPending || isApplyingPromo || !promoCode.trim()}
+                className="flex-1 h-11 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold rounded-xl disabled:opacity-50"
+              >
+                {redeemPromoMutation.isPending || isApplyingPromo ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Apply"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {convertPopupOpen && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 px-4">
+          <div className="bg-[#0d0d0d] rounded-2xl p-6 w-full max-w-sm border border-[#1a1a1a]">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <RefreshCw className="w-5 h-5 text-[#4cd3ff]" />
+              <h2 className="text-lg font-bold text-white">Convert PAD</h2>
+            </div>
+            <div className="flex items-center justify-center gap-1.5 mb-4">
+              <DiamondIcon size={14} />
+              <p className="text-gray-400 text-sm">
+                Available: {balancePAD.toLocaleString()} PAD
+              </p>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+              <Input
+                type="number"
+                placeholder="Enter amount"
+                value={convertAmount}
+                onChange={(e) => setConvertAmount(e.target.value)}
+                className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white placeholder:text-gray-500 px-4 py-3 h-12 focus:border-[#4cd3ff] focus:ring-0 mb-3"
+              />
+              
+              <button
+                onClick={() => setSelectedConvertType('USD')}
+                className={`w-full p-3 rounded-xl border transition-all flex items-center gap-3 ${
+                  selectedConvertType === 'USD' 
+                    ? 'border-[#4cd3ff] bg-[#4cd3ff]/10' 
+                    : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'
+                }`}
+              >
+                <div className="w-9 h-9 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center">
+                  <span className="text-green-400 font-bold text-sm">$</span>
+                </div>
+                <div className="text-left flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <DiamondIcon size={12} />
+                    <span className="text-gray-400 text-xs">→</span>
+                    <span className="text-green-400 font-bold text-xs">USD</span>
+                  </div>
+                  <p className="text-xs text-gray-500">Min: {(appSettings?.minimumConvertPAD || 10000).toLocaleString()} PAD</p>
+                </div>
+              </button>
+              
+              <button
+                onClick={() => setSelectedConvertType('BUG')}
+                className={`w-full p-3 rounded-xl border transition-all flex items-center gap-3 ${
+                  selectedConvertType === 'BUG' 
+                    ? 'border-[#4cd3ff] bg-[#4cd3ff]/10' 
+                    : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'
+                }`}
+              >
+                <div className="w-9 h-9 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center">
+                  <Bug className="w-4 h-4 text-green-400" />
+                </div>
+                <div className="text-left flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <DiamondIcon size={12} />
+                    <span className="text-gray-400 text-xs">→</span>
+                    <Bug className="w-3 h-3 text-green-400" />
+                    <span className="text-green-400 font-bold text-xs">BUG</span>
+                  </div>
+                  <p className="text-xs text-gray-500">Min: {(appSettings?.minimumConvertPadToBug || 1000).toLocaleString()} PAD</p>
+                </div>
+              </button>
+            </div>
+            
+            <div className="flex gap-3">
+              <Button
+                onClick={() => {
+                  setConvertPopupOpen(false);
+                  setConvertAmount("");
+                }}
+                className="flex-1 h-11 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold rounded-xl border border-[#2a2a2a]"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={handleConvertConfirm}
+                disabled={isConverting || convertMutation.isPending}
+                className="flex-1 h-11 bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold rounded-xl disabled:opacity-50"
+              >
+                {isConverting || convertMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Convert"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
