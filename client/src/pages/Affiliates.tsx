@@ -77,7 +77,7 @@ export default function Affiliates() {
   const powActive = referralRewardPOWEnabled;
   const usdActive = referralRewardUSDEnabled;
   const bonusLabel = (powActive || usdActive)
-    ? [powActive && rewardPOW > 0 ? `${rewardPOW} PAD` : null, usdActive && rewardUSD > 0 ? `$${rewardUSD}` : null]
+    ? [powActive && rewardPOW > 0 ? `${rewardPOW} POW` : null, usdActive && rewardUSD > 0 ? `$${rewardUSD}` : null]
         .filter(Boolean).join(' + ') || null
     : null;
 
@@ -174,7 +174,7 @@ export default function Affiliates() {
               <p className="text-[#888] text-xs mt-0.5">Total POW from commissions</p>
             </div>
             <span className="text-white text-lg font-black">
-              {totalStarEarned > 0 ? totalStarEarned.toLocaleString() : '0'} <span className="text-xs text-[#888] font-normal">PAD</span>
+              {totalStarEarned > 0 ? totalStarEarned.toLocaleString() : '0'} <span className="text-xs text-[#888] font-normal">POW</span>
             </span>
           </div>
         </div>

@@ -108,7 +108,7 @@ export default function Missions() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} PAD claimed!`, 'success');
+      showNotification(`+${data.reward} POW claimed!`, 'success');
       setShareWithFriendsStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -129,7 +129,7 @@ export default function Missions() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} PAD claimed!`, 'success');
+      showNotification(`+${data.reward} POW claimed!`, 'success');
       setDailyCheckinStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -150,7 +150,7 @@ export default function Missions() {
       return response.json();
     },
     onSuccess: (data) => {
-      showNotification(`+${data.reward} PAD claimed!`, 'success');
+      showNotification(`+${data.reward} POW claimed!`, 'success');
       setCheckForUpdatesStep('idle');
       queryClient.invalidateQueries({ queryKey: ['/api/missions/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -174,7 +174,7 @@ export default function Missions() {
       return data;
     },
     onSuccess: (data, taskId) => {
-      showNotification(`+${parseInt(data.reward).toLocaleString()} PAD claimed!`, "success");
+      showNotification(`+${parseInt(data.reward).toLocaleString()} POW claimed!`, "success");
       setCompletedTaskIds(prev => new Set(prev).add(taskId));
       setClickedTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
       setClaimReadyTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
@@ -406,7 +406,7 @@ export default function Missions() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-medium truncate">{task.title}</p>
-          <p className="text-[#4cd3ff] text-xs font-bold">+{reward} PAD</p>
+          <p className="text-[#4cd3ff] text-xs font-bold">+{reward} POW</p>
         </div>
         <Button
           onClick={() => isClaimReady ? clickTaskMutation.mutate(task.id) : handleTaskClick(task)}
@@ -485,7 +485,7 @@ export default function Missions() {
                 </div>
                 <div>
                   <p className="text-white text-sm font-medium">Share with Friends</p>
-                  <p className="text-green-400 text-xs font-bold">+5 PAD</p>
+                  <p className="text-green-400 text-xs font-bold">+5 POW</p>
                 </div>
               </div>
               {missionStatus?.shareStory?.claimed ? (
@@ -525,7 +525,7 @@ export default function Missions() {
                 </div>
                 <div>
                   <p className="text-white text-sm font-medium">Daily Check-in</p>
-                  <p className="text-cyan-400 text-xs font-bold">+5 PAD</p>
+                  <p className="text-cyan-400 text-xs font-bold">+5 POW</p>
                 </div>
               </div>
               {missionStatus?.dailyCheckin?.claimed ? (
@@ -571,7 +571,7 @@ export default function Missions() {
                 </div>
                 <div>
                   <p className="text-white text-sm font-medium">Check for Updates</p>
-                  <p className="text-orange-400 text-xs font-bold">+5 PAD</p>
+                  <p className="text-orange-400 text-xs font-bold">+5 POW</p>
                 </div>
               </div>
               {missionStatus?.checkForUpdates?.claimed ? (

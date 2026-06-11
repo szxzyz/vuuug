@@ -566,7 +566,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           <div className="bg-white/5 border border-white/10 p-3 rounded">
             <p className="text-xs text-muted-foreground mb-2">Balances</p>
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div><p className="text-xs text-muted-foreground">PAD</p><p className="font-bold text-[#4cd3ff]">{formatPOW(user.balance)}</p></div>
+              <div><p className="text-xs text-muted-foreground">POW</p><p className="font-bold text-[#4cd3ff]">{formatPOW(user.balance)}</p></div>
               <div><p className="text-xs text-muted-foreground">TON</p><p className="font-bold text-purple-400">{parseFloat(user.tonBalance || '0').toFixed(4)}</p></div>
               <div><p className="text-xs text-muted-foreground">USD</p><p className="font-bold text-green-400">${parseFloat(user.usdBalance || '0').toFixed(2)}</p></div>
             </div>
@@ -575,7 +575,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           <div className="bg-white/5 border border-white/10 p-3 rounded">
             <p className="text-xs text-muted-foreground mb-2">Earnings</p>
             <div className="grid grid-cols-2 gap-2">
-              <div><p className="text-xs text-muted-foreground">Total Earned</p><p className="font-bold text-emerald-400">{formatPOW(user.totalEarned)} PAD</p></div>
+              <div><p className="text-xs text-muted-foreground">Total Earned</p><p className="font-bold text-emerald-400">{formatPOW(user.totalEarned)} POW</p></div>
               <div><p className="text-xs text-muted-foreground">Total Withdrawn</p><p className="font-bold text-amber-400">${parseFloat(user.totalWithdrawn || '0').toFixed(2)} USD</p></div>
             </div>
           </div>
@@ -630,7 +630,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
                 <div key={task.id} className="bg-white/5 p-2 rounded border border-white/10">
                   <p className="text-sm font-medium">{task.title || 'Task'}</p>
                   <p className="text-xs text-muted-foreground">Completed: {task.completedAt ? new Date(task.completedAt).toLocaleDateString() : 'N/A'}</p>
-                  <p className="text-xs text-green-400">Reward: {formatPOW(task.reward)} PAD</p>
+                  <p className="text-xs text-green-400">Reward: {formatPOW(task.reward)} POW</p>
                 </div>
               ))}
             </div>
