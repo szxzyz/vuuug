@@ -5,11 +5,11 @@ import { Clock } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 const MILESTONES = [
-  { ads: 100, bugReward: 100,  usdReward: null,  label: "100 STAR",   isBug: true },
-  { ads: 200, bugReward: 500,  usdReward: null,  label: "500 STAR",   isBug: true },
-  { ads: 300, bugReward: 1000, usdReward: null,  label: "1000 STAR",  isBug: true },
-  { ads: 400, bugReward: null, usdReward: 0.005, label: "$0.005",    isBug: false },
-  { ads: 500, bugReward: null, usdReward: 0.01,  label: "$0.01",     isBug: false },
+  { ads: 100, bugReward: 100,  usdReward: null,  label: "100 STAR",  isBug: true },
+  { ads: 200, bugReward: 500,  usdReward: null,  label: "500 STAR",  isBug: true },
+  { ads: 300, bugReward: 1000, usdReward: null,  label: "1000 STAR", isBug: true },
+  { ads: 400, bugReward: null, usdReward: 0.05,  label: "$0.05",     isBug: false },
+  { ads: 500, bugReward: null, usdReward: 0.10,  label: "$0.10",     isBug: false },
 ];
 
 function useCountdown(targetIso: string | undefined, onReset?: () => void) {
