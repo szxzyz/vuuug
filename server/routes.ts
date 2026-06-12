@@ -1759,57 +1759,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.user.id;
       const currentWeek = getISOWeek();
 
-      // Top 50 users sorted by weekly_stars (current week only — resets on contest end)
+      // Top 50 users sorted by star_balance (star_balance = weekly_stars, both counted together)
       const top50 = await db
         .select({
           userId: users.id,
           username: users.username,
           firstName: users.firstName,
-          weeklyStars: users.weeklyStars,
+          weeklyStars: users.starBalance,
           starBalance: users.starBalance,
           profileImageUrl: users.profileImageUrl,
         })
         .from(users)
         .where(
-          sql`COALESCE(${users.weeklyStars}, 0) > 0
-              AND COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
+          sql`COALESCE(${users.starBalance}, 0) > 0
               AND COALESCE(${users.banned}, false) = false`
         )
-        .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+        .orderBy(sql`${users.starBalance} DESC NULLS LAST`)
         .limit(50);
 
       const leaderboard = top50.map((u, i) => ({
         ...u,
-        weeklyStars: Number(u.weeklyStars || 0),
+        weeklyStars: Number(u.starBalance || 0),
         rank: i + 1,
       }));
 
-      // Current user's weekly stats
+      // Current user's stats
       const currentUser = await storage.getUser(userId);
-      const userWeeklyStars = Number((currentUser as any)?.weeklyStars || 0);
       const userStarBalance = Number((currentUser as any)?.starBalance || 0);
-      const userWeek = (currentUser as any)?.weeklyStarWeek;
-      const userWeeklyStarsThisWeek = userWeek === currentWeek ? userWeeklyStars : 0;
 
       let userRank: { rank: number; weeklyStars: number } | null = null;
       const myEntry = leaderboard.find((e) => e.userId === userId);
       if (myEntry) {
-        userRank = { rank: myEntry.rank, weeklyStars: userWeeklyStarsThisWeek };
-      } else if (userWeeklyStarsThisWeek > 0) {
-        // User has weekly stars but outside top 50 — calculate approximate rank
+        userRank = { rank: myEntry.rank, weeklyStars: userStarBalance };
+      } else if (userStarBalance > 0) {
+        // User has stars but outside top 50 — calculate approximate rank
         const higherCount = await db
           .select({ count: sql<number>`COUNT(*)` })
           .from(users)
           .where(
-            sql`COALESCE(${users.weeklyStars}, 0) > ${userWeeklyStarsThisWeek}
-                AND COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
+            sql`COALESCE(${users.starBalance}, 0) > ${userStarBalance}
                 AND COALESCE(${users.banned}, false) = false`
           );
         const rank = (Number(higherCount[0]?.count) || 0) + 1;
-        userRank = { rank, weeklyStars: userWeeklyStarsThisWeek };
+        userRank = { rank, weeklyStars: userStarBalance };
       }
 
-      res.json({ leaderboard, userRank, userStars: userWeeklyStarsThisWeek, userStarBalance, currentWeek });
+      res.json({ leaderboard, userRank, userStars: userStarBalance, userStarBalance, currentWeek });
     } catch (error) {
       console.error('Leaderboard error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -2156,13 +2151,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalUsdEarned += parseFloat(ref.usdRewardAmount || '0');
       }
 
-      // POW earned: sum L1 + L2 commissions from earnings table
-      // (these are % of friends' ad earnings credited directly to referrer's balance)
+      // POW earned: sum L1 commissions only from earnings table
+      // (L2 commissions excluded from display)
       const powCommissionsResult = await db.execute(sql`
         SELECT COALESCE(SUM(CAST(amount AS DECIMAL)), 0) AS total
         FROM earnings
         WHERE user_id = ${userId}
-          AND source IN ('referral_commission', 'referral_commission_l2', 'referral')
+          AND source IN ('referral_commission', 'referral')
       `);
       const totalPowEarned = Number((powCommissionsResult.rows[0] as any)?.total || 0);
 

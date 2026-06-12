@@ -293,12 +293,12 @@ export async function sendWeeklyLeaderboardReport(weekLabel?: string): Promise<b
         userId: users.id,
         username: users.username,
         firstName: users.firstName,
-        weeklyStars: users.weeklyStars,
+        weeklyStars: users.starBalance,
         weeklyStarWeek: users.weeklyStarWeek,
       })
       .from(users)
-      .where(sql`COALESCE(${users.weeklyStarWeek}, '') = ${reportWeek} AND COALESCE(${users.weeklyStars}, 0) > 0`)
-      .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+      .where(sql`COALESCE(${users.starBalance}, 0) > 0 AND COALESCE(${users.banned}, false) = false`)
+      .orderBy(sql`${users.starBalance} DESC NULLS LAST`)
       .limit(10);
 
     if (top10.length === 0) {
@@ -389,12 +389,12 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
         id: users.id,
         username: users.username,
         firstName: users.firstName,
-        weeklyStars: users.weeklyStars,
+        weeklyStars: users.starBalance,
         weeklyStarWeek: users.weeklyStarWeek,
       })
       .from(users)
-      .where(sql`COALESCE(${users.weeklyStarWeek}, '') = ${reportWeek} AND COALESCE(${users.weeklyStars}, 0) > 0`)
-      .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+      .where(sql`COALESCE(${users.starBalance}, 0) > 0 AND COALESCE(${users.banned}, false) = false`)
+      .orderBy(sql`${users.starBalance} DESC NULLS LAST`)
       .limit(10);
 
     // Send admin notification with full winner details
@@ -426,7 +426,7 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
         winnerLines +
         `\n\n━━━━━━━━━━━━━━━━━━━━━━\n` +
         `💡 Please send rewards manually to each winner.\n` +
-        `🔄 Weekly Star counts reset to 0 (permanent star_balance preserved).\n` +
+        `🔄 Weekly Star counts reset to 0 (star_balance + weekly_stars both cleared).\n` +
         `🆕 New contest week started: <b>${reportWeek}</b> → next week.\n` +
         `🕐 ${new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC`;
 
@@ -456,7 +456,7 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
       }
     }
 
-    // Reset weekly_stars AND star_balance to 0 for ALL users who participated this week
+    // Reset weekly_stars AND star_balance to 0 for ALL users who have any stars
     const resetResult = await db.update(users)
       .set({
         weeklyStars: 0,
@@ -464,7 +464,7 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
         weeklyStarWeek: '',
         updatedAt: new Date(),
       })
-      .where(sql`COALESCE(${users.weeklyStarWeek}, '') = ${reportWeek}`)
+      .where(sql`COALESCE(${users.starBalance}, 0) > 0`)
       .returning({ id: users.id });
 
     const usersReset = resetResult.length;
