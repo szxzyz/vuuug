@@ -1602,8 +1602,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const adsWatchedToday = user.adsWatchedToday || 0;
       const today = getDailyResetDateStr();
-      const claimedToday = (user as any).lastBonusClaimedDate === today;
-
       let currentMilestoneIndex = -1;
       for (let i = 0; i < DAILY_BONUS_MILESTONES.length; i++) {
         if (adsWatchedToday >= DAILY_BONUS_MILESTONES[i].ads) {
@@ -1624,7 +1622,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         milestones: DAILY_BONUS_MILESTONES,
         currentMilestoneIndex,
         currentBonus: currentMilestoneIndex >= 0 ? DAILY_BONUS_MILESTONES[currentMilestoneIndex] : null,
-        claimedToday,
+        claimedToday: false,   // no restriction — always claimable
+        canUpgrade: false,
         nextResetAt: nextReset.toISOString(),
         resetHourUTC: 12,
       });
@@ -1640,11 +1639,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: 'User not found' });
 
-      const today = getDailyResetDateStr();
-      if ((user as any).lastBonusClaimedDate === today) {
-        return res.status(400).json({ message: 'Bonus already claimed today', alreadyClaimed: true });
-      }
-
       const adsWatchedToday = user.adsWatchedToday || 0;
       let milestoneIndex = -1;
       for (let i = 0; i < DAILY_BONUS_MILESTONES.length; i++) {
@@ -1659,23 +1653,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentWeek = getISOWeek();
 
       if (milestone.starReward) {
-        // Single atomic query: update starBalance + weeklyStars + weeklyStarWeek together
-        // so both always stay in sync — no silent partial-update failures
+        // No restrictions — give full milestone reward every claim
+        const starsToAdd = milestone.starReward;
         const freshUser = await storage.getUser(userId);
         const userWeek = (freshUser as any)?.weeklyStarWeek;
         const weeklyReset = userWeek !== currentWeek;
         await db.execute(sql`
           UPDATE users SET
-            star_balance   = COALESCE(star_balance, 0) + ${milestone.starReward},
-            weekly_stars   = CASE WHEN ${weeklyReset} THEN ${milestone.starReward}
-                                  ELSE COALESCE(weekly_stars, 0) + ${milestone.starReward} END,
-            weekly_star_week    = ${currentWeek},
-            last_bonus_claimed_date = ${today},
-            updated_at     = NOW()
+            star_balance     = COALESCE(star_balance, 0) + ${starsToAdd},
+            weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starsToAdd}
+                                   ELSE COALESCE(weekly_stars, 0) + ${starsToAdd} END,
+            weekly_star_week = ${currentWeek},
+            updated_at       = NOW()
           WHERE id = ${userId}
         `);
-        console.log(`⭐ Milestone ${milestoneIndex + 1}: +${milestone.starReward} STAR to starBalance + weeklyStars for ${userId}`);
+        console.log(`⭐ Milestone ${milestoneIndex + 1}: +${starsToAdd} STAR (no restriction) for ${userId}`);
       } else if (milestone.usdReward) {
+        // No restrictions — give full USD reward every claim
         const powReward = Math.round(milestone.usdReward * 10000000);
         await storage.addEarning({
           userId,
@@ -1683,12 +1677,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           source: 'daily_bonus',
           description: `Daily activity bonus: $${milestone.usdReward}`,
         });
-        await db.execute(sql`
-          UPDATE users SET
-            last_bonus_claimed_date = ${today},
-            updated_at = NOW()
-          WHERE id = ${userId}
-        `);
       }
 
       // Fetch updated user and push real-time balance update so header reflects immediately
@@ -8101,13 +8089,15 @@ ${walletAddress}
         });
       }
       
-      // Add reward based on type - PAD, TON, USD supported (PDZ is deprecated, treated as TON)
+      // Add reward based on type - PAD/POW, TON, USD, BUG/STAR supported
       let rewardType = promoCode.rewardType || 'PAD';
-      // Convert any legacy PDZ to TON
+      // Normalize aliases (stored in DB as PAD/BUG, but check both forms)
       if (rewardType === 'PDZ') rewardType = 'TON';
+      if (rewardType === 'POW') rewardType = 'PAD';
+      if (rewardType === 'STAR') rewardType = 'BUG';
       const rewardAmount = result.reward;
       
-      if (rewardType === 'POW') {
+      if (rewardType === 'PAD' || rewardType === 'POW') {
         // Add PAD balance - addEarning handles BOTH earnings tracking AND balance update
         const rewardPow = parseInt(rewardAmount || '0');
         
@@ -8165,8 +8155,8 @@ ${walletAddress}
           reward: rewardAmount,
           rewardType: 'USD'
         });
-      } else if (rewardType === 'STAR') {
-        // Add BUG balance
+      } else if (rewardType === 'BUG' || rewardType === 'STAR') {
+        // Add Star balance
         const [currentUser] = await db
           .select({ starBalance: users.starBalance })
           .from(users)
