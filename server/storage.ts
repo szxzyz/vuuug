@@ -611,7 +611,7 @@ export class DatabaseStorage implements IStorage {
         userId,
         amount: rewardEarned,
         source: 'bonus_claim',
-        description: `Bonus claim - earned 1 PAD`,
+        description: `Bonus claim - earned 1 POW`,
       });
     }
 
@@ -868,11 +868,11 @@ export class DatabaseStorage implements IStorage {
       // Get referral reward settings from admin (no hardcoded values)
       const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
       const referralRewardPOW = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
-      const referralRewardBUG = await this.getAppSetting('bug_reward_per_referral', '50');
+      const referralRewardSTAR = await this.getAppSetting('star_reward_per_referral', '50');
       const referralRewardPOWEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
       const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
       const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
-      const givePAD = referralRewardPOWEnabled || (!referralRewardPOWEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
+      const givePOW = referralRewardPOWEnabled || (!referralRewardPOWEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
       const giveUSD = referralRewardUSDEnabled;
 
       // Activate each pending referral — mark completed FIRST to prevent double-payment on retry
@@ -881,18 +881,18 @@ export class DatabaseStorage implements IStorage {
           .update(referrals)
           .set({
             status: 'completed',
-            rewardAmount: givePAD ? String(referralRewardPOW) : '0',
+            rewardAmount: givePOW ? String(referralRewardPOW) : '0',
             usdRewardAmount: giveUSD ? referralRewardUSD : '0',
-            starRewardAmount: referralRewardBUG
+            bugRewardAmount: String(referralRewardSTAR)
           })
           .where(eq(referrals.id, referral.id));
 
-        if (givePAD && referralRewardPOW > 0) {
+        if (givePOW && referralRewardPOW > 0) {
           await this.addEarning({
             userId: referral.referrerId,
             amount: String(referralRewardPOW),
             source: 'referral',
-            description: `Referral bonus (PAD) for inviting a friend`,
+            description: `Referral bonus (POW) for inviting a friend`,
           });
         }
 
@@ -916,7 +916,7 @@ export class DatabaseStorage implements IStorage {
         await db
           .update(users)
           .set({
-            starBalance: sql`COALESCE(${users.starBalance}, 0) + ${referralRewardBUG}`,
+            starBalance: sql`COALESCE(${users.starBalance}, 0) + ${referralRewardSTAR}`,
             updatedAt: new Date(),
           })
           .where(eq(users.id, referral.referrerId));
@@ -942,7 +942,7 @@ export class DatabaseStorage implements IStorage {
           }
         }
 
-        console.log(`✅ Referral bonus activated: PAD=${givePAD ? referralRewardPOW : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardBUG} → referrer ${referral.referrerId}`);
+        console.log(`✅ Referral bonus activated: PAD=${givePOW ? referralRewardPOW : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardSTAR} → referrer ${referral.referrerId}`);
       }
     } catch (error) {
       console.error('❌ Error activating referral bonus:', error);
@@ -1837,6 +1837,10 @@ export class DatabaseStorage implements IStorage {
   async ensureAdminUserExists(): Promise<void> {
     try {
       const adminTelegramId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
+      if (!adminTelegramId) {
+        console.log('ℹ️ No TELEGRAM_ADMIN_ID set — skipping admin user creation');
+        return;
+      }
       const maxBalance = '99.999'; // Admin balance as requested
       
       // Check if admin user already exists
@@ -3383,7 +3387,7 @@ export class DatabaseStorage implements IStorage {
         description: `Completed ${task.taskType} task: ${task.title}`,
       });
 
-      console.log(`✅ Task click recorded: ${taskId} by ${publisherId} - Reward: ${rewardPOW} PAD`);
+      console.log(`✅ Task click recorded: ${taskId} by ${publisherId} - Reward: ${rewardPOW} POW`);
 
       return {
         success: true,
@@ -3453,7 +3457,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Add BUG balance to user (CRITICAL FIX for referral earnings)
-  async addBUGBalance(userId: string, amount: string, source: string, description: string): Promise<void> {
+  async addSTARBalance(userId: string, amount: string, source: string, description: string): Promise<void> {
     try {
       const amountNum = parseFloat(amount);
       if (isNaN(amountNum) || amountNum <= 0) {
@@ -3470,10 +3474,10 @@ export class DatabaseStorage implements IStorage {
         throw new Error('User not found');
       }
 
-      const currentStarBalance = parseFloat(user.starBalance || '0');
-      const newStarBalance = (currentStarBalance + amountNum).toFixed(10);
+      const currentStarBalance = Math.round(parseFloat(String(user.starBalance || '0')));
+      const newStarBalance = currentStarBalance + Math.round(amountNum);
 
-      // Update user's BUG balance
+      // Update user's STAR balance
       await db
         .update(users)
         .set({
@@ -3499,7 +3503,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Backfill BUG rewards for existing referrals (fix for users who earned before the update)
+  // Backfill STAR rewards for existing referrals (fix for users who earned before the update)
   /**
    * fullReferralRepair — runs on every server startup.
    * Pass 1: users whose `referred_by` is set but have no row in `referrals` → create the row.
@@ -3599,9 +3603,9 @@ export class DatabaseStorage implements IStorage {
     return stats;
   }
 
-  async backfillExistingReferralBUGRewards(): Promise<void> {
+  async backfillExistingReferralSTARRewards(): Promise<void> {
     try {
-      console.log('🔄 Starting backfill of BUG rewards for existing referrals...');
+      console.log('🔄 Starting backfill of STAR rewards for existing referrals...');
       
       // First, ensure columns exist
       try {
@@ -3613,7 +3617,7 @@ export class DatabaseStorage implements IStorage {
         console.log('ℹ️ Referral columns already exist');
       }
       
-      // Get all completed referrals that don't have starRewardAmount set
+      // Get all completed referrals that don't have bugRewardAmount (STAR reward) set
       const referralsNeedingBugCredit = await db.execute(sql`
         SELECT id, referrer_id, status, usd_reward_amount, bug_reward_amount 
         FROM referrals 
@@ -3654,7 +3658,7 @@ export class DatabaseStorage implements IStorage {
           `);
 
           // Credit BUG to referrer's balance
-          await this.addBUGBalance(
+          await this.addSTARBalance(
             ref.referrer_id,
             starAmount.toFixed(10),
             'referral_backfill',
@@ -3667,7 +3671,7 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      console.log(`✅ Backfill of BUG rewards completed!`);
+      console.log(`✅ Backfill of STAR rewards completed!`);
     } catch (error) {
       console.error('❌ Error during BUG rewards backfill:', error);
     }

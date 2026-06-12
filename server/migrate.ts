@@ -613,6 +613,23 @@ export async function ensureDatabaseSchema(): Promise<void> {
     // Index for leaderboard queries
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_users_weekly_stars ON users(weekly_stars DESC) WHERE weekly_stars > 0`);
 
+    // Rename admin settings keys: bug_* → star_* and pad_* → pow_* (PAD→POW / BUG→STAR system rename)
+    try {
+      await db.execute(sql`
+        UPDATE admin_settings SET setting_key = 'star_reward_per_ad'               WHERE setting_key = 'bug_reward_per_ad';
+        UPDATE admin_settings SET setting_key = 'star_reward_per_task'             WHERE setting_key = 'bug_reward_per_task';
+        UPDATE admin_settings SET setting_key = 'star_reward_per_referral'         WHERE setting_key = 'bug_reward_per_referral';
+        UPDATE admin_settings SET setting_key = 'star_per_usd'                     WHERE setting_key = 'bug_per_usd';
+        UPDATE admin_settings SET setting_key = 'minimum_star_for_withdrawal'      WHERE setting_key = 'minimum_bug_for_withdrawal';
+        UPDATE admin_settings SET setting_key = 'withdrawal_star_requirement_enabled' WHERE setting_key = 'withdrawal_bug_requirement_enabled';
+        UPDATE admin_settings SET setting_key = 'pow_to_star_rate'                 WHERE setting_key = 'pad_to_bug_rate';
+        UPDATE admin_settings SET setting_key = 'minimum_convert_pow_to_star'      WHERE setting_key = 'minimum_convert_pad_to_bug';
+      `);
+      console.log('✅ [MIGRATION] Admin settings keys renamed bug_* → star_* and pad_* → pow_*');
+    } catch (error) {
+      console.log('ℹ️ [MIGRATION] Settings key rename skipped (already done or conflict)');
+    }
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {

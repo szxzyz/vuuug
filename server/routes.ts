@@ -1006,7 +1006,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
       
-      console.log(`🔄 Balance refresh for user ${userId}: PAD=${user.balance}, TON=${user.tonBalance}`);
+      console.log(`🔄 Balance refresh for user ${userId}: POW=${user.balance}, TON=${user.tonBalance}`);
       
       res.json({
         success: true,
@@ -1049,7 +1049,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardPerAd = parseInt(getSetting('reward_per_ad', '3000')); // Default 3000 POW per ad
       const seasonBroadcastActive = getSetting('season_broadcast_active', 'false') === 'true';
       const affiliateCommission = parseFloat(getSetting('affiliate_commission', '10'));
-      const walletChangeFeePAD = parseInt(getSetting('wallet_change_fee', '100')); // Default 100 PAD
+      const walletChangeFeePOW = parseInt(getSetting('wallet_change_fee', '100')); // Default 100 PAD
       const minimumWithdrawalUSD = parseFloat(getSetting('minimum_withdrawal_usd', '1.00')); // Minimum USD withdrawal
       const minimumWithdrawalTON = parseFloat(getSetting('minimum_withdrawal_ton', '0.5')); // Minimum TON withdrawal
       const withdrawalFeeTON = parseFloat(getSetting('withdrawal_fee_ton', '5')); // TON withdrawal fee %
@@ -1065,7 +1065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Separate channel and bot task rewards (in PAD)
       const channelTaskRewardPOW = parseInt(getSetting('channel_task_reward', '1000')); // Default 1000 POW per click
-      const botTaskRewardPAD = parseInt(getSetting('bot_task_reward', '1000')); // Default 1000 POW per click
+      const botTaskRewardPOW = parseInt(getSetting('bot_task_reward', '1000')); // Default 1000 POW per click
       
       // Currency conversion: 10,000,000 POW = 1 USD
       const padPerUsd = parseInt(getSetting('pad_per_usd', '10000000')); // Default 10M POW = 1 USD
@@ -1103,15 +1103,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // BUG currency settings
       const minimumConvertPadToTon = parseInt(getSetting('minimum_convert_pad_to_ton', '10000'));
-      const minimumConvertPowToStar = parseInt(getSetting('minimum_convert_pad_to_bug', '1000'));
-      const padToTonRate = parseInt(getSetting('pad_to_ton_rate', '10000000')); // 10M PAD = 1 TON
-      const powToStarRate = parseInt(getSetting('pad_to_bug_rate', '1')); // 1 PAD = 1 BUG
-      const starRewardPerAd = parseInt(getSetting('bug_reward_per_ad', '1')); // BUG per ad watched
-      const starRewardPerTask = parseInt(getSetting('bug_reward_per_task', '10')); // BUG per task completed
-      const starRewardPerReferral = parseInt(getSetting('bug_reward_per_referral', '50')); // BUG per referral
-      const minimumStarForWithdrawal = parseInt(getSetting('minimum_bug_for_withdrawal', '1000')); // Default: $0.1 = 1000 BUG
-      const starPerUsd = parseInt(getSetting('bug_per_usd', '10000')); // Default: 1 USD = 10000 BUG
-      const withdrawalStarRequirementEnabled = getSetting('withdrawal_bug_requirement_enabled', 'true') === 'true';
+      const minimumConvertPowToStar = parseInt(getSetting('minimum_convert_pow_to_star', '1000'));
+      const padToTonRate = parseInt(getSetting('pad_to_ton_rate', '10000000')); // 10M POW = 1 TON
+      const powToStarRate = parseInt(getSetting('pow_to_star_rate', '1')); // 1 POW = 1 STAR
+      const starRewardPerAd = parseInt(getSetting('star_reward_per_ad', '1')); // BUG per ad watched
+      const starRewardPerTask = parseInt(getSetting('star_reward_per_task', '10')); // BUG per task completed
+      const starRewardPerReferral = parseInt(getSetting('star_reward_per_referral', '50')); // BUG per referral
       const activePromoCode = getSetting('active_promo_code', ''); // Current active promo code
       
       // Legacy compatibility - keep old values for backwards compatibility
@@ -1123,12 +1120,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dailyAdLimit,
         hourlyAdLimit,
         rewardPerAd,
-        rewardPerAdPAD: rewardPerAd,
+        rewardPerAdPOW: rewardPerAd,
         seasonBroadcastActive,
         affiliateCommission,
         affiliateCommissionPercent: affiliateCommission,
-        walletChangeFee: walletChangeFeePAD,
-        walletChangeFeePAD,
+        walletChangeFee: walletChangeFeePOW,
+        walletChangeFeePOW,
         minimumWithdrawal,
         minimumWithdrawalUSD,
         minimumWithdrawalTON,
@@ -1139,7 +1136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         channelTaskCostTON,
         botTaskCostTON,
         channelTaskRewardPOW,
-        botTaskRewardPAD,
+        botTaskRewardPOW,
         taskCostPerClick,
         taskRewardPerClick,
         taskRewardPAD: channelTaskRewardPOW, // Use channel reward as default
@@ -1162,7 +1159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         communityTaskReward,
         partnerTaskReward,
         channelTaskReward: channelTaskRewardPOW,
-        botTaskReward: botTaskRewardPAD,
+        botTaskReward: botTaskRewardPOW,
         // Withdrawal requirement settings
         withdrawalAdRequirementEnabled,
         minimumAdsForWithdrawal,
@@ -1176,9 +1173,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         starRewardPerAd,
         starRewardPerTask,
         starRewardPerReferral,
-        minimumStarForWithdrawal,
-        starPerUsd,
-        withdrawalStarRequirementEnabled,
         activePromoCode,
         // Withdrawal packages (JSON array of {usd, bug} objects)
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
@@ -1317,11 +1311,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dailyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'daily_ad_limit')).limit(1);
       const hourlyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'hourly_ad_limit')).limit(1);
       const rewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'reward_per_ad')).limit(1);
-      const starRewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'bug_reward_per_ad')).limit(1);
+      const starRewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'star_reward_per_ad')).limit(1);
       
       const DAILY_AD_LIMIT = dailyAdLimitSetting[0]?.settingValue ? parseInt(dailyAdLimitSetting[0].settingValue) : 510;
       const HOURLY_AD_LIMIT = hourlyAdLimitSetting[0]?.settingValue ? parseInt(hourlyAdLimitSetting[0].settingValue) : 63;
-      const rewardPerAdPAD = rewardPerAdSetting[0]?.settingValue ? parseInt(rewardPerAdSetting[0].settingValue) : 1000;
+      const rewardPerAdPOW = rewardPerAdSetting[0]?.settingValue ? parseInt(rewardPerAdSetting[0].settingValue) : 1000;
       const starRewardPerAd = starRewardPerAdSetting[0]?.settingValue ? parseInt(starRewardPerAdSetting[0].settingValue) : 1;
 
       // Hourly refill logic: 63 ads/hour, 510 ads/day
@@ -1359,14 +1353,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // PAD reward amount (no conversion needed - store PAD directly)
-      const adRewardPAD = rewardPerAdPAD;
+      const adRewardPOW = rewardPerAdPOW;
       
       try {
         // Process reward with error handling to ensure success response
         // Capture the earning so we can reference its ID for referral commission tracking
         const adWatchEarning = await storage.addEarning({
           userId,
-          amount: String(adRewardPAD),
+          amount: String(adRewardPOW),
           source: 'ad_watch',
           description: 'Watched advertisement',
         });
@@ -1383,31 +1377,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } as any)
           .where(eq(users.id, userId));
         
-        // Add BUG reward for watching ad
+        // Add STAR reward + update weekly leaderboard stars in ONE atomic query
         if (starRewardPerAd > 0) {
-          await db
-            .update(users)
-            .set({
-              starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starRewardPerAd}`,
-              updatedAt: new Date()
-            })
-            .where(eq(users.id, userId));
-          console.log(`🐛 Added ${starRewardPerAd} BUG to user ${userId} for ad watch`);
-        }
-
-        // Track STAR per ad watched for weekly leaderboard (same as starBalance reward)
-        try {
           const currentWeek = getISOWeek();
           const userWeekStarWeek = (user as any).weeklyStarWeek;
           const weeklyReset = userWeekStarWeek !== currentWeek;
-          const starsToAdd = starRewardPerAd > 0 ? starRewardPerAd : 1;
-          await db.update(users).set({
-            weeklyStars: weeklyReset ? starsToAdd : sql`COALESCE(${users.weeklyStars}, 0) + ${starsToAdd}`,
-            weeklyStarWeek: currentWeek,
-            updatedAt: new Date(),
-          } as any).where(eq(users.id, userId));
-        } catch (starError) {
-          console.error("⚠️ Weekly star tracking failed (non-critical):", starError);
+          await db.execute(sql`
+            UPDATE users SET
+              star_balance     = COALESCE(star_balance, 0) + ${starRewardPerAd},
+              weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starRewardPerAd}
+                                      ELSE COALESCE(weekly_stars, 0) + ${starRewardPerAd} END,
+              weekly_star_week = ${currentWeek},
+              updated_at       = NOW()
+            WHERE id = ${userId}
+          `);
+          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR (balance + weekly) for ${userId}`);
         }
         
         // Check and activate referral bonuses
@@ -1442,11 +1426,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const l1Referrer = await storage.getUserByReferralCode(user.referredBy);
             if (l1Referrer) {
               // Use Math.ceil and ensure minimum 1 PAD commission so small rewards never round to 0
-              const l1CommissionPAD = Math.max(1, Math.ceil(adRewardPAD * l1Rate));
+              const l1CommissionPOW = Math.max(1, Math.ceil(adRewardPOW * l1Rate));
               const l1RateDisplay = Math.round(l1Rate * 100);
               const l1Earning = await storage.addEarning({
                 userId: l1Referrer.id,
-                amount: String(l1CommissionPAD),
+                amount: String(l1CommissionPOW),
                 source: 'referral_commission',
                 description: `${l1RateDisplay}% L1 commission from ${user.username || user.telegram_id}'s ad watch`,
               });
@@ -1456,12 +1440,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   referrerId: l1Referrer.id,
                   referredUserId: userId,
                   originalEarningId: adWatchEarning.id,
-                  commissionAmount: String(l1CommissionPAD),
+                  commissionAmount: String(l1CommissionPOW),
                 });
               } catch (rcErr) {
                 console.warn('⚠️ referralCommissions insert failed (non-critical):', rcErr);
               }
-              console.log(`💰 L1 commission: ${l1CommissionPAD} PAD (${l1RateDisplay}%) → ${l1Referrer.id}`);
+              console.log(`💰 L1 commission: ${l1CommissionPOW} POW (${l1RateDisplay}%) → ${l1Referrer.id}`);
               // Push live balance update to L1 referrer's open session
               try {
                 const l1Updated = await storage.getUser(l1Referrer.id);
@@ -1479,11 +1463,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 try {
                   const l2Referrer = await storage.getUserByReferralCode(l1Referrer.referredBy);
                   if (l2Referrer) {
-                    const l2CommissionPAD = Math.max(1, Math.ceil(adRewardPAD * l2Rate));
+                    const l2CommissionPOW = Math.max(1, Math.ceil(adRewardPOW * l2Rate));
                     const l2RateDisplay = Math.round(l2Rate * 100);
                     await storage.addEarning({
                       userId: l2Referrer.id,
-                      amount: String(l2CommissionPAD),
+                      amount: String(l2CommissionPOW),
                       source: 'referral_commission_l2',
                       description: `${l2RateDisplay}% L2 commission from ${user.username || user.telegram_id}'s ad watch`,
                     });
@@ -1493,12 +1477,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                         referrerId: l2Referrer.id,
                         referredUserId: userId,
                         originalEarningId: adWatchEarning.id,
-                        commissionAmount: String(l2CommissionPAD),
+                        commissionAmount: String(l2CommissionPOW),
                       });
                     } catch (rc2Err) {
                       console.warn('⚠️ L2 referralCommissions insert failed (non-critical):', rc2Err);
                     }
-                    console.log(`💰 L2 commission: ${l2CommissionPAD} PAD → ${l2Referrer.id}`);
+                    console.log(`💰 L2 commission: ${l2CommissionPOW} POW → ${l2Referrer.id}`);
                     // Push live balance update to L2 referrer
                     try {
                       const l2Updated = await storage.getUser(l2Referrer.id);
@@ -1537,11 +1521,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const newAdsWatched = updatedUser?.adsWatchedToday || (adsWatchedToday + 1);
       
-      // Send real-time update to user (non-blocking)
+      // Send real-time update to user (non-blocking) — include starBalance so header refreshes
       try {
         sendRealtimeUpdate(userId, {
-          type: 'ad_reward',
-          amount: adRewardPAD.toString(),
+          type: 'balance_update',
+          balance: updatedUser?.balance,
+          usdBalance: updatedUser?.usdBalance,
+          starBalance: Number(updatedUser?.starBalance || 0),
+          weeklyStars: Number((updatedUser as any)?.weeklyStars || 0),
+          amount: adRewardPOW.toString(),
           message: 'Ad reward earned!',
           timestamp: new Date().toISOString()
         });
@@ -1553,7 +1541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // ALWAYS return success response to ensure reward notification shows
       res.json({ 
         success: true, 
-        rewardPOW: adRewardPAD,
+        rewardPOW: adRewardPOW,
         rewardSTAR: starRewardPerAd,
         newBalance: updatedUser?.balance || user.balance || "0",
         newStarBalance: updatedUser?.starBalance || "0",
@@ -1566,10 +1554,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Return success anyway to prevent error notification from showing
       // The user watched the ad, so we should acknowledge it
-      const adRewardPAD = Math.round(parseFloat("0.00010000") * 10000000);
+      const adRewardPOW = Math.round(parseFloat("0.00010000") * 10000000);
       res.json({ 
         success: true, 
-        rewardPOW: adRewardPAD,
+        rewardPOW: adRewardPOW,
         newBalance: "0",
         adsWatchedToday: 0,
         warning: "Reward processing encountered an issue but was acknowledged"
@@ -1667,44 +1655,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const milestone = DAILY_BONUS_MILESTONES[milestoneIndex];
+      const currentWeek = getISOWeek();
 
       if (milestone.starReward) {
-        await db.update(users).set({
-          starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${milestone.starReward}`,
-          lastBonusClaimedDate: today,
-          updatedAt: new Date(),
-        } as any).where(eq(users.id, userId));
+        // Single atomic query: update starBalance + weeklyStars + weeklyStarWeek together
+        // so both always stay in sync — no silent partial-update failures
+        const freshUser = await storage.getUser(userId);
+        const userWeek = (freshUser as any)?.weeklyStarWeek;
+        const weeklyReset = userWeek !== currentWeek;
+        await db.execute(sql`
+          UPDATE users SET
+            star_balance   = COALESCE(star_balance, 0) + ${milestone.starReward},
+            weekly_stars   = CASE WHEN ${weeklyReset} THEN ${milestone.starReward}
+                                  ELSE COALESCE(weekly_stars, 0) + ${milestone.starReward} END,
+            weekly_star_week    = ${currentWeek},
+            last_bonus_claimed_date = ${today},
+            updated_at     = NOW()
+          WHERE id = ${userId}
+        `);
+        console.log(`⭐ Milestone ${milestoneIndex + 1}: +${milestone.starReward} STAR to starBalance + weeklyStars for ${userId}`);
       } else if (milestone.usdReward) {
-        const powReward = Math.round(milestone.usdReward * 10000000); // convert USD to PAD
+        const powReward = Math.round(milestone.usdReward * 10000000);
         await storage.addEarning({
           userId,
           amount: String(powReward),
           source: 'daily_bonus',
           description: `Daily activity bonus: $${milestone.usdReward}`,
         });
-        await db.update(users).set({
-          lastBonusClaimedDate: today,
-          updatedAt: new Date(),
-        } as any).where(eq(users.id, userId));
+        await db.execute(sql`
+          UPDATE users SET
+            last_bonus_claimed_date = ${today},
+            updated_at = NOW()
+          WHERE id = ${userId}
+        `);
       }
 
-      // Track full STAR reward for milestone on weekly leaderboard (same as starBalance reward)
+      // Fetch updated user and push real-time balance update so header reflects immediately
       try {
-        const fullStarReward = milestone.starReward || 0;
-        if (fullStarReward > 0) {
-          const currentWeek = getISOWeek();
-          const freshUser = await storage.getUser(userId);
-          const userWeek = (freshUser as any)?.weeklyStarWeek;
-          const weeklyReset = userWeek !== currentWeek;
-          await db.update(users).set({
-            weeklyStars: weeklyReset ? fullStarReward : sql`COALESCE(${users.weeklyStars}, 0) + ${fullStarReward}`,
-            weeklyStarWeek: currentWeek,
-            updatedAt: new Date(),
-          } as any).where(eq(users.id, userId));
-          console.log(`⭐ Added ${fullStarReward} weekly stars to ${userId} for milestone ${milestoneIndex + 1}`);
-        }
-      } catch (starError) {
-        console.error("⚠️ Milestone weekly star tracking failed (non-critical):", starError);
+        const updatedUser = await storage.getUser(userId);
+        const newStarBal = Number(updatedUser?.starBalance || 0);
+        const newWeeklyStars = Number((updatedUser as any)?.weeklyStars || 0);
+        sendRealtimeUpdate(userId, {
+          type: 'balance_update',
+          balance: updatedUser?.balance,
+          usdBalance: updatedUser?.usdBalance,
+          starBalance: newStarBal,
+          weeklyStars: newWeeklyStars,
+        });
+        return res.json({ success: true, milestoneIndex, milestone, newStarBalance: newStarBal, newWeeklyStars });
+      } catch (_) {
+        // non-critical — still return success
       }
 
       res.json({ success: true, milestoneIndex, milestone });
@@ -2062,15 +2062,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       const user = await storage.getUser(userId);
-      
-      // Get TOTAL invites (all users invited, regardless of status)
-      const totalInvitesCount = await storage.getTotalInvitesCount(userId);
-      
-      // Get SUCCESSFUL invites (users who watched 1+ ad AND are not banned)
-      const successfulInvitesCount = await storage.getValidReferralCount(userId);
-      
-      // CRITICAL FIX: Calculate from stored historical referral rewards, NOT current admin settings
-      // This ensures admin setting changes do NOT retroactively change past earnings
+
+      // ── Friend count: use users.referred_by as primary source of truth ──
+      // Some users may be missing referrals-table rows, so count directly from users table
+      let totalInvitesCount = 0;
+      let successfulInvitesCount = 0;
+      if (user?.referralCode) {
+        // Total L1 friends: anyone whose referred_by = my referral code
+        const totalFromUsers = await db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(users)
+          .where(eq(users.referredBy, user.referralCode));
+        const totalFromReferrals = await storage.getTotalInvitesCount(userId);
+        // Take MAX of both counts to never under-count
+        totalInvitesCount = Math.max(
+          Number(totalFromUsers[0]?.count || 0),
+          totalFromReferrals
+        );
+
+        // Successful: completed referrals (watched 1+ ad) from referrals table
+        successfulInvitesCount = await storage.getValidReferralCount(userId);
+        // Fallback: if referrals table < users table count, use users count
+        if (successfulInvitesCount < totalInvitesCount) {
+          // count completed referrals from users table (has ads_watched_today > 0 or balance > 0)
+          const successFromUsers = await db.execute(sql`
+            SELECT COUNT(*) as count FROM users
+            WHERE referred_by = ${user.referralCode}
+              AND (ads_watched > 0 OR COALESCE(total_earned,'0')::numeric > 0)
+              AND COALESCE(banned, false) = false
+          `);
+          const countFromUsers = Number((successFromUsers.rows[0] as any)?.count || 0);
+          successfulInvitesCount = Math.max(successfulInvitesCount, countFromUsers);
+        }
+      } else {
+        totalInvitesCount = await storage.getTotalInvitesCount(userId);
+        successfulInvitesCount = await storage.getValidReferralCount(userId);
+      }
+
+      // ── Earnings from referrals ──
+      // USD earned: from referrals table (signup USD bonuses given to referrer)
       const completedReferrals = await db
         .select()
         .from(referrals)
@@ -2078,37 +2108,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           eq(referrals.referrerId, userId),
           eq(referrals.status, 'completed')
         ));
-      
-      // Sum all historical USD rewards stored at time of earning
       let totalUsdEarned = 0;
-      let totalStarEarned = 0;
       for (const ref of completedReferrals) {
         totalUsdEarned += parseFloat(ref.usdRewardAmount || '0');
-        totalStarEarned += parseFloat(ref.starRewardAmount || '0');
       }
-      
-      // Fallback to admin settings for pending referrals (not yet earned)
-      // This ensures consistency but doesn't affect already-completed earnings
-      const pendingCount = completedReferrals.length < successfulInvitesCount ? 
-        successfulInvitesCount - completedReferrals.length : 0;
-      
+
+      // POW earned: sum L1 + L2 commissions from earnings table
+      // (these are % of friends' ad earnings credited directly to referrer's balance)
+      const powCommissionsResult = await db.execute(sql`
+        SELECT COALESCE(SUM(CAST(amount AS DECIMAL)), 0) AS total
+        FROM earnings
+        WHERE user_id = ${userId}
+          AND source IN ('referral_commission', 'referral_commission_l2', 'referral')
+      `);
+      const totalPowEarned = Number((powCommissionsResult.rows[0] as any)?.total || 0);
+
       // L2 count: users referred by my direct referrals
       let l2Count = 0;
       try {
         if (user?.referralCode) {
-          // Find all L1 users (referred_by = my referral code) and get their referral codes
           const l1Users = await db
             .select({ referralCode: users.referralCode })
             .from(users)
             .where(eq(users.referredBy, user.referralCode));
-          
           if (l1Users.length > 0) {
             const l1Codes = l1Users.map(u => u.referralCode).filter(Boolean) as string[];
             if (l1Codes.length > 0) {
               const l2Result = await db
                 .select({ count: sql<number>`COUNT(*)` })
                 .from(users)
-                .where(sql`${users.referredBy} IN ${l1Codes}`);
+                .where(sql`${users.referredBy} IN (${sql.join(l1Codes.map(c => sql`${c}`), sql`, `)})`);
               l2Count = Number(l2Result[0]?.count ?? 0);
             }
           }
@@ -2124,8 +2153,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalClaimed: user?.totalClaimedReferralBonus || '0',
         availableBonus: user?.pendingReferralBonus || '0',
         readyToClaim: user?.pendingReferralBonus || '0',
-        totalStarEarned: totalStarEarned,
-        totalUsdEarned: totalUsdEarned
+        totalPowEarned,
+        totalUsdEarned,
+        // legacy field kept for compatibility
+        totalStarEarned: totalPowEarned,
       });
     } catch (error) {
       console.error("Error fetching referral stats:", error);
@@ -2208,7 +2239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const withdrawalAdRequirementEnabled = getSetting('withdrawal_ad_requirement_enabled', 'true') === 'true';
       const MINIMUM_ADS_FOR_WITHDRAWAL = parseInt(getSetting('minimum_ads_for_withdrawal', '100'));
-      const MINIMUM_BUG_FOR_WITHDRAWAL = parseInt(getSetting('minimum_bug_for_withdrawal', '1000')); // Default: $0.1 = 1000 BUG
+      // STAR is not a withdrawal requirement — only used for weekly contest
       
       let adsWatchedSinceLastWithdrawal = 0;
       
@@ -2232,21 +2263,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adsWatchedSinceLastWithdrawal = adsCountResult[0]?.count || 0;
       }
       
-      // Check BUG balance requirement
-      const currentStarBalance = parseFloat(user.starBalance || '0');
-      const hasSufficientBug = currentStarBalance >= MINIMUM_BUG_FOR_WITHDRAWAL;
-      
-      // If ad requirement is disabled, user can always withdraw (regarding ads)
-      const canWithdrawAds = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
-      const canWithdraw = canWithdrawAds && hasSufficientBug;
+      // STAR is not a withdrawal gate — only used for weekly contest
+      const canWithdraw = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
       
       res.json({ 
         adsWatchedSinceLastWithdrawal,
         canWithdraw,
-        canWithdrawAds,
-        hasSufficientBug,
-        starBalance: currentStarBalance,
-        requiredBug: MINIMUM_BUG_FOR_WITHDRAWAL,
         requiredAds: MINIMUM_ADS_FOR_WITHDRAWAL,
         adRequirementEnabled: withdrawalAdRequirementEnabled
       });
@@ -2661,7 +2683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channelTaskReward = await storage.getAppSetting('channelTaskReward', '1000');
       const botTaskReward = await storage.getAppSetting('botTaskReward', '1000');
       const partnerTaskReward = await storage.getAppSetting('partnerTaskReward', '1000');
-      const starRewardPerTask = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starRewardPerTask = await storage.getAppSetting('star_reward_per_task', '10');
 
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
@@ -2688,7 +2710,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           link: task.link,
           rewardPOW,
           rewardSTAR: parseInt(starRewardPerTask),
-          rewardType: 'PAD',
+          rewardType: 'POW',
           isAdminTask: false,
           isAdvertiserTask: true,
           priority: 1
@@ -2735,7 +2757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardAmount = '0.0001';
       
       // Get BUG reward setting
-      const starRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
       const starReward = parseInt(starRewardSetting);
       
       await db.transaction(async (tx) => {
@@ -2758,7 +2780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${starReward} BUG to user ${userId} for share task`);
+      console.log(`🐛 Added ${starReward} STAR to user ${userId} for share task`);
       
       res.json({
         success: true,
@@ -2914,7 +2936,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardAmount = '0.0001';
       
       // Get BUG reward setting
-      const starRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
       const starReward = parseInt(starRewardSetting);
       
       await db.transaction(async (tx) => {
@@ -2935,7 +2957,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${starReward} BUG to user ${userId} for channel task`);
+      console.log(`🐛 Added ${starReward} STAR to user ${userId} for channel task`);
       
       res.json({
         success: true,
@@ -3008,7 +3030,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardAmount = '0.0001';
       
       // Get BUG reward setting
-      const starRewardSetting = await storage.getAppSetting('bug_reward_per_task', '10');
+      const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
       const starReward = parseInt(starRewardSetting);
       
       await db.transaction(async (tx) => {
@@ -3029,7 +3051,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${starReward} BUG to user ${userId} for community task`);
+      console.log(`🐛 Added ${starReward} STAR to user ${userId} for community task`);
       
       res.json({
         success: true,
@@ -3764,15 +3786,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumAdsForWithdrawal: parseInt(getSetting('minimum_ads_for_withdrawal', '100')),
         withdrawalInviteRequirementEnabled: getSetting('withdrawal_invite_requirement_enabled', 'true') === 'true',
         minimumInvitesForWithdrawal: parseInt(getSetting('minimum_invites_for_withdrawal', '3')),
-        // BUG currency settings
-        starRewardPerAd: parseInt(getSetting('bug_reward_per_ad', '1')),
-        starRewardPerTask: parseInt(getSetting('bug_reward_per_task', '10')),
-        starRewardPerReferral: parseInt(getSetting('bug_reward_per_referral', '50')),
-        minimumStarForWithdrawal: parseInt(getSetting('minimum_bug_for_withdrawal', '1000')),
-        powToStarRate: parseInt(getSetting('pad_to_bug_rate', '1')),
-        minimumConvertPowToStar: parseInt(getSetting('minimum_convert_pad_to_bug', '1000')),
-        starPerUsd: parseInt(getSetting('bug_per_usd', '10000')),
-        withdrawalStarRequirementEnabled: getSetting('withdrawal_bug_requirement_enabled', 'true') === 'true',
+        // STAR currency settings (weekly contest only)
+        starRewardPerAd: parseInt(getSetting('star_reward_per_ad', '1')),
+        starRewardPerTask: parseInt(getSetting('star_reward_per_task', '10')),
+        starRewardPerReferral: parseInt(getSetting('star_reward_per_referral', '50')),
+        powToStarRate: parseInt(getSetting('pow_to_star_rate', '1')),
+        minimumConvertPowToStar: parseInt(getSetting('minimum_convert_pow_to_star', '1000')),
         // Withdrawal packages
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
         // Legacy fields for backwards compatibility
@@ -5207,10 +5226,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get wallet change fee from admin settings (stored in PAD)
       const walletChangeFee = await storage.getAppSetting('walletChangeFee', 5000);
-      const feeInPad = parseInt(walletChangeFee);
-      const feeInTon = feeInPad / 10000000;
+      const feeInPow = parseInt(walletChangeFee);
+      const feeInTon = feeInPow / 10000000;
       
-      console.log(`💰 Wallet change fee: ${feeInPad} PAD (${feeInTon} TON)`);
+      console.log(`💰 Wallet change fee: ${feeInPow} POW (${feeInTon} TON)`);
       
       // Use database transaction to ensure atomicity
       const result = await db.transaction(async (tx) => {
@@ -5251,10 +5270,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         const currentBalance = parseFloat(user.balance || '0');
-        const currentBalancePad = Math.floor(currentBalance * 10000000);
+        const currentBalancePow = Math.floor(currentBalance * 10000000);
         
-        if (currentBalancePad < feeInPad) {
-          throw new Error(`Insufficient balance. You need ${feeInPad} PAD to change wallet. Current balance: ${currentBalancePad} PAD`);
+        if (currentBalancePow < feeInPow) {
+          throw new Error(`Insufficient balance. You need ${feeInPow} PAD to change wallet. Current balance: ${currentBalancePow} PAD`);
         }
         
         // Deduct fee from balance
@@ -5277,15 +5296,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           amount: feeInTon.toFixed(8),
           type: 'deduction',
           source: 'wallet_change_fee',
-          description: `Fee for changing Cwallet ID (${feeInPad} PAD)`,
-          metadata: { oldWallet: user.cwalletId, newWallet: newWalletId.trim(), feePad: feeInPad }
+          description: `Fee for changing Cwallet ID (${feeInPow} PAD)`,
+          metadata: { oldWallet: user.cwalletId, newWallet: newWalletId.trim(), feePad: feeInPow }
         });
         
         return {
           newBalance: newBalance.toFixed(8),
           newWallet: newWalletId.trim(),
           feeCharged: feeInTon.toFixed(8),
-          feePad: feeInPad,
+          feePad: feeInPow,
           telegramId: user.telegramId
         };
       });
@@ -5340,15 +5359,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { padAmount, convertTo = 'USD' } = req.body;
+      const { powAmount, convertTo = 'USD' } = req.body;
       
-      console.log('💵 PAD conversion request:', { userId, padAmount, convertTo });
+      console.log('💵 POW conversion request:', { userId, powAmount, convertTo });
       
-      const convertAmount = parseFloat(padAmount);
-      if (!padAmount || isNaN(convertAmount) || convertAmount <= 0) {
+      const convertAmount = parseFloat(powAmount);
+      if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
         return res.status(400).json({
           success: false,
-          message: 'Please enter a valid PAD amount'
+          message: 'Please enter a valid POW amount'
         });
       }
       
@@ -5373,7 +5392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const currentPowBalance = parseFloat(user.balance || '0');
         
         if (currentPowBalance < convertAmount) {
-          throw new Error('Insufficient PAD balance');
+          throw new Error('Insufficient POW balance');
         }
         
         const newPowBalance = currentPowBalance - convertAmount;
@@ -5387,25 +5406,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (convertTo === 'USD') {
           const conversionRateSetting = await storage.getAppSetting('pad_to_usd_rate', '10000000');
-          const PAD_TO_USD_RATE = parseFloat(conversionRateSetting);
-          convertedAmount = convertAmount / PAD_TO_USD_RATE;
+          const POW_TO_USD_RATE = parseFloat(conversionRateSetting);
+          convertedAmount = convertAmount / POW_TO_USD_RATE;
           const currentUsdBalance = parseFloat(user.usdBalance || '0');
           updateData.usdBalance = (currentUsdBalance + convertedAmount).toFixed(10);
-          console.log(`✅ PAD to USD: ${convertAmount} PAD → $${convertedAmount.toFixed(4)} USD`);
+          console.log(`✅ POW to USD: ${convertAmount} POW → $${convertedAmount.toFixed(4)} USD`);
         } else if (convertTo === 'TON') {
           const padToTonRateSetting = await storage.getAppSetting('pad_to_ton_rate', '10000000');
-          const PAD_TO_TON_RATE = parseFloat(padToTonRateSetting);
-          convertedAmount = convertAmount / PAD_TO_TON_RATE;
+          const POW_TO_TON_RATE = parseFloat(padToTonRateSetting);
+          convertedAmount = convertAmount / POW_TO_TON_RATE;
           const currentTonBalance = parseFloat(user.tonBalance || '0');
           updateData.tonBalance = (currentTonBalance + convertedAmount).toFixed(10);
-          console.log(`✅ PAD to TON: ${convertAmount} PAD → ${convertedAmount.toFixed(6)} TON`);
-        } else if (convertTo === 'BUG') {
-          const powToStarRateSetting = await storage.getAppSetting('pad_to_bug_rate', '1');
-          const PAD_TO_BUG_RATE = parseFloat(powToStarRateSetting);
-          convertedAmount = convertAmount * PAD_TO_BUG_RATE;
+          console.log(`✅ POW to TON: ${convertAmount} POW → ${convertedAmount.toFixed(6)} TON`);
+        } else if (convertTo === 'STAR') {
+          const powToStarRateSetting = await storage.getAppSetting('pow_to_star_rate', '1');
+          const POW_TO_STAR_RATE = parseFloat(powToStarRateSetting);
+          convertedAmount = convertAmount * POW_TO_STAR_RATE;
           const currentStarBalance = parseFloat(user.starBalance || '0');
           updateData.starBalance = (currentStarBalance + convertedAmount).toFixed(10);
-          console.log(`✅ PAD to BUG: ${convertAmount} PAD → ${convertedAmount.toFixed(0)} BUG`);
+          console.log(`✅ POW to STAR: ${convertAmount} POW → ${convertedAmount.toFixed(0)} STAR`);
         }
         
         await tx.update(users).set(updateData).where(eq(users.id, userId));
@@ -5427,9 +5446,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
     } catch (error) {
-      console.error('❌ Error converting PAD:', error);
+      console.error('❌ Error converting POW:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to convert';
-      res.status(errorMessage === 'Insufficient PAD balance' ? 400 : 500).json({ 
+      res.status(errorMessage === 'Insufficient POW balance' ? 400 : 500).json({ 
         success: false, 
         message: errorMessage
       });
@@ -5446,15 +5465,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { padAmount: powAmount } = req.body;
+      const { powAmount } = req.body;
       
-      console.log('💎 PAD to TON conversion request:', { userId, padAmount: powAmount });
+      console.log('💎 POW to TON conversion request:', { userId, powAmount });
       
       const convertAmount = parseFloat(powAmount);
       if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
         return res.status(400).json({
           success: false,
-          message: 'Please enter a valid PAD amount'
+          message: 'Please enter a valid POW amount'
         });
       }
 
@@ -5465,16 +5484,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (convertAmount < minimumConvertPOW) {
         return res.status(400).json({
           success: false,
-          message: `Minimum ${minimumConvertPOW.toLocaleString()} PAD required for TON conversion`
+          message: `Minimum POW required for TON conversion`
         });
       }
       
       // Get conversion rate from admin settings (default: 10,000,000 PAD = 1 TON)
       const conversionRateSetting = await storage.getAppSetting('pad_to_ton_rate', '10000000');
-      const PAD_TO_TON_RATE = parseFloat(conversionRateSetting);
-      const tonAmount = convertAmount / PAD_TO_TON_RATE;
+      const POW_TO_TON_RATE = parseFloat(conversionRateSetting);
+      const tonAmount = convertAmount / POW_TO_TON_RATE;
       
-      console.log(`📊 Using conversion rate: ${PAD_TO_TON_RATE} PAD = 1 TON`);
+      console.log(`📊 Using conversion rate: ${POW_TO_TON_RATE} POW = 1 TON`);
       
       // Use transaction to ensure atomicity
       const result = await db.transaction(async (tx) => {
@@ -5495,7 +5514,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const currentTonBalance = parseFloat(user.tonBalance || '0');
         
         if (currentPowBalance < convertAmount) {
-          throw new Error('Insufficient PAD balance');
+          throw new Error('Insufficient POW balance');
         }
         
         const newPowBalance = currentPowBalance - convertAmount;
@@ -5510,7 +5529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           })
           .where(eq(users.id, userId));
         
-        console.log(`✅ PAD to TON conversion successful: ${convertAmount} PAD → ${tonAmount.toFixed(6)} TON`);
+        console.log(`✅ POW to TON conversion successful: ${convertAmount} POW → ${tonAmount.toFixed(6)} TON`);
         
         return {
           powAmount: convertAmount,
@@ -5533,10 +5552,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
     } catch (error) {
-      console.error('❌ Error converting PAD to TON:', error);
+      console.error('❌ Error converting POW to TON:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to convert';
       
-      res.status(errorMessage === 'Insufficient PAD balance' ? 400 : 500).json({ 
+      res.status(errorMessage === 'Insufficient POW balance' ? 400 : 500).json({ 
         success: false, 
         message: errorMessage
       });
@@ -5549,39 +5568,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
       if (!userId) {
-        console.log("⚠️ BUG conversion requested without session - skipping");
+        console.log("⚠️ STAR conversion requested without session - skipping");
         return res.json({ success: true, skipAuth: true });
       }
 
-      const { padAmount: powAmount } = req.body;
+      const { powAmount } = req.body;
       
-      console.log('🐛 PAD to BUG conversion request:', { userId, padAmount: powAmount });
+      console.log('🌟 POW to STAR conversion request:', { userId, powAmount });
       
       const convertAmount = parseFloat(powAmount);
       if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
         return res.status(400).json({
           success: false,
-          message: 'Please enter a valid PAD amount'
+          message: 'Please enter a valid POW amount'
         });
       }
 
       // Get minimum conversion from admin settings
-      const minConvertSetting = await storage.getAppSetting('minimum_convert_pad_to_bug', '1000');
+      const minConvertSetting = await storage.getAppSetting('minimum_convert_pow_to_star', '1000');
       const minimumConvertPOW = parseFloat(minConvertSetting);
 
       if (convertAmount < minimumConvertPOW) {
         return res.status(400).json({
           success: false,
-          message: `Minimum ${minimumConvertPOW.toLocaleString()} PAD required for BUG conversion`
+          message: `Minimum POW required for BUG conversion`
         });
       }
       
-      // Get conversion rate from admin settings (default: 1 PAD = 1 BUG)
-      const conversionRateSetting = await storage.getAppSetting('pad_to_bug_rate', '1');
-      const PAD_TO_BUG_RATE = parseFloat(conversionRateSetting);
-      const starAmount = convertAmount / PAD_TO_BUG_RATE;
+      // Get conversion rate from admin settings (default: 1 POW = 1 STAR)
+      const conversionRateSetting = await storage.getAppSetting('pow_to_star_rate', '1');
+      const POW_TO_STAR_RATE = parseFloat(conversionRateSetting);
+      const starAmount = convertAmount / POW_TO_STAR_RATE;
       
-      console.log(`📊 Using conversion rate: ${PAD_TO_BUG_RATE} PAD = 1 BUG`);
+      console.log(`📊 Using conversion rate: ${POW_TO_STAR_RATE} POW = 1 STAR`);
       
       // Use transaction to ensure atomicity
       const result = await db.transaction(async (tx) => {
@@ -5602,7 +5621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const currentStarBalance = parseFloat(user.starBalance || '0');
         
         if (currentPowBalance < convertAmount) {
-          throw new Error('Insufficient PAD balance');
+          throw new Error('Insufficient POW balance');
         }
         
         const newPowBalance = currentPowBalance - convertAmount;
@@ -5617,7 +5636,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           })
           .where(eq(users.id, userId));
         
-        console.log(`✅ PAD to BUG conversion successful: ${convertAmount} PAD → ${starAmount.toFixed(0)} BUG`);
+        console.log(`✅ POW to STAR conversion successful: ${convertAmount} POW → ${starAmount.toFixed(0)} STAR`);
         
         return {
           powAmount: convertAmount,
@@ -5635,15 +5654,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         success: true,
-        message: 'Conversion to BUG successful!',
+        message: 'Conversion to STAR successful!',
         ...result
       });
       
     } catch (error) {
-      console.error('❌ Error converting PAD to BUG:', error);
+      console.error('❌ Error converting POW to STAR:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to convert';
       
-      res.status(errorMessage === 'Insufficient PAD balance' ? 400 : 500).json({ 
+      res.status(errorMessage === 'Insufficient POW balance' ? 400 : 500).json({ 
         success: false, 
         message: errorMessage
       });
@@ -5710,20 +5729,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isChangingWallet) {
         // Get wallet change fee from admin settings
         const walletChangeFee = await storage.getAppSetting('walletChangeFee', 5000);
-        const feeInPad = parseInt(walletChangeFee);
+        const feeInPow = parseInt(walletChangeFee);
         
         const currentBalance = parseFloat(currentUser.balance || '0');
-        const currentBalancePad = currentBalance < 1 ? Math.floor(currentBalance * 10000000) : Math.floor(currentBalance);
+        const currentBalancePow = currentBalance < 1 ? Math.floor(currentBalance * 10000000) : Math.floor(currentBalance);
         
-        if (currentBalancePad < feeInPad) {
+        if (currentBalancePow < feeInPow) {
           return res.status(400).json({
             success: false,
-            message: `Insufficient balance. You need ${feeInPad} PAD to change wallet. Current balance: ${currentBalancePad} PAD`
+            message: `Insufficient balance. You need ${feeInPow} PAD to change wallet. Current balance: ${currentBalancePow} PAD`
           });
         }
         
         // Deduct fee from balance (stored as PAD integer)
-        const newBalancePad = currentBalancePad - feeInPad;
+        const newBalancePad = currentBalancePow - feeInPow;
         
         // Update wallet and deduct fee
         await db
@@ -5739,13 +5758,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Record transaction
         await db.insert(transactions).values({
           userId: userId,
-          amount: feeInPad.toString(),
+          amount: feeInPow.toString(),
           type: 'deduction',
           description: `USDT wallet change fee`,
           createdAt: new Date()
         });
         
-        console.log(`✅ USDT wallet changed for user ${userId} - Fee: ${feeInPad} PAD deducted`);
+        console.log(`✅ USDT wallet changed for user ${userId} - Fee: ${feeInPow} POW deducted`);
         
         // Send real-time update
         sendRealtimeUpdate(userId, {
@@ -5829,20 +5848,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isChangingUsername) {
         // Get wallet change fee from admin settings
         const walletChangeFee = await storage.getAppSetting('walletChangeFee', 5000);
-        const feeInPad = parseInt(walletChangeFee);
+        const feeInPow = parseInt(walletChangeFee);
         
         const currentBalance = parseFloat(currentUser.balance || '0');
-        const currentBalancePad = currentBalance < 1 ? Math.floor(currentBalance * 10000000) : Math.floor(currentBalance);
+        const currentBalancePow = currentBalance < 1 ? Math.floor(currentBalance * 10000000) : Math.floor(currentBalance);
         
-        if (currentBalancePad < feeInPad) {
+        if (currentBalancePow < feeInPow) {
           return res.status(400).json({
             success: false,
-            message: `Insufficient balance. You need ${feeInPad} PAD to change username. Current balance: ${currentBalancePad} PAD`
+            message: `Insufficient balance. You need ${feeInPow} PAD to change username. Current balance: ${currentBalancePow} PAD`
           });
         }
         
         // Deduct fee from balance (stored as PAD integer)
-        const newBalancePad = currentBalancePad - feeInPad;
+        const newBalancePad = currentBalancePow - feeInPow;
         
         // Update username and deduct fee
         await db
@@ -5858,13 +5877,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Record transaction
         await db.insert(transactions).values({
           userId: userId,
-          amount: feeInPad.toString(),
+          amount: feeInPow.toString(),
           type: 'deduction',
           description: `Telegram Stars username change fee`,
           createdAt: new Date()
         });
         
-        console.log(`✅ Telegram Stars username changed for user ${userId} - Fee: ${feeInPad} PAD deducted`);
+        console.log(`✅ Telegram Stars username changed for user ${userId} - Fee: ${feeInPow} POW deducted`);
         
         // Send real-time update
         sendRealtimeUpdate(userId, {
@@ -6204,11 +6223,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           eq(taskClicks.publisherId, userId)
         ));
 
-      console.log(`✅ Task reward claimed: ${taskId} by ${userId} - Reward: ${rewardPOW} PAD`);
+      console.log(`✅ Task reward claimed: ${taskId} by ${userId} - Reward: ${rewardPOW} POW`);
 
       res.json({
         success: true,
-        message: `Reward claimed! +${rewardPOW} PAD`,
+        message: `Reward claimed! +${rewardPOW} POW`,
         reward: rewardPOW,
       });
     } catch (error) {
@@ -6940,48 +6959,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const withdrawalPackagesConfig = JSON.parse(withdrawalPackagesSetting?.settingValue || '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]');
         
         // Get BUG requirement settings from admin
-        const [bugRequirementEnabledSetting] = await tx
-          .select({ settingValue: adminSettings.settingValue })
-          .from(adminSettings)
-          .where(eq(adminSettings.settingKey, 'withdrawal_bug_requirement_enabled'))
-          .limit(1);
-        const withdrawalStarRequirementEnabled = bugRequirementEnabledSetting?.settingValue !== 'false';
-        
-        const [starPerUsdSetting] = await tx
-          .select({ settingValue: adminSettings.settingValue })
-          .from(adminSettings)
-          .where(eq(adminSettings.settingKey, 'bug_per_usd'))
-          .limit(1);
-        const starPerUsd = parseInt(starPerUsdSetting?.settingValue || '10000'); // Default: 1 USD = 10000 BUG
-        
-        // Determine BUG requirement based on package or FULL withdrawal
-        const currentUsdBalanceForBug = parseFloat(user.usdBalance || '0');
-        let minimumStarForWithdrawal: number;
+        // STAR is only used for weekly contest — no withdrawal gate
         let packageUsdAmount: number | null = null;
         
         if (withdrawalPackage && withdrawalPackage !== 'FULL') {
-          // Package-based withdrawal: use package's BUG requirement
           const selectedPkg = withdrawalPackagesConfig.find((p: any) => p.usd === withdrawalPackage);
           if (!selectedPkg) {
             throw new Error('Invalid withdrawal package selected');
           }
-          minimumStarForWithdrawal = selectedPkg.bug;
           packageUsdAmount = selectedPkg.usd;
-          
-          // Check if user has enough USD balance for this package
-          if (currentUsdBalanceForBug < packageUsdAmount) {
+          const currentUsdBalanceForPkg = parseFloat(user.usdBalance || '0');
+          if (currentUsdBalanceForPkg < packageUsdAmount) {
             throw new Error(`Insufficient balance. You need $${packageUsdAmount.toFixed(2)} for this package.`);
           }
-        } else {
-          // FULL withdrawal: dynamic BUG requirement based on full USD balance
-          minimumStarForWithdrawal = Math.ceil(currentUsdBalanceForBug * starPerUsd);
-        }
-        
-        const currentStarBalance = parseFloat(user.starBalance || '0');
-        if (withdrawalStarRequirementEnabled && currentStarBalance < minimumStarForWithdrawal) {
-          const remaining = minimumStarForWithdrawal - currentStarBalance;
-          const amountStr = packageUsdAmount ? `$${packageUsdAmount.toFixed(2)}` : `$${currentUsdBalanceForBug.toFixed(2)}`;
-          throw new Error(`Earn ${remaining.toFixed(0)} more STAR to unlock your ${amountStr} withdrawal. Required: ${minimumStarForWithdrawal.toLocaleString()} STAR.`);
         }
 
         // Check if user has appropriate wallet address based on method
@@ -7106,8 +7096,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (packageUsdAmount !== null) {
             withdrawalDetails.withdrawalPackage = packageUsdAmount;
           }
-          // Only store BUG deduction if requirement is enabled — if disabled, no BUG should be cut on approval
-          withdrawalDetails.starDeducted = withdrawalStarRequirementEnabled ? minimumStarForWithdrawal : 0;
+          // STAR is not deducted on withdrawal — it's only for weekly contest
+          withdrawalDetails.starDeducted = 0;
           
           // Store wallet address based on method
           if (method === 'TON') {
@@ -8103,9 +8093,9 @@ ${walletAddress}
       if (rewardType === 'PDZ') rewardType = 'TON';
       const rewardAmount = result.reward;
       
-      if (rewardType === 'PAD') {
+      if (rewardType === 'POW') {
         // Add PAD balance - addEarning handles BOTH earnings tracking AND balance update
-        const rewardPad = parseInt(rewardAmount || '0');
+        const rewardPow = parseInt(rewardAmount || '0');
         
         await storage.addEarning({
           userId,
@@ -8116,9 +8106,9 @@ ${walletAddress}
         
         res.json({ 
           success: true, 
-          message: `${rewardPad} PAD added to your balance!`,
+          message: `${rewardPow} POW added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'PAD'
+          rewardType: 'POW'
         });
       } else if (rewardType === 'TON') {
         // Add TON balance - direct update required since addEarning only handles PAD balance
@@ -8161,7 +8151,7 @@ ${walletAddress}
           reward: rewardAmount,
           rewardType: 'USD'
         });
-      } else if (rewardType === 'BUG') {
+      } else if (rewardType === 'STAR') {
         // Add BUG balance
         const [currentUser] = await db
           .select({ starBalance: users.starBalance })
@@ -8194,7 +8184,7 @@ ${walletAddress}
         });
       } else {
         // Default: Add PAD balance
-        const rewardPad = parseInt(rewardAmount || '0');
+        const rewardPow = parseInt(rewardAmount || '0');
         
         await storage.addEarning({
           userId,
@@ -8205,9 +8195,9 @@ ${walletAddress}
         
         res.json({ 
           success: true, 
-          message: `${rewardPad} PAD added to your balance!`,
+          message: `${rewardPow} POW added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'PAD'
+          rewardType: 'POW'
         });
       }
     } catch (error) {
@@ -8687,7 +8677,7 @@ ${walletAddress}
         return res.status(404).json({ error: 'User not found' });
       }
 
-      if (reward.type === 'PAD') {
+      if (reward.type === 'POW') {
         const currentBalance = parseFloat(user.balance?.toString() || '0');
         const newBalance = currentBalance + reward.amount;
         await db.update(users).set({
