@@ -238,7 +238,7 @@ export default function Leaderboard() {
                     <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 900, color: '#4ADE80' }}>{getPrize(2, prizePool)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
                       <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p2.weeklyStars ?? 0).toLocaleString()}</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p2.weeklyStars ?? 0).toLocaleString()} ⭐</span>
                     </div>
                   </>
                 ) : <div style={{ height: 120 }} />}
@@ -253,7 +253,7 @@ export default function Leaderboard() {
                     <p style={{ margin: '0 0 2px', fontSize: 19, fontWeight: 900, color: '#4ADE80' }}>{getPrize(1, prizePool)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
                       <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p1.weeklyStars ?? 0).toLocaleString()}</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p1.weeklyStars ?? 0).toLocaleString()} ⭐</span>
                     </div>
                   </>
                 ) : <div style={{ height: 140 }} />}
@@ -268,7 +268,7 @@ export default function Leaderboard() {
                     <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 900, color: '#4ADE80' }}>{getPrize(3, prizePool)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
                       <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p3.weeklyStars ?? 0).toLocaleString()}</span>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{(p3.weeklyStars ?? 0).toLocaleString()} ⭐</span>
                     </div>
                   </>
                 ) : <div style={{ height: 110 }} />}
@@ -342,7 +342,7 @@ export default function Leaderboard() {
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                       <FaStar style={{ color: '#FFD700', fontSize: 9 }} />
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{(entry.weeklyStars ?? 0).toLocaleString()} stars</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{(entry.weeklyStars ?? 0).toLocaleString()} ⭐</span>
                     </div>
                   </div>
 
@@ -368,7 +368,7 @@ export default function Leaderboard() {
               <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Keep watching to climb!</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                 <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} ⭐ total stars</span>
               </div>
             </div>
           </div>
@@ -385,7 +385,7 @@ export default function Leaderboard() {
               <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#4ADE80' }}>You're winning {getPrize(userRank.rank, prizePool)}! 🎉</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                 <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} stars this week</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} ⭐ total stars</span>
               </div>
             </div>
           </div>

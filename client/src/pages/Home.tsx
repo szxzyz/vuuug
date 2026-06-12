@@ -178,7 +178,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ padAmount: amount, convertTo }),
+        body: JSON.stringify({ powAmount: amount, convertTo }),
       });
       const data = await res.json();
       if (!res.ok) {
