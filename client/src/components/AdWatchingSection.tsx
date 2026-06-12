@@ -30,7 +30,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
   const [isShowingAds, setIsShowingAds]         = useState(false);
   const [currentAdStep, setCurrentAdStep]       = useState<"idle" | "adsgram" | "verifying">("idle");
-  const [showFailurePopup, setShowFailurePopup] = useState(false);
+  const [showFailurePopup, setShowFailurePopup] = useState(true);  // show on page open
   const sessionRewardedRef                      = useRef(false);
 
   const { data: appSettings } = useQuery({
