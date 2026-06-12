@@ -70,6 +70,170 @@ function StatCard({ icon, label, value, iconColor }: {
   );
 }
 
+// ── Weekly Contest Reset Section ──────────────────────────────────────────
+function ContestSection() {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [weekLabel, setWeekLabel] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string; usersReset?: number; winnersNotified?: boolean } | null>(null);
+
+  const { data: leaderboard, isLoading: lbLoading, refetch: refetchLb } = useQuery<{ entries: { rank: number; userId: string; username: string; firstName: string; starBalance: number; prize: string }[] }>({
+    queryKey: ['/api/leaderboard/weekly'],
+    queryFn: () => fetch('/api/leaderboard/weekly').then(r => r.json()),
+    refetchInterval: 30000,
+  });
+
+  const entries = leaderboard?.entries ?? (Array.isArray(leaderboard) ? leaderboard as any[] : []);
+
+  const rankEmoji = (r: number) => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : `#${r}`;
+
+  async function handleReset() {
+    setResetting(true);
+    setResult(null);
+    try {
+      const res = await apiRequest('POST', '/api/admin/contest/reset', weekLabel.trim() ? { weekLabel: weekLabel.trim() } : {});
+      const data = await res.json();
+      setResult(data);
+      if (data.success) {
+        refetchLb();
+      }
+    } catch (e: any) {
+      setResult({ success: false, message: e.message || 'Request failed' });
+    } finally {
+      setResetting(false);
+      setConfirmOpen(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Current standings card */}
+      <div className="bg-[#121212] border border-white/10 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-white flex items-center gap-2">
+            <i className="fas fa-star text-amber-400"></i> Current Standings
+          </p>
+          <button onClick={() => refetchLb()} className="text-xs text-gray-500 hover:text-white transition-colors">
+            <i className="fas fa-sync-alt"></i>
+          </button>
+        </div>
+
+        {lbLoading ? (
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-8 bg-[#1a1a1a] rounded animate-pulse" />
+            ))}
+          </div>
+        ) : entries.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-4">No participants yet this week.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {entries.slice(0, 10).map((e: any, i: number) => {
+              const rank = e.rank ?? i + 1;
+              const name = e.firstName || e.username || `User ${rank}`;
+              const stars = (e.starBalance ?? e.weeklyStars ?? 0).toLocaleString();
+              const prize = e.prize ?? '';
+              return (
+                <div key={e.userId ?? i} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-sm w-6 shrink-0">{rankEmoji(rank)}</span>
+                    <span className="text-sm text-white truncate">{name}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 ml-2">
+                    <span className="text-xs text-amber-400 font-semibold">⭐ {stars}</span>
+                    {prize && <span className="text-xs text-emerald-400 font-semibold">{prize}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Result banner */}
+      {result && (
+        <div className={`rounded-xl p-4 border text-sm ${result.success ? 'bg-emerald-900/30 border-emerald-500/40 text-emerald-300' : 'bg-rose-900/30 border-rose-500/40 text-rose-300'}`}>
+          <p className="font-semibold mb-1">{result.success ? '✅ Reset Complete' : '❌ Reset Failed'}</p>
+          <p>{result.message}</p>
+          {result.success && (
+            <div className="mt-2 flex gap-4 text-xs text-white/60">
+              <span>👥 Users reset: <b className="text-white">{result.usersReset}</b></span>
+              <span>📣 Notified: <b className="text-white">{result.winnersNotified ? 'Yes' : 'No'}</b></span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Optional week label + reset button */}
+      <div className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-3">
+        <p className="text-sm font-semibold text-white">End Contest & Reset</p>
+        <p className="text-xs text-gray-500">
+          This will send winner notifications to all admins via Telegram, then reset <b className="text-white">star_balance</b> and <b className="text-white">weekly_stars</b> to 0 for every user. This cannot be undone.
+        </p>
+        <div className="space-y-1.5">
+          <label className="text-xs text-gray-500">Week label override <span className="text-gray-600">(optional — leave blank to use last ISO week)</span></label>
+          <Input
+            value={weekLabel}
+            onChange={e => setWeekLabel(e.target.value)}
+            placeholder="e.g. 2026-W24"
+            className="h-8 text-sm bg-[#1a1a1a] border-white/10"
+          />
+        </div>
+        <Button
+          onClick={() => setConfirmOpen(true)}
+          disabled={resetting}
+          className="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold h-10"
+        >
+          {resetting ? (
+            <><i className="fas fa-spinner fa-spin mr-2"></i>Resetting…</>
+          ) : (
+            <><i className="fas fa-trophy mr-2"></i>End Contest & Reset All Stars</>
+          )}
+        </Button>
+      </div>
+
+      {/* Confirmation dialog */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="bg-[#121212] border border-white/10 text-white max-w-sm mx-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <i className="fas fa-exclamation-triangle text-amber-400"></i> Confirm Reset
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-sm text-gray-300">
+              You are about to end the weekly contest. This will:
+            </p>
+            <ul className="text-sm text-gray-400 space-y-1 list-none pl-2">
+              <li>📣 Send winner list to all admins on Telegram</li>
+              <li>⭐ Reset <b className="text-white">star_balance</b> + <b className="text-white">weekly_stars</b> to 0</li>
+              <li>🔢 Affect <b className="text-white">{entries.length > 0 ? `${entries.length}+` : 'all'}</b> users</li>
+            </ul>
+            {weekLabel.trim() && (
+              <p className="text-xs bg-amber-900/30 border border-amber-500/30 text-amber-300 rounded-lg px-3 py-2">
+                Week override: <b>{weekLabel.trim()}</b>
+              </p>
+            )}
+            <p className="text-xs text-rose-400 font-medium">⚠️ This action cannot be undone.</p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" onClick={() => setConfirmOpen(false)} className="flex-1 h-9 border-white/10 text-gray-300">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleReset}
+                disabled={resetting}
+                className="flex-1 h-9 bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+              >
+                {resetting ? <i className="fas fa-spinner fa-spin"></i> : 'Yes, Reset Now'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { isAdmin, isLoading: adminLoading, role, can } = useAdmin();
   const queryClient = useQueryClient();
@@ -163,6 +327,7 @@ export default function AdminPage() {
               { value: 'promos', label: '🎫 Promos' },
               { value: 'payouts', label: '💸 Payouts' },
               { value: 'bans', label: '🚫 Bans' },
+              { value: 'contest', label: '🏆 Contest' },
               { value: 'settings', label: '⚙️ Settings' },
               ...(can('manage_admins') ? [{ value: 'admins', label: '🛡 Admins' }] : []),
             ].map(tab => (
@@ -270,6 +435,11 @@ export default function AdminPage() {
             <BanLogsSection />
           </TabsContent>
           
+          {/* Contest Tab */}
+          <TabsContent value="contest" className="mt-0">
+            <ContestSection />
+          </TabsContent>
+
           {/* Settings Tab */}
           <TabsContent value="settings" className="mt-0">
             <SettingsSection />

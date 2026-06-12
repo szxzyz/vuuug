@@ -24,8 +24,8 @@ interface LeaderboardData {
 }
 
 const PRIZE_PCTS: [number, number][] = [
-  [1, 40], [2, 25], [3, 15], [4, 8], [5, 5],
-  [6, 3], [7, 1], [8, 1], [9, 1], [10, 1],
+  [1, 25], [2, 18], [3, 14], [4, 11], [5, 7],
+  [6, 5], [7, 5], [8, 5], [9, 5], [10, 5],
 ];
 
 function getPrize(rank: number, pool: number): string {

@@ -4,6 +4,7 @@ import { showNotification } from '@/components/AppNotification';
 import Layout from '@/components/Layout';
 import IncomeChart from '@/components/IncomeChart';
 import { Copy, Share2 } from 'lucide-react';
+import { formatLargePAD } from '@/lib/utils';
 
 export default function Affiliates() {
   const { data: user } = useQuery<any>({
@@ -165,16 +166,16 @@ export default function Affiliates() {
               <p className="text-[#888] text-xs mt-0.5">Total from all referrals</p>
             </div>
             <span className="text-green-400 text-lg font-black">
-              ${totalUsdEarned > 0 ? totalUsdEarned.toFixed(5) : '0.00000'}
+              ${totalUsdEarned > 0 ? totalUsdEarned.toFixed(3) : '0.000'}
             </span>
           </div>
           <div className="flex items-center justify-between pt-2">
             <div>
               <p className="text-white text-sm font-semibold">POW Earned</p>
-              <p className="text-[#888] text-xs mt-0.5">Total POW from L1 + L2 commissions</p>
+              <p className="text-[#888] text-xs mt-0.5">Total POW from L1 commissions</p>
             </div>
             <span className="text-white text-lg font-black">
-              {totalPowEarned > 0 ? Math.round(totalPowEarned).toLocaleString() : '0'} <span className="text-xs text-[#888] font-normal">POW</span>
+              {formatLargePAD(totalPowEarned, false)} <span className="text-xs text-[#888] font-normal">POW</span>
             </span>
           </div>
         </div>
