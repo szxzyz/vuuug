@@ -8246,12 +8246,14 @@ ${walletAddress}
         console.log('🎲 Auto-generated promo code:', finalCode);
       }
       
-      // Validate reward type - PAD, TON, USD, BUG supported (PDZ is deprecated)
+      // Validate reward type - PAD/POW, TON, USD, BUG/STAR supported (PDZ is deprecated)
       let finalRewardType = rewardType || 'TON';
-      // Convert legacy PDZ to TON
+      // Normalize aliases
       if (finalRewardType === 'PDZ') finalRewardType = 'TON';
+      if (finalRewardType === 'POW') finalRewardType = 'PAD';   // POW = PAD internally
+      if (finalRewardType === 'STAR') finalRewardType = 'BUG';  // STAR = BUG internally
       if (finalRewardType !== 'PAD' && finalRewardType !== 'TON' && finalRewardType !== 'USD' && finalRewardType !== 'BUG') {
-        return res.status(400).json({ message: 'Reward type must be PAD, TON, USD, or BUG' });
+        return res.status(400).json({ message: 'Reward type must be POW, TON, USD, or STAR' });
       }
       
       const promoCode = await storage.createPromoCode({
