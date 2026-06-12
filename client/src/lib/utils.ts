@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { PAD_TO_USD, padToUSD } from "@shared/constants"
+import { POW_TO_USD, powToUSD } from "@shared/constants"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -15,14 +15,13 @@ export function formatCurrency(value: string | number, includeSymbol: boolean = 
   const numValue = parseFloat(typeof value === 'string' ? value : value.toString());
   
   if (isNaN(numValue) || !isFinite(numValue)) {
-    return includeSymbol ? '0 PAD' : '0';
+    return includeSymbol ? '0 POW' : '0';
   }
   
-  // PAD is always an integer - no TON conversion
-  const padValue = Math.round(numValue);
+  const powValue = Math.round(numValue);
   
-  const symbol = includeSymbol ? ' PAD' : '';
-  return `${padValue.toLocaleString()}${symbol}`;
+  const symbol = includeSymbol ? ' POW' : '';
+  return `${powValue.toLocaleString()}${symbol}`;
 }
 
 /**
@@ -34,11 +33,11 @@ export function formatLargePAD(value: string | number, includeSymbol: boolean = 
   const numValue = parseFloat(typeof value === 'string' ? value : value.toString());
   
   if (isNaN(numValue) || !isFinite(numValue)) {
-    return includeSymbol ? '0 PAD' : '0';
+    return includeSymbol ? '0 POW' : '0';
   }
   
   const absValue = Math.abs(numValue);
-  const symbol = includeSymbol ? ' PAD' : '';
+  const symbol = includeSymbol ? ' POW' : '';
   const sign = numValue < 0 ? '-' : '';
   
   if (absValue >= 1000000000000) {
@@ -66,22 +65,21 @@ export function formatTaskReward(value: string | number, includeSymbol: boolean 
   const numValue = parseFloat(typeof value === 'string' ? value : value.toString());
   
   if (isNaN(numValue) || !isFinite(numValue)) {
-    return includeSymbol ? '0 PAD' : '0';
+    return includeSymbol ? '0 POW' : '0';
   }
   
-  // PAD is always an integer - no TON conversion
-  const padValue = Math.round(numValue);
+  const powValue = Math.round(numValue);
   
-  const symbol = includeSymbol ? ' PAD' : '';
-  return `${padValue.toLocaleString()}${symbol}`;
+  const symbol = includeSymbol ? ' POW' : '';
+  return `${powValue.toLocaleString()}${symbol}`;
 }
 
 /**
  * Convert PAD to USD
  * 100,000 PAD = $1.00
  */
-export function formatPADtoUSD(padAmount: number | string): string {
-  const usd = padToUSD(padAmount);
+export function formatPADtoUSD(powAmount: number | string): string {
+  const usd = powToUSD(powAmount);
   return usd.toFixed(2);
 }
 
