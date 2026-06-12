@@ -1655,7 +1655,6 @@ function SettingsSection() {
     // STAR currency settings (weekly contest only)
     starRewardPerAd: '1',
     starRewardPerTask: '10',
-    starRewardPerReferral: '50',
     powToStarRate: '1',
     minimumConvertPowToStar: '1000',
     weeklyGiveawayAmount: '10',
@@ -1712,7 +1711,6 @@ function SettingsSection() {
         // STAR currency settings (weekly contest only)
         starRewardPerAd: settingsData.starRewardPerAd?.toString() || '1',
         starRewardPerTask: settingsData.starRewardPerTask?.toString() || '10',
-        starRewardPerReferral: settingsData.starRewardPerReferral?.toString() || '50',
         powToStarRate: settingsData.powToStarRate?.toString() || '1',
         minimumConvertPowToStar: settingsData.minimumConvertPowToStar?.toString() || '1000',
         weeklyGiveawayAmount: settingsData.weeklyGiveawayAmount?.toString() || '10',
@@ -1809,7 +1807,6 @@ function SettingsSection() {
         // STAR currency settings (weekly contest only)
         starRewardPerAd: parseInt(settings.starRewardPerAd) || 1,
         starRewardPerTask: parseInt(settings.starRewardPerTask) || 10,
-        starRewardPerReferral: parseInt(settings.starRewardPerReferral) || 50,
         powToStarRate: parseInt(settings.powToStarRate) || 1,
         minimumConvertPowToStar: parseInt(settings.minimumConvertPowToStar) || 1000,
         weeklyGiveawayAmount: parseFloat(settings.weeklyGiveawayAmount) || 10,
@@ -2368,24 +2365,6 @@ function SettingsSection() {
               />
               <p className="text-xs text-muted-foreground">
                 Current: {settingsData?.starRewardPerTask || 10} STAR
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="bug-reward-per-referral" className="text-sm font-semibold">
-                <i className="fas fa-users mr-2 text-lime-600"></i>
-                STAR Per Referral
-              </Label>
-              <Input
-                id="bug-reward-per-referral"
-                type="number"
-                value={settings.starRewardPerReferral}
-                onChange={(e) => setSettings({ ...settings, starRewardPerReferral: e.target.value })}
-                placeholder="50"
-                min="0"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.starRewardPerReferral || 50} STAR
               </p>
             </div>
 
