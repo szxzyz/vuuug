@@ -76,6 +76,17 @@ export default function DailyActivityBonus({ user }: { user: any }) {
       return res.json();
     },
     onSuccess: (data) => {
+      // Immediately patch the user cache with fresh star balance from response
+      if (data.newStarBalance !== undefined) {
+        queryClient.setQueryData(['/api/auth/user'], (oldUser: any) => {
+          if (!oldUser) return oldUser;
+          return {
+            ...oldUser,
+            starBalance: data.newStarBalance,
+            weeklyStars: data.newWeeklyStars ?? oldUser.weeklyStars,
+          };
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/daily-bonus/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });

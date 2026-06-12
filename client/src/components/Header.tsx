@@ -25,12 +25,12 @@ export default function Header() {
   const usdBalance = parseFloat(user?.usdBalance || "0");
   const usdFormatted = usdBalance.toFixed(3);
 
-  const bugBalance = parseFloat(user?.bugBalance || "0");
-  const bugFormatted = bugBalance >= 1000000
-    ? (bugBalance / 1000000).toFixed(1) + 'M'
-    : bugBalance >= 1000
-    ? (bugBalance / 1000).toFixed(1) + 'k'
-    : bugBalance.toFixed(0);
+  const starBalance = parseFloat(user?.starBalance || "0");
+  const starFormatted = starBalance >= 1000000
+    ? (starBalance / 1000000).toFixed(1) + 'M'
+    : starBalance >= 1000
+    ? (starBalance / 1000).toFixed(1) + 'k'
+    : starBalance.toFixed(0);
 
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-md h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl flex items-center justify-between px-4">
@@ -51,7 +51,7 @@ export default function Header() {
 
         <div className="flex items-center gap-1.5">
           <img src="/star-bug.png" alt="STAR" className="w-7 h-7 object-contain flex-shrink-0" />
-          <span className="text-[15px] font-bold text-white leading-none">{bugFormatted}</span>
+          <span className="text-[15px] font-bold text-white leading-none">{starFormatted}</span>
         </div>
 
         <div className="flex items-center gap-1.5">
