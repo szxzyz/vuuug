@@ -463,6 +463,32 @@ export class DatabaseStorage implements IStorage {
         console.error('Error updating users table in addEarning:', userUpdateError);
         // Don't throw - the earning was already recorded
       }
+
+      // Balance integrity guard: if balance is 0 but totalEarned is positive, sync balance
+      // This can happen if a repair/reset script accidentally zeroed the balance column
+      try {
+        const [userCheck] = await db
+          .select({ balance: users.balance, totalEarned: users.totalEarned })
+          .from(users)
+          .where(eq(users.id, earning.userId));
+        if (
+          userCheck &&
+          parseFloat(String(userCheck.balance || '0')) === 0 &&
+          parseFloat(String(userCheck.totalEarned || '0')) > 0
+        ) {
+          console.warn(`⚠️ Balance integrity issue detected for user ${earning.userId}: balance=0 but totalEarned=${userCheck.totalEarned}. Auto-syncing...`);
+          await db
+            .update(users)
+            .set({
+              balance: sql`COALESCE(${users.totalEarned}, 0)`,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, earning.userId));
+          console.log(`✅ Balance synced from totalEarned for user ${earning.userId}`);
+        }
+      } catch (integrityError) {
+        console.error('⚠️ Balance integrity check failed (non-critical):', integrityError);
+      }
     }
     
     // Check and activate referral bonuses after ad watch (must happen before commission processing)

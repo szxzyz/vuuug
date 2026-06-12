@@ -1699,6 +1699,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const milestone = DAILY_BONUS_MILESTONES[milestoneIndex];
 
+      // STEP 1: Atomically claim the milestone slot FIRST (prevents race condition / double-claim)
+      // ON CONFLICT means another concurrent request already claimed it — return error immediately
+      const inserted = await db.insert(dailyMissions).values({
+        userId: String(userId),
+        missionType: `ad_milestone_${milestoneIndex}`,
+        completed: true,
+        claimedAt: new Date(),
+        resetDate: today,
+        createdAt: new Date(),
+      }).onConflictDoNothing().returning({ id: dailyMissions.id });
+
+      if (inserted.length === 0) {
+        // Slot was already taken — another request beat us to it
+        return res.status(400).json({ message: 'Milestone already claimed', alreadyClaimed: true });
+      }
+
+      // STEP 2: Give the reward (safe — slot is already locked above)
       if (milestone.starReward) {
         const starsToAdd = milestone.starReward;
         const freshUser = await storage.getUser(userId);
@@ -1737,17 +1754,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`💰 Milestone ${milestoneIndex} (${milestone.ads} ads): +$${milestone.usdReward} USD credited to usd_balance for ${userId}`);
       }
 
-      // Mark this milestone as claimed in daily_missions
-      await db.insert(dailyMissions).values({
-        userId: String(userId),
-        missionType: `ad_milestone_${milestoneIndex}`,
-        completed: true,
-        claimedAt: new Date(),
-        resetDate: today,
-        createdAt: new Date(),
-      });
+      // STEP 3: Update last_bonus_claimed_index to highest claimed (keeps legacy column in sync)
+      try {
+        await db.execute(sql`
+          UPDATE users
+          SET last_bonus_claimed_index = GREATEST(COALESCE(last_bonus_claimed_index, -1), ${milestoneIndex}),
+              updated_at = NOW()
+          WHERE id = ${userId}
+        `);
+      } catch (_) { /* non-critical legacy column */ }
 
-      // Fetch updated user and push real-time balance update
+      // STEP 4: Figure out the next unclaimed milestone for the UI
+      const updatedClaimedIndices = new Set([...claimedIndices, milestoneIndex]);
+      let nextMilestone: { index: number; ads: number; reward: string } | null = null;
+      for (let i = milestoneIndex + 1; i < DAILY_BONUS_MILESTONES.length; i++) {
+        if (!updatedClaimedIndices.has(i)) {
+          const m = DAILY_BONUS_MILESTONES[i];
+          nextMilestone = {
+            index: i,
+            ads: m.ads,
+            reward: m.starReward ? `${m.starReward} Stars` : `$${m.usdReward} USD`,
+          };
+          break;
+        }
+      }
+
+      // STEP 5: Fetch updated user and push real-time balance update
       try {
         const updatedUser = await storage.getUser(userId);
         const newStarBal = Number(updatedUser?.starBalance || 0);
@@ -1759,12 +1791,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           starBalance: newStarBal,
           weeklyStars: newWeeklyStars,
         });
-        return res.json({ success: true, milestoneIndex, milestone, newStarBalance: newStarBal, newWeeklyStars });
+        return res.json({
+          success: true,
+          milestoneIndex,
+          milestone,
+          newStarBalance: newStarBal,
+          newWeeklyStars,
+          nextMilestone,
+        });
       } catch (_) {
         // non-critical — still return success
       }
 
-      res.json({ success: true, milestoneIndex, milestone });
+      res.json({ success: true, milestoneIndex, milestone, nextMilestone });
     } catch (error) {
       console.error('Daily bonus claim error:', error);
       res.status(500).json({ message: 'Internal server error' });
