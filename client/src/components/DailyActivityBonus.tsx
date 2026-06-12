@@ -111,10 +111,9 @@ export default function DailyActivityBonus({ user }: { user: any }) {
 
   const adsWatched = bonusStatus?.adsWatchedToday ?? (user?.adsWatchedToday || 0);
   const currentMilestoneIndex: number = bonusStatus?.currentMilestoneIndex ?? -1;
-  const claimedToday: boolean = bonusStatus?.claimedToday ?? false;
 
   const currentMilestone = currentMilestoneIndex >= 0 ? MILESTONES[currentMilestoneIndex] : null;
-  const canClaim = !!currentMilestone && !claimedToday;
+  const canClaim = !!currentMilestone;
 
   return (
     <div className="mb-3 px-1">
@@ -218,9 +217,9 @@ export default function DailyActivityBonus({ user }: { user: any }) {
 
       <button
         onClick={() => claimMutation.mutate()}
-        disabled={claimMutation.isPending || claimedToday || isLoading || !canClaim}
+        disabled={claimMutation.isPending || isLoading || !canClaim}
         className={`btn-primary active:scale-95 transition-transform ${
-          claimedToday || !canClaim ? 'opacity-40 cursor-not-allowed' : ''
+          !canClaim ? 'opacity-40 cursor-not-allowed' : ''
         }`}
         style={{
           width: '100%',
@@ -231,12 +230,12 @@ export default function DailyActivityBonus({ user }: { user: any }) {
           borderRadius: 12,
           fontSize: 14,
           fontWeight: 700,
-          cursor: claimedToday || !canClaim ? 'not-allowed' : 'pointer',
+          cursor: !canClaim ? 'not-allowed' : 'pointer',
           letterSpacing: '0.03em',
           marginTop: 10,
         }}
       >
-        {claimedToday ? "CLAIMED TODAY ✓" : claimMutation.isPending ? "CLAIMING..." : "GET BONUS"}
+        {claimMutation.isPending ? "CLAIMING..." : "GET BONUS"}
       </button>
     </div>
   );
