@@ -1571,8 +1571,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     { ads: 100, starReward: 100,  usdReward: null  },
     { ads: 200, starReward: 500,  usdReward: null  },
     { ads: 300, starReward: 1000, usdReward: null  },
-    { ads: 400, starReward: null, usdReward: 0.005 },
-    { ads: 500, starReward: null, usdReward: 0.01  },
+    { ads: 400, starReward: null, usdReward: 0.05  },
+    { ads: 500, starReward: null, usdReward: 0.10  },
   ];
 
   function getISOWeek(): string {
@@ -1602,10 +1602,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const adsWatchedToday = user.adsWatchedToday || 0;
       const today = getDailyResetDateStr();
-      let currentMilestoneIndex = -1;
+
+      // Get which milestones were already claimed today
+      const claimedRows = await db.select({ missionType: dailyMissions.missionType })
+        .from(dailyMissions)
+        .where(
+          and(
+            eq(dailyMissions.userId, String(userId)),
+            eq(dailyMissions.resetDate, today),
+            sql`${dailyMissions.missionType} LIKE 'ad_milestone_%'`
+          )
+        );
+      const claimedIndices: number[] = claimedRows.map(r => parseInt(r.missionType.replace('ad_milestone_', ''))).filter(n => !isNaN(n));
+
+      // Next claimable = lowest unclaimed milestone the user qualifies for
+      let nextClaimableIndex = -1;
       for (let i = 0; i < DAILY_BONUS_MILESTONES.length; i++) {
-        if (adsWatchedToday >= DAILY_BONUS_MILESTONES[i].ads) {
-          currentMilestoneIndex = i;
+        if (adsWatchedToday >= DAILY_BONUS_MILESTONES[i].ads && !claimedIndices.includes(i)) {
+          nextClaimableIndex = i;
+          break;
         }
       }
 
@@ -1620,9 +1635,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         adsWatchedToday,
         milestones: DAILY_BONUS_MILESTONES,
-        currentMilestoneIndex,
-        currentBonus: currentMilestoneIndex >= 0 ? DAILY_BONUS_MILESTONES[currentMilestoneIndex] : null,
-        claimedToday: false,   // no restriction — always claimable
+        currentMilestoneIndex: nextClaimableIndex,
+        currentBonus: nextClaimableIndex >= 0 ? DAILY_BONUS_MILESTONES[nextClaimableIndex] : null,
+        claimedMilestones: claimedIndices,
+        claimedToday: claimedIndices.length > 0,
         canUpgrade: false,
         nextResetAt: nextReset.toISOString(),
         resetHourUTC: 12,
@@ -1640,20 +1656,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return res.status(404).json({ message: 'User not found' });
 
       const adsWatchedToday = user.adsWatchedToday || 0;
+      const today = getDailyResetDateStr();
+      const currentWeek = getISOWeek();
+
+      // Get which milestones were already claimed today
+      const claimedRows = await db.select({ missionType: dailyMissions.missionType })
+        .from(dailyMissions)
+        .where(
+          and(
+            eq(dailyMissions.userId, String(userId)),
+            eq(dailyMissions.resetDate, today),
+            sql`${dailyMissions.missionType} LIKE 'ad_milestone_%'`
+          )
+        );
+      const claimedIndices = new Set<number>(
+        claimedRows.map(r => parseInt(r.missionType.replace('ad_milestone_', ''))).filter(n => !isNaN(n))
+      );
+
+      // Find the LOWEST unclaimed milestone the user qualifies for (must claim in order)
       let milestoneIndex = -1;
       for (let i = 0; i < DAILY_BONUS_MILESTONES.length; i++) {
-        if (adsWatchedToday >= DAILY_BONUS_MILESTONES[i].ads) milestoneIndex = i;
+        if (adsWatchedToday >= DAILY_BONUS_MILESTONES[i].ads && !claimedIndices.has(i)) {
+          milestoneIndex = i;
+          break;
+        }
       }
 
       if (milestoneIndex < 0) {
-        return res.status(400).json({ message: 'No milestone reached yet', noMilestone: true });
+        // Check whether user hasn't reached any milestone vs all claimed
+        const anyReached = DAILY_BONUS_MILESTONES.some(m => adsWatchedToday >= m.ads);
+        if (!anyReached) {
+          return res.status(400).json({ message: 'No milestone reached yet', noMilestone: true });
+        }
+        return res.status(400).json({ message: 'All reached milestones already claimed today', alreadyClaimed: true });
       }
 
       const milestone = DAILY_BONUS_MILESTONES[milestoneIndex];
-      const currentWeek = getISOWeek();
 
       if (milestone.starReward) {
-        // No restrictions — give full milestone reward every claim
         const starsToAdd = milestone.starReward;
         const freshUser = await storage.getUser(userId);
         const userWeek = (freshUser as any)?.weeklyStarWeek;
@@ -1667,9 +1707,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updated_at       = NOW()
           WHERE id = ${userId}
         `);
-        console.log(`⭐ Milestone ${milestoneIndex + 1}: +${starsToAdd} STAR (no restriction) for ${userId}`);
+        console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR for ${userId}`);
       } else if (milestone.usdReward) {
-        // No restrictions — give full USD reward every claim
         const powReward = Math.round(milestone.usdReward * 10000000);
         await storage.addEarning({
           userId,
@@ -1677,9 +1716,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           source: 'daily_bonus',
           description: `Daily activity bonus: $${milestone.usdReward}`,
         });
+        console.log(`💰 Milestone ${milestoneIndex} (${milestone.ads} ads): +$${milestone.usdReward} USD for ${userId}`);
       }
 
-      // Fetch updated user and push real-time balance update so header reflects immediately
+      // Mark this milestone as claimed in daily_missions
+      await db.insert(dailyMissions).values({
+        userId: String(userId),
+        missionType: `ad_milestone_${milestoneIndex}`,
+        completed: true,
+        claimedAt: new Date(),
+        resetDate: today,
+        createdAt: new Date(),
+      });
+
+      // Fetch updated user and push real-time balance update
       try {
         const updatedUser = await storage.getUser(userId);
         const newStarBal = Number(updatedUser?.starBalance || 0);
@@ -1703,57 +1753,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Leaderboard — ranked by total star_balance (all sources: ads, milestones, invites, tasks)
+  // Leaderboard — ranked by weekly_stars for current week contest (resets when contest ends)
   app.get('/api/leaderboard/weekly', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
       const currentWeek = getISOWeek();
 
-      // Top 50 users sorted by total star balance
+      // Top 50 users sorted by weekly_stars (current week only — resets on contest end)
       const top50 = await db
         .select({
           userId: users.id,
           username: users.username,
           firstName: users.firstName,
+          weeklyStars: users.weeklyStars,
           starBalance: users.starBalance,
           profileImageUrl: users.profileImageUrl,
         })
         .from(users)
         .where(
-          sql`COALESCE(${users.starBalance}, 0) > 0
+          sql`COALESCE(${users.weeklyStars}, 0) > 0
+              AND COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
               AND COALESCE(${users.banned}, false) = false`
         )
-        .orderBy(sql`${users.starBalance} DESC NULLS LAST`)
+        .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
         .limit(50);
 
       const leaderboard = top50.map((u, i) => ({
         ...u,
-        weeklyStars: u.starBalance, // keep field name for frontend compatibility
+        weeklyStars: Number(u.weeklyStars || 0),
         rank: i + 1,
       }));
 
-      // Current user's stats
+      // Current user's weekly stats
       const currentUser = await storage.getUser(userId);
+      const userWeeklyStars = Number((currentUser as any)?.weeklyStars || 0);
       const userStarBalance = Number((currentUser as any)?.starBalance || 0);
+      const userWeek = (currentUser as any)?.weeklyStarWeek;
+      const userWeeklyStarsThisWeek = userWeek === currentWeek ? userWeeklyStars : 0;
 
       let userRank: { rank: number; weeklyStars: number } | null = null;
       const myEntry = leaderboard.find((e) => e.userId === userId);
       if (myEntry) {
-        userRank = { rank: myEntry.rank, weeklyStars: userStarBalance };
-      } else if (userStarBalance > 0) {
-        // User has stars but outside top 50 — calculate approximate rank
+        userRank = { rank: myEntry.rank, weeklyStars: userWeeklyStarsThisWeek };
+      } else if (userWeeklyStarsThisWeek > 0) {
+        // User has weekly stars but outside top 50 — calculate approximate rank
         const higherCount = await db
           .select({ count: sql<number>`COUNT(*)` })
           .from(users)
           .where(
-            sql`COALESCE(${users.starBalance}, 0) > ${userStarBalance}
+            sql`COALESCE(${users.weeklyStars}, 0) > ${userWeeklyStarsThisWeek}
+                AND COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
                 AND COALESCE(${users.banned}, false) = false`
           );
         const rank = (Number(higherCount[0]?.count) || 0) + 1;
-        userRank = { rank, weeklyStars: userStarBalance };
+        userRank = { rank, weeklyStars: userWeeklyStarsThisWeek };
       }
 
-      res.json({ leaderboard, userRank, userStars: userStarBalance, userStarBalance, currentWeek });
+      res.json({ leaderboard, userRank, userStars: userWeeklyStarsThisWeek, userStarBalance, currentWeek });
     } catch (error) {
       console.error('Leaderboard error:', error);
       res.status(500).json({ message: 'Internal server error' });

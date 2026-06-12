@@ -400,10 +400,10 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
     // Send admin notification with full winner details
     let winnersNotified = false;
     if (TELEGRAM_BOT_TOKEN) {
-      const rankEmojis: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
+      const rankEmojis: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉', 10: '🔟' };
       const prizePcts: [number, number][] = [
-        [1, 40], [2, 25], [3, 15], [4, 8], [5, 5],
-        [6, 3], [7, 1], [8, 1], [9, 1], [10, 1],
+        [1, 25], [2, 18], [3, 14], [4, 11], [5, 7],
+        [6, 5],  [7, 5],  [8, 5],  [9, 5],  [10, 5],
       ];
       const prizePool = 10;
 
@@ -415,18 +415,19 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
             const stars = (u.weeklyStars ?? 0).toLocaleString();
             const pct = prizePcts.find(([r]) => r === rank)?.[1] ?? 0;
             const prizeAmt = ((prizePool * pct) / 100).toFixed(2);
-            return `${emoji} <b>${name}</b>\n   🆔 <code>${u.id}</code>\n   ⭐ ${stars} stars  💰 $${prizeAmt}`;
+            return `${emoji} <b>${name}</b>\n   🆔 <code>${u.id}</code>\n   ⭐ ${stars} stars  💰 $${prizeAmt} (${pct}%)`;
           }).join('\n\n')
         : 'No participants this week.';
 
       const message =
-        `🏆 <b>Weekly Contest Ended — ${reportWeek}</b>\n` +
+        `🏆 <b>Weekly Giveaway Ended — ${reportWeek}</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `<b>Winners:</b>\n\n` +
+        `<b>🎉 Winners (Manual Distribution):</b>\n\n` +
         winnerLines +
         `\n\n━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🔄 All Star balances have been reset to 0.\n` +
-        `🆕 New contest has started automatically.\n` +
+        `💡 Please send rewards manually to each winner.\n` +
+        `🔄 Weekly Star counts reset to 0 (permanent star_balance preserved).\n` +
+        `🆕 New contest week started: <b>${reportWeek}</b> → next week.\n` +
         `🕐 ${new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC`;
 
       try {
@@ -455,10 +456,11 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
       }
     }
 
-    // Reset weekly_stars to 0 and clear weekly_star_week for ALL users who participated this week
+    // Reset weekly_stars AND star_balance to 0 for ALL users who participated this week
     const resetResult = await db.update(users)
       .set({
         weeklyStars: 0,
+        starBalance: 0,
         weeklyStarWeek: '',
         updatedAt: new Date(),
       })
@@ -466,7 +468,7 @@ export async function resetWeeklyContest(forcedWeekLabel?: string): Promise<{ su
       .returning({ id: users.id });
 
     const usersReset = resetResult.length;
-    console.log(`✅ Weekly contest reset complete — ${usersReset} users' Star balances reset to 0 for week ${reportWeek}`);
+    console.log(`✅ Weekly contest reset complete — ${usersReset} users' weekly_stars + star_balance reset to 0 for week ${reportWeek}`);
 
     // Mark reset as done
     await db.insert(adminSettings)

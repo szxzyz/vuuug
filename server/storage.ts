@@ -838,14 +838,27 @@ export class DatabaseStorage implements IStorage {
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) return activatedReferrerIds;
 
-      // Always check for pending referrals regardless of firstAdWatched flag.
-      const pendingReferrals = await db
-        .select()
-        .from(referrals)
-        .where(and(
-          eq(referrals.refereeId, userId),
-          eq(referrals.status, 'pending')
-        ));
+      // Only activate the DIRECT L1 referral — the referrer whose referral_code
+      // matches this user's referred_by field. Never give the 0.03 bonus to L2/L3.
+      const directReferrerId = user.referredBy
+        ? await db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.referralCode, user.referredBy))
+            .limit(1)
+            .then(rows => rows[0]?.id ?? null)
+        : null;
+
+      const pendingReferrals = directReferrerId
+        ? await db
+            .select()
+            .from(referrals)
+            .where(and(
+              eq(referrals.refereeId, userId),
+              eq(referrals.referrerId, directReferrerId),
+              eq(referrals.status, 'pending')
+            ))
+        : [];
 
       // Get admin-configured referral ads requirement
       const referralAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
@@ -1655,36 +1668,31 @@ export class DatabaseStorage implements IStorage {
       const totalToRefund = withdrawalDetails?.totalDeducted 
         ? parseFloat(withdrawalDetails.totalDeducted) 
         : withdrawalAmount;
-      const bugToRefund = withdrawalDetails?.starDeducted ? parseFloat(withdrawalDetails.starDeducted) : 0;
       const currentUsdBalance = parseFloat(user.usdBalance || '0');
-      const currentStarBalance = parseFloat(user.starBalance || '0');
       
       // Check if this is a LEGACY withdrawal (balance was already deducted at request time)
       // Legacy withdrawals have insufficient balance because it was already taken
       // We detect this by checking if the user's balance is lower than expected
-      // For legacy withdrawals, we need to REFUND the balance
+      // For legacy withdrawals, we need to REFUND the USD balance ONLY
+      // CRITICAL: star_balance / weekly_stars are NEVER touched on withdrawal rejection or approval
       if (currentUsdBalance < totalToRefund) {
-        // LEGACY withdrawal - refund the balance that was already deducted
-        console.log(`⚠️ Legacy withdrawal detected - refunding balance that was deducted at request time`);
+        // LEGACY withdrawal - refund the USD balance that was already deducted
+        console.log(`⚠️ Legacy withdrawal detected - refunding USD balance that was deducted at request time`);
         const newUsdBalance = (currentUsdBalance + totalToRefund).toFixed(10);
-        const newStarBalance = (currentStarBalance + bugToRefund).toFixed(10);
         
         await db
           .update(users)
           .set({
             usdBalance: newUsdBalance,
-            starBalance: newStarBalance,
             updatedAt: new Date()
           })
           .where(eq(users.id, withdrawal.userId));
         console.log(`💰 USD balance refunded: ${currentUsdBalance} → ${newUsdBalance}`);
-        if (bugToRefund > 0) {
-          console.log(`💰 BUG balance refunded: ${currentStarBalance} → ${newStarBalance}`);
-        }
+        console.log(`✅ star_balance preserved (never deducted or modified by withdrawal logic)`);
       } else {
         // NEW withdrawal - balance was never deducted, nothing to refund
         console.log(`❌ Withdrawal #${withdrawalId} rejected - no refund needed (balance was never deducted)`);
-        console.log(`💡 User balance remains unchanged`);
+        console.log(`💡 User USD balance and star_balance remain unchanged`);
       }
 
       // Update withdrawal status to rejected
@@ -3553,8 +3561,15 @@ export class DatabaseStorage implements IStorage {
           if (!u.referredBy) continue;
           const referrer = await this.getUserByReferralCode(u.referredBy);
           if (!referrer) continue;
-          const existing = await this.getReferralByUsers(referrer.id, u.userId);
-          if (existing) continue;
+
+          // Check if this referee ALREADY has ANY referral record (not just with this referrer)
+          // A user should have at most ONE referral record — their direct L1 only
+          const anyExisting = await db
+            .select({ id: referrals.id })
+            .from(referrals)
+            .where(eq(referrals.refereeId, u.userId))
+            .limit(1);
+          if (anyExisting.length > 0) continue;
 
           await db.insert(referrals).values({
             referrerId: referrer.id,
