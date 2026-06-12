@@ -37,6 +37,15 @@ import { db } from "./db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
 import crypto from "crypto";
 
+function getISOWeek(): string {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const startOfYear = new Date(Date.UTC(year, 0, 1));
+  const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+  const week = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
 // Payment system configuration
 export interface PaymentSystem {
   id: string;
@@ -913,13 +922,17 @@ export class DatabaseStorage implements IStorage {
           });
         }
 
-        await db
-          .update(users)
-          .set({
-            starBalance: sql`COALESCE(${users.starBalance}, 0) + ${referralRewardSTAR}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(users.id, referral.referrerId));
+        const currentWeek = getISOWeek();
+        await db.execute(sql`
+          UPDATE users SET
+            star_balance     = COALESCE(star_balance, 0) + ${referralRewardSTAR},
+            weekly_stars     = CASE WHEN COALESCE(weekly_star_week, '') = ${currentWeek}
+                                    THEN COALESCE(weekly_stars, 0) + ${referralRewardSTAR}
+                                    ELSE ${referralRewardSTAR} END,
+            weekly_star_week = ${currentWeek},
+            updated_at       = NOW()
+          WHERE id = ${referral.referrerId}
+        `);
 
         // Track this referrer so caller can push WebSocket update
         activatedReferrerIds.push(referral.referrerId);

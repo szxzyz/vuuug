@@ -1407,6 +1407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 withdrawBalance: referrerData?.withdrawBalance,
                 usdBalance: referrerData?.usdBalance,
                 totalEarnings: referrerData?.totalEarnings,
+                starBalance: Number(referrerData?.starBalance || 0),
               });
             } catch (_) {}
           }
@@ -1714,61 +1715,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Weekly Leaderboard — ranked by Stars earned this week
+  // Leaderboard — ranked by total star_balance (all sources: ads, milestones, invites, tasks)
   app.get('/api/leaderboard/weekly', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
       const currentWeek = getISOWeek();
 
-      // Top 50 users this week sorted by weekly stars
+      // Top 50 users sorted by total star balance
       const top50 = await db
         .select({
           userId: users.id,
           username: users.username,
           firstName: users.firstName,
-          weeklyStars: users.weeklyStars,
+          starBalance: users.starBalance,
           profileImageUrl: users.profileImageUrl,
         })
         .from(users)
         .where(
-          sql`COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
-              AND COALESCE(${users.weeklyStars}, 0) > 0
+          sql`COALESCE(${users.starBalance}, 0) > 0
               AND COALESCE(${users.banned}, false) = false`
         )
-        .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
+        .orderBy(sql`${users.starBalance} DESC NULLS LAST`)
         .limit(50);
 
-      const leaderboard = top50.map((u, i) => ({ ...u, rank: i + 1 }));
+      const leaderboard = top50.map((u, i) => ({
+        ...u,
+        weeklyStars: u.starBalance, // keep field name for frontend compatibility
+        rank: i + 1,
+      }));
 
       // Current user's stats
       const currentUser = await storage.getUser(userId);
-      const userWeeklyStars =
-        (currentUser as any)?.weeklyStarWeek === currentWeek
-          ? ((currentUser as any)?.weeklyStars || 0)
-          : 0;
       const userStarBalance = Number((currentUser as any)?.starBalance || 0);
 
       let userRank: { rank: number; weeklyStars: number } | null = null;
       const myEntry = leaderboard.find((e) => e.userId === userId);
       if (myEntry) {
-        userRank = { rank: myEntry.rank, weeklyStars: myEntry.weeklyStars || 0 };
-      } else if (userWeeklyStars > 0) {
+        userRank = { rank: myEntry.rank, weeklyStars: userStarBalance };
+      } else if (userStarBalance > 0) {
         // User has stars but outside top 50 — calculate approximate rank
         const higherCount = await db
           .select({ count: sql<number>`COUNT(*)` })
           .from(users)
           .where(
-            sql`COALESCE(${users.weeklyStarWeek}, '') = ${currentWeek}
-                AND COALESCE(${users.weeklyStars}, 0) > ${userWeeklyStars}
+            sql`COALESCE(${users.starBalance}, 0) > ${userStarBalance}
                 AND COALESCE(${users.banned}, false) = false`
           );
         const rank = (Number(higherCount[0]?.count) || 0) + 1;
-        userRank = { rank, weeklyStars: userWeeklyStars };
+        userRank = { rank, weeklyStars: userStarBalance };
       }
 
-      res.json({ leaderboard, userRank, userStars: userWeeklyStars, userStarBalance, currentWeek });
+      res.json({ leaderboard, userRank, userStars: userStarBalance, userStarBalance, currentWeek });
     } catch (error) {
-      console.error('Weekly leaderboard error:', error);
+      console.error('Leaderboard error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -2760,16 +2759,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
       const starReward = parseInt(starRewardSetting);
       
+      const shareTaskWeek = getISOWeek();
       await db.transaction(async (tx) => {
         // Update balance, BUG balance, and mark task complete
-        await tx.update(users)
-          .set({ 
-            balance: sql`${users.balance} + ${rewardAmount}`,
-            starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starReward}`,
-            taskShareCompletedToday: true,
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, userId));
+        await tx.execute(sql`
+          UPDATE users SET
+            balance                  = balance + ${rewardAmount}::numeric,
+            star_balance             = COALESCE(star_balance, 0) + ${starReward},
+            weekly_stars             = CASE WHEN COALESCE(weekly_star_week, '') = ${shareTaskWeek}
+                                           THEN COALESCE(weekly_stars, 0) + ${starReward}
+                                           ELSE ${starReward} END,
+            weekly_star_week         = ${shareTaskWeek},
+            task_share_completed_today = true,
+            updated_at               = NOW()
+          WHERE id = ${userId}
+        `);
         
         // Add earning record
         await storage.addEarning({
@@ -2939,15 +2943,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
       const starReward = parseInt(starRewardSetting);
       
+      const channelTaskWeek = getISOWeek();
       await db.transaction(async (tx) => {
-        await tx.update(users)
-          .set({ 
-            balance: sql`${users.balance} + ${rewardAmount}`,
-            starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starReward}`,
-            taskChannelCompletedToday: true,
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, userId));
+        await tx.execute(sql`
+          UPDATE users SET
+            balance                    = balance + ${rewardAmount}::numeric,
+            star_balance               = COALESCE(star_balance, 0) + ${starReward},
+            weekly_stars               = CASE WHEN COALESCE(weekly_star_week, '') = ${channelTaskWeek}
+                                             THEN COALESCE(weekly_stars, 0) + ${starReward}
+                                             ELSE ${starReward} END,
+            weekly_star_week           = ${channelTaskWeek},
+            task_channel_completed_today = true,
+            updated_at                 = NOW()
+          WHERE id = ${userId}
+        `);
         
         await storage.addEarning({
           userId,
@@ -3033,15 +3042,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
       const starReward = parseInt(starRewardSetting);
       
+      const communityTaskWeek = getISOWeek();
       await db.transaction(async (tx) => {
-        await tx.update(users)
-          .set({ 
-            balance: sql`${users.balance} + ${rewardAmount}`,
-            starBalance: sql`COALESCE(${users.starBalance}, '0')::numeric + ${starReward}`,
-            taskCommunityCompletedToday: true,
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, userId));
+        await tx.execute(sql`
+          UPDATE users SET
+            balance                      = balance + ${rewardAmount}::numeric,
+            star_balance                 = COALESCE(star_balance, 0) + ${starReward},
+            weekly_stars                 = CASE WHEN COALESCE(weekly_star_week, '') = ${communityTaskWeek}
+                                               THEN COALESCE(weekly_stars, 0) + ${starReward}
+                                               ELSE ${starReward} END,
+            weekly_star_week             = ${communityTaskWeek},
+            task_community_completed_today = true,
+            updated_at                   = NOW()
+          WHERE id = ${userId}
+        `);
         
         await storage.addEarning({
           userId,
