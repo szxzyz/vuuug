@@ -19,7 +19,6 @@ try {
   // Run heavy startup tasks in background — don't block server startup
   (async () => {
     try {
-      await storage.backfillExistingReferralSTARRewards();
       const repairStats = await storage.fullReferralRepair();
       if (repairStats.referralsCreated > 0 || repairStats.referralsActivated > 0) {
         console.log(`✅ Referral repair complete — created:${repairStats.referralsCreated} activated:${repairStats.referralsActivated}`);

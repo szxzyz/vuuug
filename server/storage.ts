@@ -676,17 +676,16 @@ export class DatabaseStorage implements IStorage {
     if (!user) return;
 
     const now = new Date();
-    const currentResetDate = this.getCurrentResetDate(); // Use new reset method
+    const currentResetDate = this.getResetDate(now); // 12 PM UTC reset boundary
 
-    // Check if last ad was watched today (same reset period)
-    let adsCount = 1; // Default for first ad of the day
+    // Check if last ad was watched in the same reset period
+    let adsCount = 1; // Default for first ad of the period
     
     if (user.lastAdDate) {
-      const lastAdResetDate = this.getCurrentResetDate(); // Use consistent method
-      const lastAdDateString = user.lastAdDate.toISOString().split('T')[0];
+      const lastAdResetDate = this.getResetDate(user.lastAdDate); // Use same 12 PM reset logic
       
       // If same reset period, increment current count
-      if (lastAdDateString === currentResetDate) {
+      if (lastAdResetDate === currentResetDate) {
         adsCount = (user.adsWatchedToday || 0) + 1;
       }
     }
@@ -890,7 +889,6 @@ export class DatabaseStorage implements IStorage {
       // Get referral reward settings from admin (no hardcoded values)
       const referralRewardUSD = await this.getAppSetting('referral_reward_usd', '0.0005');
       const referralRewardPOW = parseInt(await this.getAppSetting('referral_reward_pad', '50'));
-      const referralRewardSTAR = await this.getAppSetting('star_reward_per_referral', '50');
       const referralRewardPOWEnabled = (await this.getAppSetting('referral_reward_pad_enabled', 'true')) === 'true';
       const referralRewardUSDEnabled = (await this.getAppSetting('referral_reward_usd_enabled', 'false')) === 'true';
       const referralRewardEnabled = (await this.getAppSetting('referral_reward_enabled', 'true')) === 'true';
@@ -905,7 +903,7 @@ export class DatabaseStorage implements IStorage {
             status: 'completed',
             rewardAmount: givePOW ? String(referralRewardPOW) : '0',
             usdRewardAmount: giveUSD ? referralRewardUSD : '0',
-            bugRewardAmount: String(referralRewardSTAR)
+            bugRewardAmount: '0'
           })
           .where(eq(referrals.id, referral.id));
 
@@ -933,19 +931,16 @@ export class DatabaseStorage implements IStorage {
             source: 'referral',
             description: `Referral bonus (USD) for inviting a friend`,
           });
+          // Log USD credit in transactions table for audit trail
+          await this.logTransaction({
+            userId: referral.referrerId,
+            amount: referralRewardUSD,
+            type: 'credit',
+            source: 'referral_reward',
+            description: `Referral reward: +$${referralRewardUSD} USD for inviting a friend`,
+            metadata: { rewardType: 'USD', refereeId: referral.refereeId },
+          });
         }
-
-        const currentWeek = getISOWeek();
-        await db.execute(sql`
-          UPDATE users SET
-            star_balance     = COALESCE(star_balance, 0) + ${referralRewardSTAR},
-            weekly_stars     = CASE WHEN COALESCE(weekly_star_week, '') = ${currentWeek}
-                                    THEN COALESCE(weekly_stars, 0) + ${referralRewardSTAR}
-                                    ELSE ${referralRewardSTAR} END,
-            weekly_star_week = ${currentWeek},
-            updated_at       = NOW()
-          WHERE id = ${referral.referrerId}
-        `);
 
         // Track this referrer so caller can push WebSocket update
         activatedReferrerIds.push(referral.referrerId);
@@ -968,7 +963,7 @@ export class DatabaseStorage implements IStorage {
           }
         }
 
-        console.log(`✅ Referral bonus activated: PAD=${givePOW ? referralRewardPOW : 0}, USD=${giveUSD ? referralRewardUSD : 0}, BUG=${referralRewardSTAR} → referrer ${referral.referrerId}`);
+        console.log(`✅ Referral bonus activated: PAD=${givePOW ? referralRewardPOW : 0}, USD=${giveUSD ? referralRewardUSD : 0} → referrer ${referral.referrerId}`);
       }
     } catch (error) {
       console.error('❌ Error activating referral bonus:', error);
@@ -3632,6 +3627,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async backfillExistingReferralSTARRewards(): Promise<void> {
+    // STAR per referral feature removed — backfill disabled
+    return;
     try {
       console.log('🔄 Starting backfill of STAR rewards for existing referrals...');
       

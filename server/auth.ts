@@ -228,7 +228,7 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
       if (deviceValidation.shouldBan) {
         // CRITICAL: Create or update user as banned to persist the ban in database
         let bannedUser;
-        const { user: existingUser } = await storage.getTelegramUser(telegramUser.id.toString());
+        const existingUser = await storage.getUserByTelegramId(telegramUser.id.toString());
         
         if (existingUser) {
           // User exists, ban them
@@ -255,7 +255,7 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
             banned: true,  // Create as banned
             bannedReason: deviceValidation.reason || "Multiple accounts detected on the same device",
             referralCode: '',
-          }, deviceInfo);
+          });
           bannedUser = newBannedUser;
         }
         

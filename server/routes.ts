@@ -42,10 +42,18 @@ const AD_REWARD_COOLDOWN_MS = 5000;   // 5 s between rewards
 const AD_ABUSE_LOCK_SCORE   = 5;      // lock after 5 consecutive failures
 const AD_ABUSE_BASE_LOCK_MS = 60_000; // 1 min base lock, doubles per extra level
 
-// Prune stale sessions every 15 minutes (keep only last 15 min)
+// Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
 setInterval(() => {
-  const cutoff = Date.now() - 15 * 60 * 1000;
-  for (const [sid, ts] of adUsedSessions) if (ts < cutoff) adUsedSessions.delete(sid);
+  const cutoff15m = Date.now() - 15 * 60 * 1000;
+  const cutoff1h  = Date.now() - 60 * 60 * 1000;
+  // Remove sessions older than 15 min
+  for (const [sid, ts] of adUsedSessions) if (ts < cutoff15m) adUsedSessions.delete(sid);
+  // Remove cooldown entries older than 1 hour (user hasn't watched an ad in a while)
+  for (const [uid, ts] of adUserCooldowns) if (ts < cutoff1h) adUserCooldowns.delete(uid);
+  // Remove abuse entries where lock has expired and score is 0
+  for (const [uid, abuse] of adAbuseStore) {
+    if (abuse.lockedUntil < Date.now() && abuse.score === 0) adAbuseStore.delete(uid);
+  }
 }, 15 * 60 * 1000);
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1108,7 +1116,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const powToStarRate = parseInt(getSetting('pow_to_star_rate', '1')); // 1 POW = 1 STAR
       const starRewardPerAd = parseInt(getSetting('star_reward_per_ad', '1')); // BUG per ad watched
       const starRewardPerTask = parseInt(getSetting('star_reward_per_task', '10')); // BUG per task completed
-      const starRewardPerReferral = parseInt(getSetting('star_reward_per_referral', '50')); // BUG per referral
       const activePromoCode = getSetting('active_promo_code', ''); // Current active promo code
       
       // Legacy compatibility - keep old values for backwards compatibility
@@ -1172,7 +1179,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         powToStarRate,
         starRewardPerAd,
         starRewardPerTask,
-        starRewardPerReferral,
         activePromoCode,
         // Withdrawal packages (JSON array of {usd, bug} objects)
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
@@ -1709,14 +1715,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `);
         console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR for ${userId}`);
       } else if (milestone.usdReward) {
-        const powReward = Math.round(milestone.usdReward * 10000000);
-        await storage.addEarning({
+        // Credit USD directly to usd_balance — do NOT convert to PAD
+        await db
+          .update(users)
+          .set({
+            usdBalance: sql`COALESCE(${users.usdBalance}, 0) + ${milestone.usdReward}`,
+            totalEarned: sql`COALESCE(${users.totalEarned}, 0) + ${String(milestone.usdReward)}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId));
+        // Log transaction for audit trail
+        await db.insert(transactions).values({
           userId,
-          amount: String(powReward),
-          source: 'daily_bonus',
-          description: `Daily activity bonus: $${milestone.usdReward}`,
+          amount: String(milestone.usdReward),
+          type: 'addition',
+          source: 'daily_bonus_usd',
+          description: `Daily activity bonus: $${milestone.usdReward} (${milestone.ads} ads milestone)`,
+          metadata: { rewardType: 'USD', milestone: milestoneIndex, adsRequired: milestone.ads },
+          createdAt: new Date(),
         });
-        console.log(`💰 Milestone ${milestoneIndex} (${milestone.ads} ads): +$${milestone.usdReward} USD for ${userId}`);
+        console.log(`💰 Milestone ${milestoneIndex} (${milestone.ads} ads): +$${milestone.usdReward} USD credited to usd_balance for ${userId}`);
       }
 
       // Mark this milestone as claimed in daily_missions
@@ -2794,23 +2812,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
-      // Get BUG reward setting
-      const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
-      const starReward = parseInt(starRewardSetting);
-      
-      const shareTaskWeek = getISOWeek();
       await db.transaction(async (tx) => {
-        // Update balance, BUG balance, and mark task complete
+        // Update balance and mark task complete — no star reward from tasks
         await tx.execute(sql`
           UPDATE users SET
-            balance                  = balance + ${rewardAmount}::numeric,
-            star_balance             = COALESCE(star_balance, 0) + ${starReward},
-            weekly_stars             = CASE WHEN COALESCE(weekly_star_week, '') = ${shareTaskWeek}
-                                           THEN COALESCE(weekly_stars, 0) + ${starReward}
-                                           ELSE ${starReward} END,
-            weekly_star_week         = ${shareTaskWeek},
+            balance                    = balance + ${rewardAmount}::numeric,
             task_share_completed_today = true,
-            updated_at               = NOW()
+            updated_at                 = NOW()
           WHERE id = ${userId}
         `);
         
@@ -2823,13 +2831,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${starReward} STAR to user ${userId} for share task`);
-      
       res.json({
         success: true,
         message: 'Task completed!',
-        rewardAmount,
-        rewardSTAR: starReward
+        rewardAmount
       });
       
     } catch (error) {
@@ -2978,22 +2983,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
-      // Get BUG reward setting
-      const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
-      const starReward = parseInt(starRewardSetting);
-      
-      const channelTaskWeek = getISOWeek();
       await db.transaction(async (tx) => {
         await tx.execute(sql`
           UPDATE users SET
-            balance                    = balance + ${rewardAmount}::numeric,
-            star_balance               = COALESCE(star_balance, 0) + ${starReward},
-            weekly_stars               = CASE WHEN COALESCE(weekly_star_week, '') = ${channelTaskWeek}
-                                             THEN COALESCE(weekly_stars, 0) + ${starReward}
-                                             ELSE ${starReward} END,
-            weekly_star_week           = ${channelTaskWeek},
+            balance                      = balance + ${rewardAmount}::numeric,
             task_channel_completed_today = true,
-            updated_at                 = NOW()
+            updated_at                   = NOW()
           WHERE id = ${userId}
         `);
         
@@ -3005,13 +3000,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${starReward} STAR to user ${userId} for channel task`);
-      
       res.json({
         success: true,
         message: 'Task completed!',
-        rewardAmount,
-        rewardSTAR: starReward
+        rewardAmount
       });
       
     } catch (error) {
@@ -3077,22 +3069,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
-      // Get BUG reward setting
-      const starRewardSetting = await storage.getAppSetting('star_reward_per_task', '10');
-      const starReward = parseInt(starRewardSetting);
-      
-      const communityTaskWeek = getISOWeek();
       await db.transaction(async (tx) => {
         await tx.execute(sql`
           UPDATE users SET
-            balance                      = balance + ${rewardAmount}::numeric,
-            star_balance                 = COALESCE(star_balance, 0) + ${starReward},
-            weekly_stars                 = CASE WHEN COALESCE(weekly_star_week, '') = ${communityTaskWeek}
-                                               THEN COALESCE(weekly_stars, 0) + ${starReward}
-                                               ELSE ${starReward} END,
-            weekly_star_week             = ${communityTaskWeek},
+            balance                        = balance + ${rewardAmount}::numeric,
             task_community_completed_today = true,
-            updated_at                   = NOW()
+            updated_at                     = NOW()
           WHERE id = ${userId}
         `);
         
@@ -3104,13 +3086,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`🐛 Added ${starReward} STAR to user ${userId} for community task`);
-      
       res.json({
         success: true,
         message: 'Task completed!',
-        rewardAmount,
-        rewardSTAR: starReward
+        rewardAmount
       });
       
     } catch (error) {
@@ -3842,7 +3821,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // STAR currency settings (weekly contest only)
         starRewardPerAd: parseInt(getSetting('star_reward_per_ad', '1')),
         starRewardPerTask: parseInt(getSetting('star_reward_per_task', '10')),
-        starRewardPerReferral: parseInt(getSetting('star_reward_per_referral', '50')),
         powToStarRate: parseInt(getSetting('pow_to_star_rate', '1')),
         minimumConvertPowToStar: parseInt(getSetting('minimum_convert_pow_to_star', '1000')),
         // Withdrawal packages
