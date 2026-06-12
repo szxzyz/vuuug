@@ -128,12 +128,14 @@ export function useWebSocket() {
                   tonBalance: (message as any).tonBalance ?? oldUser.tonBalance,
                   balance: (message as any).balance ?? oldUser.balance,
                   usdBalance: (message as any).usdBalance ?? oldUser.usdBalance,
-                  bugBalance: (message as any).bugBalance ?? oldUser.bugBalance,
+                  starBalance: (message as any).starBalance ?? oldUser.starBalance,
+                  weeklyStars: (message as any).weeklyStars ?? oldUser.weeklyStars,
                 };
               });
               
               // Also invalidate to ensure everything is perfectly in sync
               queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+              queryClient.invalidateQueries({ queryKey: ['/api/leaderboard/weekly'] });
               
               if (message.message) {
                 showNotification("Balance Updated", "success");
