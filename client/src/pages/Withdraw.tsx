@@ -105,20 +105,15 @@ export default function Withdraw() {
   const withdrawalInviteRequirementEnabled = appSettings?.withdrawalInviteRequirementEnabled === true;
   const MINIMUM_VALID_REFERRALS_REQUIRED = appSettings?.minimumInvitesForWithdrawal ?? 3;
   
-  // Dynamic BUG requirement: scales with selected package or full balance
-  const withdrawalStarRequirementEnabled = appSettings?.withdrawalStarRequirementEnabled !== false;
-  const starPerUsd = appSettings?.starPerUsd ?? 10000;
-  
-  // Withdrawal packages from admin settings - compute BUG requirements using starPerUsd
+  // Withdrawal packages from admin settings
   const defaultPackages = [
     {usd: 0.2},
     {usd: 0.4},
     {usd: 0.8}
   ];
   const rawPackages = appSettings?.withdrawalPackages || defaultPackages;
-  const withdrawalPackages = rawPackages.map((pkg: {usd: number, bug?: number}) => ({
-    usd: pkg.usd,
-    bug: pkg.bug ?? Math.ceil(pkg.usd * starPerUsd)
+  const withdrawalPackages = rawPackages.map((pkg: {usd: number}) => ({
+    usd: pkg.usd
   }));
   
   // Get the withdrawal amount based on selected package
@@ -129,19 +124,7 @@ export default function Withdraw() {
     return selectedPackage;
   };
   
-  // Calculate BUG requirement based on selected package - always use starPerUsd for consistency
-  const getBugRequirementForAmount = (usdAmount: number) => {
-    return Math.ceil(usdAmount * starPerUsd);
-  };
-  
-  const getPackageBugRequirement = () => {
-    if (selectedPackage === 'FULL') {
-      return getBugRequirementForAmount(usdBalance);
-    }
-    return getBugRequirementForAmount(selectedPackage as number);
-  };
-  
-  const minimumStarForWithdrawal = getPackageBugRequirement();
+  // STAR is only for weekly contest — no withdrawal requirement
   
   const { data: withdrawalEligibility, isLoading: isLoadingEligibility, isFetched: isEligibilityFetched } = useQuery<{ adsWatchedSinceLastWithdrawal: number; canWithdraw: boolean }>({
     queryKey: ['/api/withdrawal-eligibility'],
@@ -160,7 +143,6 @@ export default function Withdraw() {
   
   const hasWatchedEnoughAds = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
   const hasEnoughReferrals = !withdrawalInviteRequirementEnabled || validReferralCount >= MINIMUM_VALID_REFERRALS_REQUIRED;
-  const hasEnoughBug = !withdrawalStarRequirementEnabled || starBalance >= minimumStarForWithdrawal;
 
   const botUsername = import.meta.env.VITE_BOT_USERNAME || '';
   // Use bot deep link format (?start=) for reliable referral tracking
@@ -287,12 +269,6 @@ export default function Withdraw() {
       return;
     }
     
-    if (!hasEnoughBug) {
-      const remaining = Math.ceil(minimumStarForWithdrawal - starBalance);
-      showNotification(`You need ${remaining.toLocaleString()} more STAR to withdraw. Watch ads or complete tasks to earn STAR.`, "error");
-      return;
-    }
-
     if (hasPendingWithdrawal) {
       showNotification("Cannot create new request until current one is processed.", "error");
       return;
@@ -333,14 +309,6 @@ export default function Withdraw() {
     return usdBalance >= pkgUsd;
   };
   
-  // Check if user has enough BUG for a package - use consistent starPerUsd calculation
-  const hasEnoughBugForPackage = (pkgUsd: number | 'FULL') => {
-    if (!withdrawalStarRequirementEnabled) return true;
-    const usdAmount = pkgUsd === 'FULL' ? usdBalance : pkgUsd;
-    const required = getBugRequirementForAmount(usdAmount);
-    return starBalance >= required;
-  };
-
   const getStatusIcon = (status: string) => {
     const lowerStatus = status.toLowerCase();
     if (lowerStatus.includes('approved') || lowerStatus.includes('success') || lowerStatus.includes('paid')) {
@@ -455,8 +423,6 @@ export default function Withdraw() {
                   {withdrawalPackages.map((pkg) => {
                     const isSelected = selectedPackage === pkg.usd;
                     const canAfford = canAffordPackage(pkg.usd);
-                    const hasBug = hasEnoughBugForPackage(pkg.usd);
-                    const bugRequired = getBugRequirementForAmount(pkg.usd);
                     const isDisabled = !canAfford;
                     
                     return (
@@ -478,14 +444,6 @@ export default function Withdraw() {
                           </div>
                         )}
                         <div className="text-sm font-bold text-white">${pkg.usd.toFixed(2)}</div>
-                        {withdrawalStarRequirementEnabled && (
-                          <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasBug ? 'text-green-400' : 'text-red-400'}`}>
-                            <div className="w-3 h-3 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
-                              <img src="/star-bug.png" alt="STAR" className="w-3 h-3 object-cover" />
-                            </div>
-                            {bugRequired.toLocaleString()}
-                          </div>
-                        )}
                       </button>
                     );
                   })}
@@ -509,14 +467,6 @@ export default function Withdraw() {
                   )}
                   <div className="text-sm font-bold text-white">FULL BALANCE</div>
                   <div className="text-[10px] text-gray-400">${usdBalance.toFixed(2)}</div>
-                  {withdrawalStarRequirementEnabled && (
-                    <div className={`text-[10px] flex items-center justify-center gap-0.5 ${hasEnoughBugForPackage('FULL') ? 'text-green-400' : 'text-red-400'}`}>
-                      <div className="w-3 h-3 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
-                        <img src="/star-bug.png" alt="STAR" className="w-3 h-3 object-cover" />
-                      </div>
-                      {Math.ceil(usdBalance * starPerUsd).toLocaleString()} STAR
-                    </div>
-                  )}
                 </button>
                 
                 <div className="pt-3 space-y-2">
@@ -530,16 +480,6 @@ export default function Withdraw() {
                   <div className="text-xs text-yellow-400/80">
                     Withdrawal method: {selectedMethod}
                   </div>
-                  
-                  {withdrawalStarRequirementEnabled && getWithdrawalUsdAmount() > 0 && (
-                    <div className={`flex items-center gap-2 text-xs ${hasEnoughBug ? 'text-green-400' : 'text-red-400'}`}>
-                      <div className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
-                        <img src="/star-bug.png" alt="STAR" className="w-4 h-4 object-cover" />
-                      </div>
-                      <span>STAR Required: {minimumStarForWithdrawal.toLocaleString()} (You have: {Math.floor(starBalance).toLocaleString()})</span>
-                      {hasEnoughBug && <Check className="w-3 h-3" />}
-                    </div>
-                  )}
                   
                   {withdrawalInviteRequirementEnabled && (
                     <div className={`flex items-center gap-2 text-xs ${hasEnoughReferrals ? 'text-green-400' : 'text-red-400'}`}>
@@ -570,8 +510,7 @@ export default function Withdraw() {
                   usdBalance < getWithdrawalUsdAmount() ||
                   getWithdrawalUsdAmount() <= 0 ||
                   !hasEnoughReferrals ||
-                  !hasWatchedEnoughAds ||
-                  !hasEnoughBug
+                  !hasWatchedEnoughAds
                 }
                 className="w-full bg-[#4cd3ff] hover:bg-[#6ddeff] text-black font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -580,7 +519,7 @@ export default function Withdraw() {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Processing...
                   </>
-                ) : getWithdrawalUsdAmount() <= 0 ? 'Select a Package' : usdBalance < getWithdrawalUsdAmount() ? 'Insufficient Balance' : (!hasEnoughReferrals || !hasWatchedEnoughAds || !hasEnoughBug) ? 'Requirements Not Met' : `Withdraw $${getWithdrawalUsdAmount().toFixed(2)} via ${selectedMethod}`}
+                ) : getWithdrawalUsdAmount() <= 0 ? 'Select a Package' : usdBalance < getWithdrawalUsdAmount() ? 'Insufficient Balance' : (!hasEnoughReferrals || !hasWatchedEnoughAds) ? 'Requirements Not Met' : `Withdraw $${getWithdrawalUsdAmount().toFixed(2)} via ${selectedMethod}`}
               </Button>
             </div>
             </>

@@ -210,7 +210,7 @@ export default function AdminPage() {
                   />
                   <StatCard 
                     icon="gem" 
-                    label="PAD Earned" 
+                    label="POW Earned" 
                     value={formatLargeNumber(parseFloat(stats?.totalEarnings || '0'))} 
                     iconColor="text-[#4cd3ff]"
                   />
@@ -875,7 +875,7 @@ function PromoCreatorSection() {
   const [formData, setFormData] = useState({
     code: '',
     rewardAmount: '',
-    rewardType: 'TON' as 'PAD' | 'TON' | 'USD' | 'BUG',
+    rewardType: 'TON' as 'POW' | 'TON' | 'USD' | 'STAR',
     usageLimit: '',
     perUserLimit: '1',
     expiresAt: ''
@@ -964,7 +964,7 @@ function PromoCreatorSection() {
             <Button type="button" variant="outline" onClick={handleGenerateCode} size="sm" className="h-8"><i className="fas fa-random"></i></Button>
           </div>
           <div className="grid grid-cols-4 gap-1">
-            {(['PAD', 'TON', 'USD', 'BUG'] as const).map(type => (
+            {(['POW', 'TON', 'USD', 'STAR'] as const).map(type => (
               <Button key={type} type="button" variant={formData.rewardType === type ? 'default' : 'outline'} onClick={() => setFormData({ ...formData, rewardType: type })} className="h-8 text-xs">{type}</Button>
             ))}
           </div>
@@ -993,7 +993,7 @@ function PromoCreatorSection() {
                     </div>
                     <Badge className={`${status.color} text-[10px]`}>{status.label}</Badge>
                   </div>
-                  <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>{promo.rewardType === 'USD' ? `$${parseFloat(promo.rewardAmount).toFixed(2)}` : `${Math.round(parseFloat(promo.rewardAmount))} ${promo.rewardType || 'PAD'}`}</span><span>{promo.usageCount || 0}/{promo.usageLimit || '∞'}</span></div>
+                  <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>{promo.rewardType === 'USD' ? `$${parseFloat(promo.rewardAmount).toFixed(2)}` : `${Math.round(parseFloat(promo.rewardAmount))} ${promo.rewardType || 'POW'}`}</span><span>{promo.usageCount || 0}/{promo.usageLimit || '∞'}</span></div>
                 </div>
               );
             })
@@ -1415,6 +1415,30 @@ function SettingsSection() {
   const queryClient = useQueryClient();
   const [isSaving, setIsSaving] = useState(false);
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('ads');
+  const [isRepairingReferrals, setIsRepairingReferrals] = useState(false);
+  const [referralRepairResult, setReferralRepairResult] = useState<{
+    usersLinked: number;
+    referralsCreated: number;
+    referralsActivated: number;
+    errors: number;
+  } | null>(null);
+
+  const handleReferralRepair = async () => {
+    setIsRepairingReferrals(true);
+    setReferralRepairResult(null);
+    try {
+      const res = await apiRequest("POST", "/api/admin/referrals/sync");
+      const data = await res.json();
+      if (data.success) {
+        setReferralRepairResult(data.stats);
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      }
+    } catch (err) {
+      console.error("Referral repair failed:", err);
+    } finally {
+      setIsRepairingReferrals(false);
+    }
+  };
   
   const { data: settingsData, isLoading } = useQuery({
     queryKey: ["/api/admin/settings"],
@@ -1458,15 +1482,12 @@ function SettingsSection() {
     streakReward: '100',
     shareTaskReward: '1000',
     communityTaskReward: '1000',
-    // BUG currency settings
+    // STAR currency settings (weekly contest only)
     starRewardPerAd: '1',
     starRewardPerTask: '10',
     starRewardPerReferral: '50',
-    minimumStarForWithdrawal: '1000',
     powToStarRate: '1',
     minimumConvertPowToStar: '1000',
-    starPerUsd: '10000',
-    withdrawalStarRequirementEnabled: true,
     weeklyGiveawayAmount: '10',
     weeklyContestEndDate: '',
     monetagMissionReward: '50',
@@ -1518,15 +1539,12 @@ function SettingsSection() {
         streakReward: settingsData.streakReward?.toString() || '100',
         shareTaskReward: settingsData.shareTaskReward?.toString() || '1000',
         communityTaskReward: settingsData.communityTaskReward?.toString() || '1000',
-        // BUG currency settings
+        // STAR currency settings (weekly contest only)
         starRewardPerAd: settingsData.starRewardPerAd?.toString() || '1',
         starRewardPerTask: settingsData.starRewardPerTask?.toString() || '10',
         starRewardPerReferral: settingsData.starRewardPerReferral?.toString() || '50',
-        minimumStarForWithdrawal: settingsData.minimumStarForWithdrawal?.toString() || '1000',
         powToStarRate: settingsData.powToStarRate?.toString() || '1',
         minimumConvertPowToStar: settingsData.minimumConvertPowToStar?.toString() || '1000',
-        starPerUsd: settingsData.starPerUsd?.toString() || '10000',
-        withdrawalStarRequirementEnabled: settingsData.withdrawalStarRequirementEnabled !== false,
         weeklyGiveawayAmount: settingsData.weeklyGiveawayAmount?.toString() || '10',
         weeklyContestEndDate: settingsData.weeklyContestEndDate?.toString() || '',
         monetagMissionReward: settingsData.monetagMissionReward?.toString() || '50',
@@ -1618,15 +1636,12 @@ function SettingsSection() {
         streakReward: parseInt(settings.streakReward) || 100,
         shareTaskReward: parseInt(settings.shareTaskReward) || 1000,
         communityTaskReward: parseInt(settings.communityTaskReward) || 1000,
-        // BUG currency settings
+        // STAR currency settings (weekly contest only)
         starRewardPerAd: parseInt(settings.starRewardPerAd) || 1,
         starRewardPerTask: parseInt(settings.starRewardPerTask) || 10,
         starRewardPerReferral: parseInt(settings.starRewardPerReferral) || 50,
-        minimumStarForWithdrawal: parseInt(settings.minimumStarForWithdrawal) || 1000,
         powToStarRate: parseInt(settings.powToStarRate) || 1,
         minimumConvertPowToStar: parseInt(settings.minimumConvertPowToStar) || 1000,
-        starPerUsd: parseInt(settings.starPerUsd) || 10000,
-        withdrawalStarRequirementEnabled: settings.withdrawalStarRequirementEnabled,
         weeklyGiveawayAmount: parseFloat(settings.weeklyGiveawayAmount) || 10,
         weeklyContestEndDate: settings.weeklyContestEndDate || '',
         monetagMissionReward: parseInt(settings.monetagMissionReward) || 50,
@@ -1725,7 +1740,7 @@ function SettingsSection() {
             <div className="space-y-2">
               <Label htmlFor="reward-per-ad" className="text-sm font-semibold">
                 <i className="fas fa-gem mr-2 text-purple-600"></i>
-                Reward Per Ad (PAD)
+                Reward Per Ad (POW)
               </Label>
               <Input
                 id="reward-per-ad"
@@ -1804,7 +1819,7 @@ function SettingsSection() {
                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${settings.referralRewardPOWEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
                   </button>
                   <div className="flex-1">
-                    <Label className="text-xs font-semibold text-green-400">PAD Reward</Label>
+                    <Label className="text-xs font-semibold text-green-400">POW Reward</Label>
                     <Input
                       type="number"
                       value={settings.referralRewardPOW}
@@ -1813,7 +1828,7 @@ function SettingsSection() {
                       disabled={!settings.referralRewardPOWEnabled}
                       className={`h-8 mt-1 ${!settings.referralRewardPOWEnabled ? 'opacity-50' : ''}`}
                     />
-                    <p className="text-xs text-muted-foreground mt-1">Current: {settingsData?.referralRewardPOW || 50} PAD per referral</p>
+                    <p className="text-xs text-muted-foreground mt-1">Current: {settingsData?.referralRewardPOW || 50} POW per referral</p>
                   </div>
                 </div>
 
@@ -2059,7 +2074,7 @@ function SettingsSection() {
                 </div>
               </div>
               <div>
-                <Label className="text-xs">Reward (PAD)</Label>
+                <Label className="text-xs">Reward (POW)</Label>
                 <Input
                   type="number"
                   value={settings.channelTaskReward}
@@ -2100,7 +2115,7 @@ function SettingsSection() {
                 </div>
               </div>
               <div>
-                <Label className="text-xs">Reward (PAD)</Label>
+                <Label className="text-xs">Reward (POW)</Label>
                 <Input
                   type="number"
                   value={settings.botTaskReward}
@@ -2114,7 +2129,7 @@ function SettingsSection() {
             <div className="space-y-2">
               <Label htmlFor="partner-task-reward" className="text-sm font-semibold">
                 <i className="fas fa-handshake mr-2 text-green-600"></i>
-                Partner Task Reward (PAD)
+                Partner Task Reward (POW)
               </Label>
               <Input
                 id="partner-task-reward"
@@ -2205,24 +2220,6 @@ function SettingsSection() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="minimum-bug-for-withdrawal" className="text-sm font-semibold">
-                <i className="fas fa-wallet mr-2 text-lime-600"></i>
-                Min STAR for Withdrawal
-              </Label>
-              <Input
-                id="minimum-bug-for-withdrawal"
-                type="number"
-                value={settings.minimumStarForWithdrawal}
-                onChange={(e) => setSettings({ ...settings, minimumStarForWithdrawal: e.target.value })}
-                placeholder="1000"
-                min="0"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumStarForWithdrawal || 1000} STAR (1000 STAR = $0.1)
-              </p>
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="pad-to-bug-rate" className="text-sm font-semibold">
                 <i className="fas fa-exchange-alt mr-2 text-lime-600"></i>
                 POW to STAR Rate
@@ -2258,50 +2255,6 @@ function SettingsSection() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="bug-per-usd" className="text-sm font-semibold">
-                <i className="fas fa-dollar-sign mr-2 text-lime-600"></i>
-                STAR per USD (Withdrawal)
-              </Label>
-              <Input
-                id="bug-per-usd"
-                type="number"
-                value={settings.starPerUsd}
-                onChange={(e) => setSettings({ ...settings, starPerUsd: e.target.value })}
-                placeholder="10000"
-                min="1"
-              />
-              <p className="text-xs text-muted-foreground">
-                1 USD = {settingsData?.starPerUsd || 10000} STAR required for withdrawal
-              </p>
-            </div>
-
-            <div className="space-y-2 p-3 border rounded-lg bg-lime-50/5 border-lime-500/20 md:col-span-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">
-                  <i className="fas fa-star mr-2 text-lime-500"></i>
-                  Withdrawal STAR Requirement
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setSettings({ ...settings, withdrawalStarRequirementEnabled: !settings.withdrawalStarRequirementEnabled })}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    settings.withdrawalStarRequirementEnabled ? 'bg-lime-500' : 'bg-gray-600'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                      settings.withdrawalStarRequirementEnabled ? 'translate-x-5' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {settings.withdrawalStarRequirementEnabled 
-                  ? 'Users must have enough STAR (based on USD amount × STAR per USD) to withdraw' 
-                  : 'STAR requirement disabled - users can withdraw without STAR'}
-              </p>
-            </div>
           </div>
         )}
 
@@ -2448,7 +2401,7 @@ function SettingsSection() {
             <div className="space-y-2">
               <Label htmlFor="wallet-change-fee" className="text-sm font-semibold">
                 <i className="fas fa-exchange-alt mr-2 text-yellow-600"></i>
-                Wallet Change Fee (PAD)
+                Wallet Change Fee (POW)
               </Label>
               <Input
                 id="wallet-change-fee"
@@ -2465,7 +2418,7 @@ function SettingsSection() {
             <div className="space-y-2">
               <Label htmlFor="minimum-convert-pad" className="text-sm font-semibold">
                 <i className="fas fa-repeat mr-2 text-indigo-600"></i>
-                Min Convert (PAD)
+                Min Convert (POW)
               </Label>
               <Input
                 id="minimum-convert-pad"
@@ -2521,6 +2474,67 @@ function SettingsSection() {
           </div>
         )}
         
+        {/* Maintenance Tools */}
+        <div className="pt-3 border-t border-white/10">
+          <p className="text-xs font-semibold text-white/70 uppercase tracking-wider mb-3">
+            <i className="fas fa-wrench mr-2 text-amber-400"></i>
+            Maintenance Tools
+          </p>
+
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white">Referral Repair</p>
+                <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                  Syncs friend counts for all users whose <code className="text-amber-300">referrals</code> rows are missing or mismatched. Also activates pending referral bonuses for users who already qualify.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleReferralRepair}
+                disabled={isRepairingReferrals}
+                className="flex-shrink-0 border-amber-400/40 text-amber-300 hover:bg-amber-400/10 hover:border-amber-400 h-8 text-xs px-3"
+              >
+                {isRepairingReferrals ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin mr-1.5"></i>
+                    Running…
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-tools mr-1.5"></i>
+                    Run Repair
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {referralRepairResult && (
+              <div className="bg-[#121212] border border-white/5 rounded-lg p-3 grid grid-cols-4 gap-2">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-[#4cd3ff]">{referralRepairResult.usersLinked}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Linked</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-emerald-400">{referralRepairResult.referralsCreated}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Created</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-purple-400">{referralRepairResult.referralsActivated}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Activated</p>
+                </div>
+                <div className="text-center">
+                  <p className={`text-lg font-bold ${referralRepairResult.errors > 0 ? 'text-rose-400' : 'text-gray-500'}`}>
+                    {referralRepairResult.errors}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Errors</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="pt-3 border-t flex gap-2">
           <Button
             onClick={handleSaveSettings}

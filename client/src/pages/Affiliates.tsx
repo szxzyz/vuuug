@@ -43,7 +43,7 @@ export default function Affiliates() {
   const referralRewardUSDEnabled = appSettings?.referralRewardUSDEnabled;
 
   const totalUsdEarned: number = stats?.totalUsdEarned ?? 0;
-  const totalStarEarned: number = stats?.totalStarEarned ?? 0;
+  const totalPowEarned: number = stats?.totalPowEarned ?? stats?.totalStarEarned ?? 0;
 
   const copyLink = () => {
     if (!referralLink) return;
@@ -171,10 +171,10 @@ export default function Affiliates() {
           <div className="flex items-center justify-between pt-2">
             <div>
               <p className="text-white text-sm font-semibold">POW Earned</p>
-              <p className="text-[#888] text-xs mt-0.5">Total POW from commissions</p>
+              <p className="text-[#888] text-xs mt-0.5">Total POW from L1 + L2 commissions</p>
             </div>
             <span className="text-white text-lg font-black">
-              {totalStarEarned > 0 ? totalStarEarned.toLocaleString() : '0'} <span className="text-xs text-[#888] font-normal">POW</span>
+              {totalPowEarned > 0 ? Math.round(totalPowEarned).toLocaleString() : '0'} <span className="text-xs text-[#888] font-normal">POW</span>
             </span>
           </div>
         </div>

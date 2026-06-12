@@ -134,8 +134,8 @@ export default function CreateTask() {
   const rewardPerClickPAD = taskType === 'partner'
     ? 5
     : taskType === 'bot'
-      ? (appSettings?.botTaskRewardPAD || 20)
-      : (appSettings?.channelTaskRewardPAD || 30);
+      ? (appSettings?.botTaskRewardPOW || 20)
+      : (appSettings?.channelTaskRewardPOW || 30);
   const minimumClicks = taskType === 'partner' ? 1 : (appSettings?.minimumClicks || 500);
   
   const clicksNum = parseInt(totalClicks) || 0;
@@ -489,7 +489,7 @@ export default function CreateTask() {
                     className="mt-1"
                   />
                   {taskType === "partner" && (
-                    <p className="text-xs text-green-400 mt-1">Partner tasks: 5 PAD reward, any link type allowed</p>
+                    <p className="text-xs text-green-400 mt-1">Partner tasks: 5 POW reward, any link type allowed</p>
                   )}
                 </div>
 
