@@ -4,17 +4,20 @@ import { useLocation } from "wouter";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useTonConnectUI, useTonAddress } from "@tonconnect/ui-react";
 
+
 export default function Header() {
   const { data: user } = useQuery<any>({
     queryKey: ['/api/auth/user'],
     retry: false,
   });
 
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { isAdmin } = useAdmin();
   const [tonConnectUI] = useTonConnectUI();
   const connectedAddress = useTonAddress();
   const isWalletConnected = !!connectedAddress;
+
+  const isHomePage = location === "/";
 
   const photoUrl = typeof window !== 'undefined'
     ? (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.photo_url
@@ -54,10 +57,12 @@ export default function Header() {
           <span className="text-[15px] font-bold text-white leading-none">{starFormatted}</span>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <img src="/usdt.png" alt="USDT" className="w-6 h-6 object-contain flex-shrink-0" />
-          <span className="text-[15px] font-bold text-white leading-none">{usdFormatted}</span>
-        </div>
+        {!isHomePage && (
+          <div className="flex items-center gap-1.5">
+            <img src="/usdt.png" alt="USDT" className="w-6 h-6 object-contain flex-shrink-0" />
+            <span className="text-[15px] font-bold text-white leading-none">{usdFormatted}</span>
+          </div>
+        )}
       </div>
 
       {/* Right — TON Connect */}

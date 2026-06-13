@@ -30,7 +30,8 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
   const [isShowingAds, setIsShowingAds]         = useState(false);
   const [currentAdStep, setCurrentAdStep]       = useState<"idle" | "adsgram" | "verifying">("idle");
-  const [showFailurePopup, setShowFailurePopup] = useState(true);  // show on page open
+  const [showFailurePopup, setShowFailurePopup] = useState(false);
+  const [pendingAdStart, setPendingAdStart]     = useState(false);
   const sessionRewardedRef                      = useRef(false);
 
   const { data: appSettings } = useQuery({
@@ -102,7 +103,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }
     });
 
-  const handleStartEarning = async () => {
+  const runAdFlow = async () => {
     if (isShowingAds) return;
     setIsShowingAds(true);
     sessionRewardedRef.current = false;
@@ -152,6 +153,20 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       setCurrentAdStep("idle");
       setIsShowingAds(false);
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    }
+  };
+
+  const handleStartEarning = () => {
+    if (isShowingAds) return;
+    setPendingAdStart(true);
+    setShowFailurePopup(true);
+  };
+
+  const handlePopupClose = () => {
+    setShowFailurePopup(false);
+    if (pendingAdStart) {
+      setPendingAdStart(false);
+      runAdFlow();
     }
   };
 
@@ -223,7 +238,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       </Card>
 
       {showFailurePopup && (
-        <AdFailurePopup onClose={() => setShowFailurePopup(false)} />
+        <AdFailurePopup onClose={handlePopupClose} />
       )}
     </>
   );
