@@ -453,7 +453,6 @@ export default function Missions() {
   const adPlatforms = [
     { id: 'monetag' as const, name: 'Monetag',  reward: monetagReward, limit: monetagLimit,  count: platformCounts.monetag },
     { id: 'gigapub' as const, name: 'GiGaPub',  reward: gigaPubReward, limit: gigaPubLimit,  count: platformCounts.gigapub },
-    { id: 'monetix' as const, name: 'Monetix',  reward: monetixReward, limit: monetixLimit,  count: platformCounts.monetix },
   ];
 
   const cardStyle = {

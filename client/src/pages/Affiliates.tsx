@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { showNotification } from '@/components/AppNotification';
 import Layout from '@/components/Layout';
-import IncomeChart from '@/components/IncomeChart';
 import { Copy, Share2 } from 'lucide-react';
 import { formatLargePAD } from '@/lib/utils';
 
@@ -180,14 +179,6 @@ export default function Affiliates() {
           </div>
         </div>
 
-        {/* Referral Income Chart */}
-        <div className="mt-2 pb-0">
-          <IncomeChart
-            title="REFERRAL INCOME"
-            subtitle="Earnings from friends — L1 and L2 commissions"
-            apiEndpoint="/api/referrals/earnings/chart"
-          />
-        </div>
 
       </main>
     </Layout>

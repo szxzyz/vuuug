@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import Header from "@/components/Header";
-import IncomeChart from "@/components/IncomeChart";
 import IncomeStatistics from "@/components/IncomeStatistics";
+import AdWatchingSection from "@/components/AdWatchingSection";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -794,18 +794,13 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Statistics Section */}
-        <IncomeStatistics />
-
-        {/* Total Income Chart */}
-        <div className="mt-3 pb-0">
-          <IncomeChart
-            title="TOTAL INCOME"
-            subtitle="Earnings statistics from all sources"
-            apiEndpoint="/api/earnings/chart"
-          />
+        {/* Ad Watch Section */}
+        <div className="mt-3">
+          <AdWatchingSection user={user} />
         </div>
 
+        {/* Statistics Section */}
+        <IncomeStatistics />
 
       </main>
 
