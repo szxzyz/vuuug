@@ -29,7 +29,6 @@ export default function Layout({ children }: LayoutProps) {
 
   const navItems = [
     { href: "/leaderboard", icon: Trophy, label: "RANK" },
-    { href: "/watch", icon: Play, label: "WATCH" },
     { href: "/affiliates", icon: HeartHandshake, label: "INVITE" },
     { href: "/missions", icon: ListTodo, label: "MISSION" },
   ];
