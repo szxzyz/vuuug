@@ -630,6 +630,18 @@ export async function ensureDatabaseSchema(): Promise<void> {
       console.log('ℹ️ [MIGRATION] Settings key rename skipped (already done or conflict)');
     }
 
+    // Fix column precisions — ensure all amount columns support large values & full decimal precision
+    // These were originally created with numeric(12,2) or numeric(12,8) which caused overflow and rounding bugs
+    try {
+      await db.execute(sql`ALTER TABLE earnings ALTER COLUMN amount TYPE numeric(30,10)`);
+      await db.execute(sql`ALTER TABLE transactions ALTER COLUMN amount TYPE numeric(30,10)`);
+      await db.execute(sql`ALTER TABLE promo_codes ALTER COLUMN reward_amount TYPE numeric(30,10)`);
+      await db.execute(sql`ALTER TABLE promo_code_usage ALTER COLUMN reward_amount TYPE numeric(30,10)`);
+      console.log('✅ [MIGRATION] Amount column precisions fixed to numeric(30,10)');
+    } catch (error) {
+      console.log('ℹ️ [MIGRATION] Amount column precision fix skipped:', error);
+    }
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
