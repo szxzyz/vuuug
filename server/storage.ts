@@ -1259,15 +1259,15 @@ export class DatabaseStorage implements IStorage {
     return promoCode;
   }
 
-  async usePromoCode(code: string, userId: string): Promise<{ success: boolean; message: string; reward?: string; errorType?: string }> {
-    // Get promo code
+  async usePromoCode(code: string, userId: string): Promise<{ success: boolean; message: string; reward?: string; rewardType?: string; rewardCurrency?: string; promoCodeId?: string; errorType?: string }> {
+    // Step 1: Validate only — do NOT record usage yet
     const promoCode = await this.getPromoCode(code);
-    
+
     if (!promoCode) {
       return { success: false, message: "Invalid promo code", errorType: "invalid" };
     }
 
-    // Check per-user limit first (already applied)
+    // Check per-user limit (already applied)
     const userUsageCount = await db
       .select({ count: sql<number>`count(*)` })
       .from(promoCodeUsage)
@@ -1276,7 +1276,7 @@ export class DatabaseStorage implements IStorage {
         eq(promoCodeUsage.userId, userId)
       ));
 
-    if (userUsageCount[0]?.count >= (promoCode.perUserLimit || 1)) {
+    if (Number(userUsageCount[0]?.count) >= (promoCode.perUserLimit || 1)) {
       return { success: false, message: "Promo code already applied", errorType: "already_applied" };
     }
 
@@ -1290,35 +1290,37 @@ export class DatabaseStorage implements IStorage {
       return { success: false, message: "Promo code not active", errorType: "not_active" };
     }
 
-    // Check usage limit (global limit reached)
+    // Check global usage limit
     if (promoCode.usageLimit && (promoCode.usageCount || 0) >= promoCode.usageLimit) {
       return { success: false, message: "Promo code limit reached", errorType: "limit_reached" };
     }
 
-    // Record usage
-    await db.insert(promoCodeUsage).values({
-      promoCodeId: promoCode.id,
-      userId,
-      rewardAmount: promoCode.rewardAmount,
-    });
-
-    // Update usage count
-    await db
-      .update(promoCodes)
-      .set({
-        usageCount: sql`${promoCodes.usageCount} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(promoCodes.id, promoCode.id));
-
-    // NOTE: Reward is added by the routes.ts handler, not here
-    // This prevents double-rewarding and allows routes.ts to handle different reward types (PAD, TON, USD)
-
+    // Return validated info — usage will be recorded by routes.ts AFTER reward is given
     return {
       success: true,
       message: `Promo code redeemed! You earned ${promoCode.rewardAmount} ${promoCode.rewardCurrency || 'PAD'}`,
       reward: promoCode.rewardAmount,
+      rewardType: promoCode.rewardType || 'PAD',
+      rewardCurrency: promoCode.rewardCurrency || 'PAD',
+      promoCodeId: promoCode.id,
     };
+  }
+
+  async confirmPromoCodeUsage(promoCodeId: string, userId: string, rewardAmount: string): Promise<void> {
+    // Record usage AFTER reward is successfully given
+    await db.insert(promoCodeUsage).values({
+      promoCodeId,
+      userId,
+      rewardAmount,
+    });
+
+    await db
+      .update(promoCodes)
+      .set({
+        usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(promoCodes.id, promoCodeId));
   }
 
   // Process referral commission (10% of user's earnings)

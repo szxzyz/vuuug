@@ -8128,153 +8128,113 @@ ${walletAddress}
     try {
       const userId = req.user.user.id;
       const { code } = req.body;
-      
+
       if (!code || !code.trim()) {
-        return res.status(400).json({ 
-          success: false,
-          message: 'Please enter a promo code' 
-        });
+        return res.status(400).json({ success: false, message: 'Please enter a promo code' });
       }
-      
-      // Use promo code (validates all conditions including existence, limits, expiry)
-      const result = await storage.usePromoCode(code.trim().toUpperCase(), userId);
-      
-      // Handle errors with proper user-friendly messages
+
+      const cleanCode = code.trim().toUpperCase();
+
+      // STEP 1: Validate only — does NOT record usage yet
+      const result = await storage.usePromoCode(cleanCode, userId);
       if (!result.success) {
-        return res.status(400).json({ 
-          success: false, 
-          message: result.message
-        });
+        return res.status(400).json({ success: false, message: result.message });
       }
-      
-      // Get promo code details for reward type
-      const promoCode = await storage.getPromoCode(code.trim().toUpperCase());
-      
-      if (!promoCode) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Invalid promo code'
-        });
-      }
-      
-      // Add reward based on type - PAD/POW, TON, USD, BUG/STAR supported
-      let rewardType = promoCode.rewardType || 'PAD';
-      // Normalize aliases (stored in DB as PAD/BUG, but check both forms)
-      if (rewardType === 'PDZ') rewardType = 'TON';
-      if (rewardType === 'POW') rewardType = 'PAD';
+
+      // Pull validated values from result (no second DB fetch needed)
+      const rewardAmount  = result.reward || '0';
+      const promoCodeId   = result.promoCodeId!;
+      let   rewardType    = (result.rewardType || 'PAD').toUpperCase();
+      // Normalize aliases
+      if (rewardType === 'PDZ')  rewardType = 'TON';
+      if (rewardType === 'POW')  rewardType = 'PAD';
       if (rewardType === 'STAR') rewardType = 'BUG';
-      const rewardAmount = result.reward;
-      
-      if (rewardType === 'PAD' || rewardType === 'POW') {
-        // Add PAD balance - addEarning handles BOTH earnings tracking AND balance update
-        const rewardPow = parseInt(rewardAmount || '0');
-        
+
+      // STEP 2: Give the reward — if this throws, usage is NOT recorded
+      if (rewardType === 'PAD') {
+        const rewardPow = parseInt(rewardAmount);
         await storage.addEarning({
           userId,
-          amount: rewardAmount || '0',
+          amount: rewardAmount,
           source: 'promo_code',
-          description: `Redeemed promo code: ${code}`,
+          description: `Redeemed promo code: ${cleanCode}`,
         });
-        
-        res.json({ 
-          success: true, 
-          message: `${rewardPow} POW added to your balance!`,
+
+        // STEP 3: Only record usage after reward is successfully given
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
+
+        return res.json({
+          success: true,
+          message: `${rewardPow.toLocaleString()} POW added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'POW'
+          rewardType: 'POW',
         });
+
       } else if (rewardType === 'TON') {
-        // Add TON balance - direct update required since addEarning only handles PAD balance
-        const [currentUser] = await db
-          .select({ tonBalance: users.tonBalance })
-          .from(users)
-          .where(eq(users.id, userId));
-        
-        const currentTonBalance = parseFloat(currentUser?.tonBalance || '0');
-        const newTonBalance = (currentTonBalance + parseFloat(rewardAmount || '0')).toFixed(8);
-        
-        await db
-          .update(users)
-          .set({ tonBalance: newTonBalance, updatedAt: new Date() })
-          .where(eq(users.id, userId));
-        
-        // Log transaction for tracking
-        await storage.logTransaction({
-          userId,
-          amount: rewardAmount || '0',
-          type: "credit",
-          source: "promo_code",
-          description: `Redeemed promo code: ${code}`,
-          metadata: { code, rewardType: 'TON' }
-        });
-        
-        res.json({ 
-          success: true, 
+        const [currentUser] = await db.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId));
+        const newTonBalance = (parseFloat(currentUser?.tonBalance || '0') + parseFloat(rewardAmount)).toFixed(8);
+        await db.update(users).set({ tonBalance: newTonBalance, updatedAt: new Date() }).where(eq(users.id, userId));
+        await storage.logTransaction({ userId, amount: rewardAmount, type: 'credit', source: 'promo_code', description: `Redeemed promo code: ${cleanCode}`, metadata: { code: cleanCode, rewardType: 'TON' } });
+
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
+
+        return res.json({
+          success: true,
           message: `${rewardAmount} TON added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'TON'
+          rewardType: 'TON',
         });
+
       } else if (rewardType === 'USD') {
-        // Add USD balance
-        await storage.addUSDBalance(userId, rewardAmount || '0', 'promo_code', `Redeemed promo code: ${code}`);
-        
-        res.json({ 
-          success: true, 
+        await storage.addUSDBalance(userId, rewardAmount, 'promo_code', `Redeemed promo code: ${cleanCode}`);
+
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
+
+        return res.json({
+          success: true,
           message: `$${rewardAmount} USD added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'USD'
+          rewardType: 'USD',
         });
-      } else if (rewardType === 'BUG' || rewardType === 'STAR') {
-        // Add Star balance
-        const [currentUser] = await db
-          .select({ starBalance: users.starBalance })
-          .from(users)
-          .where(eq(users.id, userId));
-        
-        const currentStarBalance = parseFloat(currentUser?.starBalance || '0');
-        const newStarBalance = (currentStarBalance + parseFloat(rewardAmount || '0')).toFixed(2);
-        
-        await db
-          .update(users)
-          .set({ starBalance: newStarBalance, updatedAt: new Date() })
-          .where(eq(users.id, userId));
-        
-        // Log transaction for tracking
-        await storage.logTransaction({
-          userId,
-          amount: rewardAmount || '0',
-          type: "credit",
-          source: "promo_code",
-          description: `Redeemed promo code: ${code}`,
-          metadata: { code, rewardType: 'STAR' }
-        });
-        
-        res.json({ 
-          success: true, 
+
+      } else if (rewardType === 'BUG') {
+        const [currentUser] = await db.select({ starBalance: users.starBalance }).from(users).where(eq(users.id, userId));
+        const newStarBalance = (parseFloat(currentUser?.starBalance || '0') + parseFloat(rewardAmount)).toFixed(2);
+        await db.update(users).set({ starBalance: newStarBalance, updatedAt: new Date() }).where(eq(users.id, userId));
+        await storage.logTransaction({ userId, amount: rewardAmount, type: 'credit', source: 'promo_code', description: `Redeemed promo code: ${cleanCode}`, metadata: { code: cleanCode, rewardType: 'STAR' } });
+
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
+
+        return res.json({
+          success: true,
           message: `${rewardAmount} STAR added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'STAR'
+          rewardType: 'STAR',
         });
+
       } else {
-        // Default: Add PAD balance
-        const rewardPow = parseInt(rewardAmount || '0');
-        
+        // Default fallback: PAD
+        const rewardPow = parseInt(rewardAmount);
         await storage.addEarning({
           userId,
-          amount: rewardAmount || '0',
+          amount: rewardAmount,
           source: 'promo_code',
-          description: `Redeemed promo code: ${code}`,
+          description: `Redeemed promo code: ${cleanCode}`,
         });
-        
-        res.json({ 
-          success: true, 
-          message: `${rewardPow} POW added to your balance!`,
+
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
+
+        return res.json({
+          success: true,
+          message: `${rewardPow.toLocaleString()} POW added to your balance!`,
           reward: rewardAmount,
-          rewardType: 'POW'
+          rewardType: 'POW',
         });
       }
+
     } catch (error) {
       console.error("Error redeeming promo code:", error);
-      res.status(500).json({ message: "Failed to redeem promo code" });
+      res.status(500).json({ success: false, message: "Failed to redeem promo code. Please try again." });
     }
   });
 
