@@ -1301,9 +1301,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 5. Log background duration (no minimum required — AdsGram callback is the verification)
+      // 5. Log background duration (Adsgram SDK validates ad completion on its side)
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
-      console.log(`ℹ️ Ad session bg time for user ${userId}: ${bgDuration}ms`);
+      const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
+      console.log(`ℹ️ Ad session bg time for user ${userId}: ${bgDuration}ms (total: ${sessionAgeMs}ms)`);
 
       // ✅ All checks passed — mark session used, update cooldown, decay abuse score
       adUsedSessions.set(sessionId, Date.now());
