@@ -2,18 +2,19 @@ import { Link, useLocation } from "wouter";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAdmin } from "@/hooks/useAdmin";
 import { motion, AnimatePresence } from "framer-motion";
-import { HeartHandshake, User, Play, ListTodo, Trophy } from "lucide-react";
+import { HeartHandshake, User, ListTodo, Trophy, ShieldCheck, Home } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import { useSeasonEnd } from "@/lib/SeasonEndContext";
 import BanScreen from "@/components/BanScreen";
+import { useRef, useCallback } from "react";
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { isConnected } = useWebSocket();
   const { isAdmin } = useAdmin();
   const { showSeasonEnd } = useSeasonEnd();
@@ -22,6 +23,43 @@ export default function Layout({ children }: LayoutProps) {
     queryKey: ['/api/auth/user'],
     retry: false,
   });
+
+  const clickCountRef = useRef(0);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleHomeButtonClick = useCallback(() => {
+    if (!isAdmin) {
+      navigate("/");
+      return;
+    }
+
+    clickCountRef.current += 1;
+
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+    }
+
+    if (clickCountRef.current >= 2) {
+      clickCountRef.current = 0;
+      if (location === "/admin") {
+        navigate("/");
+      } else {
+        navigate("/admin");
+      }
+      return;
+    }
+
+    clickTimerRef.current = setTimeout(() => {
+      if (clickCountRef.current === 1) {
+        if (location === "/admin") {
+          navigate("/");
+        } else {
+          navigate("/");
+        }
+      }
+      clickCountRef.current = 0;
+    }, 400);
+  }, [isAdmin, location, navigate]);
 
   if (user?.banned) {
     return <BanScreen reason={user.bannedReason} />;
@@ -33,10 +71,12 @@ export default function Layout({ children }: LayoutProps) {
     { href: "/missions", icon: ListTodo, label: "MISSION" },
   ];
 
-  // Get photo from Telegram WebApp first, then fallback to user data
   const telegramPhotoUrl = typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.photo_url;
   const userPhotoUrl = telegramPhotoUrl || user?.profileImageUrl || user?.profileUrl || null;
   const isHomeActive = location === "/";
+  const isAdminActive = location === "/admin" || location.startsWith("/admin");
+
+  const isAdminNavMode = isAdmin && isAdminActive;
 
   return (
     <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
@@ -63,35 +103,43 @@ export default function Layout({ children }: LayoutProps) {
       {!showSeasonEnd && (
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-48px)] max-w-md h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl">
           <div className="flex justify-around items-center h-full px-4">
-            {/* WATCH with Profile Photo */}
-            <Link href="/">
-              <button
-                className={`flex flex-col items-center justify-center min-w-[64px] transition-all duration-300 ${
-                  isHomeActive 
-                    ? "text-white scale-105" 
+
+            <button
+              onClick={handleHomeButtonClick}
+              className={`flex flex-col items-center justify-center min-w-[64px] transition-all duration-300 ${
+                isAdminNavMode
+                  ? "text-yellow-400 scale-105"
+                  : isHomeActive
+                    ? "text-white scale-105"
                     : "text-[#6E6E73] hover:text-white/80"
-                }`}
-              >
-                {userPhotoUrl ? (
-                  <img 
-                    src={userPhotoUrl} 
-                    alt="Profile" 
-                    className={`w-6 h-6 rounded-full object-cover transition-all mb-1 ${
-                      isHomeActive ? "ring-2 ring-white" : ""
-                    }`}
-                  />
-                ) : (
-                  <div className={`w-6 h-6 rounded-full bg-[#2a2a2a] flex items-center justify-center mb-1 ${
+              }`}
+            >
+              {isAdminNavMode ? (
+                <ShieldCheck
+                  className="w-6 h-6 mb-1 transition-all"
+                  strokeWidth={2.5}
+                />
+              ) : userPhotoUrl ? (
+                <img
+                  src={userPhotoUrl}
+                  alt="Profile"
+                  className={`w-6 h-6 rounded-full object-cover transition-all mb-1 ${
                     isHomeActive ? "ring-2 ring-white" : ""
-                  }`}>
-                    <User className="w-4 h-4" />
-                  </div>
-                )}
-                <span className={`text-[10px] font-semibold tracking-wide uppercase ${isHomeActive ? 'opacity-100' : 'opacity-70'}`}>
-                  HOME
-                </span>
-              </button>
-            </Link>
+                  }`}
+                />
+              ) : (
+                <div className={`w-6 h-6 rounded-full bg-[#2a2a2a] flex items-center justify-center mb-1 ${
+                  isHomeActive ? "ring-2 ring-white" : ""
+                }`}>
+                  <User className="w-4 h-4" />
+                </div>
+              )}
+              <span className={`text-[10px] font-semibold tracking-wide uppercase ${
+                isAdminNavMode ? 'opacity-100 text-yellow-400' : isHomeActive ? 'opacity-100' : 'opacity-70'
+              }`}>
+                {isAdminNavMode ? "ADMIN" : "HOME"}
+              </span>
+            </button>
 
             {navItems.map((item) => {
               const isActive = location === item.href;
