@@ -737,7 +737,7 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <img src="/star-bug.png" alt="STAR" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0 }} />
               <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
-                {formatBalance(parseFloat((user as any)?.starBalance || "0"))} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>STAR</span>
+                {formatBalance(parseInt((user as any)?.weeklyStars || "0"))} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>STAR</span>
               </span>
             </div>
           </div>
