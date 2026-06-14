@@ -370,48 +370,42 @@ export default function Withdraw() {
 
             {!isLoadingRequirements && (
             <>
-            {/* Wallet Status Banner */}
-            {selectedMethod === 'TON' && !isWalletConnected && (
-              <div className="p-3 bg-orange-500/10 border border-orange-500/25 rounded-xl flex items-start gap-3">
-                <Wallet className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-orange-400">Wallet Not Connected</p>
-                  <p className="text-xs text-orange-300/70 mt-0.5">Tap the <strong>Connect</strong> button at the top to link your TON wallet before withdrawing.</p>
-                </div>
-              </div>
-            )}
-            {selectedMethod === 'TON' && isWalletConnected && (
-              <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center gap-3">
-                <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
-                <p className="text-xs text-green-400 font-medium">
-                  Wallet connected: {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
-                </p>
-              </div>
-            )}
             <div className="space-y-3">
               <div className="space-y-2">
                 {paymentSystems.map((system) => (
                   <button
                     key={system.id}
-                    onClick={() => setSelectedMethod(system.id)}
-                    className={`w-full flex items-center space-x-2 p-3 rounded-lg transition-all ${
+                    onClick={() => {
+                      setSelectedMethod(system.id);
+                      if (system.id === 'TON') tonConnectUI.openModal();
+                    }}
+                    className={`w-full flex items-center p-3 rounded-lg transition-all ${
                       selectedMethod === system.id
                         ? 'bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]'
                         : 'bg-[#1C1C1E] hover:bg-[#2C2C2E]'
                     }`}
                   >
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                       selectedMethod === system.id ? 'border-[#4cd3ff] bg-[#4cd3ff]' : 'border-[#aaa]'
                     }`}>
                       {selectedMethod === system.id && <Check className="w-3 h-3 text-black" />}
                     </div>
-                    <div className="flex-1 flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center">
+                    <div className="flex items-center gap-2 ml-2 flex-1">
+                      <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
                         <img src="/images/ton.png" alt="TON" className="w-6 h-6 object-cover" />
                       </div>
-                      <span className="text-white">{system.name}</span>
-                      <span className="text-xs text-[#aaa] ml-auto">({system.fee}% fee)</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm font-medium">{system.name}</span>
+                        {system.id === 'TON' && (
+                          <span className="text-xs font-semibold" style={{ color: isWalletConnected ? '#4ade80' : '#0098EA' }}>
+                            {isWalletConnected
+                              ? `${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`
+                              : 'Connect'}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    <span className="text-xs text-[#aaa] flex-shrink-0">({system.fee}% fee)</span>
                   </button>
                 ))}
               </div>

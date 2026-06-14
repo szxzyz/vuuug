@@ -227,51 +227,49 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
   );
 }
 
-/* ─── Category Tabs ─── */
-type CategoryTab = 'channel' | 'bot' | 'partner';
+/* ─── Main Tabs ─── */
+type MainTab = 'all' | 'daily' | 'partner';
 
-const CATEGORY_TABS: { id: CategoryTab; label: string; Icon: React.ElementType; color: string }[] = [
-  { id: 'channel', label: 'Channels',  Icon: FaBullhorn,  color: '#3b82f6' },
-  { id: 'bot',     label: 'Bots & Web', Icon: FaRobot,    color: '#8b5cf6' },
-  { id: 'partner', label: 'Partners',  Icon: FaHandshake, color: '#ec4899' },
-];
-
-function CategoryTabs({ active, onChange, counts }: {
-  active: CategoryTab;
-  onChange: (tab: CategoryTab) => void;
-  counts: Record<CategoryTab, number>;
+function MainTabs({ active, onChange }: {
+  active: MainTab;
+  onChange: (tab: MainTab) => void;
 }) {
+  const tabs: { id: MainTab; label: string }[] = [
+    { id: 'all',     label: 'All' },
+    { id: 'daily',   label: 'Daily' },
+    { id: 'partner', label: 'Partner' },
+  ];
   return (
-    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-      {CATEGORY_TABS.map(tab => {
+    <div style={{
+      display: 'flex',
+      background: 'rgba(255,255,255,0.06)',
+      borderRadius: 14,
+      padding: 4,
+      marginBottom: 16,
+      gap: 2,
+    }}>
+      {tabs.map(tab => {
         const isActive = active === tab.id;
-        const count = counts[tab.id];
         return (
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
             style={{
               flex: 1,
-              display: 'flex',
-              flexDirection: 'column' as const,
-              alignItems: 'center',
-              gap: 4,
-              padding: '10px 6px',
-              borderRadius: 12,
-              border: isActive ? `1px solid ${tab.color}55` : '1px solid rgba(255,255,255,0.06)',
-              background: isActive ? `${tab.color}18` : 'rgba(255,255,255,0.04)',
+              padding: '9px 0',
+              borderRadius: 11,
+              border: 'none',
+              background: isActive ? '#fff' : 'transparent',
               cursor: 'pointer',
-              transition: 'all 0.15s',
+              transition: 'all 0.18s',
+              fontSize: 13,
+              fontWeight: 700,
+              color: isActive ? '#000' : 'rgba(255,255,255,0.5)',
+              letterSpacing: '0.01em',
             }}
-            className="active:scale-95 transition-transform"
+            className="active:scale-95"
           >
-            <tab.Icon size={17} color={isActive ? tab.color : 'rgba(255,255,255,0.4)'} />
-            <span style={{ fontSize: 10, fontWeight: 800, color: isActive ? '#fff' : 'rgba(255,255,255,0.45)', letterSpacing: '0.04em' }}>{tab.label}</span>
-            {count > 0 && (
-              <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? tab.color : 'rgba(255,255,255,0.3)', background: isActive ? `${tab.color}22` : 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '1px 6px' }}>
-                {count}
-              </span>
-            )}
+            {tab.label}
           </button>
         );
       })}
@@ -286,7 +284,7 @@ export default function Missions() {
   const [, setLocation] = useLocation();
   const { data: adminData } = useQuery<{ isAdmin: boolean }>({ queryKey: ['/api/admin/check'], retry: false });
   const isAdmin = adminData?.isAdmin || false;
-  const [activeCategory, setActiveCategory] = useState<CategoryTab>('channel');
+  const [activeTab, setActiveTab] = useState<MainTab>('all');
   const [clickedTasks, setClickedTasks] = useState<Set<string>>(new Set());
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
@@ -425,30 +423,11 @@ export default function Missions() {
     );
   }
 
-  const allTasks    = (tasksData?.tasks || []).filter(t => !completedTaskIds.has(t.id));
-  const channelTasks = allTasks.filter(t => t.taskType === 'channel');
-  const botTasks    = allTasks.filter(t => t.taskType === 'bot');
+  const allTasks     = (tasksData?.tasks || []).filter(t => !completedTaskIds.has(t.id));
   const partnerTasks = allTasks.filter(t => t.taskType === 'partner');
-
-  const categoryCounts: Record<CategoryTab, number> = {
-    channel: channelTasks.length,
-    bot: botTasks.length,
-    partner: partnerTasks.length,
-  };
-
-  const activeTasks =
-    activeCategory === 'channel' ? channelTasks :
-    activeCategory === 'bot'     ? botTasks     :
-    partnerTasks;
 
   const getReward = (t: Task) =>
     t.taskType === 'partner' ? partnerReward : t.taskType === 'channel' ? channelReward : botReward;
-
-  const emptyMessages: Record<CategoryTab, string> = {
-    channel: 'No channel tasks available right now',
-    bot: 'No bot or website tasks available right now',
-    partner: 'No partner tasks available right now',
-  };
 
   const adPlatforms = [
     { id: 'monetag' as const, name: 'Monetag',  reward: monetagReward, limit: monetagLimit,  count: platformCounts.monetag },
@@ -499,26 +478,7 @@ export default function Missions() {
           )}
         </div>
 
-        {/* Earn with ADS */}
-        <SectionLabel title="Earn with ADS" />
-        <div style={cardStyle}>
-          {adPlatforms.map((p, i) => (
-            <AdRow
-              key={p.id}
-              platform={p.id}
-              name={p.name}
-              reward={p.reward}
-              limit={p.limit}
-              count={p.count}
-              loading={adLoadingPlatform === p.id}
-              disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
-              onWatch={() => handleWatchAd(p.id)}
-              isLast={i === adPlatforms.length - 1}
-            />
-          ))}
-        </div>
-
-        {/* Promo Code */}
+        {/* Promo Code — above tabs, always visible */}
         <SectionLabel title="Promo Code" />
         <div style={cardStyle}>
           <div style={{ padding: '14px 16px' }}>
@@ -526,43 +486,116 @@ export default function Missions() {
           </div>
         </div>
 
-        {/* Tasks — Categorized */}
-        <SectionLabel title="Tasks" />
+        {/* Main Tabs */}
+        <MainTabs active={activeTab} onChange={setActiveTab} />
 
-        {/* Category Tabs */}
-        <CategoryTabs
-          active={activeCategory}
-          onChange={setActiveCategory}
-          counts={categoryCounts}
-        />
+        {/* ── ALL TAB ── */}
+        {activeTab === 'all' && (
+          <>
+            {/* Ads section */}
+            <SectionLabel title="Earn with ADS" />
+            <div style={cardStyle}>
+              {adPlatforms.map((p, i) => (
+                <AdRow
+                  key={p.id}
+                  platform={p.id}
+                  name={p.name}
+                  reward={p.reward}
+                  limit={p.limit}
+                  count={p.count}
+                  loading={adLoadingPlatform === p.id}
+                  disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
+                  onWatch={() => handleWatchAd(p.id)}
+                  isLast={i === adPlatforms.length - 1}
+                />
+              ))}
+            </div>
 
-        {/* Task List for Active Category */}
-        <div style={cardStyle}>
-          {tasksLoading ? (
-            <>
-              <LoadingRow />
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
-              <LoadingRow />
-            </>
-          ) : activeTasks.length === 0 ? (
-            <EmptyRow label={emptyMessages[activeCategory]} />
-          ) : (
-            activeTasks.map((task, i) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                reward={getReward(task)}
-                loading={loadingTaskId === task.id}
-                clickedTasks={clickedTasks}
-                claimReadyTasks={claimReadyTasks}
-                countdownTasks={countdownTasks}
-                onGo={handleTaskGo}
-                onClaim={id => clickTaskMutation.mutate(id)}
-                isLast={i === activeTasks.length - 1}
-              />
-            ))
-          )}
-        </div>
+            <SectionLabel title="All Tasks" />
+            <div style={cardStyle}>
+              {tasksLoading ? (
+                <>
+                  <LoadingRow />
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
+                  <LoadingRow />
+                </>
+              ) : allTasks.length === 0 ? (
+                <EmptyRow label="No tasks available right now" />
+              ) : (
+                allTasks.map((task, i) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    reward={getReward(task)}
+                    loading={loadingTaskId === task.id}
+                    clickedTasks={clickedTasks}
+                    claimReadyTasks={claimReadyTasks}
+                    countdownTasks={countdownTasks}
+                    onGo={handleTaskGo}
+                    onClaim={id => clickTaskMutation.mutate(id)}
+                    isLast={i === allTasks.length - 1}
+                  />
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── DAILY TAB ── */}
+        {activeTab === 'daily' && (
+          <>
+            <SectionLabel title="Earn with ADS" />
+            <div style={cardStyle}>
+              {adPlatforms.map((p, i) => (
+                <AdRow
+                  key={p.id}
+                  platform={p.id}
+                  name={p.name}
+                  reward={p.reward}
+                  limit={p.limit}
+                  count={p.count}
+                  loading={adLoadingPlatform === p.id}
+                  disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
+                  onWatch={() => handleWatchAd(p.id)}
+                  isLast={i === adPlatforms.length - 1}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── PARTNER TAB ── */}
+        {activeTab === 'partner' && (
+          <>
+            <SectionLabel title="Partner Tasks" />
+            <div style={cardStyle}>
+              {tasksLoading ? (
+                <>
+                  <LoadingRow />
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
+                  <LoadingRow />
+                </>
+              ) : partnerTasks.length === 0 ? (
+                <EmptyRow label="No partner tasks available right now" />
+              ) : (
+                partnerTasks.map((task, i) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    reward={getReward(task)}
+                    loading={loadingTaskId === task.id}
+                    clickedTasks={clickedTasks}
+                    claimReadyTasks={claimReadyTasks}
+                    countdownTasks={countdownTasks}
+                    onGo={handleTaskGo}
+                    onClaim={id => clickTaskMutation.mutate(id)}
+                    isLast={i === partnerTasks.length - 1}
+                  />
+                ))
+              )}
+            </div>
+          </>
+        )}
 
       </main>
     </Layout>

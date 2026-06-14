@@ -700,16 +700,16 @@ export default function Home() {
   return (
     <Layout>
       <Header />
-      <main className="max-w-md mx-auto px-4 pt-0 bg-black text-white">
+      <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 10 }}>
         {/* Balance Section — left aligned */}
-        <div className="mb-4 pt-2 px-1">
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: 4 }}>
+        <div className="mb-3 px-1">
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             Balance
           </p>
 
           {/* Main USD balance */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 2 }}>
-            <span style={{ fontSize: 32, fontWeight: 700, color: 'rgba(255,255,255,0.65)', lineHeight: 1 }}>$</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 8 }}>
+            <span style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.55)', lineHeight: 1 }}>$</span>
             <span style={{
               fontSize: balanceUSD >= 1000 ? 38 : 44,
               fontWeight: 800,
@@ -721,13 +721,26 @@ export default function Home() {
             }}>
               {usdInt}
             </span>
-            <span style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.45)', lineHeight: 1 }}>.{usdDec}</span>
+            <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.38)', lineHeight: 1 }}>.{usdDec}</span>
           </div>
 
-          {/* PAD sub-value */}
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 500, marginBottom: 16 }}>
-            {formatBalance(balancePAD)} POW
-          </p>
+          {/* POW & STAR — stacked vertically */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
+              </div>
+              <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
+                {formatBalance(balancePAD)} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>POW</span>
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <img src="/star-bug.png" alt="STAR" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0 }} />
+              <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
+                {formatBalance(parseFloat((user as any)?.starBalance || "0"))} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>STAR</span>
+              </span>
+            </div>
+          </div>
 
           {/* Equal-width buttons */}
           <div style={{ display: 'flex', gap: 10 }}>
