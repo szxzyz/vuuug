@@ -603,18 +603,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 2. CHANNEL/GROUP JOIN CHECK - DISABLED
-      const isVerified = true;
-      const channelMember = true;
-      const groupMember = true;
-      
-      console.log(`🔍 check-membership for ${telegramId}: bypass enabled`);
-      
+      // 2. CHANNEL/GROUP JOIN CHECK - verify with Telegram Bot API
+      let channelMember = false;
+      let groupMember = false;
+
+      const { verifyChannelMembership } = await import('./telegram');
+
+      try {
+        channelMember = await verifyChannelMembership(userId, channelConfig.channelId, botToken);
+      } catch (e) {
+        // Fail open if bot cannot check (bot not admin, API error, etc.)
+        console.log(`⚠️ check-membership: channel check failed for ${telegramId}, failing open:`, e);
+        channelMember = true;
+      }
+
+      try {
+        groupMember = await verifyChannelMembership(userId, channelConfig.groupId, botToken);
+      } catch (e) {
+        console.log(`⚠️ check-membership: group check failed for ${telegramId}, failing open:`, e);
+        groupMember = true;
+      }
+
+      const isVerified = channelMember && groupMember;
+      console.log(`🔍 check-membership for ${telegramId}: channel=${channelMember} group=${groupMember} verified=${isVerified}`);
+
       // Update user status in database to match current membership state
       if (user) {
         await storage.updateUserVerificationStatus(user.id, isVerified);
       }
-      
+
       res.json({
         success: true,
         isVerified,
@@ -645,10 +662,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mandatory channel/group membership check endpoint - authenticated
   app.get('/api/membership/check', authenticateTelegram, async (req: any, res) => {
     try {
-      // Bypass membership check - always verified
+      const isDevMode = process.env.NODE_ENV === 'development';
       const channelConfig = getChannelConfig();
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+      if (isDevMode || !botToken) {
+        return res.json({
+          success: true,
+          isVerified: true,
+          channelMember: true,
+          groupMember: true,
+          channelUrl: channelConfig.channelUrl,
+          groupUrl: channelConfig.groupUrl,
+          channelName: channelConfig.channelName,
+          groupName: channelConfig.groupName
+        });
+      }
+
+      const telegramUser = req.telegramUser;
+      if (!telegramUser?.id) {
+        return res.json({ success: false, isVerified: false, channelMember: false, groupMember: false, channelUrl: channelConfig.channelUrl, groupUrl: channelConfig.groupUrl, channelName: channelConfig.channelName, groupName: channelConfig.groupName });
+      }
+
+      const userId = parseInt(telegramUser.id.toString(), 10);
+      const { verifyChannelMembership } = await import('./telegram');
+
+      let channelMember = false;
+      let groupMember = false;
+
+      try {
+        channelMember = await verifyChannelMembership(userId, channelConfig.channelId, botToken);
+      } catch {
+        channelMember = true; // fail open
+      }
+
+      try {
+        groupMember = await verifyChannelMembership(userId, channelConfig.groupId, botToken);
+      } catch {
+        groupMember = true; // fail open
+      }
+
+      const isVerified = channelMember && groupMember;
+
+      if (isVerified) {
+        const { storage: s } = await import('./storage');
+        const dbUser = await s.getUserByTelegramId(telegramUser.id.toString());
+        if (dbUser) await s.updateUserVerificationStatus(dbUser.id, true);
+      }
+
       res.json({
         success: true,
+        isVerified,
+        channelMember,
+        groupMember,
+        channelUrl: channelConfig.channelUrl,
+        groupUrl: channelConfig.groupUrl,
+        channelName: channelConfig.channelName,
+        groupName: channelConfig.groupName
+      });
+    } catch (error) {
+      console.error('❌ Membership check error:', error);
+      const channelConfig = getChannelConfig();
+      res.json({ 
+        success: false, 
+        message: 'Failed to check membership',
         isVerified: true,
         channelMember: true,
         groupMember: true,
@@ -657,13 +734,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         channelName: channelConfig.channelName,
         groupName: channelConfig.groupName
       });
+    }
+  });
+
+  // Update user language preference
+  app.post('/api/user/language', authenticateTelegram, async (req: any, res) => {
+    try {
+      const { language } = req.body;
+      const validLanguages = ['en', 'ru', 'ar'];
+      if (!language || !validLanguages.includes(language)) {
+        return res.status(400).json({ success: false, message: 'Invalid language' });
+      }
+      const telegramUser = req.telegramUser;
+      if (telegramUser?.id) {
+        const dbUser = await storage.getUserByTelegramId(telegramUser.id.toString());
+        if (dbUser) {
+          await storage.updateUserLanguage(dbUser.id, language);
+        }
+      }
+      res.json({ success: true, language });
     } catch (error) {
-      console.error('❌ Membership check error:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Failed to check membership',
-        isVerified: true 
-      });
+      res.json({ success: true }); // Non-critical, don't fail
     }
   });
 

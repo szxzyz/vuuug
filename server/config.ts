@@ -3,19 +3,15 @@
 
 export const config = {
   // Telegram channel settings - use numeric ID for more reliable verification
-  // To get numeric channel ID:
-  // 1. Add @userinfobot to your channel
-  // 2. Forward a message from the channel to @userinfobot
-  // 3. It will show the channel ID (looks like: -1001234567890)
   telegram: {
     // Channel settings (environment variables required)
-    channelId: process.env.TELEGRAM_CHANNEL_ID || '-1002242502661',
-    channelUrl: process.env.TELEGRAM_CHANNEL_URL || 'https://t.me/MoneyAdz',
-    channelName: process.env.TELEGRAM_CHANNEL_NAME || 'Money adz',
+    channelId: process.env.TELEGRAM_CHANNEL_ID || '-1002307369718',
+    channelUrl: process.env.TELEGRAM_CHANNEL_LINK || process.env.TELEGRAM_CHANNEL_URL || 'https://t.me/PaidAdzNews',
+    channelName: process.env.TELEGRAM_CHANNEL_NAME || 'PaidAdzNews',
     // Group settings (environment variables required)
-    groupId: process.env.TELEGRAM_GROUP_ID || '-1002422003884',
-    groupUrl: process.env.TELEGRAM_GROUP_URL || 'https://t.me/MoneyAdzChat',
-    groupName: process.env.TELEGRAM_GROUP_NAME || 'Money adz community',
+    groupId: process.env.TELEGRAM_GROUP_ID || '-1002402950172',
+    groupUrl: process.env.TELEGRAM_GROUP_LINK || process.env.TELEGRAM_GROUP_URL || 'https://t.me/PaidAdzChat',
+    groupName: process.env.TELEGRAM_GROUP_NAME || 'PaidAdzChat',
   },
   
   // Bot configuration

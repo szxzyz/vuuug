@@ -78,6 +78,9 @@ export interface IStorage {
     totalEarnings: string;
   }>;
   
+  // Language operations
+  updateUserLanguage(userId: string, language: string): Promise<void>;
+
   // Balance operations
   updateUserBalance(userId: string, amount: string): Promise<void>;
   
@@ -1217,6 +1220,13 @@ export class DatabaseStorage implements IStorage {
         banned,
         updatedAt: new Date(),
       })
+      .where(eq(users.id, userId));
+  }
+
+  async updateUserLanguage(userId: string, language: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ language, updatedAt: new Date() })
       .where(eq(users.id, userId));
   }
 

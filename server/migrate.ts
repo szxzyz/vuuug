@@ -124,6 +124,8 @@ export async function ensureDatabaseSchema(): Promise<void> {
       // Add mandatory channel/group join verification columns
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_channel_group_verified BOOLEAN DEFAULT false`);
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_membership_check TIMESTAMP`);
+      // Add preferred language column
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(5) DEFAULT 'en'`);
 
       // Add hourly ad refill tracking columns
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS hourly_ads_watched INTEGER DEFAULT 0`);
