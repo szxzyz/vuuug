@@ -357,33 +357,21 @@ export default function Leaderboard() {
               </button>
             </div>
 
-            {top10.map((entry, i) => {
+            {top10.slice(3).map((entry, sliceIdx) => {
+              const i = sliceIdx + 3;
               const isMe = entry.userId === user?.id;
-              const rankMedal = MEDAL[i];
               const prize = activeTab === 'current' ? getPrize(i + 1, prizePool) : '';
               return (
                 <div key={entry.userId} style={{
                   display: 'flex', alignItems: 'center', gap: 12,
                   padding: '10px 12px',
-                  background: isMe ? 'rgba(255,215,0,0.06)' : i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'transparent',
+                  background: isMe ? 'rgba(255,215,0,0.06)' : sliceIdx % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'transparent',
                   borderRadius: 12, marginBottom: 4,
                   border: isMe ? '1px solid rgba(255,215,0,0.2)' : '1px solid transparent',
                 }}>
-                  {i < 3 ? (
-                    <div style={{
-                      width: 28, height: 28, borderRadius: '50%', background: rankMedal.bg,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                      boxShadow: `0 2px 8px ${rankMedal.shadow}`,
-                    }}>
-                      {i === 0
-                        ? <FaCrown style={{ fontSize: 12, color: '#000' }} />
-                        : <FaMedal style={{ fontSize: 12, color: '#000' }} />}
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.3)', width: 28, textAlign: 'center', flexShrink: 0 }}>
-                      #{i + 1}
-                    </span>
-                  )}
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.3)', width: 28, textAlign: 'center', flexShrink: 0 }}>
+                    #{i + 1}
+                  </span>
 
                   <SmallAvatar entry={entry} index={i} />
 
@@ -426,8 +414,8 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {/* ── User's own rank (in top 10) ── */}
-        {!isLoading && activeTab === 'current' && userRank && userRank.rank <= 10 && (
+        {/* ── User's own rank (in top 3 — shown in podium, highlight below too) ── */}
+        {!isLoading && activeTab === 'current' && userRank && userRank.rank <= 3 && (
           <div style={{ margin: '8px 16px 0', background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ background: '#2C2C2E', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flexShrink: 0 }}>
               <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>YOUR RANK</p>
