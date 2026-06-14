@@ -35,20 +35,39 @@ const NotFound = lazy(() => import("@/pages/not-found"));
 
 const PageLoader = memo(function PageLoader() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#000', gap: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#000', padding: '0 24px' }}>
       <style>{`
-        @keyframes logoFadeIn { 0%{opacity:0;transform:scale(0.85)} 100%{opacity:1;transform:scale(1)} }
-        @keyframes dotBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-8px)} }
+        @keyframes powFadeIn { 0%{opacity:0;transform:scale(0.8) translateY(12px)} 100%{opacity:1;transform:scale(1) translateY(0)} }
+        @keyframes textSlideUp { 0%{opacity:0;transform:translateY(16px)} 100%{opacity:1;transform:translateY(0)} }
+        @keyframes barFill { 0%{width:0%} 100%{width:85%} }
+        @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
       `}</style>
 
-      <div style={{ marginBottom: 36, animation: 'logoFadeIn 0.5s ease both' }}>
-        <img src="/app-logo-loading.jpg" alt="Paid Ads" style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+      <div style={{ animation: 'powFadeIn 0.55s cubic-bezier(0.34,1.56,0.64,1) both', marginBottom: 28 }}>
+        <div style={{ position: 'relative', width: 96, height: 96 }}>
+          <div style={{ position: 'absolute', inset: -6, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,123,255,0.35) 0%, transparent 70%)' }} />
+          <div style={{ width: 96, height: 96, borderRadius: '50%', background: '#111', border: '2px solid rgba(0,123,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <img src="/pow-icon.png" alt="POW" style={{ width: 72, height: 72, objectFit: 'contain' }} />
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 7 }}>
-        {[0, 160, 320].map((d, i) => (
-          <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: '#3b82f6', animation: `dotBounce 1.1s ${d}ms infinite ease-in-out` }} />
-        ))}
+      <div style={{ animation: 'textSlideUp 0.5s 0.2s ease both', textAlign: 'center', marginBottom: 10 }}>
+        <h1 style={{ fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: '-0.5px', margin: 0, lineHeight: 1 }}>
+          Paid Adz
+        </h1>
+      </div>
+
+      <div style={{ animation: 'textSlideUp 0.5s 0.35s ease both', textAlign: 'center', marginBottom: 48 }}>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', margin: 0, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500 }}>
+          Watch Ads · Earn POW
+        </p>
+      </div>
+
+      <div style={{ animation: 'textSlideUp 0.5s 0.45s ease both', width: '100%', maxWidth: 200 }}>
+        <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99, overflow: 'hidden' }}>
+          <div style={{ height: '100%', borderRadius: 99, background: 'linear-gradient(90deg, #007BFF, #60a5fa)', animation: 'barFill 2.2s 0.5s ease-in-out both' }} />
+        </div>
       </div>
     </div>
   );
