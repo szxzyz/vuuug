@@ -244,6 +244,70 @@ app.use((req, res, next) => {
         console.error('❌ Error in weekly leaderboard report check:', error);
       }
     }, 30 * 60 * 1000); // Every 30 minutes
+
+    // Weekly star reset — runs every hour, fires on Monday UTC 00:00–00:59
+    // Saves top-50 snapshot then resets weekly_stars = 0 for all users
+    setInterval(async () => {
+      try {
+        const now = new Date();
+        const isMonday = now.getUTCDay() === 1;
+        const isMidnightHour = now.getUTCHours() === 0;
+        if (!isMonday || !isMidnightHour) return;
+
+        const { db } = await import('./db');
+        const { users, leaderboardSnapshots } = await import('../shared/schema');
+        const { sql } = await import('drizzle-orm');
+
+        // Calculate last week key (the week that just ended)
+        const lastWeekDate = new Date(now);
+        lastWeekDate.setUTCDate(lastWeekDate.getUTCDate() - 1); // Sunday = last week
+        const year = lastWeekDate.getUTCFullYear();
+        const startOfYear = new Date(Date.UTC(year, 0, 1));
+        const dayOfYear = Math.floor((lastWeekDate.getTime() - startOfYear.getTime()) / 86400000);
+        const weekNum = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+        const lastWeekKey = `${year}-W${String(weekNum).padStart(2, '0')}`;
+
+        // Check if already reset this week (idempotent guard)
+        const existing = await db.execute(sql`SELECT COUNT(*) as cnt FROM leaderboard_snapshots WHERE week_key = ${lastWeekKey}`);
+        const alreadyDone = Number((existing.rows[0] as any)?.cnt || 0) > 0;
+        if (alreadyDone) return;
+
+        log(`🔄 Weekly reset: saving snapshot for ${lastWeekKey} and resetting weekly_stars…`);
+
+        // 1. Save top-50 snapshot
+        const top50 = await db.execute(sql`
+          SELECT id, username, first_name, profile_image_url, weekly_stars
+          FROM users
+          WHERE COALESCE(weekly_stars, 0) > 0
+            AND COALESCE(banned, false) = false
+          ORDER BY weekly_stars DESC
+          LIMIT 50
+        `);
+
+        if (top50.rows.length > 0) {
+          for (let i = 0; i < top50.rows.length; i++) {
+            const u = top50.rows[i] as any;
+            await db.insert(leaderboardSnapshots).values({
+              weekKey: lastWeekKey,
+              rank: i + 1,
+              userId: u.id,
+              username: u.username,
+              firstName: u.first_name,
+              profileImageUrl: u.profile_image_url,
+              weeklyStars: Number(u.weekly_stars || 0),
+            }).onConflictDoNothing();
+          }
+          log(`✅ Weekly snapshot saved: ${top50.rows.length} entries for ${lastWeekKey}`);
+        }
+
+        // 2. Reset weekly_stars = 0 for all users
+        await db.execute(sql`UPDATE users SET weekly_stars = 0, weekly_star_week = NULL, updated_at = NOW()`);
+        log(`✅ Weekly reset done — all weekly_stars cleared for new week`);
+
+      } catch (error) {
+        console.error('❌ Weekly star reset error:', error);
+      }
+    }, 60 * 60 * 1000); // Every hour
     
     // Auto-setup Telegram webhook on server start with retry logic
     if (process.env.TELEGRAM_BOT_TOKEN) {

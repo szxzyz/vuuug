@@ -19,7 +19,8 @@ import {
   spinData,
   spinHistory,
   dailyMissions,
-  adminRoles
+  adminRoles,
+  leaderboardSnapshots,
 } from "../shared/schema";
 import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
@@ -1383,21 +1384,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } as any)
           .where(eq(users.id, userId));
         
-        // Add STAR reward + update weekly leaderboard stars in ONE atomic query
+        // Add STAR reward to weekly_stars ONLY (2 stars per ad, no permanent star_balance update)
         if (starRewardPerAd > 0) {
           const currentWeek = getISOWeek();
           const userWeekStarWeek = (user as any).weeklyStarWeek;
           const weeklyReset = userWeekStarWeek !== currentWeek;
           await db.execute(sql`
             UPDATE users SET
-              star_balance     = COALESCE(star_balance, 0) + ${starRewardPerAd},
               weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starRewardPerAd}
                                       ELSE COALESCE(weekly_stars, 0) + ${starRewardPerAd} END,
               weekly_star_week = ${currentWeek},
               updated_at       = NOW()
             WHERE id = ${userId}
           `);
-          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR (balance + weekly) for ${userId}`);
+          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR (weekly only) for ${userId}`);
         }
         
         // Check and activate referral bonuses
@@ -1723,14 +1723,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const weeklyReset = userWeek !== currentWeek;
         await db.execute(sql`
           UPDATE users SET
-            star_balance     = COALESCE(star_balance, 0) + ${starsToAdd},
             weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starsToAdd}
                                    ELSE COALESCE(weekly_stars, 0) + ${starsToAdd} END,
             weekly_star_week = ${currentWeek},
             updated_at       = NOW()
           WHERE id = ${userId}
         `);
-        console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR for ${userId}`);
+        console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR (weekly only) for ${userId}`);
       } else if (milestone.usdReward) {
         // Credit USD directly to usd_balance — do NOT convert to PAD
         await db
@@ -1810,58 +1809,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: get ISO week key for N weeks ago (0 = current, 1 = last week)
+  function getISOWeekOffset(weeksAgo: number): string {
+    const now = new Date();
+    now.setUTCDate(now.getUTCDate() - weeksAgo * 7);
+    const year = now.getUTCFullYear();
+    const startOfYear = new Date(Date.UTC(year, 0, 1));
+    const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+    const week = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+    return `${year}-W${String(week).padStart(2, '0')}`;
+  }
+
   // Leaderboard — ranked by weekly_stars for current week contest (resets when contest ends)
   app.get('/api/leaderboard/weekly', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
       const currentWeek = getISOWeek();
+      const isLastWeek = req.query.week === 'last';
 
-      // Top 50 users sorted by star_balance (star_balance = weekly_stars, both counted together)
+      // ── LAST WEEK: serve from snapshot table ──────────────────────────────
+      if (isLastWeek) {
+        const lastWeekKey = getISOWeekOffset(1);
+        const rows = await db
+          .select()
+          .from(leaderboardSnapshots)
+          .where(sql`${leaderboardSnapshots.weekKey} = ${lastWeekKey}`)
+          .orderBy(leaderboardSnapshots.rank);
+
+        const leaderboard = rows.map(r => ({
+          userId: r.userId,
+          username: r.username,
+          firstName: r.firstName,
+          weeklyStars: r.weeklyStars,
+          rank: r.rank,
+          profileImageUrl: r.profileImageUrl,
+        }));
+
+        const myEntry = leaderboard.find(e => e.userId === userId);
+        const userRank = myEntry ? { rank: myEntry.rank, weeklyStars: myEntry.weeklyStars } : null;
+
+        return res.json({
+          leaderboard,
+          userRank,
+          userStars: myEntry?.weeklyStars || 0,
+          userStarBalance: myEntry?.weeklyStars || 0,
+          currentWeek,
+          lastWeek: lastWeekKey,
+          isLastWeek: true,
+        });
+      }
+
+      // ── CURRENT WEEK ──────────────────────────────────────────────────────
+
+      // Top 50 users sorted by weekly_stars (ad watch only, 2 stars per ad)
       const top50 = await db
         .select({
           userId: users.id,
           username: users.username,
           firstName: users.firstName,
-          weeklyStars: users.starBalance,
-          starBalance: users.starBalance,
+          weeklyStars: users.weeklyStars,
+          starBalance: users.weeklyStars,
           profileImageUrl: users.profileImageUrl,
         })
         .from(users)
         .where(
-          sql`COALESCE(${users.starBalance}, 0) > 0
+          sql`COALESCE(${users.weeklyStars}, 0) > 0
               AND COALESCE(${users.banned}, false) = false`
         )
-        .orderBy(sql`${users.starBalance} DESC NULLS LAST`)
+        .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
         .limit(50);
 
       const leaderboard = top50.map((u, i) => ({
         ...u,
-        weeklyStars: Number(u.starBalance || 0),
+        weeklyStars: Number(u.weeklyStars || 0),
         rank: i + 1,
       }));
 
       // Current user's stats
       const currentUser = await storage.getUser(userId);
-      const userStarBalance = Number((currentUser as any)?.starBalance || 0);
+      const userWeeklyStars = Number((currentUser as any)?.weeklyStars || 0);
 
       let userRank: { rank: number; weeklyStars: number } | null = null;
       const myEntry = leaderboard.find((e) => e.userId === userId);
       if (myEntry) {
-        userRank = { rank: myEntry.rank, weeklyStars: userStarBalance };
-      } else if (userStarBalance > 0) {
+        userRank = { rank: myEntry.rank, weeklyStars: userWeeklyStars };
+      } else if (userWeeklyStars > 0) {
         // User has stars but outside top 50 — calculate approximate rank
         const higherCount = await db
           .select({ count: sql<number>`COUNT(*)` })
           .from(users)
           .where(
-            sql`COALESCE(${users.starBalance}, 0) > ${userStarBalance}
+            sql`COALESCE(${users.weeklyStars}, 0) > ${userWeeklyStars}
                 AND COALESCE(${users.banned}, false) = false`
           );
         const rank = (Number(higherCount[0]?.count) || 0) + 1;
-        userRank = { rank, weeklyStars: userStarBalance };
+        userRank = { rank, weeklyStars: userWeeklyStars };
       }
 
-      res.json({ leaderboard, userRank, userStars: userStarBalance, userStarBalance, currentWeek });
+      res.json({
+        leaderboard,
+        userRank,
+        userStars: userWeeklyStars,
+        userStarBalance: userWeeklyStars,
+        currentWeek,
+        lastWeek: getISOWeekOffset(1),
+        isLastWeek: false,
+      });
     } catch (error) {
       console.error('Leaderboard error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -2804,7 +2857,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           title: task.title,
           link: task.link,
           rewardPOW,
-          rewardSTAR: parseInt(starRewardPerTask),
+          rewardSTAR: 0,
           rewardType: 'POW',
           isAdminTask: false,
           isAdvertiserTask: true,
@@ -3858,8 +3911,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         withdrawalInviteRequirementEnabled: getSetting('withdrawal_invite_requirement_enabled', 'true') === 'true',
         minimumInvitesForWithdrawal: parseInt(getSetting('minimum_invites_for_withdrawal', '3')),
         // STAR currency settings (weekly contest only)
-        starRewardPerAd: parseInt(getSetting('star_reward_per_ad', '1')),
-        starRewardPerTask: parseInt(getSetting('star_reward_per_task', '10')),
+        starRewardPerAd: parseInt(getSetting('star_reward_per_ad', '2')),
+        starRewardPerTask: 0,
         powToStarRate: parseInt(getSetting('pow_to_star_rate', '1')),
         minimumConvertPowToStar: parseInt(getSetting('minimum_convert_pow_to_star', '1000')),
         // Withdrawal packages

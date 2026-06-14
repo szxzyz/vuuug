@@ -642,6 +642,23 @@ export async function ensureDatabaseSchema(): Promise<void> {
       console.log('ℹ️ [MIGRATION] Amount column precision fix skipped:', error);
     }
 
+    // Leaderboard snapshots table — stores weekly top-50 before Monday reset
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS leaderboard_snapshots (
+        id SERIAL PRIMARY KEY,
+        week_key VARCHAR(20) NOT NULL,
+        rank INTEGER NOT NULL,
+        user_id VARCHAR NOT NULL,
+        username VARCHAR,
+        first_name TEXT,
+        profile_image_url TEXT,
+        weekly_stars INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_lb_snapshot_week ON leaderboard_snapshots(week_key, rank)`);
+    console.log('✅ [MIGRATION] leaderboard_snapshots table ensured');
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
