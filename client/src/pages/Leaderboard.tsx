@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { FaStar, FaCrown, FaMedal, FaSync } from "react-icons/fa";
 import Layout from "@/components/Layout";
+import { useLanguage } from "@/hooks/useLanguage";
 
 interface LeaderboardEntry {
   userId: string;
@@ -135,6 +136,7 @@ function SmallAvatar({ entry, index }: { entry: LeaderboardEntry; index: number 
 export default function Leaderboard() {
   const { user } = useAuth() as any;
   const [activeTab, setActiveTab] = useState<'current' | 'last'>('current');
+  const { t } = useLanguage();
 
   const { data: currentData, isLoading: loadingCurrent, refetch: refetchCurrent } = useQuery<LeaderboardData>({
     queryKey: ['/api/leaderboard/weekly', 'current'],
@@ -192,7 +194,7 @@ export default function Leaderboard() {
                 transition: 'all 0.2s',
               }}
             >
-              {tab === 'current' ? '⭐ This Week' : '🗓 Last Week'}
+              {tab === 'current' ? t('this_week') : t('last_week')}
             </button>
           ))}
         </div>
@@ -204,7 +206,7 @@ export default function Leaderboard() {
             padding: '8px 16px 6px', gap: 6,
           }}>
             <FaStar style={{ color: '#FFD700', fontSize: 11 }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>Contest ends in</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>{t('contest_ends_in')}</span>
             <span style={{ fontSize: 13, fontWeight: 800, color: '#FFD700' }}>{d}d {h}h {m}m {s}s</span>
           </div>
         )}
@@ -216,7 +218,7 @@ export default function Leaderboard() {
             padding: '8px 16px 6px', gap: 6,
           }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.4)' }}>
-              🏁 Last week's final results — {lastData?.lastWeek || ''}
+              {t('last_week_final')} — {lastData?.lastWeek || ''}
             </span>
           </div>
         )}
@@ -231,13 +233,13 @@ export default function Leaderboard() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,215,0,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {activeTab === 'current' ? 'Weekly Prize Pool' : 'Last Week Prize'}
+                {activeTab === 'current' ? t('weekly_prize_pool') : t('last_week_prize')}
               </p>
               <p style={{ margin: '2px 0 0', fontSize: 26, fontWeight: 900, color: '#FFD700', lineHeight: 1 }}>${prizePool}</p>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>Top 10 winners</p>
-              <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,215,0,0.5)', fontWeight: 700 }}>Earn Stars by watching ads</p>
+              <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>{t('top_10_winners')}</p>
+              <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,215,0,0.5)', fontWeight: 700 }}>{t('earn_stars_by')}</p>
             </div>
           </div>
         </div>
@@ -258,23 +260,18 @@ export default function Leaderboard() {
           <div style={{ textAlign: 'center', padding: '48px 24px' }}>
             <FaStar style={{ color: 'rgba(255,215,0,0.18)', fontSize: 60, marginBottom: 16 }} />
             <p style={{ fontSize: 17, fontWeight: 700, color: 'rgba(255,255,255,0.45)', margin: '0 0 8px' }}>
-              {activeTab === 'last' ? 'No data for last week' : 'No participants yet'}
+              {activeTab === 'last' ? t('no_data_last_week') : t('no_participants_yet')}
             </p>
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', margin: '0 0 20px' }}>
-              {activeTab === 'last' ? 'Last week had no contest data.' : 'Watch ads to earn Stars and claim the top spot!'}
+              {activeTab === 'last' ? t('last_week_no_data') : t('watch_to_top_spot')}
             </p>
           </div>
         )}
 
-        {/* ══════════════════════════════════════
-            PODIUM
-        ══════════════════════════════════════ */}
+        {/* PODIUM */}
         {!isLoading && top10.length > 0 && (
           <div style={{ padding: '16px 16px 0' }}>
-
-            {/* Avatars row: 2nd | 1st | 3rd */}
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 0, marginBottom: 0 }}>
-
               {/* 2nd Place */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 {p2 ? (
@@ -342,15 +339,12 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════
-            TOP 10 RANKED LIST
-        ══════════════════════════════════════ */}
+        {/* TOP 10 RANKED LIST */}
         {!isLoading && top10.length > 0 && (
           <div style={{ background: '#141414', borderRadius: '20px 20px 0 0', marginTop: 0, padding: '20px 16px 16px' }}>
-
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
-                TOP 10 PLAYERS
+                {t('top_10_players')}
               </p>
               <button onClick={() => refetch()} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}>
                 <FaSync style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }} />
@@ -372,20 +366,17 @@ export default function Leaderboard() {
                   <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.3)', width: 28, textAlign: 'center', flexShrink: 0 }}>
                     #{i + 1}
                   </span>
-
                   <SmallAvatar entry={entry} index={i} />
-
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isMe ? '#FFD700' : '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {entry.firstName || entry.username || `Player ${i + 1}`}
-                      {isMe && <span style={{ fontSize: 9, background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderRadius: 4, padding: '1px 5px', marginLeft: 5, fontWeight: 700 }}>YOU</span>}
+                      {isMe && <span style={{ fontSize: 9, background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderRadius: 4, padding: '1px 5px', marginLeft: 5, fontWeight: 700 }}>{t('you_label')}</span>}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                       <FaStar style={{ color: '#FFD700', fontSize: 9 }} />
                       <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{(entry.weeklyStars ?? 0).toLocaleString()} ⭐</span>
                     </div>
                   </div>
-
                   {prize && (
                     <span style={{ fontSize: 15, fontWeight: 800, color: '#4ADE80', flexShrink: 0 }}>
                       {prize}
@@ -397,51 +388,50 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {/* ── User's own rank (current week only, outside top 10) ── */}
+        {/* User's own rank (outside top 10) */}
         {!isLoading && activeTab === 'current' && userRank && userRank.rank > 10 && (
           <div style={{ margin: '8px 16px 0', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ background: '#2C2C2E', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flexShrink: 0 }}>
-              <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>YOUR RANK</p>
+              <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>{t('your_rank')}</p>
               <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#FFD700', lineHeight: 1.1 }}>#{userRank.rank}</p>
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Keep watching to climb!</p>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>{t('keep_watching_climb')}</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                 <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} ⭐ this week</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} ⭐ {t('this_week_label')}</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── User's own rank (in top 3 — shown in podium, highlight below too) ── */}
+        {/* User in top 3 */}
         {!isLoading && activeTab === 'current' && userRank && userRank.rank <= 3 && (
           <div style={{ margin: '8px 16px 0', background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ background: '#2C2C2E', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flexShrink: 0 }}>
-              <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>YOUR RANK</p>
+              <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase' }}>{t('your_rank')}</p>
               <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#4ADE80', lineHeight: 1.1 }}>#{userRank.rank}</p>
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#4ADE80' }}>You're winning {getPrize(userRank.rank, prizePool)}! 🎉</p>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#4ADE80' }}>{t('you_are_winning')} {getPrize(userRank.rank, prizePool)}! 🎉</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                 <FaStar style={{ color: '#FFD700', fontSize: 10 }} />
-                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} ⭐ this week</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,215,0,0.8)', fontWeight: 600 }}>{userStars.toLocaleString()} ⭐ {t('this_week_label')}</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Not ranked this week ── */}
+        {/* Not ranked this week */}
         {!isLoading && activeTab === 'current' && !userRank && (
           <div style={{ margin: '8px 16px 0', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '10px 14px' }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>Not ranked yet this week</p>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>{t('not_ranked_yet')}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
               <FaStar style={{ color: 'rgba(255,215,0,0.5)', fontSize: 10 }} />
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Watch ads to earn Stars and enter the contest</span>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{t('watch_to_enter')}</span>
             </div>
           </div>
         )}
-
 
         <style>{`@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.6}}`}</style>
       </div>

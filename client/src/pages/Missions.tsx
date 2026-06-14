@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import PromoCodeInput from "@/components/PromoCodeInput";
 import { FaBullhorn, FaRobot, FaHandshake } from "react-icons/fa";
+import { useLanguage } from "@/hooks/useLanguage";
 
 const BLUE   = '#3b82f6';
 const BLUE_D = '#2563eb';
@@ -56,7 +57,6 @@ function incPlatformCount(platform: string) {
   } catch {}
 }
 
-/* ─── Section Label ─── */
 function SectionLabel({ title }: { title: string }) {
   return (
     <div style={{ marginBottom: 10 }}>
@@ -65,7 +65,6 @@ function SectionLabel({ title }: { title: string }) {
   );
 }
 
-/* ─── Empty state ─── */
 function EmptyRow({ label }: { label: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px' }}>
@@ -77,7 +76,6 @@ function EmptyRow({ label }: { label: string }) {
   );
 }
 
-/* ─── Loading Row ─── */
 function LoadingRow() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
@@ -90,12 +88,12 @@ function LoadingRow() {
   );
 }
 
-/* ─── Ad platform icon ─── */
 const PLATFORM_LOGOS: Record<string, string> = {
   monetag: '/monetag-logo.jpg',
   gigapub: '/gigapub-logo.jpg',
   monetix: '/monetix-logo-loading.jpg',
 };
+
 function AdIcon({ platform, done }: { platform: string; done: boolean }) {
   if (done) {
     return (
@@ -118,14 +116,14 @@ function AdIcon({ platform, done }: { platform: string; done: boolean }) {
   );
 }
 
-/* ─── Ad Row ─── */
-function AdRow({ platform, name, reward, limit, count, loading, disabled, onWatch, isLast }: {
+function AdRow({ platform, name, reward, limit, count, loading, disabled, onWatch, isLast, doneLabel, watchLabel, loadingLabel, perDayLabel }: {
   platform: string; name: string; reward: number; limit: number; count: number;
   loading: boolean; disabled: boolean; onWatch: () => void; isLast: boolean;
+  doneLabel: string; watchLabel: string; loadingLabel: string; perDayLabel: string;
 }) {
   const done = count >= limit;
   const busy = loading;
-  const btnLabel = busy ? 'Loading…' : done ? 'DONE' : 'WATCH';
+  const btnLabel = busy ? loadingLabel : done ? doneLabel : watchLabel;
 
   return (
     <>
@@ -137,7 +135,7 @@ function AdRow({ platform, name, reward, limit, count, loading, disabled, onWatc
             <span style={{ background: `${BLUE}22`, borderRadius: 5, color: BLUE, fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
           </div>
           <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>
-            {done ? `${limit}/${limit} — come back tomorrow` : `${count}/${limit} today`}
+            {done ? `${limit}/${limit} — ${perDayLabel}` : `${count}/${limit} ${perDayLabel}`}
           </div>
         </div>
         <button
@@ -163,12 +161,11 @@ function AdRow({ platform, name, reward, limit, count, loading, disabled, onWatc
   );
 }
 
-
-/* ─── Advertiser Task Row ─── */
-function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdownTasks, onGo, onClaim, isLast }: {
+function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdownTasks, onGo, onClaim, isLast, claimLabel, channelLabel, botLabel, partnerLabel }: {
   task: Task; reward: number; loading: boolean;
   clickedTasks: Set<string>; claimReadyTasks: Set<string>; countdownTasks: Map<string, number>;
   onGo: (task: Task) => void; onClaim: (taskId: string) => void; isLast: boolean;
+  claimLabel: string; channelLabel: string; botLabel: string; partnerLabel: string;
 }) {
   const isClaimReady = claimReadyTasks.has(task.id);
   const isClicked = clickedTasks.has(task.id);
@@ -188,6 +185,10 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
     </div>
   );
 
+  const taskTypeLabel = task.taskType === 'channel' ? channelLabel
+    : task.taskType === 'partner' ? partnerLabel
+    : botLabel;
+
   return (
     <>
       <div
@@ -199,10 +200,10 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
           <span style={{ color: TEXT, fontSize: 14, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, display: 'block' }}>{task.title}</span>
           <span style={{ color: TEXT_DIM, fontSize: 11, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
             {task.taskType === 'channel'
-              ? <><FaBullhorn size={10} color="#3b82f6" /> Channel</>
+              ? <><FaBullhorn size={10} color="#3b82f6" /> {channelLabel}</>
               : task.taskType === 'partner'
-              ? <><FaHandshake size={10} color="#ec4899" /> Partner</>
-              : <><FaRobot size={10} color="#8b5cf6" /> Bot / Website</>}
+              ? <><FaHandshake size={10} color="#ec4899" /> {partnerLabel}</>
+              : <><FaRobot size={10} color="#8b5cf6" /> {botLabel}</>}
           </span>
         </div>
         <div style={{ flexShrink: 0 }}>
@@ -217,7 +218,7 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
               style={{ background: loading ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #16a34a, #22c55e)', border: 'none', borderRadius: 10, padding: '9px 12px', fontSize: 12, fontWeight: 800, color: loading ? TEXT_DIM : '#fff', cursor: loading ? 'not-allowed' : 'pointer', boxShadow: loading ? 'none' : '0 2px 12px rgba(34,197,94,0.35)' }}
               className="active:scale-95 transition-transform"
             >
-              {loading ? '…' : 'CLAIM'}
+              {loading ? '…' : claimLabel}
             </button>
           )}
         </div>
@@ -227,17 +228,19 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
   );
 }
 
-/* ─── Main Tabs ─── */
 type MainTab = 'all' | 'daily' | 'partner';
 
-function MainTabs({ active, onChange }: {
+function MainTabs({ active, onChange, allLabel, dailyLabel, partnerLabel }: {
   active: MainTab;
   onChange: (tab: MainTab) => void;
+  allLabel: string;
+  dailyLabel: string;
+  partnerLabel: string;
 }) {
   const tabs: { id: MainTab; label: string }[] = [
-    { id: 'all',     label: 'All' },
-    { id: 'daily',   label: 'Daily' },
-    { id: 'partner', label: 'Partner' },
+    { id: 'all',     label: allLabel },
+    { id: 'daily',   label: dailyLabel },
+    { id: 'partner', label: partnerLabel },
   ];
   return (
     <div style={{
@@ -277,11 +280,11 @@ function MainTabs({ active, onChange }: {
   );
 }
 
-/* ─── Main Page ─── */
 export default function Missions() {
   const { isLoading, user } = useAuth() as any;
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { t } = useLanguage();
   const { data: adminData } = useQuery<{ isAdmin: boolean }>({ queryKey: ['/api/admin/check'], retry: false });
   const isAdmin = adminData?.isAdmin || false;
   const [activeTab, setActiveTab] = useState<MainTab>('all');
@@ -324,13 +327,13 @@ export default function Missions() {
         body: JSON.stringify({ platform }),
       });
       const data = await response.json();
-      if (!data.success) throw new Error(data.message || 'Failed to claim reward');
+      if (!data.success) throw new Error(data.message || t('failed'));
       return data;
     },
     onSuccess: (data, platform) => {
       incPlatformCount(platform);
       setPlatformCounts(prev => ({ ...prev, [platform]: getPlatformCount(platform) }));
-      showNotification(`+${data.reward} POW claimed!`, 'success');
+      showNotification(`+${data.reward} POW ${t('claimed')}!`, 'success');
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
     },
     onError: (error: Error) => showNotification(error.message, 'error'),
@@ -339,7 +342,7 @@ export default function Missions() {
   const handleWatchAd = useCallback(async (platform: 'monetag' | 'gigapub' | 'monetix') => {
     const limitMap = { monetag: monetagLimit, gigapub: gigaPubLimit, monetix: monetixLimit };
     const limit = limitMap[platform];
-    if (getPlatformCount(platform) >= limit) { showNotification(`Daily limit reached (${limit}/day)`, 'info'); return; }
+    if (getPlatformCount(platform) >= limit) { showNotification(`${t('daily_limit_short')} (${limit}${t('per_day')})`, 'info'); return; }
     if (adLoadingPlatform) return;
     setAdLoadingPlatform(platform);
     try {
@@ -352,15 +355,15 @@ export default function Missions() {
       } else {
         result = await showMonetixAd();
       }
-      if (result.unavailable) { showNotification('No ad available right now, try again later', 'info'); return; }
-      if (!result.success)    { showNotification('Please watch the full ad to earn', 'error'); return; }
+      if (result.unavailable) { showNotification(t('no_ad_available'), 'info'); return; }
+      if (!result.success)    { showNotification(t('watch_full_ad'), 'error'); return; }
       await claimMissionAdMutation.mutateAsync(platform);
     } catch (err: any) {
-      showNotification(err?.message || 'Something went wrong', 'error');
+      showNotification(err?.message || t('something_went_wrong'), 'error');
     } finally {
       setAdLoadingPlatform(null);
     }
-  }, [monetagLimit, gigaPubLimit, monetixLimit, adLoadingPlatform, showMonetagAd, showGigaPubAd, showMonetixAd, claimMissionAdMutation]);
+  }, [monetagLimit, gigaPubLimit, monetixLimit, adLoadingPlatform, showMonetagAd, showGigaPubAd, showMonetixAd, claimMissionAdMutation, t]);
 
   const clickTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -373,7 +376,7 @@ export default function Missions() {
       return data;
     },
     onSuccess: (data, taskId) => {
-      showNotification(`+${parseInt(data.reward).toLocaleString()} POW claimed!`, "success");
+      showNotification(`+${parseInt(data.reward).toLocaleString()} POW ${t('claimed')}!`, "success");
       setCompletedTaskIds(prev => new Set(prev).add(taskId));
       setClickedTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
       setClaimReadyTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
@@ -426,8 +429,8 @@ export default function Missions() {
   const allTasks     = (tasksData?.tasks || []).filter(t => !completedTaskIds.has(t.id));
   const partnerTasks = allTasks.filter(t => t.taskType === 'partner');
 
-  const getReward = (t: Task) =>
-    t.taskType === 'partner' ? partnerReward : t.taskType === 'channel' ? channelReward : botReward;
+  const getReward = (task: Task) =>
+    task.taskType === 'partner' ? partnerReward : task.taskType === 'channel' ? channelReward : botReward;
 
   const adPlatforms = [
     { id: 'monetag' as const, name: 'Monetag',  reward: monetagReward, limit: monetagLimit,  count: platformCounts.monetag },
@@ -447,8 +450,8 @@ export default function Missions() {
 
         {/* Header */}
         <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: TEXT, margin: 0 }}>Mission</h1>
-          <p style={{ fontSize: 13, color: TEXT_DIM, marginTop: 4 }}>Complete tasks and earn POW rewards</p>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: TEXT, margin: 0 }}>{t('mission_title')}</h1>
+          <p style={{ fontSize: 13, color: TEXT_DIM, marginTop: 4 }}>{t('complete_tasks_earn')}</p>
         </div>
 
         {/* Banner — Create Task */}
@@ -459,27 +462,27 @@ export default function Missions() {
             if (isAdmin) {
               setLocation("/task/create");
             } else {
-              showNotification("Coming Soon", "info");
+              showNotification(t('coming_soon_label'), "info");
             }
           }}
         >
           <img src="/spiderman-banner.jpg" alt="Create Task" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 35%' }} />
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 60%, rgba(0,0,0,0.1) 100%)' }} />
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 18px' }}>
-            <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', lineHeight: 1.2 }}>I want my task here</span>
+            <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', lineHeight: 1.2 }}>{t('i_want_task_here')}</span>
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 }}>
-              {isAdmin ? 'create your own task' : '🔒 Coming Soon'}
+              {isAdmin ? t('create_your_own_task') : `🔒 ${t('coming_soon_label')}`}
             </span>
           </div>
           {!isAdmin && (
             <div style={{ position: 'absolute', top: 10, right: 12, background: 'rgba(255,200,0,0.18)', border: '1px solid rgba(255,200,0,0.45)', borderRadius: 8, padding: '3px 10px' }}>
-              <span style={{ fontSize: 10, fontWeight: 900, color: '#ffd700', letterSpacing: '0.08em' }}>COMING SOON</span>
+              <span style={{ fontSize: 10, fontWeight: 900, color: '#ffd700', letterSpacing: '0.08em' }}>{t('coming_soon_label').toUpperCase()}</span>
             </div>
           )}
         </div>
 
-        {/* Promo Code — above tabs, always visible */}
-        <SectionLabel title="Promo Code" />
+        {/* Promo Code */}
+        <SectionLabel title={t('promo_code_label')} />
         <div style={cardStyle}>
           <div style={{ padding: '14px 16px' }}>
             <PromoCodeInput />
@@ -487,13 +490,18 @@ export default function Missions() {
         </div>
 
         {/* Main Tabs */}
-        <MainTabs active={activeTab} onChange={setActiveTab} />
+        <MainTabs
+          active={activeTab}
+          onChange={setActiveTab}
+          allLabel={t('all_tab')}
+          dailyLabel={t('daily_tab')}
+          partnerLabel={t('partner_tab')}
+        />
 
         {/* ── ALL TAB ── */}
         {activeTab === 'all' && (
           <>
-            {/* Ads section */}
-            <SectionLabel title="Earn with ADS" />
+            <SectionLabel title={t('earn_with_ads')} />
             <div style={cardStyle}>
               {adPlatforms.map((p, i) => (
                 <AdRow
@@ -507,11 +515,15 @@ export default function Missions() {
                   disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
                   onWatch={() => handleWatchAd(p.id)}
                   isLast={i === adPlatforms.length - 1}
+                  doneLabel={t('done_label')}
+                  watchLabel={t('watch_label')}
+                  loadingLabel={t('loading_ellipsis')}
+                  perDayLabel={t('per_day')}
                 />
               ))}
             </div>
 
-            <SectionLabel title="All Tasks" />
+            <SectionLabel title={t('all_tasks_label')} />
             <div style={cardStyle}>
               {tasksLoading ? (
                 <>
@@ -520,7 +532,7 @@ export default function Missions() {
                   <LoadingRow />
                 </>
               ) : allTasks.length === 0 ? (
-                <EmptyRow label="No tasks available right now" />
+                <EmptyRow label={t('no_tasks_available')} />
               ) : (
                 allTasks.map((task, i) => (
                   <TaskRow
@@ -534,6 +546,10 @@ export default function Missions() {
                     onGo={handleTaskGo}
                     onClaim={id => clickTaskMutation.mutate(id)}
                     isLast={i === allTasks.length - 1}
+                    claimLabel={t('claim_label')}
+                    channelLabel={t('channel_label')}
+                    botLabel={t('bot_website_label')}
+                    partnerLabel={t('partner_label')}
                   />
                 ))
               )}
@@ -544,7 +560,7 @@ export default function Missions() {
         {/* ── DAILY TAB ── */}
         {activeTab === 'daily' && (
           <>
-            <SectionLabel title="Earn with ADS" />
+            <SectionLabel title={t('earn_with_ads')} />
             <div style={cardStyle}>
               {adPlatforms.map((p, i) => (
                 <AdRow
@@ -558,6 +574,10 @@ export default function Missions() {
                   disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
                   onWatch={() => handleWatchAd(p.id)}
                   isLast={i === adPlatforms.length - 1}
+                  doneLabel={t('done_label')}
+                  watchLabel={t('watch_label')}
+                  loadingLabel={t('loading_ellipsis')}
+                  perDayLabel={t('per_day')}
                 />
               ))}
             </div>
@@ -567,16 +587,12 @@ export default function Missions() {
         {/* ── PARTNER TAB ── */}
         {activeTab === 'partner' && (
           <>
-            <SectionLabel title="Partner Tasks" />
+            <SectionLabel title={t('partner_tab')} />
             <div style={cardStyle}>
               {tasksLoading ? (
-                <>
-                  <LoadingRow />
-                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
-                  <LoadingRow />
-                </>
+                <LoadingRow />
               ) : partnerTasks.length === 0 ? (
-                <EmptyRow label="No partner tasks available right now" />
+                <EmptyRow label={t('no_tasks_available')} />
               ) : (
                 partnerTasks.map((task, i) => (
                   <TaskRow
@@ -590,6 +606,10 @@ export default function Missions() {
                     onGo={handleTaskGo}
                     onClaim={id => clickTaskMutation.mutate(id)}
                     isLast={i === partnerTasks.length - 1}
+                    claimLabel={t('claim_label')}
+                    channelLabel={t('channel_label')}
+                    botLabel={t('bot_website_label')}
+                    partnerLabel={t('partner_label')}
                   />
                 ))
               )}
@@ -597,6 +617,11 @@ export default function Missions() {
           </>
         )}
 
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes bounce { 0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)} }
+          @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.5} }
+        `}</style>
       </main>
     </Layout>
   );

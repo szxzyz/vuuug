@@ -9,12 +9,13 @@ import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
-import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
+import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight, Globe } from "lucide-react";
 import { FaTrophy, FaMedal } from "react-icons/fa";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
 import { apiRequest, getTelegramInitData } from "@/lib/queryClient";
+import { useLanguage, Language } from "@/hooks/useLanguage";
 
 // Unified Task Interface
 interface UnifiedTask {
@@ -56,6 +57,8 @@ export default function Home() {
   const { isAdmin } = useAdmin();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const { language, setLanguage, t } = useLanguage();
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
 
   const [isConverting, setIsConverting] = useState(false);
   const [isClaimingStreak, setIsClaimingStreak] = useState(false);
@@ -477,7 +480,7 @@ export default function Home() {
             <div className="w-2 h-2 rounded-full bg-[#4cd3ff] animate-bounce" style={{ animationDelay: '150ms' }}></div>
             <div className="w-2 h-2 rounded-full bg-[#4cd3ff] animate-bounce" style={{ animationDelay: '300ms' }}></div>
           </div>
-          <div className="text-foreground font-medium">Loading...</div>
+          <div className="text-foreground font-medium">{t('loading')}</div>
         </div>
       </div>
     );
@@ -703,9 +706,21 @@ export default function Home() {
       <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 10 }}>
         {/* Balance Section — left aligned */}
         <div className="mb-3 px-1">
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Balance
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              {t('balance')}
+            </p>
+            <button
+              onClick={() => setLangPickerOpen(true)}
+              className="flex items-center gap-1.5 active:scale-95 transition-transform"
+              style={{ background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            >
+              <Globe className="w-4 h-4" />
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.03em' }}>
+                {language === 'en' ? 'EN' : language === 'ru' ? 'RU' : 'AR'}
+              </span>
+            </button>
+          </div>
 
           {/* Main USD balance */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 8 }}>
@@ -749,7 +764,7 @@ export default function Home() {
               className="btn-primary active:scale-95 transition-transform"
               style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
             >
-              WITHDRAW
+              {t('withdraw_upper')}
             </button>
 
             <button
@@ -757,7 +772,7 @@ export default function Home() {
               className="active:scale-95 transition-transform"
               style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)', border: 'none' }}
             >
-              SWAP
+              {t('swap')}
             </button>
           </div>
         </div>
@@ -783,14 +798,14 @@ export default function Home() {
               <div className="flex items-center gap-1.5">
                 <FaMedal style={{ color: '#FFD700', fontSize: 13 }} />
                 <span style={{ fontSize: 11, fontWeight: 700, color: '#FFD700', letterSpacing: '0.18em', textTransform: 'uppercase', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
-                  Weekly Contest
+                  {t('weekly_contest')}
                 </span>
               </div>
               <span style={{ fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: '-0.3px', textShadow: '0 2px 8px rgba(0,0,0,0.95)', lineHeight: 1.15 }}>
-                Top Earners
+                {t('top_earners')}
               </span>
               <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textShadow: '0 1px 4px rgba(0,0,0,0.9)', lineHeight: 1.2 }}>
-                take the prize
+                {t('take_the_prize')}
               </span>
             </div>
 
@@ -801,7 +816,7 @@ export default function Home() {
                 ${appSettings?.weeklyGiveawayAmount ?? 10}
               </span>
               <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>
-                PRIZE POOL
+                {t('prize_pool')}
               </span>
             </div>
           </div>
@@ -823,7 +838,7 @@ export default function Home() {
           <div className="bg-[#1C1C1E] rounded-2xl p-6 w-full max-w-sm border border-[#2C2C2E] relative">
             <div className="flex items-center justify-center gap-3 mb-6">
               <CalendarCheck className="w-6 h-6 text-blue-400" />
-              <h2 className="text-xl font-bold text-white tracking-tight">Daily Missions</h2>
+              <h2 className="text-xl font-bold text-white tracking-tight">{t('missions')}</h2>
             </div>
             
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
@@ -831,10 +846,10 @@ export default function Home() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <Users className="w-4 h-4 text-[#4cd3ff]" />
-                    <p className="text-white text-sm font-medium truncate">Share with Friends</p>
+                    <p className="text-white text-sm font-medium truncate">{t('share_with_friends')}</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.referralRewardPAD || '5'} POW</span></p>
+                    <p>{t('reward')}: <span className="text-white font-medium">{appSettings?.referralRewardPAD || '5'} POW</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -848,7 +863,7 @@ export default function Home() {
                       disabled={shareWithFriendsMutation.isPending}
                       className="h-8 w-20 text-xs font-bold rounded-lg bg-green-500 hover:bg-green-600 text-white"
                     >
-                      {shareWithFriendsMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Claim'}
+                      {shareWithFriendsMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : t('claim')}
                     </Button>
                   ) : (
                     <Button
@@ -856,7 +871,7 @@ export default function Home() {
                       disabled={!referralLink}
                       className="h-8 w-20 text-xs font-bold rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-sm"
                     >
-                      Share
+                      {t('share')}
                     </Button>
                   )}
                 </div>
@@ -866,10 +881,10 @@ export default function Home() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <CalendarCheck className="w-4 h-4 text-[#4cd3ff]" />
-                    <p className="text-white text-sm font-medium truncate">Daily Check-in</p>
+                    <p className="text-white text-sm font-medium truncate">{t('daily_checkin')}</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.dailyCheckinReward || '5'} POW</span></p>
+                    <p>{t('reward')}: <span className="text-white font-medium">{appSettings?.dailyCheckinReward || '5'} POW</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -890,14 +905,14 @@ export default function Home() {
                       disabled={dailyCheckinMutation.isPending}
                       className="h-8 w-20 text-xs font-bold rounded-lg bg-green-500 hover:bg-green-600 text-white"
                     >
-                      {dailyCheckinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Claim'}
+                      {dailyCheckinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : t('claim')}
                     </Button>
                   ) : (
                     <Button
                       onClick={handleDailyCheckin}
                       className="h-8 w-20 text-xs font-bold rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-sm"
                     >
-                      Go
+                      {t('go')}
                     </Button>
                   )}
                 </div>
@@ -907,10 +922,10 @@ export default function Home() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <Bell className="w-4 h-4 text-[#4cd3ff]" />
-                    <p className="text-white text-sm font-medium truncate">Check for Updates</p>
+                    <p className="text-white text-sm font-medium truncate">{t('check_for_updates')}</p>
                   </div>
                   <div className="text-xs text-gray-400 ml-6">
-                    <p>Reward: <span className="text-white font-medium">{appSettings?.checkForUpdatesReward || '5'} POW</span></p>
+                    <p>{t('reward')}: <span className="text-white font-medium">{appSettings?.checkForUpdatesReward || '5'} POW</span></p>
                   </div>
                 </div>
                 <div className="ml-3 flex-shrink-0">
@@ -924,7 +939,7 @@ export default function Home() {
                       disabled={checkForUpdatesMutation.isPending}
                       className="h-8 w-20 text-xs font-bold rounded-lg bg-green-500 hover:bg-green-600 text-white"
                     >
-                      {checkForUpdatesMutation.isPending || checkForUpdatesStep === 'claiming' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Claim'}
+                      {checkForUpdatesMutation.isPending || checkForUpdatesStep === 'claiming' ? <Loader2 className="w-3 h-3 animate-spin" /> : t('claim')}
                     </Button>
                   ) : checkForUpdatesStep === 'opened' || checkForUpdatesStep === 'countdown' ? (
                     <Button
@@ -938,7 +953,7 @@ export default function Home() {
                       onClick={handleCheckForUpdates}
                       className="h-8 w-16 text-xs font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
                     >
-                      Go
+                      {t('go')}
                     </Button>
                   )}
                 </div>
@@ -948,7 +963,62 @@ export default function Home() {
         </div>
       )}
 
-
+      {/* Language Picker Popup */}
+      {langPickerOpen && (
+        <div
+          className="fixed inset-0 z-[200] flex items-end justify-center"
+          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setLangPickerOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm mb-6 mx-4 rounded-2xl overflow-hidden"
+            style={{ background: '#111', border: '1px solid rgba(255,255,255,0.1)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+              <p className="text-white text-sm font-semibold text-center">{t('select_language')}</p>
+            </div>
+            {([
+              { code: 'en', flag: '🇬🇧', name: 'English' },
+              { code: 'ru', flag: '🇷🇺', name: 'Русский' },
+              { code: 'ar', flag: '🇸🇦', name: 'العربية' },
+            ] as { code: Language; flag: string; name: string }[]).map(({ code, flag, name }) => (
+              <button
+                key={code}
+                onClick={() => {
+                  setLanguage(code);
+                  showNotification(t('language_changed'), 'success');
+                  setLangPickerOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-4 transition-all hover:bg-white/5 active:bg-white/10"
+                style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{flag}</span>
+                  <span className="text-white text-sm font-medium">{name}</span>
+                </div>
+                {language === code && (
+                  <div
+                    className="w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background: 'rgba(0,123,255,0.2)', border: '1px solid rgba(0,123,255,0.5)' }}
+                  >
+                    <Check className="w-3 h-3 text-blue-400" />
+                  </div>
+                )}
+              </button>
+            ))}
+            <div className="p-4">
+              <button
+                onClick={() => setLangPickerOpen(false)}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white/60 transition-all hover:text-white"
+                style={{ background: 'rgba(255,255,255,0.05)' }}
+              >
+                {t('cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </Layout>
   );

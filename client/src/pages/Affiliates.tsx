@@ -4,8 +4,11 @@ import { showNotification } from '@/components/AppNotification';
 import Layout from '@/components/Layout';
 import { Copy, Share2 } from 'lucide-react';
 import { formatLargePAD } from '@/lib/utils';
+import { useLanguage } from '@/hooks/useLanguage';
 
 export default function Affiliates() {
+  const { t } = useLanguage();
+
   const { data: user } = useQuery<any>({
     queryKey: ['/api/auth/user'],
     retry: false,
@@ -48,7 +51,7 @@ export default function Affiliates() {
   const copyLink = () => {
     if (!referralLink) return;
     navigator.clipboard.writeText(referralLink);
-    showNotification('Link copied!', 'success');
+    showNotification(t('link_copied'), 'success');
   };
 
   const shareLink = async () => {
@@ -88,38 +91,34 @@ export default function Affiliates() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-            Affiliates Program
+            {t('affiliates_program')}
           </h1>
           <p className="text-[#888] text-sm leading-relaxed">
-            We pay out up to{' '}
+            {t('we_pay_out')}{' '}
             <span className="text-white font-semibold">{l1Percent}%</span>{' '}
-            from the income of referrals of the 1st level and up to{' '}
+            {t('from_l1_income')}{' '}
             <span className="text-white font-semibold">{l2Percent}%</span>{' '}
-            from the income of referrals of the 2nd level.
+            {t('from_l2_income')}
           </p>
         </div>
 
         {/* Copy + Share buttons */}
         <div className="mb-4 flex items-center gap-3">
-          {/* Wide pill Copy button */}
           <button
             onClick={copyLink}
             disabled={!user?.referralCode}
             className="flex-1 h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform disabled:opacity-50"
             style={{ background: 'rgba(255,255,255,0.12)' }}
-            title="Copy referral link"
           >
             <Copy className="w-5 h-5 text-white/70" />
-            <span className="text-white font-bold tracking-widest text-sm">COPY</span>
+            <span className="text-white font-bold tracking-widest text-sm">{t('copy')}</span>
           </button>
 
-          {/* Circle Share button */}
           <button
             onClick={shareLink}
             disabled={isSharing || !user?.referralCode}
             className="w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 flex-shrink-0"
             style={{ background: 'rgba(255,255,255,0.12)' }}
-            title="Share referral link"
           >
             <Share2 className="w-5 h-5 text-white/70" />
           </button>
@@ -129,40 +128,40 @@ export default function Affiliates() {
         <div className="bg-[#1C1C1E] rounded-2xl p-4 mb-3 border border-white/5">
           <div className="flex items-center justify-between py-3 border-b border-white/5">
             <div>
-              <p className="text-white text-sm font-semibold">Level 1 Referrals</p>
-              <p className="text-[#888] text-xs mt-0.5">Get {l1Percent}% of your friends POW</p>
+              <p className="text-white text-sm font-semibold">{t('level1_referrals')}</p>
+              <p className="text-[#888] text-xs mt-0.5">{t('get_label')} {l1Percent}% {t('of_friends_pow')}</p>
             </div>
             <span className="text-white text-xl font-black">{l1Count}</span>
           </div>
 
           <div className="flex items-center justify-between py-3 border-b border-white/5">
             <div>
-              <p className="text-white text-sm font-semibold">Level 2 Referrals</p>
-              <p className="text-[#888] text-xs mt-0.5">Get {l2Percent}% from their friends</p>
+              <p className="text-white text-sm font-semibold">{t('level2_referrals')}</p>
+              <p className="text-[#888] text-xs mt-0.5">{t('get_label')} {l2Percent}% {t('from_their_friends')}</p>
             </div>
             <span className="text-white text-xl font-black">{l2Count}</span>
           </div>
 
           <div className="flex items-center justify-between pt-3">
             <div>
-              <p className="text-white text-sm font-semibold">Bonus</p>
-              <p className="text-[#888] text-xs mt-0.5">When your friend watches 1 ad</p>
+              <p className="text-white text-sm font-semibold">{t('bonus')}</p>
+              <p className="text-[#888] text-xs mt-0.5">{t('when_friend_watches')}</p>
             </div>
             {bonusLabel ? (
               <span className="text-green-400 text-sm font-bold">{bonusLabel}</span>
             ) : (
-              <span className="text-white/30 text-sm font-semibold">Disabled</span>
+              <span className="text-white/30 text-sm font-semibold">{t('disabled')}</span>
             )}
           </div>
         </div>
 
         {/* Total Affiliate Earnings */}
         <div className="bg-[#1C1C1E] rounded-2xl p-4 mb-3 border border-white/5">
-          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Total Affiliate Earnings</p>
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t('total_affiliate_earnings')}</p>
           <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div>
-              <p className="text-white text-sm font-semibold">USD Earned</p>
-              <p className="text-[#888] text-xs mt-0.5">Total from all referrals</p>
+              <p className="text-white text-sm font-semibold">{t('usd_earned')}</p>
+              <p className="text-[#888] text-xs mt-0.5">{t('total_from_referrals')}</p>
             </div>
             <span className="text-green-400 text-lg font-black">
               ${totalUsdEarned > 0 ? totalUsdEarned.toFixed(3) : '0.000'}
@@ -170,15 +169,14 @@ export default function Affiliates() {
           </div>
           <div className="flex items-center justify-between pt-2">
             <div>
-              <p className="text-white text-sm font-semibold">POW Earned</p>
-              <p className="text-[#888] text-xs mt-0.5">Total POW from L1 commissions</p>
+              <p className="text-white text-sm font-semibold">{t('pow_earned')}</p>
+              <p className="text-[#888] text-xs mt-0.5">{t('total_pow_l1')}</p>
             </div>
             <span className="text-white text-lg font-black">
               {formatLargePAD(totalPowEarned, false)} <span className="text-xs text-[#888] font-normal">POW</span>
             </span>
           </div>
         </div>
-
 
       </main>
     </Layout>

@@ -14,6 +14,7 @@ import { useLocation } from 'wouter';
 import { shortenAddress } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useTonConnectUI, useTonAddress } from '@tonconnect/ui-react';
+import { useLanguage } from '@/hooks/useLanguage';
 
 interface User {
   id: string;
@@ -55,6 +56,7 @@ interface WithdrawalsResponse {
 export default function Withdraw() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { t } = useLanguage();
 
   const [tonConnectUI] = useTonConnectUI();
   const connectedAddress = useTonAddress();
@@ -105,7 +107,6 @@ export default function Withdraw() {
   const withdrawalInviteRequirementEnabled = appSettings?.withdrawalInviteRequirementEnabled === true;
   const MINIMUM_VALID_REFERRALS_REQUIRED = appSettings?.minimumInvitesForWithdrawal ?? 3;
   
-  // Withdrawal packages from admin settings
   const defaultPackages = [
     {usd: 0.2},
     {usd: 0.4},
@@ -116,16 +117,13 @@ export default function Withdraw() {
     usd: pkg.usd
   }));
   
-  // Get the withdrawal amount based on selected package
   const getWithdrawalUsdAmount = () => {
     if (selectedPackage === 'FULL') {
       return usdBalance;
     }
     return selectedPackage;
   };
-  
-  // STAR is only for weekly contest — no withdrawal requirement
-  
+
   const { data: withdrawalEligibility, isLoading: isLoadingEligibility, isFetched: isEligibilityFetched } = useQuery<{ adsWatchedSinceLastWithdrawal: number; canWithdraw: boolean }>({
     queryKey: ['/api/withdrawal-eligibility'],
     retry: false,
@@ -145,7 +143,6 @@ export default function Withdraw() {
   const hasEnoughReferrals = !withdrawalInviteRequirementEnabled || validReferralCount >= MINIMUM_VALID_REFERRALS_REQUIRED;
 
   const botUsername = import.meta.env.VITE_BOT_USERNAME || '';
-  // Use bot deep link format (?start=) for reliable referral tracking
   const referralLink = user?.referralCode 
     ? `https://t.me/${botUsername}?start=${user.referralCode}`
     : '';
@@ -154,12 +151,9 @@ export default function Withdraw() {
 
   const openShareSheet = async () => {
     if (!referralLink || isSharing) return;
-    
     setIsSharing(true);
-    
     try {
       const tgWebApp = window.Telegram?.WebApp as any;
-      
       if (tgWebApp?.shareMessage) {
         try {
           const response = await fetch('/api/share/prepare-message', {
@@ -168,11 +162,8 @@ export default function Withdraw() {
             headers: { 'Content-Type': 'application/json' }
           });
           const data = await response.json();
-          
           if (data.success && data.messageId) {
-            tgWebApp.shareMessage(data.messageId, (success: boolean) => {
-              setIsSharing(false);
-            });
+            tgWebApp.shareMessage(data.messageId, (success: boolean) => { setIsSharing(false); });
             return;
           } else if (data.fallbackUrl) {
             tgWebApp.openTelegramLink(data.fallbackUrl);
@@ -183,10 +174,8 @@ export default function Withdraw() {
           console.error('Prepare message error:', error);
         }
       }
-      
       const shareTitle = `Start earning money just by completing tasks & watching ads!`;
       const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareTitle)}`;
-      
       if (tgWebApp?.openTelegramLink) {
         tgWebApp.openTelegramLink(shareUrl);
       } else {
@@ -195,7 +184,6 @@ export default function Withdraw() {
     } catch (error) {
       console.error('Share error:', error);
     }
-    
     setIsSharing(false);
   };
 
@@ -219,13 +207,13 @@ export default function Withdraw() {
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to submit withdrawal request');
+        throw new Error(data.message || t('failed'));
       }
       
       return data;
     },
     onSuccess: async () => {
-      showNotification("You have sent a withdrawal request.", "success");
+      showNotification(t('withdrawal_request_sent'), "success");
       
       queryClient.invalidateQueries({ queryKey: ['/api/withdrawals'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -241,15 +229,15 @@ export default function Withdraw() {
       setSelectedPackage('FULL');
     },
     onError: (error: any) => {
-      const errorMessage = error.message || "Failed to submit withdrawal request";
+      const errorMessage = error.message || t('failed');
       
       if (errorMessage.toLowerCase().includes("minimum") || errorMessage === "minimum withdrawal") {
         const minAmount = selectedPaymentSystem?.minWithdrawal || 1;
-        showNotification(`minimum $${minAmount}`, "error");
+        showNotification(`${t('minimum')} $${minAmount}`, "error");
       } else if (errorMessage.toLowerCase().includes("pending")) {
-        showNotification("You already have a pending withdrawal. Please wait for it to be processed.", "error");
+        showNotification(t('pending_withdrawal_warning'), "error");
       } else if (errorMessage.toLowerCase().includes("insufficient")) {
-        showNotification("Insufficient balance for withdrawal. Please convert POW to USD first.", "error");
+        showNotification(t('insufficient_balance'), "error");
       } else {
         showNotification(errorMessage, "error");
       }
@@ -259,37 +247,31 @@ export default function Withdraw() {
   const handleWithdraw = () => {
     if (!hasEnoughReferrals) {
       const remaining = MINIMUM_VALID_REFERRALS_REQUIRED - validReferralCount;
-      showNotification(`Invite ${remaining} more friend${remaining !== 1 ? 's' : ''} who watch${remaining !== 1 ? '' : 'es'} at least 1 ad to unlock withdrawals.`, "error");
+      showNotification(`${t('invite_friends')}: ${remaining} ${remaining !== 1 ? t('friends') : t('friend')}`, "error");
       return;
     }
     
     if (!hasWatchedEnoughAds) {
       const remaining = MINIMUM_ADS_FOR_WITHDRAWAL - adsWatchedSinceLastWithdrawal;
-      showNotification(`Watch ${remaining} more ad${remaining !== 1 ? 's' : ''} to unlock this withdrawal.`, "error");
+      showNotification(`${t('watch')} ${remaining} ${t('ads_count')}`, "error");
       return;
     }
     
     if (hasPendingWithdrawal) {
-      showNotification("Cannot create new request until current one is processed.", "error");
+      showNotification(t('pending_withdrawal_warning'), "error");
       return;
     }
 
     if (selectedMethod === 'TON' && !connectedAddress) {
-      showNotification("Please connect your TON wallet first using the Connect button at the top.", "error");
+      showNotification(t('connect') + " TON wallet", "error");
       return;
     }
 
     const withdrawAmount = getWithdrawalUsdAmount();
     if (withdrawAmount <= 0 || usdBalance < withdrawAmount) {
-      showNotification("Insufficient balance for this withdrawal package", "error");
+      showNotification(t('insufficient_balance'), "error");
       return;
     }
-
-    console.log('💸 Submitting withdrawal:', {
-      method: selectedMethod,
-      package: selectedPackage,
-      tonWalletAddress: connectedAddress ? `${connectedAddress.slice(0, 8)}...` : 'not connected',
-    });
 
     withdrawMutation.mutate();
   };
@@ -303,7 +285,6 @@ export default function Withdraw() {
     return withdrawAmount * (1 - feePercent / 100);
   };
   
-  // Check if user can afford a package
   const canAffordPackage = (pkgUsd: number | 'FULL') => {
     if (pkgUsd === 'FULL') return usdBalance > 0;
     return usdBalance >= pkgUsd;
@@ -333,6 +314,14 @@ export default function Withdraw() {
     return 'text-gray-500';
   };
 
+  const getStatusLabel = (status: string) => {
+    const lowerStatus = status.toLowerCase();
+    if (lowerStatus.includes('approved') || lowerStatus.includes('success') || lowerStatus.includes('paid')) return t('completed');
+    if (lowerStatus.includes('reject')) return t('rejected');
+    if (lowerStatus.includes('pending')) return t('pending');
+    return status;
+  };
+
   const formatUSD = (amount: string) => {
     return parseFloat(amount).toFixed(2);
   };
@@ -342,6 +331,14 @@ export default function Withdraw() {
       return withdrawal.details.totalDeducted;
     }
     return withdrawal.amount;
+  };
+
+  const getWithdrawButtonLabel = () => {
+    if (withdrawMutation.isPending) return t('processing');
+    if (getWithdrawalUsdAmount() <= 0) return t('select_package');
+    if (usdBalance < getWithdrawalUsdAmount()) return t('insufficient_balance');
+    if (!hasEnoughReferrals || !hasWatchedEnoughAds) return t('requirements_not_met');
+    return `${t('withdraw')} $${getWithdrawalUsdAmount().toFixed(2)} ${t('via')} ${selectedMethod}`;
   };
 
   return (
@@ -354,7 +351,7 @@ export default function Withdraw() {
                 <CardContent className="p-6 flex items-center justify-center">
                   <div className="flex items-center gap-3">
                     <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                    <span className="text-gray-400 text-sm">Checking requirements...</span>
+                    <span className="text-gray-400 text-sm">{t('checking_requirements')}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -363,7 +360,7 @@ export default function Withdraw() {
             {hasPendingWithdrawal && (
               <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
                 <p className="text-xs text-yellow-500">
-                  You have a pending withdrawal. Please wait for it to be processed.
+                  {t('pending_withdrawal_warning')}
                 </p>
               </div>
             )}
@@ -400,18 +397,18 @@ export default function Withdraw() {
                           <span className="text-xs font-semibold" style={{ color: isWalletConnected ? '#4ade80' : '#0098EA' }}>
                             {isWalletConnected
                               ? `${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`
-                              : 'Connect'}
+                              : t('connect')}
                           </span>
                         )}
                       </div>
                     </div>
-                    <span className="text-xs text-[#aaa] flex-shrink-0">({system.fee}% fee)</span>
+                    <span className="text-xs text-[#aaa] flex-shrink-0">({system.fee}% {t('fee_label')})</span>
                   </button>
                 ))}
               </div>
 
               <div className="p-3 bg-[#1C1C1E] rounded-xl space-y-3">
-                <div className="text-xs text-[#aaa]">Select Withdrawal Package</div>
+                <div className="text-xs text-[#aaa]">{t('select_withdrawal_package')}</div>
                 
                 <div className="grid grid-cols-3 gap-2">
                   {withdrawalPackages.map((pkg) => {
@@ -459,41 +456,55 @@ export default function Withdraw() {
                       <Check className="w-2.5 h-2.5 text-black" />
                     </div>
                   )}
-                  <div className="text-sm font-bold text-white">FULL BALANCE</div>
+                  <div className="text-sm font-bold text-white">{t('full_balance')}</div>
                   <div className="text-[10px] text-gray-400">${usdBalance.toFixed(2)}</div>
                 </button>
                 
                 <div className="pt-3 space-y-2">
                   <div>
-                    <div className="text-xs text-[#aaa]">You will receive</div>
+                    <div className="text-xs text-[#aaa]">{t('you_will_receive')}</div>
                     <div className="text-2xl font-bold text-white">${calculateWithdrawalAmount().toFixed(2)}</div>
                   </div>
                   <div className="text-xs text-[#aaa]">
-                    {selectedPackage === 'FULL' ? 'Full balance' : `$${(selectedPackage as number).toFixed(2)}`} withdrawal ({selectedPaymentSystem?.fee}% fee deducted)
+                    {selectedPackage === 'FULL' ? t('full_balance_lower') : `$${(selectedPackage as number).toFixed(2)}`} ({selectedPaymentSystem?.fee}% {t('fee_label')})
                   </div>
                   <div className="text-xs text-yellow-400/80">
-                    Withdrawal method: {selectedMethod}
+                    {t('withdrawal_method')}: {selectedMethod}
                   </div>
                   
                   {withdrawalInviteRequirementEnabled && (
                     <div className={`flex items-center gap-2 text-xs ${hasEnoughReferrals ? 'text-green-400' : 'text-red-400'}`}>
                       <UserPlus className="w-4 h-4" />
-                      <span>To withdraw you need: {MINIMUM_VALID_REFERRALS_REQUIRED} friend{MINIMUM_VALID_REFERRALS_REQUIRED !== 1 ? 's' : ''}</span>
+                      <span>{t('to_withdraw_need')} {MINIMUM_VALID_REFERRALS_REQUIRED} {MINIMUM_VALID_REFERRALS_REQUIRED !== 1 ? t('friends') : t('friend')}</span>
                       {hasEnoughReferrals && <Check className="w-3 h-3" />}
                     </div>
                   )}
                   
                   {withdrawalAdRequirementEnabled && (
-                    <div className={`flex items-center gap-2 text-xs ${hasWatchedEnoughAds ? 'text-green-400' : 'text-red-400'}`}>
-                      <PlayCircle className="w-4 h-4" />
-                      <span>To withdraw you need: {MINIMUM_ADS_FOR_WITHDRAWAL} ads</span>
-                      {hasWatchedEnoughAds && <Check className="w-3 h-3" />}
+                    <div className="space-y-1.5">
+                      <div className={`flex items-center justify-between text-xs ${hasWatchedEnoughAds ? 'text-green-400' : 'text-orange-400'}`}>
+                        <div className="flex items-center gap-1.5">
+                          <PlayCircle className="w-4 h-4 flex-shrink-0" />
+                          <span className="font-semibold">
+                            {adsWatchedSinceLastWithdrawal}/{MINIMUM_ADS_FOR_WITHDRAWAL} {t('ads_watched_progress')}
+                          </span>
+                        </div>
+                        {hasWatchedEnoughAds
+                          ? <Check className="w-3.5 h-3.5" />
+                          : <span className="text-gray-400">{MINIMUM_ADS_FOR_WITHDRAWAL - adsWatchedSinceLastWithdrawal} {t('more_ads_to_watch')}</span>
+                        }
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${hasWatchedEnoughAds ? 'bg-green-400' : 'bg-orange-400'}`}
+                          style={{ width: `${Math.min(100, (adsWatchedSinceLastWithdrawal / MINIMUM_ADS_FOR_WITHDRAWAL) * 100)}%` }}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
             </div>
-
 
             <div className="mt-6">
               <Button
@@ -511,9 +522,9 @@ export default function Withdraw() {
                 {withdrawMutation.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
+                    {t('processing')}
                   </>
-                ) : getWithdrawalUsdAmount() <= 0 ? 'Select a Package' : usdBalance < getWithdrawalUsdAmount() ? 'Insufficient Balance' : (!hasEnoughReferrals || !hasWatchedEnoughAds) ? 'Requirements Not Met' : `Withdraw $${getWithdrawalUsdAmount().toFixed(2)} via ${selectedMethod}`}
+                ) : getWithdrawButtonLabel()}
               </Button>
             </div>
             </>
@@ -522,7 +533,7 @@ export default function Withdraw() {
             <div className="mt-6 pt-4">
               <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-[#4cd3ff]" />
-                Wallet Activity
+                {t('wallet_activity')}
               </h3>
               {withdrawalsLoading ? (
                 <div className="flex items-center justify-center py-8">
@@ -531,8 +542,8 @@ export default function Withdraw() {
               ) : withdrawalsData.length === 0 ? (
                 <div className="text-center py-6 bg-[#1C1C1E]/50 rounded-xl">
                   <Receipt className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">No transactions yet</p>
-                  <p className="text-gray-600 text-xs mt-1">Your withdrawal history will appear here</p>
+                  <p className="text-gray-500 text-sm">{t('no_transactions_yet')}</p>
+                  <p className="text-gray-600 text-xs mt-1">{t('withdrawal_history_here')}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -554,19 +565,19 @@ export default function Withdraw() {
                       </div>
                       <div className="text-right">
                         <span className={`text-xs font-medium capitalize ${getStatusColor(withdrawal.status)}`}>
-                          {withdrawal.status}
+                          {getStatusLabel(withdrawal.status)}
                         </span>
-                        <p className="text-xs text-gray-500">
-                          {withdrawal.method || 'TON'}
-                        </p>
+                        {withdrawal.method && (
+                          <p className="text-xs text-gray-500">{withdrawal.method}</p>
+                        )}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-          </div>
 
+        </div>
       </main>
     </Layout>
   );
