@@ -597,10 +597,14 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
   try {
     const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1002480439556');
     const WITHDRAWAL_CHANNEL_ID = groupSetting || '-1002480439556';
+    console.log(`📤 Sending withdrawal approval notification to group: ${WITHDRAWAL_CHANNEL_ID}`);
+
     const user = await storage.getUser(withdrawal.userId);
     
     const withdrawalDetails = withdrawal.details as any;
     const netAmount = parseFloat(withdrawalDetails?.netAmount || withdrawal.amount);
+    const feeAmount = parseFloat(withdrawalDetails?.fee || '0');
+    const feePercent = withdrawalDetails?.feePercent || '0';
     const walletAddress = withdrawalDetails?.paymentDetails || withdrawalDetails?.walletAddress || 'N/A';
     
     const userName = user?.firstName || user?.username || 'Unknown';
@@ -609,15 +613,24 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
     const currentDate = new Date().toUTCString();
 
     const botUsername = await getBotUsername();
+    const botLink = `https://t.me/${botUsername}`;
+
     const groupMessage = `✅ <b>Withdrawal Approved</b>
 
 🗣 User: <a href="tg://user?id=${userTelegramId}">${escapeHtml(userName)}</a>
 🆔 User ID: <code>${userTelegramId}</code>
 💳 Username: ${userTelegramUsername}
-💰 Wallet: <code>${walletAddress}</code>
-💸 Amount: <b>${netAmount.toFixed(2)} USD</b>
-📅 Date: ${currentDate}
-🤖 Bot: @${botUsername}`;
+🌐 Wallet: <code>${walletAddress}</code>
+💸 Amount: <b>${netAmount.toFixed(5)} USD</b>
+🛂 Fee: ${feeAmount.toFixed(5)} (${feePercent}%)
+📅 Date: ${currentDate}`;
+
+    // Inline keyboard: "Paid Ads" button linking to the bot
+    const replyMarkup = {
+      inline_keyboard: [[
+        { text: '💰 Paid Ads', url: botLink }
+      ]]
+    };
 
     const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -625,16 +638,17 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
       body: JSON.stringify({
         chat_id: WITHDRAWAL_CHANNEL_ID,
         text: groupMessage,
-        parse_mode: 'HTML'
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup
       })
     });
 
-    if (response.ok) {
+    const responseData = await response.json() as any;
+    if (response.ok && responseData.ok) {
       console.log('✅ Group notification for withdrawal approval sent successfully');
       return true;
     } else {
-      const errorData = await response.text();
-      console.error('❌ Failed to send group notification for withdrawal approval:', errorData);
+      console.error('❌ Failed to send group notification for withdrawal approval:', JSON.stringify(responseData));
       return false;
     }
   } catch (error) {
@@ -644,39 +658,8 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
 }
 
 export async function sendWithdrawalRejectedNotification(withdrawal: any, reason: string): Promise<boolean> {
-  if (!TELEGRAM_BOT_TOKEN) return false;
-  
-  try {
-    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1002480439556');
-    const WITHDRAWAL_CHANNEL_ID = groupSetting || '-1002480439556';
-    const user = await storage.getUser(withdrawal.userId);
-    const userTelegramId = user?.telegram_id || '';
-    const userName = user?.firstName || user?.username || 'Unknown';
-    
-    const botUsernameReject = await getBotUsername();
-    const message = `❌ <b>Withdrawal Rejected</b>
-
-🗣 User: <a href="tg://user?id=${userTelegramId}">${escapeHtml(userName)}</a>
-🆔 User ID: <code>${userTelegramId}</code>
-💸 Amount: <b>${parseFloat(withdrawal.amount).toFixed(2)} USD</b>
-⚠️ Reason: ${escapeHtml(reason)}
-📅 Date: ${new Date().toUTCString()}
-🤖 Bot: @${botUsernameReject}`;
-
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: WITHDRAWAL_CHANNEL_ID,
-        text: message,
-        parse_mode: 'HTML'
-      })
-    });
-    return true;
-  } catch (error) {
-    console.error('Error sending rejection notification:', error);
-    return false;
-  }
+  // Rejection does NOT post to group — only the user is notified privately
+  return true;
 }
 
 // Send notification to referrer when referred user watches their first ad
@@ -1790,14 +1773,15 @@ ${walletAddress}
 💵 Amount: ${netAmount.toFixed(3)} USD
 🛂 Fee: ${feeAmount.toFixed(3)} (${feePercent}%)`;
               
-              // Always show "Share in Group" button instead of transaction button
-              const shareInGroupButton = {
+              // Mini App button — same format as welcome message "Let's GOOO!!" button
+              const miniAppBotUsername = await getBotUsername();
+              const openAppButton = {
                 inline_keyboard: [[
-                  { text: '📢 Share in Group', url: 'https://t.me/szxzyz' }
+                  { text: "🚀 Let's GOOO!!", url: `https://t.me/${miniAppBotUsername}/MyWAdz` }
                 ]]
               };
               
-              await sendUserTelegramNotification(userTelegramId, userConfirmationMessage, shareInGroupButton);
+              await sendUserTelegramNotification(userTelegramId, userConfirmationMessage, openAppButton);
             }
             
             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
@@ -2109,17 +2093,17 @@ ${walletAddress}
         let failCount = 0;
         let skippedCount = 0;
         
-        // Get app URL from environment variables
-        const appUrl = process.env.RENDER_EXTERNAL_URL || 
-                      (process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.replit.app` : 'https://vuuug.onrender.com');
+        // Get bot username for Mini App link (same as welcome message "Let's GOOO!!" button)
+        const broadcastBotUsername = await getBotUsername();
+        const miniAppUrl = `https://t.me/${broadcastBotUsername}/MyWAdz`;
         
-        // Create inline buttons for broadcast message - webapp link only
+        // Create inline buttons for broadcast message - same Mini App link as welcome message
         const broadcastButtons = {
           inline_keyboard: [
             [
               {
-                text: "🚀 Open App",
-                web_app: { url: appUrl }
+                text: "🚀 Let's GOOO!!",
+                url: miniAppUrl
               }
             ]
           ]
