@@ -12,6 +12,7 @@ import SeasonEndOverlay from "@/components/SeasonEndOverlay";
 import { SeasonEndContext } from "@/lib/SeasonEndContext";
 import { useAdmin } from "@/hooks/useAdmin";
 import ChannelJoinPopup from "@/components/ChannelJoinPopup";
+import { LanguageProvider } from "@/hooks/useLanguage";
 
 declare global {
   interface Window {
@@ -41,13 +42,18 @@ const PageLoader = memo(function PageLoader() {
         @keyframes textSlideUp { 0%{opacity:0;transform:translateY(16px)} 100%{opacity:1;transform:translateY(0)} }
         @keyframes barFill { 0%{width:0%} 100%{width:85%} }
         @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
+        @keyframes ringPulse { 0%,100%{opacity:0.4;transform:scale(1)} 50%{opacity:0.8;transform:scale(1.05)} }
       `}</style>
 
       <div style={{ animation: 'powFadeIn 0.55s cubic-bezier(0.34,1.56,0.64,1) both', marginBottom: 28 }}>
-        <div style={{ position: 'relative', width: 96, height: 96 }}>
-          <div style={{ position: 'absolute', inset: -6, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,123,255,0.35) 0%, transparent 70%)' }} />
-          <div style={{ width: 96, height: 96, borderRadius: '50%', background: '#111', border: '2px solid rgba(0,123,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            <img src="/pow-icon.png" alt="POW" style={{ width: 72, height: 72, objectFit: 'contain' }} />
+        <div style={{ position: 'relative', width: 110, height: 110 }}>
+          <div style={{ position: 'absolute', inset: -8, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,123,255,0.4) 0%, transparent 70%)', animation: 'ringPulse 2s ease-in-out infinite' }} />
+          <div style={{ width: 110, height: 110, borderRadius: '50%', background: 'linear-gradient(135deg, #111 0%, #1a1a1a 100%)', border: '2px solid rgba(0,123,255,0.5)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 30px rgba(0,123,255,0.2)' }}>
+            <img
+              src="/pow-icon.png"
+              alt="POW"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
+            />
           </div>
         </div>
       </div>
@@ -155,8 +161,6 @@ function AppContent() {
   );
 }
 
-import { LanguageProvider } from "@/hooks/useLanguage";
-
 function App() {
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string>();
@@ -165,18 +169,10 @@ function App() {
   const [telegramId, setTelegramId] = useState<string | null>(null);
   const [isCheckingCountry, setIsCheckingCountry] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(true);
-  const [isChannelVerified, setIsChannelVerified] = useState<boolean>(true);
+  const [isChannelVerified, setIsChannelVerified] = useState<boolean | null>(null);
   const [isCheckingMembership, setIsCheckingMembership] = useState(false);
   
   const isDevMode = import.meta.env.DEV || import.meta.env.MODE === 'development';
-
-  const checkMembership = useCallback(async () => {
-    setIsCheckingMembership(false);
-  }, []);
-
-  useEffect(() => {
-    checkMembership();
-  }, [checkMembership]);
 
   const checkCountry = useCallback(async () => {
     try {
@@ -225,8 +221,6 @@ function App() {
     const handleCountryBlockChange = (event: CustomEvent) => {
       const { action, countryCode } = event.detail;
       
-      console.log(`Country block change: ${countryCode} - ${action}`);
-      
       if (userCountryCode && countryCode === userCountryCode) {
         if (action === 'blocked') {
           setIsCountryBlocked(true);
@@ -243,6 +237,44 @@ function App() {
     };
   }, [userCountryCode]);
 
+  // Check membership after auth completes
+  const checkMembership = useCallback(async (userTelegramId: string) => {
+    if (isDevMode) {
+      setIsChannelVerified(true);
+      return;
+    }
+
+    setIsCheckingMembership(true);
+    try {
+      const headers: Record<string, string> = {};
+      const tg = window.Telegram?.WebApp;
+      if (tg?.initData) {
+        headers['x-telegram-data'] = tg.initData;
+      }
+
+      const response = await fetch('/api/check-membership', {
+        cache: 'no-store',
+        headers,
+      });
+      const data = await response.json();
+
+      if (data.banned) {
+        setIsBanned(true);
+        setBanReason(data.reason);
+        setIsChannelVerified(true); // Don't block banned users on join screen
+        return;
+      }
+
+      setIsChannelVerified(data.isVerified === true);
+    } catch (err) {
+      // Fail open on network error
+      console.error("Membership check error:", err);
+      setIsChannelVerified(true);
+    } finally {
+      setIsCheckingMembership(false);
+    }
+  }, [isDevMode]);
+
   useEffect(() => {
     if (isCheckingCountry || isCountryBlocked) {
       return;
@@ -251,6 +283,7 @@ function App() {
     if (isDevMode) {
       console.log('Development mode: Skipping Telegram authentication');
       setTelegramId('dev-user-123');
+      setIsChannelVerified(true);
       setIsAuthenticating(false);
       return;
     }
@@ -315,18 +348,27 @@ function App() {
           if (data.banned) {
             setIsBanned(true);
             setBanReason(data.reason);
+            setIsAuthenticating(false);
+            setIsChannelVerified(true);
           } else if (userTelegramId) {
             setTelegramId(userTelegramId);
+            setIsAuthenticating(false);
+            // Now check membership
+            checkMembership(userTelegramId);
+          } else {
+            setIsAuthenticating(false);
+            setIsChannelVerified(true);
           }
-          setIsAuthenticating(false);
         })
         .catch(() => {
           setIsAuthenticating(false);
+          setIsChannelVerified(true);
         });
     } else {
       setIsAuthenticating(false);
+      setIsChannelVerified(true);
     }
-  }, [isDevMode, isCheckingCountry, isCountryBlocked]);
+  }, [isDevMode, isCheckingCountry, isCountryBlocked, checkMembership]);
 
   if (isBanned) {
     return <BanScreen reason={banReason} />;
@@ -367,7 +409,14 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <LanguageProvider>
           <TooltipProvider>
-            <AppContent />
+            {isChannelVerified === false && telegramId && !isDevMode ? (
+              <ChannelJoinPopup
+                telegramId={telegramId}
+                onVerified={() => setIsChannelVerified(true)}
+              />
+            ) : (
+              <AppContent />
+            )}
           </TooltipProvider>
         </LanguageProvider>
       </QueryClientProvider>
