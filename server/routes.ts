@@ -1553,6 +1553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rewardSTAR: starRewardPerAd,
         newBalance: updatedUser?.balance || user.balance || "0",
         newStarBalance: updatedUser?.starBalance || "0",
+        newWeeklyStars: Number((updatedUser as any)?.weeklyStars || 0),
         adsWatchedToday: newAdsWatched
       });
     } catch (error) {
