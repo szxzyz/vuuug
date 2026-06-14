@@ -59,15 +59,13 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       return r.json();
     },
     onSuccess: (data: any) => {
-      // Update cache immediately with actual server values
+      // Set exact server values — overrides the optimistic guess with real numbers
       queryClient.setQueryData(["/api/auth/user"], (old: any) => {
         if (!old) return old;
-        const newBalance = data?.newBalance !== undefined ? String(data.newBalance) : old.balance;
-        const starDelta  = data?.rewardSTAR  || 0;
         return {
           ...old,
-          balance:     newBalance,
-          weeklyStars: parseInt(old.weeklyStars || "0") + starDelta,
+          balance:     data?.newBalance !== undefined ? String(data.newBalance) : old.balance,
+          weeklyStars: data?.newWeeklyStars !== undefined ? data.newWeeklyStars : old.weeklyStars,
         };
       });
 
@@ -75,12 +73,12 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       const star = data?.rewardSTAR ?? 0;
       showNotification(`+${pow} POW · +${star} ⭐ earned!`, "success");
 
+      // Refetch all affected queries for full consistency
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/withdrawal-eligibility"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/referrals/valid-count"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });
     },
     onError: (error: any) => {
       sessionRewardedRef.current = false;

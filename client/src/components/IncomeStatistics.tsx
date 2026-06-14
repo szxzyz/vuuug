@@ -40,7 +40,7 @@ export default function IncomeStatistics() {
   const { data: stats, isLoading } = useQuery<UserStats>({
     queryKey: ['/api/user/stats'],
     retry: false,
-    staleTime: 30000,
+    staleTime: 0,
     refetchOnMount: true,
   });
 

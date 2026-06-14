@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { X, Lock, Wrench, Clock, AlertCircle } from "lucide-react";
 
 interface SeasonEndOverlayProps {
   onClose: () => void;
@@ -11,102 +9,143 @@ export default function SeasonEndOverlay({ onClose, isLocked = false }: SeasonEn
   const [isClosing, setIsClosing] = useState(false);
 
   const handleClose = () => {
-    if (isLocked) {
-      return;
-    }
+    if (isLocked) return;
     setIsClosing(true);
-    setTimeout(() => {
-      onClose();
-    }, 300);
+    setTimeout(() => onClose(), 280);
   };
 
   return (
-    <div 
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md transition-opacity duration-300 ${
-        isClosing ? 'opacity-0' : 'opacity-100'
-      }`}
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.92)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        transition: 'opacity 0.28s ease',
+        opacity: isClosing ? 0 : 1,
+        padding: '24px',
+      }}
     >
-      <div className={`relative max-w-md w-full mx-4 transition-all duration-300 ${
-        isClosing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
-      }`}>
-        <div className="bg-gradient-to-br from-[#4cd3ff] via-[#0095cc] to-[#1a1a1a] rounded-3xl p-1 shadow-2xl">
-          <div className="bg-[#0d0d0d] rounded-3xl p-8">
-            <div className="text-center">
-              {/* Icon */}
-              <div className="mb-6 flex justify-center">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#4cd3ff]/30 to-[#0095cc]/30 flex items-center justify-center">
-                  <Wrench className="w-10 h-10 text-[#4cd3ff] animate-pulse" />
-                </div>
+      <style>{`
+        @keyframes overlayPop { 0%{opacity:0;transform:scale(0.92) translateY(16px)} 100%{opacity:1;transform:scale(1) translateY(0)} }
+        @keyframes iconPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+        @keyframes dotBlink { 0%,100%{opacity:0.3} 50%{opacity:1} }
+      `}</style>
+
+      <div style={{
+        width: '100%', maxWidth: 360,
+        animation: 'overlayPop 0.38s cubic-bezier(0.34,1.4,0.64,1) both',
+        transform: isClosing ? 'scale(0.94) translateY(12px)' : undefined,
+        transition: isClosing ? 'transform 0.28s ease' : undefined,
+      }}>
+        <div style={{
+          background: '#0d0d0d',
+          border: '1px solid rgba(255,255,255,0.09)',
+          borderRadius: 28,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(0,123,255,0.18) 0%, rgba(0,0,0,0) 60%)',
+            padding: '36px 28px 28px',
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+              <div style={{
+                width: 80, height: 80,
+                borderRadius: '50%',
+                background: 'rgba(0,123,255,0.12)',
+                border: '1.5px solid rgba(0,123,255,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 20px',
+                animation: 'iconPulse 2.4s ease-in-out infinite',
+              }}>
+                <img src="/pow-icon.png" alt="POW" style={{ width: 48, height: 48, objectFit: 'contain' }} />
               </div>
 
-              {/* Title */}
-              <h1 className="text-3xl font-bold text-white mb-2">
-                App Maintenance
+              <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: '0 0 6px', letterSpacing: '-0.3px' }}>
+                Under Maintenance
               </h1>
-              <p className="text-lg text-[#4cd3ff] font-semibold mb-6">
-                We're upgrading our platform!
-              </p>
-
-              {/* Details Section */}
-              <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-[#4cd3ff]/30 rounded-2xl p-6 mb-6 space-y-4">
-                {/* What's happening */}
-                <div className="flex gap-3 items-start">
-                  <AlertCircle className="w-5 h-5 text-[#4cd3ff] flex-shrink-0 mt-1" />
-                  <div className="text-left">
-                    <p className="text-white text-sm font-semibold mb-1">What's Happening?</p>
-                    <p className="text-gray-300 text-xs leading-relaxed">
-                      We're performing scheduled maintenance to bring you exciting new features and improved security updates.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Duration */}
-                <div className="flex gap-3 items-start">
-                  <Clock className="w-5 h-5 text-[#4cd3ff] flex-shrink-0 mt-1" />
-                  <div className="text-left">
-                    <p className="text-white text-sm font-semibold mb-1">Expected Duration</p>
-                    <p className="text-gray-300 text-xs leading-relaxed">
-                      The maintenance should be completed within the next 24-48 hours. We appreciate your patience.
-                    </p>
-                  </div>
-                </div>
-
-                {/* During maintenance */}
-                <div className="flex gap-3 items-start">
-                  <Wrench className="w-5 h-5 text-[#ADFF2F] flex-shrink-0 mt-1" />
-                  <div className="text-left">
-                    <p className="text-white text-sm font-semibold mb-1">During Maintenance</p>
-                    <p className="text-gray-300 text-xs leading-relaxed">
-                      • User accounts remain secure • All balances are preserved • No data will be lost
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status Info */}
-              <div className="bg-[#1a1a1a] border border-[#ADFF2F]/30 rounded-xl p-4 mb-6">
-                <p className="text-xs text-gray-400 mb-2">MAINTENANCE STATUS</p>
-                <div className="flex items-center gap-2 justify-center">
-                  <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse"></div>
-                  <p className="text-white font-semibold">In Progress - Check back soon!</p>
-                </div>
-              </div>
-
-              {/* Button */}
-              <Button
-                onClick={handleClose}
-                className="w-full bg-gradient-to-r from-[#4cd3ff] to-[#0095cc] hover:from-[#5ce6ff] hover:to-[#00b5e5] text-black font-bold text-lg py-6 rounded-xl shadow-lg hover:shadow-[#4cd3ff]/50 transition-all"
-              >
-                Understood
-              </Button>
-
-              {/* Footer Info */}
-              <p className="text-gray-500 text-xs mt-4">
-                Need help? Contact us @CashWatchBot
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', margin: 0, letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 500 }}>
+                Paid Adz · Back Soon
               </p>
             </div>
+
+            <div style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              borderRadius: 16,
+              padding: '18px 20px',
+              marginBottom: 16,
+              display: 'flex', flexDirection: 'column', gap: 16,
+            }}>
+              <Row icon="🔧" title="What's happening?" text="We're upgrading the platform to bring you faster rewards and better performance." />
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
+              <Row icon="⏱️" title="How long?" text="Estimated 24–48 hours. Your balance and account are fully safe." />
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
+              <Row icon="🔒" title="Your earnings?" text="All POW, Stars, and referrals are preserved. Nothing is lost." />
+            </div>
+
+            <div style={{
+              background: 'rgba(0,123,255,0.08)',
+              border: '1px solid rgba(0,123,255,0.2)',
+              borderRadius: 12,
+              padding: '12px 16px',
+              marginBottom: 20,
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[0, 200, 400].map((d, i) => (
+                  <div key={i} style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: '#007BFF',
+                    animation: `dotBlink 1.4s ${d}ms ease-in-out infinite`,
+                  }} />
+                ))}
+              </div>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', margin: 0, fontWeight: 500 }}>
+                Maintenance in progress — check back soon
+              </p>
+            </div>
+
+            <button
+              onClick={handleClose}
+              disabled={isLocked}
+              style={{
+                width: '100%',
+                padding: '14px 0',
+                borderRadius: 14,
+                border: 'none',
+                background: isLocked ? 'rgba(255,255,255,0.07)' : '#007BFF',
+                color: isLocked ? 'rgba(255,255,255,0.3)' : '#fff',
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: isLocked ? 'not-allowed' : 'pointer',
+                letterSpacing: '0.02em',
+                transition: 'background 0.2s, transform 0.1s',
+              }}
+              onMouseDown={e => { if (!isLocked) (e.currentTarget.style.transform = 'scale(0.97)'); }}
+              onMouseUp={e => { (e.currentTarget.style.transform = 'scale(1)'); }}
+            >
+              {isLocked ? 'Maintenance in Progress' : 'Got it'}
+            </button>
+
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', margin: '14px 0 0', letterSpacing: '0.03em' }}>
+              Need help? Contact us @PaidAdzBot
+            </p>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Row({ icon, title, text }: { icon: string; title: string; text: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+      <div>
+        <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.75)', margin: '0 0 3px', letterSpacing: '0.02em' }}>{title}</p>
+        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', margin: 0, lineHeight: 1.5 }}>{text}</p>
       </div>
     </div>
   );
