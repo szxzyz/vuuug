@@ -58,15 +58,33 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // Update cache immediately with actual server values
+      queryClient.setQueryData(["/api/auth/user"], (old: any) => {
+        if (!old) return old;
+        const newBalance = data?.newBalance !== undefined ? String(data.newBalance) : old.balance;
+        const starDelta  = data?.rewardSTAR  || 0;
+        return {
+          ...old,
+          balance:     newBalance,
+          weeklyStars: parseInt(old.weeklyStars || "0") + starDelta,
+        };
+      });
+
+      const pow  = data?.rewardPOW  ?? 0;
+      const star = data?.rewardSTAR ?? 0;
+      showNotification(`+${pow} POW · +${star} ⭐ earned!`, "success");
+
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/withdrawal-eligibility"] });
       queryClient.invalidateQueries({ queryKey: ["/api/referrals/valid-count"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });
     },
     onError: (error: any) => {
       sessionRewardedRef.current = false;
+      // Roll back optimistic update
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       if (error.errorType === "insufficient_background") {
         setShowFailurePopup(true);
@@ -121,6 +139,8 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         showNotification("Ads not available. Please try again later.", "error");
         return;
       }
+
+      // Adsgram .catch() already fires when user closes ad early → show failure popup
       if (!adsgramResult.success) {
         setShowFailurePopup(true);
         return;
@@ -130,14 +150,17 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
-        const rewardAmount = appSettings?.rewardPerAd || 2;
-        queryClient.setQueryData(["/api/auth/user"], (old: any) => ({
-          ...old,
-          balance:          String(parseFloat(old?.balance || "0") + rewardAmount),
-          adsWatchedToday:  (old?.adsWatchedToday  || 0) + 1,
-          hourlyAdsWatched: (old?.hourlyAdsWatched || 0) + 1,
-        }));
-        showNotification(`+${rewardAmount} POW earned!`, "success");
+        const starReward = appSettings?.starRewardPerAd || 2;
+        // Optimistic update — counters only; balance will be set from server response
+        queryClient.setQueryData(["/api/auth/user"], (old: any) => {
+          if (!old) return old;
+          return {
+            ...old,
+            adsWatchedToday:  (old.adsWatchedToday  || 0) + 1,
+            hourlyAdsWatched: (old.hourlyAdsWatched || 0) + 1,
+            weeklyStars:      (parseInt(old.weeklyStars || "0") + starReward),
+          };
+        });
         watchAdMutation.mutate({
           adType: "adsgram",
           sessionId: session.sessionId,
@@ -152,7 +175,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     } finally {
       setCurrentAdStep("idle");
       setIsShowingAds(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     }
   };
 
