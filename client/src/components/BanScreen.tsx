@@ -1,5 +1,6 @@
 import { AlertTriangle, Unlock } from "lucide-react";
 import { useState, useEffect } from "react";
+import { getTranslation } from "@/hooks/useLanguage";
 
 interface BanScreenProps {
   reason?: string;
@@ -10,6 +11,7 @@ export default function BanScreen({ reason }: BanScreenProps) {
   const [isUnbanning, setIsUnbanning] = useState(false);
   const [unbanError, setUnbanError] = useState<string | null>(null);
   const [unbanSuccess, setUnbanSuccess] = useState(false);
+  const [, forceUpdate] = useState(0);
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -18,7 +20,11 @@ export default function BanScreen({ reason }: BanScreenProps) {
       const adminId = import.meta.env.VITE_TELEGRAM_ADMIN_ID;
       setIsAdmin(userId === adminId);
     }
+    // force re-render to pick up language from localStorage
+    forceUpdate(n => n + 1);
   }, []);
+
+  const t = getTranslation;
 
   const handleContactSupport = () => {
     window.open('https://t.me/szxzyz', '_blank');
@@ -51,10 +57,10 @@ export default function BanScreen({ reason }: BanScreenProps) {
           window.location.reload();
         }, 1500);
       } else {
-        setUnbanError(data.message || "Failed to unban");
+        setUnbanError(data.message || t('failed'));
       }
     } catch (error) {
-      setUnbanError("Network error. Please try again.");
+      setUnbanError(t('something_went_wrong'));
     } finally {
       setIsUnbanning(false);
     }
@@ -71,13 +77,13 @@ export default function BanScreen({ reason }: BanScreenProps) {
 
             <div className="space-y-2">
               <h1 className="text-xl font-bold text-red-500 leading-tight">
-                Your account has been banned due to suspicious multi-account activity
+                {t('account_banned_msg')}
               </h1>
 
               {reason && (
                 <div className="mt-4 p-3 bg-red-950/20 border border-red-900/30 rounded-lg">
                   <p className="text-xs font-semibold text-red-400/70 mb-1">
-                    Details:
+                    {t('ban_details')}
                   </p>
                   <p className="text-xs text-gray-400">
                     {reason}
@@ -86,14 +92,17 @@ export default function BanScreen({ reason }: BanScreenProps) {
               )}
 
               <p className="text-gray-400 text-sm mt-4">
-                All features are disabled. If you believe this is a mistake, please contact our <button onClick={handleContactSupport} className="text-red-500 hover:text-red-400 font-semibold underline underline-offset-4 transition-colors">support team</button>.
+                {t('all_features_disabled')}{' '}
+                <button onClick={handleContactSupport} className="text-red-500 hover:text-red-400 font-semibold underline underline-offset-4 transition-colors">
+                  {t('support_team')}
+                </button>.
               </p>
             </div>
 
             {unbanSuccess && (
               <div className="w-full p-3 bg-green-950/30 border border-green-500/30 rounded-lg">
                 <p className="text-green-400 text-sm font-semibold">
-                  Successfully unbanned! Reloading...
+                  {t('unbanned_successfully')}
                 </p>
               </div>
             )}
@@ -115,7 +124,7 @@ export default function BanScreen({ reason }: BanScreenProps) {
                 ) : (
                   <>
                     <Unlock className="w-5 h-5" />
-                    Admin Self-Unban
+                    {t('admin_self_unban')}
                   </>
                 )}
               </button>

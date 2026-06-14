@@ -8,6 +8,7 @@ import Header from "@/components/Header";
 import { useSeasonEnd } from "@/lib/SeasonEndContext";
 import BanScreen from "@/components/BanScreen";
 import { useRef, useCallback } from "react";
+import { useLanguage } from "@/hooks/useLanguage";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ export default function Layout({ children }: LayoutProps) {
   const { isConnected } = useWebSocket();
   const { isAdmin } = useAdmin();
   const { showSeasonEnd } = useSeasonEnd();
+  const { t } = useLanguage();
 
   const { data: user } = useQuery<any>({
     queryKey: ['/api/auth/user'],
@@ -51,11 +53,7 @@ export default function Layout({ children }: LayoutProps) {
 
     clickTimerRef.current = setTimeout(() => {
       if (clickCountRef.current === 1) {
-        if (location === "/admin") {
-          navigate("/");
-        } else {
-          navigate("/");
-        }
+        navigate("/");
       }
       clickCountRef.current = 0;
     }, 400);
@@ -66,9 +64,9 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const navItems = [
-    { href: "/leaderboard", icon: Trophy, label: "RANK" },
-    { href: "/affiliates", icon: HeartHandshake, label: "INVITE" },
-    { href: "/missions", icon: ListTodo, label: "MISSION" },
+    { href: "/leaderboard", icon: Trophy, labelKey: "rank" },
+    { href: "/affiliates", icon: HeartHandshake, labelKey: "invite" },
+    { href: "/missions", icon: ListTodo, labelKey: "mission" },
   ];
 
   const telegramPhotoUrl = typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.photo_url;
@@ -137,7 +135,7 @@ export default function Layout({ children }: LayoutProps) {
               <span className={`text-[10px] font-semibold tracking-wide uppercase ${
                 isAdminNavMode ? 'opacity-100 text-yellow-400' : isHomeActive ? 'opacity-100' : 'opacity-70'
               }`}>
-                {isAdminNavMode ? "ADMIN" : "HOME"}
+                {isAdminNavMode ? t('admin') : t('home')}
               </span>
             </button>
 
@@ -159,7 +157,7 @@ export default function Layout({ children }: LayoutProps) {
                       strokeWidth={isActive ? 2.5 : 2}
                     />
                     <span className={`text-[10px] font-semibold tracking-wide uppercase ${isActive ? 'opacity-100' : 'opacity-70'}`}>
-                      {item.label}
+                      {t(item.labelKey)}
                     </span>
                   </button>
                 </Link>

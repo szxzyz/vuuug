@@ -129,9 +129,14 @@ export const SettingsPopup: React.FC<SettingsPopupProps> = ({ onClose }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const toggleLanguage = () => {
-    setLanguage(language === 'en' ? 'ru' : 'en');
+  const cycleLanguage = () => {
+    const order: Array<import('@/hooks/useLanguage').Language> = ['en', 'ru', 'ar'];
+    const idx = order.indexOf(language as any);
+    const next = order[(idx + 1) % order.length];
+    setLanguage(next);
   };
+
+  const languageLabel = language === 'en' ? t('english') : language === 'ru' ? t('russian') : t('arabic');
 
   const openLink = (url: string) => {
     if (window.Telegram?.WebApp?.openTelegramLink) {
@@ -157,8 +162,8 @@ export const SettingsPopup: React.FC<SettingsPopupProps> = ({ onClose }) => {
             {/* Language */}
             <LegalItem 
               icon={<Globe className="w-4 h-4 text-purple-400" />} 
-              label={`${t('language')}: ${language === 'en' ? t('english') : t('russian')}`} 
-              onClick={toggleLanguage}
+              label={`${t('language')}: ${languageLabel}`} 
+              onClick={cycleLanguage}
               rightIcon={<RefreshCw className="w-3 h-3 text-gray-600" />}
             />
 

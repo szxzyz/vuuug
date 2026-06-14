@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useLanguage } from "@/hooks/useLanguage";
 
 interface UserStats {
   todayEarnings: string;
@@ -37,6 +38,7 @@ function StatCard({ label, value, isLoading }: { label: string; value: string; i
 }
 
 export default function IncomeStatistics() {
+  const { t } = useLanguage();
   const { data: stats, isLoading } = useQuery<UserStats>({
     queryKey: ['/api/user/stats'],
     retry: false,
@@ -47,16 +49,16 @@ export default function IncomeStatistics() {
   return (
     <div className="mt-5 px-1">
       <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
-        Income Statistics
+        {t('income_statistics')}
       </p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <StatCard label="Today" value={stats?.todayEarnings ?? '0'} isLoading={isLoading} />
-        <StatCard label="Weekly" value={stats?.weekEarnings ?? '0'} isLoading={isLoading} />
+        <StatCard label={t('today')} value={stats?.todayEarnings ?? '0'} isLoading={isLoading} />
+        <StatCard label={t('weekly')} value={stats?.weekEarnings ?? '0'} isLoading={isLoading} />
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-        <StatCard label="Monthly" value={stats?.monthEarnings ?? '0'} isLoading={isLoading} />
-        <StatCard label="All-Time" value={stats?.totalEarnings ?? '0'} isLoading={isLoading} />
+        <StatCard label={t('monthly')} value={stats?.monthEarnings ?? '0'} isLoading={isLoading} />
+        <StatCard label={t('all_time')} value={stats?.totalEarnings ?? '0'} isLoading={isLoading} />
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { FiClock, FiShield } from "react-icons/fi";
 import { showNotification } from "@/components/AppNotification";
 import { useAdSession } from "@/hooks/useAdSession";
 import AdFailurePopup from "@/components/AdFailurePopup";
+import { useLanguage } from "@/hooks/useLanguage";
 
 declare global {
   interface Window {
@@ -19,7 +20,6 @@ declare global {
   }
 }
 
-
 interface AdWatchingSectionProps {
   user: any;
 }
@@ -27,6 +27,7 @@ interface AdWatchingSectionProps {
 export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const { startSession, endSession, cancelSession } = useAdSession();
+  const { t } = useLanguage();
 
   const [isShowingAds, setIsShowingAds]         = useState(false);
   const [currentAdStep, setCurrentAdStep]       = useState<"idle" | "adsgram" | "verifying">("idle");
@@ -59,7 +60,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       return r.json();
     },
     onSuccess: (data: any) => {
-      // Set exact server values — overrides the optimistic guess with real numbers
       queryClient.setQueryData(["/api/auth/user"], (old: any) => {
         if (!old) return old;
         return {
@@ -73,7 +73,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       const star = data?.rewardSTAR ?? 0;
       showNotification(`+${pow} POW · +${star} ⭐ earned!`, "success");
 
-      // Refetch all affected queries for full consistency
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });
@@ -82,24 +81,23 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     },
     onError: (error: any) => {
       sessionRewardedRef.current = false;
-      // Roll back optimistic update
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       if (error.errorType === "insufficient_background") {
         setShowFailurePopup(true);
       } else if (error.errorType === "duplicate_session") {
-        showNotification("Session already used. Please watch a new ad.", "error");
+        showNotification(t('error') + ": Session already used.", "error");
       } else if (error.errorType === "cooldown") {
-        showNotification(`Please wait ${error.secsLeft || 5}s before watching another ad.`, "error");
+        showNotification(`${t('processing')} ${error.secsLeft || 5}s`, "error");
       } else if (error.errorType === "abuse_lock") {
-        showNotification(`Too many failed attempts. Try again in ${error.secsLeft || 60}s.`, "error");
+        showNotification(`${t('failed')}. ${t('retry')} in ${error.secsLeft || 60}s.`, "error");
       } else if (error.limitType === "hourly") {
-        showNotification("Hourly limit reached. Refills in ~1 hour.", "error");
+        showNotification(t('hourly_limit_reached'), "error");
       } else if (error.limitType === "daily") {
-        showNotification("Daily limit reached. Come back tomorrow.", "error");
+        showNotification(t('daily_limit_reached_tomorrow'), "error");
       } else if (error.message) {
-        showNotification(`Error: ${error.message}`, "error");
+        showNotification(`${t('error')}: ${error.message}`, "error");
       } else {
-        showNotification("Network error. Check your connection and try again.", "error");
+        showNotification(t('something_went_wrong'), "error");
       }
     },
   });
@@ -134,11 +132,10 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
       if (adsgramResult.unavailable) {
         cancelSession();
-        showNotification("Ads not available. Please try again later.", "error");
+        showNotification(t('no_ad_available'), "error");
         return;
       }
 
-      // Adsgram .catch() already fires when user closes ad early → show failure popup
       if (!adsgramResult.success) {
         setShowFailurePopup(true);
         return;
@@ -149,7 +146,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
         const starReward = appSettings?.starRewardPerAd || 2;
-        // Optimistic update — counters only; balance will be set from server response
         queryClient.setQueryData(["/api/auth/user"], (old: any) => {
           if (!old) return old;
           return {
@@ -169,7 +165,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     } catch (err) {
       console.error("Ad watching error:", err);
       cancelSession();
-      showNotification("Error playing ads. Try again.", "error");
+      showNotification(t('something_went_wrong'), "error");
     } finally {
       setCurrentAdStep("idle");
       setIsShowingAds(false);
@@ -209,10 +205,10 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         <CardContent className="p-5">
           <div className="text-center mb-5">
             <h2 className="text-lg font-extrabold text-white mb-1 tracking-widest uppercase">
-              Viewing Ads
+              {t('viewing_ads')}
             </h2>
             <p className="text-[#AAAAAA] text-xs leading-relaxed">
-              Get paid for watching short Ads on Telegram.
+              {t('get_paid_watching')}
             </p>
           </div>
 
@@ -230,14 +226,14 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                     : <FiClock size={15} className="animate-spin" />
                   }
                   <span className="text-sm font-semibold">
-                    {currentAdStep === "adsgram"   ? "Loading Ad..."  :
-                     currentAdStep === "verifying" ? "Verifying..."   : "Loading..."}
+                    {currentAdStep === "adsgram"   ? t('loading_ad')  :
+                     currentAdStep === "verifying" ? t('verifying')   : t('loading')}
                   </span>
                 </>
               ) : (
                 <>
                   <FaPlay size={13} />
-                  <span className="text-sm font-semibold">Start Earning</span>
+                  <span className="text-sm font-semibold">{t('start_earning')}</span>
                 </>
               )}
             </button>
@@ -245,12 +241,12 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
           <div className="text-center">
             {isLimitReached && dailyWatched >= DAILY_LIMIT ? (
-              <p className="text-xs text-red-400/80">Daily limit reached. Resets tomorrow.</p>
+              <p className="text-xs text-red-400/80">{t('daily_limit_reached_tomorrow')}</p>
             ) : isLimitReached ? (
-              <p className="text-xs text-yellow-400/80">Hourly limit reached. Refills in ~1 hour.</p>
+              <p className="text-xs text-yellow-400/80">{t('hourly_limit_reached')}</p>
             ) : (
               <p className="text-xs text-white/30">
-                {adsAvailable} ads available · {dailyWatched}/{DAILY_LIMIT} today
+                {adsAvailable} {t('ads_available_label')} · {dailyWatched}/{DAILY_LIMIT} {t('today_label')}
               </p>
             )}
           </div>
