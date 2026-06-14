@@ -42,7 +42,7 @@ export default function Layout({ children }: LayoutProps) {
     <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
       {!showSeasonEnd && <Header />}
       
-      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '88px', paddingTop: '80px' }}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '88px', paddingTop: location === '/' ? 0 : '80px' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location}
