@@ -365,6 +365,19 @@ export const insertDailyMissionSchema = createInsertSchema(dailyMissions).omit({
 export const insertBlockedCountrySchema = createInsertSchema(blockedCountries).omit({ id: true, createdAt: true });
 export const insertAdminRoleSchema = createInsertSchema(adminRoles).omit({ id: true, createdAt: true, updatedAt: true });
 
+// Leaderboard snapshots — weekly top-50 saved every Monday before reset
+export const leaderboardSnapshots = pgTable("leaderboard_snapshots", {
+  id: serial("id").primaryKey(),
+  weekKey: varchar("week_key", { length: 20 }).notNull(),   // e.g. '2026-W24'
+  rank: integer("rank").notNull(),
+  userId: varchar("user_id").notNull(),
+  username: varchar("username"),
+  firstName: text("first_name"),
+  profileImageUrl: text("profile_image_url"),
+  weeklyStars: integer("weekly_stars").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
