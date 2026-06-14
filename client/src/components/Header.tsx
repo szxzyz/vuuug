@@ -15,12 +15,12 @@ export default function Header() {
   const usdBalance = parseFloat(user?.usdBalance || "0");
   const usdFormatted = usdBalance.toFixed(3);
 
-  const starBalance = parseFloat(user?.starBalance || "0");
-  const starFormatted = starBalance >= 1000000
-    ? (starBalance / 1000000).toFixed(1) + 'M'
-    : starBalance >= 1000
-    ? (starBalance / 1000).toFixed(1) + 'k'
-    : starBalance.toFixed(0);
+  const weeklyStars = parseInt(user?.weeklyStars || "0");
+  const starFormatted = weeklyStars >= 1000000
+    ? (weeklyStars / 1000000).toFixed(1) + 'M'
+    : weeklyStars >= 1000
+    ? (weeklyStars / 1000).toFixed(1) + 'k'
+    : weeklyStars.toString();
 
   const powBalance = parseFloat(user?.balance || "0");
   const powAmount = powBalance < 1 ? Math.round(powBalance * 10000000) : Math.round(powBalance);
