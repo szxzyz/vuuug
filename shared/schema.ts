@@ -107,6 +107,7 @@ export const users = pgTable("users", {
   starBalance: integer("star_balance").default(0),
   weeklyStars: integer("weekly_stars").default(0),
   weeklyStarWeek: text("weekly_star_week"),
+  language: varchar("language", { length: 5 }).default("en"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
