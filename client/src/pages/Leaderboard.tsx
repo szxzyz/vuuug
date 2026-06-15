@@ -38,10 +38,16 @@ function getPrize(rank: number, pool: number): string {
 
 function getWeekEnd(): Date {
   const now = new Date();
-  const day = now.getUTCDay();
+  const day = now.getUTCDay(); // 0=Sun,1=Mon,...,6=Sat
+  // Contest ends Saturday 18:30 UTC = Sunday 12:00 AM IST
+  const daysUntilSat = (6 - day + 7) % 7;
   const end = new Date(now);
-  end.setUTCDate(end.getUTCDate() + (day === 0 ? 0 : 7 - day));
-  end.setUTCHours(23, 59, 59, 0);
+  end.setUTCDate(end.getUTCDate() + daysUntilSat);
+  end.setUTCHours(18, 30, 0, 0);
+  // If already past Saturday 18:30 UTC, go to next Saturday
+  if (end.getTime() <= now.getTime()) {
+    end.setUTCDate(end.getUTCDate() + 7);
+  }
   return end;
 }
 
@@ -218,7 +224,7 @@ export default function Leaderboard() {
                   Star Earning Paused
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
-                  Contest ended — New contest starts Monday at 12:00 AM IST
+                  Contest ended — New contest starts Sunday midnight IST
                 </div>
               </div>
             </div>
