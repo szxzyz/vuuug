@@ -225,7 +225,7 @@ app.use((req, res, next) => {
   }, async () => {
     log(`serving on port ${port}`);
     
-    // Set up new daily reset check (runs every 5 minutes at 00:00 UTC)
+    // Set up new daily reset check (runs every 5 minutes at 07:30 UTC)
     setInterval(async () => {
       try {
         const { storage } = await import('./storage');
@@ -234,6 +234,216 @@ app.use((req, res, next) => {
         console.error('❌ Error in daily reset check:', error);
       }
     }, 5 * 60 * 1000); // Every 5 minutes
+
+    // Contest-end detector — runs every 5 minutes
+    // When weekly_contest_end_date passes: zero all weekly_stars and lock star earning
+    // Stars stay locked until the 07:30 UTC daily reset unlocks them
+    setInterval(async () => {
+      try {
+        const { db } = await import('./db');
+        const { adminSettings, users } = await import('../shared/schema');
+        const { eq, sql } = await import('drizzle-orm');
+
+        // Read current lock state + optional admin-set end date
+        const [endDateRow, lockedRow] = await Promise.all([
+          db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'weekly_contest_end_date')).limit(1),
+          db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'stars_locked')).limit(1),
+        ]);
+
+        const alreadyLocked = lockedRow[0]?.settingValue === 'true';
+        if (alreadyLocked) return; // Already locked, nothing to do
+
+        // Trigger 1: Admin-set contest end date has passed
+        const endDateStr = endDateRow[0]?.settingValue || '';
+        const endDate = endDateStr ? new Date(endDateStr) : null;
+        const adminEndTriggered = endDate && !isNaN(endDate.getTime()) && Date.now() >= endDate.getTime();
+
+        // Trigger 2: Automatic — every Sunday at or after 23:30 UTC
+        const checkNow = new Date();
+        const isSunday = checkNow.getUTCDay() === 0;
+        const afterContestEndTime = checkNow.getUTCHours() >= 23 && checkNow.getUTCMinutes() >= 30;
+        const autoEndTriggered = isSunday && afterContestEndTime;
+
+        if (!adminEndTriggered && !autoEndTriggered) return;
+
+        const triggerReason = adminEndTriggered
+          ? `admin end date ${endDateStr}`
+          : `auto Sunday 23:30 UTC`;
+
+        // Contest has ended → lock now
+        log(`🏁 Weekly contest ended (${triggerReason}). Saving snapshot, locking star earning…`);
+
+        // Calculate current week key for snapshot
+        const now = new Date();
+        const year = now.getUTCFullYear();
+        const startOfYear = new Date(Date.UTC(year, 0, 1));
+        const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+        const weekNum = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+        const weekKey = `${year}-W${String(weekNum).padStart(2, '0')}`;
+
+        // 1. Save leaderboard snapshot (only if not already saved)
+        const { leaderboardSnapshots } = await import('../shared/schema');
+        const existing = await db.execute(sql`SELECT COUNT(*) as cnt FROM leaderboard_snapshots WHERE week_key = ${weekKey}`);
+        const alreadySaved = Number((existing.rows[0] as any)?.cnt || 0) > 0;
+
+        if (!alreadySaved) {
+          const top50 = await db.execute(sql`
+            SELECT id, username, first_name, profile_image_url, weekly_stars
+            FROM users
+            WHERE COALESCE(weekly_stars, 0) > 0
+              AND COALESCE(banned, false) = false
+            ORDER BY weekly_stars DESC
+            LIMIT 50
+          `);
+          if (top50.rows.length > 0) {
+            for (let i = 0; i < top50.rows.length; i++) {
+              const u = top50.rows[i] as any;
+              await db.insert(leaderboardSnapshots).values({
+                weekKey,
+                rank: i + 1,
+                userId: u.id,
+                username: u.username,
+                firstName: u.first_name,
+                profileImageUrl: u.profile_image_url,
+                weeklyStars: Number(u.weekly_stars || 0),
+              }).onConflictDoNothing();
+            }
+            log(`📸 Leaderboard snapshot saved: ${top50.rows.length} entries for ${weekKey}`);
+
+            // 2. Notify admin about contest end + winner
+            const adminId = process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID;
+            const botToken = process.env.TELEGRAM_BOT_TOKEN;
+            if (adminId && botToken) {
+              const winner = top50.rows[0] as any;
+              const winnerName = winner.username ? `@${winner.username}` : (winner.first_name || 'Unknown');
+              const totalParticipants = top50.rows.length;
+              const msg = `🏁 *Weekly Contest Ended!*\n\n` +
+                `📅 Week: \`${weekKey}\`\n` +
+                `🥇 Winner: ${winnerName} — *${winner.weekly_stars} ⭐ stars*\n` +
+                `👥 Participants: ${totalParticipants}\n\n` +
+                `🔒 Star earning is now *LOCKED* until Monday 07:30 UTC\n` +
+                `All users' weekly stars have been reset to 0.`;
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: adminId, text: msg, parse_mode: 'Markdown' }),
+              }).catch(() => {});
+            }
+          } else {
+            log(`ℹ️ No participants found for ${weekKey} — snapshot skipped`);
+          }
+        }
+
+        // 3. Zero all weekly_stars
+        await db.execute(sql`UPDATE users SET weekly_stars = 0, weekly_star_week = NULL, updated_at = NOW()`);
+
+        // 4. Set stars_locked = true (stays locked until Monday 07:30 UTC)
+        await db.execute(sql`
+          INSERT INTO admin_settings (setting_key, setting_value, description)
+          VALUES ('stars_locked', 'true', 'Locks star earning between contest end and Monday 07:30 UTC reset')
+          ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'true', updated_at = NOW()
+        `);
+
+        log('✅ Contest ended: leaderboard saved, weekly_stars cleared, star earning locked until Monday 07:30 UTC');
+      } catch (err) {
+        console.error('❌ Error in contest-end detector:', err);
+      }
+    }, 5 * 60 * 1000); // Every 5 minutes
+
+    // Monday new-contest broadcast — runs every hour, fires Mon 07:30–07:59 UTC
+    // Sends "new weekly contest started" message to all users once per week
+    setInterval(async () => {
+      try {
+        const now = new Date();
+        const isMonday = now.getUTCDay() === 1;
+        const isResetHour = now.getUTCHours() === 7 && now.getUTCMinutes() >= 30;
+        if (!isMonday || !isResetHour) return;
+
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        const botUsername = process.env.TELEGRAM_BOT_USERNAME || process.env.BOT_USERNAME || '';
+        if (!botToken) return;
+
+        const { db } = await import('./db');
+        const { adminSettings, users } = await import('../shared/schema');
+        const { sql, eq } = await import('drizzle-orm');
+
+        // Idempotent guard — store this week key in admin_settings
+        const year = now.getUTCFullYear();
+        const startOfYear = new Date(Date.UTC(year, 0, 1));
+        const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+        const weekNum = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+        const weekKey = `${year}-W${String(weekNum).padStart(2, '0')}`;
+        const guardKey = `contest_broadcast_sent_${weekKey}`;
+
+        const guardRow = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, guardKey)).limit(1);
+        if (guardRow.length > 0) return; // Already sent this week
+
+        // Mark as sent BEFORE broadcasting (prevents duplicate on restart)
+        await db.execute(sql`
+          INSERT INTO admin_settings (setting_key, setting_value, description)
+          VALUES (${guardKey}, 'true', 'Monday broadcast sent flag for ' || ${weekKey})
+          ON CONFLICT (setting_key) DO NOTHING
+        `);
+
+        // Fetch prize pool for the message
+        const prizeRow = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'weekly_giveaway_amount')).limit(1);
+        const prizePool = Number(prizeRow[0]?.settingValue || 10);
+        const top1Prize = ((prizePool * 25) / 100).toFixed(0);
+        const top2Prize = ((prizePool * 18) / 100).toFixed(0);
+        const top3Prize = ((prizePool * 14) / 100).toFixed(0);
+
+        const msg = `🌟 <b>New Weekly Contest Has Started!</b>\n\n` +
+          `⭐ Earn stars by watching ads & completing tasks\n` +
+          `🏆 Top 10 winners share <b>$${prizePool}</b> this week\n\n` +
+          `🥇 1st Place — <b>$${top1Prize}</b>\n` +
+          `🥈 2nd Place — <b>$${top2Prize}</b>\n` +
+          `🥉 3rd Place — <b>$${top3Prize}</b>\n\n` +
+          `The contest runs until <b>Sunday 23:30 UTC</b>.\n` +
+          `Start earning stars now! 👇`;
+
+        const replyMarkup = botUsername ? {
+          inline_keyboard: [[
+            { text: '🎯 Earn Stars Now', url: `https://t.me/${botUsername}/MyWAdz` }
+          ]]
+        } : undefined;
+
+        // Fetch all users with telegram_id
+        const allUsers = await db.execute(sql`
+          SELECT DISTINCT telegram_id FROM users
+          WHERE telegram_id IS NOT NULL AND telegram_id != ''
+          AND COALESCE(banned, false) = false
+        `);
+
+        log(`📢 Monday broadcast: sending new-contest message to ${allUsers.rows.length} users…`);
+
+        let sent = 0, failed = 0;
+        for (const row of allUsers.rows) {
+          const tgId = (row as any).telegram_id;
+          try {
+            const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: tgId,
+                text: msg,
+                parse_mode: 'HTML',
+                ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+              }),
+            });
+            const json = await res.json() as any;
+            if (json.ok) sent++; else failed++;
+          } catch {
+            failed++;
+          }
+          // 35ms delay to stay well under Telegram's 30 msg/sec limit
+          await new Promise(r => setTimeout(r, 35));
+        }
+
+        log(`✅ Monday broadcast done — ${sent} delivered, ${failed} failed`);
+      } catch (err) {
+        console.error('❌ Error in Monday contest broadcast:', err);
+      }
+    }, 60 * 60 * 1000); // Every hour
 
     // Weekly leaderboard report check (runs every 30 minutes on Monday UTC)
     setInterval(async () => {
@@ -245,14 +455,14 @@ app.use((req, res, next) => {
       }
     }, 30 * 60 * 1000); // Every 30 minutes
 
-    // Weekly star reset — runs every hour, fires on Monday UTC 00:00–00:59
+    // Weekly star reset — runs every hour, fires on Monday UTC 07:30–07:59
     // Saves top-50 snapshot then resets weekly_stars = 0 for all users
     setInterval(async () => {
       try {
         const now = new Date();
         const isMonday = now.getUTCDay() === 1;
-        const isMidnightHour = now.getUTCHours() === 0;
-        if (!isMonday || !isMidnightHour) return;
+        const isResetHour = now.getUTCHours() === 7 && now.getUTCMinutes() >= 30;
+        if (!isMonday || !isResetHour) return;
 
         const { db } = await import('./db');
         const { users, leaderboardSnapshots } = await import('../shared/schema');

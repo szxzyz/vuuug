@@ -2832,9 +2832,17 @@ export class DatabaseStorage implements IStorage {
     { level: 9, required: 20, reward: "0.00033000" },
   ];
 
-  // Get current reset date in YYYY-MM-DD format (resets at 00:00 UTC)
+  // Get current reset date in YYYY-MM-DD format (resets at 07:30 UTC)
+  // Before 07:30 UTC the "current day" is still yesterday
   private getCurrentResetDate(): string {
     const now = new Date();
+    const resetHour = 7;
+    const resetMinute = 30;
+    if (now.getUTCHours() < resetHour || (now.getUTCHours() === resetHour && now.getUTCMinutes() < resetMinute)) {
+      const yesterday = new Date(now);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      return yesterday.toISOString().split('T')[0];
+    }
     return now.toISOString().split('T')[0];
   }
 
@@ -3055,15 +3063,15 @@ export class DatabaseStorage implements IStorage {
     return null; // All tasks claimed
   }
 
-  // New daily reset - runs at 00:00 UTC instead of 12:00 PM UTC
+  // New daily reset - runs at 07:30 UTC
   async performDailyResetV2(): Promise<void> {
     try {
-      console.log('🔄 Starting daily reset at 00:00 UTC (new task system)...');
+      console.log('🔄 Starting daily reset at 07:30 UTC (new task system)...');
       
       const currentDate = new Date();
       const currentDateString = currentDate.toISOString().split('T')[0];
       const resetTime = new Date(currentDate);
-      resetTime.setUTCHours(0, 0, 0, 0); // 00:00 UTC reset
+      resetTime.setUTCHours(7, 30, 0, 0); // 07:30 UTC reset
       
       // Check if today's reset has already been performed
       const usersNeedingReset = await db.select({ id: users.id })
@@ -3086,6 +3094,18 @@ export class DatabaseStorage implements IStorage {
           updatedAt: new Date(),
         })
         .where(sql`${users.lastResetDate} != ${currentDateString} OR ${users.lastResetDate} IS NULL`);
+
+      // Unlock star earning ONLY on Monday (new weekly contest begins)
+      // Stars stay locked all Sunday after contest ends — only Monday 07:30 UTC unlocks them
+      const resetDayUTC = new Date().getUTCDay(); // 0=Sun, 1=Mon, …, 6=Sat
+      if (resetDayUTC === 1) {
+        await db.execute(sql`
+          INSERT INTO admin_settings (setting_key, setting_value, description)
+          VALUES ('stars_locked', 'false', 'Locks star earning between contest end and Monday 07:30 UTC reset')
+          ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'false', updated_at = NOW()
+        `);
+        console.log('⭐ Monday 07:30 UTC — star earning unlocked, new weekly contest started!');
+      }
       
       console.log('✅ Daily reset completed successfully (new task system)');
       
@@ -3102,8 +3122,8 @@ export class DatabaseStorage implements IStorage {
       const currentHour = now.getUTCHours();
       const currentMinute = now.getUTCMinutes();
       
-      // Run reset at 00:00-00:05 UTC to catch the reset window
-      if (currentHour === 0 && currentMinute < 5) {
+      // Run reset at 07:30-07:35 UTC to catch the reset window
+      if (currentHour === 7 && currentMinute >= 30 && currentMinute < 35) {
         await this.performDailyResetV2();
       }
     } catch (error) {

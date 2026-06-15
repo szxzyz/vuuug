@@ -1286,6 +1286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
+        starsLocked: getSetting('stars_locked', 'false') === 'true',
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -1477,7 +1478,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(users.id, userId));
         
         // Add STAR reward to weekly_stars ONLY (2 stars per ad, no permanent star_balance update)
-        if (starRewardPerAd > 0) {
+        // Skip if stars are locked (contest ended, waiting for 07:30 UTC reset)
+        const starsLockedSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'stars_locked')).limit(1);
+        const starsLocked = starsLockedSetting[0]?.settingValue === 'true';
+        if (starRewardPerAd > 0 && !starsLocked) {
           const currentWeek = getISOWeek();
           const userWeekStarWeek = (user as any).weeklyStarWeek;
           const weeklyReset = userWeekStarWeek !== currentWeek;
@@ -1490,6 +1494,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             WHERE id = ${userId}
           `);
           console.log(`⭐ Ad watch: +${starRewardPerAd} STAR (weekly only) for ${userId}`);
+        } else if (starsLocked) {
+          console.log(`🔒 Star earning locked for ${userId} — contest ended, waiting for 07:30 UTC reset`);
         }
         
         // Check and activate referral bonuses
@@ -1810,19 +1816,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // STEP 2: Give the reward (safe — slot is already locked above)
       if (milestone.starReward) {
-        const starsToAdd = milestone.starReward;
-        const freshUser = await storage.getUser(userId);
-        const userWeek = (freshUser as any)?.weeklyStarWeek;
-        const weeklyReset = userWeek !== currentWeek;
-        await db.execute(sql`
-          UPDATE users SET
-            weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starsToAdd}
-                                   ELSE COALESCE(weekly_stars, 0) + ${starsToAdd} END,
-            weekly_star_week = ${currentWeek},
-            updated_at       = NOW()
-          WHERE id = ${userId}
-        `);
-        console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR (weekly only) for ${userId}`);
+        // Check stars_locked — no stars while contest is paused
+        const starsLockedRow = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'stars_locked')).limit(1);
+        const milestoneStarsLocked = starsLockedRow[0]?.settingValue === 'true';
+        if (!milestoneStarsLocked) {
+          const starsToAdd = milestone.starReward;
+          const freshUser = await storage.getUser(userId);
+          const userWeek = (freshUser as any)?.weeklyStarWeek;
+          const weeklyReset = userWeek !== currentWeek;
+          await db.execute(sql`
+            UPDATE users SET
+              weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starsToAdd}
+                                     ELSE COALESCE(weekly_stars, 0) + ${starsToAdd} END,
+              weekly_star_week = ${currentWeek},
+              updated_at       = NOW()
+            WHERE id = ${userId}
+          `);
+          console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR (weekly only) for ${userId}`);
+        } else {
+          console.log(`🔒 Milestone star reward skipped for ${userId} — contest ended, waiting for 07:30 UTC reset`);
+        }
       } else if (milestone.usdReward) {
         // Credit USD directly to usd_balance — do NOT convert to PAD
         await db
@@ -4027,6 +4040,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
+        starsLocked: getSetting('stars_locked', 'false') === 'true',
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);
