@@ -1495,7 +1495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `);
           console.log(`⭐ Ad watch: +${starRewardPerAd} STAR (weekly only) for ${userId}`);
         } else if (starsLocked) {
-          console.log(`🔒 Star earning locked for ${userId} — contest ended, waiting for Monday 12 AM IST reset`);
+          console.log(`🔒 Star earning locked for ${userId} — contest ended, waiting for Sunday midnight IST reset`);
         }
         
         // Check and activate referral bonuses

@@ -321,7 +321,7 @@ app.use((req, res, next) => {
                 `📅 Week: \`${weekKey}\`\n` +
                 `🥇 Winner: ${winnerName} — *${winner.weekly_stars} ⭐ stars*\n` +
                 `👥 Participants: ${totalParticipants}\n\n` +
-                `🔒 Star earning is now *LOCKED* until Monday 12 AM IST (Sunday 18:30 UTC)\n` +
+                `🔒 Star earning is now *LOCKED* until Sunday midnight IST (Saturday 18:30 UTC)\n` +
                 `All users' weekly stars have been reset to 0.`;
               fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
                 method: 'POST',
@@ -399,7 +399,7 @@ app.use((req, res, next) => {
           `🥇 1st Place — <b>$${top1Prize}</b>\n` +
           `🥈 2nd Place — <b>$${top2Prize}</b>\n` +
           `🥉 3rd Place — <b>$${top3Prize}</b>\n\n` +
-          `The contest runs until <b>Sunday midnight IST (12 AM IST)</b>.\n` +
+          `The contest runs until <b>Saturday midnight IST (12 AM IST)</b>.\n` +
           `Start earning stars now! 👇`;
 
         const replyMarkup = botUsername ? {
