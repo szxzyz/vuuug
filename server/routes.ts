@@ -1495,7 +1495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `);
           console.log(`⭐ Ad watch: +${starRewardPerAd} STAR (weekly only) for ${userId}`);
         } else if (starsLocked) {
-          console.log(`🔒 Star earning locked for ${userId} — contest ended, waiting for 07:30 UTC reset`);
+          console.log(`🔒 Star earning locked for ${userId} — contest ended, waiting for Monday 12 AM IST reset`);
         }
         
         // Check and activate referral bonuses
@@ -1691,7 +1691,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   function getDailyResetDateStr(): string {
     const now = new Date();
-    if (now.getUTCHours() < 12) {
+    // Reset at 18:30 UTC = 12:00 AM IST — before that, still "yesterday"
+    if (now.getUTCHours() < 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() < 30)) {
       const prev = new Date(now);
       prev.setUTCDate(prev.getUTCDate() - 1);
       return prev.toISOString().split('T')[0];
@@ -1729,11 +1730,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Calculate exact next reset time: 12:00 PM UTC
+      // Calculate exact next reset time: 18:30 UTC = 12:00 AM IST
       const now = new Date();
       const nextReset = new Date();
-      nextReset.setUTCHours(12, 0, 0, 0);
-      if (now.getUTCHours() >= 12) {
+      nextReset.setUTCHours(18, 30, 0, 0);
+      if (now.getUTCHours() > 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() >= 30)) {
         nextReset.setUTCDate(nextReset.getUTCDate() + 1);
       }
 
@@ -1746,7 +1747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         claimedToday: claimedIndices.length > 0,
         canUpgrade: false,
         nextResetAt: nextReset.toISOString(),
-        resetHourUTC: 12,
+        resetHourUTC: 18,
       });
     } catch (error) {
       console.error('Daily bonus status error:', error);
@@ -1834,7 +1835,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `);
           console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR (weekly only) for ${userId}`);
         } else {
-          console.log(`🔒 Milestone star reward skipped for ${userId} — contest ended, waiting for 07:30 UTC reset`);
+          console.log(`🔒 Milestone star reward skipped for ${userId} — contest ended, waiting for Monday 12 AM IST reset`);
         }
       } else if (milestone.usdReward) {
         // Credit USD directly to usd_balance — do NOT convert to PAD
@@ -2048,11 +2049,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const claimedToday = lastLogin === today;
 
       // Compute what the current (or next) day streak would be
+      // Reset at 18:30 UTC = 12:00 AM IST
       const yesterday = (() => {
         const now = new Date();
-        const resetHour = now.getUTCHours() >= 12 ? 0 : -1;
+        const pastReset = now.getUTCHours() > 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() >= 30);
         const d = new Date(now);
-        d.setUTCDate(d.getUTCDate() - 1 + resetHour);
+        d.setUTCDate(d.getUTCDate() - (pastReset ? 1 : 2));
         return d.toISOString().split('T')[0];
       })();
 
@@ -2065,8 +2067,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const now = new Date();
       const nextReset = new Date();
-      nextReset.setUTCHours(12, 0, 0, 0);
-      if (now.getUTCHours() >= 12) nextReset.setUTCDate(nextReset.getUTCDate() + 1);
+      nextReset.setUTCHours(18, 30, 0, 0);
+      if (now.getUTCHours() > 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() >= 30)) nextReset.setUTCDate(nextReset.getUTCDate() + 1);
 
       const reward = getDailyStreakReward(nextStreakDay);
 
@@ -2098,15 +2100,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Already claimed today', alreadyClaimed: true });
       }
 
-      // Determine next streak day
+      // Determine next streak day — reset at 18:30 UTC = 12:00 AM IST
       const yesterday = (() => {
         const now = new Date();
         const d = new Date(now);
-        if (now.getUTCHours() < 12) {
-          d.setUTCDate(d.getUTCDate() - 2);
-        } else {
-          d.setUTCDate(d.getUTCDate() - 1);
-        }
+        const pastReset = now.getUTCHours() > 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() >= 30);
+        d.setUTCDate(d.getUTCDate() - (pastReset ? 1 : 2));
         return d.toISOString().split('T')[0];
       })();
 
@@ -3456,16 +3455,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check which tasks user has already completed
       const completedIds = new Set<string>();
       
-      // Calculate current task date using 12:00 PM UTC reset logic
+      // Calculate current task date using 18:30 UTC (12:00 AM IST) reset logic
       const getCurrentTaskDate = (): string => {
         const now = new Date();
-        const resetHour = 12; // 12:00 PM UTC
-        
-        // If current time is before 12:00 PM UTC, use yesterday's date
-        if (now.getUTCHours() < resetHour) {
+        // If current time is before 18:30 UTC, use yesterday's date
+        if (now.getUTCHours() < 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() < 30)) {
           now.setUTCDate(now.getUTCDate() - 1);
         }
-        
         return now.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
       };
       

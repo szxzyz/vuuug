@@ -685,18 +685,15 @@ export class DatabaseStorage implements IStorage {
     return (user.extraAdsWatchedToday || 0) < 100;
   }
 
-  // Helper function for consistent 12:00 PM UTC reset date calculation
+  // Helper function for consistent 18:30 UTC (12:00 AM IST) reset date calculation
   private getResetDate(date = new Date()): string {
-    const utcDate = date.toISOString().split('T')[0];
-    
-    // If current time is before 12:00 PM UTC, consider it still "yesterday" for tasks
-    if (date.getUTCHours() < 12) {
+    // If current time is before 18:30 UTC, consider it still "yesterday" for tasks
+    if (date.getUTCHours() < 18 || (date.getUTCHours() === 18 && date.getUTCMinutes() < 30)) {
       const yesterday = new Date(date);
       yesterday.setUTCDate(yesterday.getUTCDate() - 1);
       return yesterday.toISOString().split('T')[0];
     }
-    
-    return utcDate;
+    return date.toISOString().split('T')[0];
   }
 
   async incrementAdsWatched(userId: string): Promise<void> {
@@ -2105,16 +2102,13 @@ export class DatabaseStorage implements IStorage {
   // Task completion system removed - using Ads Watch Tasks system only
 
 
-  // Get current date in YYYY-MM-DD format for 12:00 PM UTC reset
+  // Get current date in YYYY-MM-DD format for 18:30 UTC (12:00 AM IST) reset
   private getCurrentTaskDate(): string {
     const now = new Date();
-    const resetHour = 12; // 12:00 PM UTC
-    
-    // If current time is before 12:00 PM UTC, use yesterday's date
-    if (now.getUTCHours() < resetHour) {
+    // If current time is before 18:30 UTC, use yesterday's date
+    if (now.getUTCHours() < 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() < 30)) {
       now.setUTCDate(now.getUTCDate() - 1);
     }
-    
     return now.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
   }
 
@@ -2651,12 +2645,12 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Check if it's time for daily reset (12:00 PM UTC)
+  // Check if it's time for daily reset (18:30 UTC = 12:00 AM IST)
   async checkAndPerformDailyReset(): Promise<void> {
     const now = new Date();
     
-    // Check if it's exactly 12:00 PM UTC (within 1 minute window)
-    const isResetTime = now.getUTCHours() === 12 && now.getUTCMinutes() === 0;
+    // Check if it's 18:30 UTC (within 1 minute window)
+    const isResetTime = now.getUTCHours() === 18 && now.getUTCMinutes() === 30;
     
     if (isResetTime) {
       await this.performDailyReset();
