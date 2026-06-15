@@ -7373,21 +7373,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: 'You have sent a withdrawal request.'
       });
 
-      // Send withdrawal notification to admin via Telegram bot with inline buttons
-      // Format matches the approved withdrawal message format exactly
+      // Send withdrawal notification — (1) to the group chat, (2) to individual admins
       const userName = newWithdrawal.firstName;
       const userTelegramId = newWithdrawal.userTelegramId || '';
       const userTelegramUsername = newWithdrawal.username ? `@${newWithdrawal.username}` : 'N/A';
-      const currentDate = new Date().toUTCString();
       const walletAddress = newWithdrawal.walletAddress || 'N/A';
       const feeAmount = newWithdrawal.fee;
       const feePercent = newWithdrawal.feePercent;
 
-      // Get bot username dynamically from API
-      const { getBotUsername: getBotUsernameForWithdrawal } = await import('./telegram');
-      const botUsernameForWithdrawal = await getBotUsernameForWithdrawal();
-      
-      const adminMessage = `💰 Withdrawal Request
+      // (1) Post to the withdrawal group chat with Approve / Reject buttons
+      const { sendWithdrawalRequestToGroup } = await import('./telegram');
+      sendWithdrawalRequestToGroup({
+        withdrawalId: newWithdrawal.withdrawal.id,
+        userTelegramId,
+        userName,
+        userTelegramUsername,
+        walletAddress,
+        amount: newWithdrawal.withdrawnAmount,
+        fee: feeAmount,
+        feePercent
+      }).catch(err => console.error('❌ Group withdrawal request post failed:', err));
+
+      // (2) Also DM each individual admin with the same message + buttons
+      if (process.env.TELEGRAM_BOT_TOKEN) {
+        const { getBotUsername: getBotUsernameForWithdrawal } = await import('./telegram');
+        const botUsernameForWithdrawal = await getBotUsernameForWithdrawal();
+        const currentDate = new Date().toUTCString();
+
+        const adminMessage = `💰 Withdrawal Request
 
 🗣 User: <a href="tg://user?id=${userTelegramId}">${userName}</a>
 🆔 User ID: ${userTelegramId}
@@ -7399,16 +7412,13 @@ ${walletAddress}
 📅 Date: ${currentDate}
 🤖 Bot: @${botUsernameForWithdrawal}`;
 
-      // Create inline keyboard with Approve and Reject buttons
-      const inlineKeyboard = {
-        inline_keyboard: [[
-          { text: "🔘 Approve", callback_data: `withdraw_paid_${newWithdrawal.withdrawal.id}` },
-          { text: "❌ Reject", callback_data: `withdraw_reject_${newWithdrawal.withdrawal.id}` }
-        ]]
-      };
+        const inlineKeyboard = {
+          inline_keyboard: [[
+            { text: "✅ Approve", callback_data: `withdraw_paid_${newWithdrawal.withdrawal.id}` },
+            { text: "❌ Reject",  callback_data: `withdraw_reject_${newWithdrawal.withdrawal.id}` }
+          ]]
+        };
 
-      // Send message with inline buttons to ALL admins
-      if (process.env.TELEGRAM_BOT_TOKEN) {
         getAllAdminTelegramIds().then(allAdminIds => {
           const withdrawalId = newWithdrawal.withdrawal.id;
           allAdminIds.forEach(adminId => {

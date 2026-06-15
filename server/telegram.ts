@@ -133,23 +133,23 @@ export async function verifyChannelMembership(userId: number, channelIdOrUsernam
     
     console.log(`🔍 Checking membership for user ${userId} in channel ${channelIdentifier}...`);
     
-    // First, verify bot has admin access to the channel
+    // Verify bot has admin access to the channel — fail OPEN if bot can't check,
+    // so legitimate members are never blocked due to a bot permission issue.
     try {
       const botInfo = await bot.getMe();
       const botMember = await bot.getChatMember(channelIdentifier, botInfo.id);
       
       if (!['creator', 'administrator'].includes(botMember.status)) {
-        console.error(`❌ CRITICAL: Bot @${botInfo.username} is NOT an admin in ${channelIdentifier}!`);
-        console.error(`   Current bot status: ${botMember.status}`);
-        console.error(`   ⚠️ Please make the bot an ADMINISTRATOR in the channel to enable membership verification.`);
-        return false;
+        console.warn(`⚠️ Bot @${botInfo.username} is NOT an admin in ${channelIdentifier} (status: ${botMember.status}).`);
+        console.warn(`   Failing OPEN — make the bot an ADMINISTRATOR to enable real membership checks.`);
+        return true; // fail open: can't verify → let user through
       }
       
       console.log(`✅ Bot @${botInfo.username} has admin access to ${channelIdentifier}`);
     } catch (botCheckError: any) {
-      console.error(`❌ Could not verify bot permissions in ${channelIdentifier}:`, botCheckError?.message);
-      console.error(`   Make sure the bot is added as an ADMINISTRATOR to the channel.`);
-      return false;
+      console.warn(`⚠️ Could not check bot permissions in ${channelIdentifier}:`, botCheckError?.message);
+      console.warn(`   Failing OPEN — make the bot an ADMINISTRATOR to enable real membership checks.`);
+      return true; // fail open: can't verify → let user through
     }
     
     // Now check user membership with retry logic
@@ -586,6 +586,73 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Post a new withdrawal REQUEST to the group chat with Approve / Reject buttons
+export async function sendWithdrawalRequestToGroup(withdrawalData: {
+  withdrawalId: string;
+  userTelegramId: string;
+  userName: string;
+  userTelegramUsername: string;
+  walletAddress: string;
+  amount: number;
+  fee: number;
+  feePercent: string | number;
+}): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn('⚠️ Telegram bot token not set — skipping group withdrawal request notification');
+    return false;
+  }
+
+  try {
+    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1002480439556');
+    const groupChatId = groupSetting || '-1002480439556';
+
+    const botUsername = await getBotUsername();
+    const currentDate = new Date().toUTCString();
+
+    const text = `💰 <b>Withdrawal Request</b>
+
+🗣 User: <a href="tg://user?id=${withdrawalData.userTelegramId}">${escapeHtml(withdrawalData.userName)}</a>
+🆔 User ID: <code>${withdrawalData.userTelegramId}</code>
+💳 Username: ${escapeHtml(withdrawalData.userTelegramUsername)}
+🌐 Address:
+<code>${escapeHtml(withdrawalData.walletAddress)}</code>
+💸 Amount: <b>${withdrawalData.amount.toFixed(5)} USD</b>
+🛂 Fee: ${withdrawalData.fee.toFixed(5)} (${withdrawalData.feePercent}%)
+📅 Date: ${currentDate}
+🤖 Bot: @${botUsername}`;
+
+    const replyMarkup = {
+      inline_keyboard: [[
+        { text: '✅ Approve', callback_data: `withdraw_paid_${withdrawalData.withdrawalId}` },
+        { text: '❌ Reject',  callback_data: `withdraw_reject_${withdrawalData.withdrawalId}` }
+      ]]
+    };
+
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: groupChatId,
+        text,
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup
+      })
+    });
+
+    const data = await response.json() as any;
+    if (response.ok && data.ok) {
+      console.log(`✅ Withdrawal request posted to group ${groupChatId} for withdrawal ${withdrawalData.withdrawalId}`);
+      return true;
+    } else {
+      console.error(`❌ Failed to post withdrawal request to group ${groupChatId}:`, JSON.stringify(data));
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error posting withdrawal request to group:', error);
+    return false;
+  }
 }
 
 export async function sendWithdrawalApprovedNotification(withdrawal: any): Promise<boolean> {
