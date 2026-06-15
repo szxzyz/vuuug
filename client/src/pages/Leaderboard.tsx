@@ -218,7 +218,7 @@ export default function Leaderboard() {
                   Star Earning Paused
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
-                  Contest ended — New contest starts Monday at 07:30 UTC
+                  Contest ended — New contest starts Monday at 12:00 AM IST
                 </div>
               </div>
             </div>
