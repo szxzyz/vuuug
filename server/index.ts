@@ -50,13 +50,16 @@ try {
   for (const setting of allSettings) {
     const correctKey = toSnakeCase(setting.settingKey);
     if (correctKey !== setting.settingKey) {
-      // Save under the correct snake_case key (upsert)
-      await db.insert(adminSettings)
-        .values({ settingKey: correctKey, settingValue: setting.settingValue, updatedAt: new Date() })
-        .onConflictDoUpdate({
-          target: adminSettings.settingKey,
-          set: { settingValue: setting.settingValue, updatedAt: new Date() }
-        });
+      // Check if snake_case version already exists — if so, just delete the camelCase duplicate
+      const existing = allSettings.find(s => s.settingKey === correctKey);
+      if (!existing) {
+        // No snake_case version yet — rename by inserting snake_case
+        await db.insert(adminSettings)
+          .values({ settingKey: correctKey, settingValue: setting.settingValue, updatedAt: new Date() })
+          .onConflictDoNothing();
+      }
+      // Always delete the old camelCase key so it never overwrites snake_case on next restart
+      await db.execute(sql`DELETE FROM admin_settings WHERE setting_key = ${setting.settingKey}`);
       fixed++;
       console.log(`🔧 Fixed admin setting key: ${setting.settingKey} → ${correctKey}`);
     }
