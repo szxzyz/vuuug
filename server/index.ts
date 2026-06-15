@@ -225,7 +225,7 @@ app.use((req, res, next) => {
   }, async () => {
     log(`serving on port ${port}`);
     
-    // Set up new daily reset check (runs every 5 minutes at 07:30 UTC)
+    // Set up new daily reset check (runs every 5 minutes at 18:30 UTC = 12 AM IST)
     setInterval(async () => {
       try {
         const { storage } = await import('./storage');
@@ -237,7 +237,7 @@ app.use((req, res, next) => {
 
     // Contest-end detector — runs every 5 minutes
     // When weekly_contest_end_date passes: zero all weekly_stars and lock star earning
-    // Stars stay locked until the 07:30 UTC daily reset unlocks them
+    // Stars stay locked until Monday 12 AM IST (Sunday 18:30 UTC daily reset) unlocks them
     setInterval(async () => {
       try {
         const { db } = await import('./db');
@@ -258,17 +258,17 @@ app.use((req, res, next) => {
         const endDate = endDateStr ? new Date(endDateStr) : null;
         const adminEndTriggered = endDate && !isNaN(endDate.getTime()) && Date.now() >= endDate.getTime();
 
-        // Trigger 2: Automatic — every Sunday at or after 23:30 UTC
+        // Trigger 2: Automatic — every Saturday at or after 18:30 UTC (= Sunday 12 AM IST, contest ends)
         const checkNow = new Date();
-        const isSunday = checkNow.getUTCDay() === 0;
-        const afterContestEndTime = checkNow.getUTCHours() >= 23 && checkNow.getUTCMinutes() >= 30;
-        const autoEndTriggered = isSunday && afterContestEndTime;
+        const isSaturday = checkNow.getUTCDay() === 6;
+        const afterContestEndTime = checkNow.getUTCHours() >= 18 && checkNow.getUTCMinutes() >= 30;
+        const autoEndTriggered = isSaturday && afterContestEndTime;
 
         if (!adminEndTriggered && !autoEndTriggered) return;
 
         const triggerReason = adminEndTriggered
           ? `admin end date ${endDateStr}`
-          : `auto Sunday 23:30 UTC`;
+          : `auto Saturday 18:30 UTC (Sunday 12 AM IST)`;
 
         // Contest has ended → lock now
         log(`🏁 Weekly contest ended (${triggerReason}). Saving snapshot, locking star earning…`);
@@ -321,7 +321,7 @@ app.use((req, res, next) => {
                 `📅 Week: \`${weekKey}\`\n` +
                 `🥇 Winner: ${winnerName} — *${winner.weekly_stars} ⭐ stars*\n` +
                 `👥 Participants: ${totalParticipants}\n\n` +
-                `🔒 Star earning is now *LOCKED* until Monday 07:30 UTC\n` +
+                `🔒 Star earning is now *LOCKED* until Monday 12 AM IST (Sunday 18:30 UTC)\n` +
                 `All users' weekly stars have been reset to 0.`;
               fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
                 method: 'POST',
@@ -337,27 +337,28 @@ app.use((req, res, next) => {
         // 3. Zero all weekly_stars
         await db.execute(sql`UPDATE users SET weekly_stars = 0, weekly_star_week = NULL, updated_at = NOW()`);
 
-        // 4. Set stars_locked = true (stays locked until Monday 07:30 UTC)
+        // 4. Set stars_locked = true (stays locked until Monday 12 AM IST = Sunday 18:30 UTC)
         await db.execute(sql`
           INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES ('stars_locked', 'true', 'Locks star earning between contest end and Monday 07:30 UTC reset')
+          VALUES ('stars_locked', 'true', 'Locks star earning between contest end and Monday 12 AM IST (Sunday 18:30 UTC)')
           ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'true', updated_at = NOW()
         `);
 
-        log('✅ Contest ended: leaderboard saved, weekly_stars cleared, star earning locked until Monday 07:30 UTC');
+        log('✅ Contest ended: leaderboard saved, weekly_stars cleared, star earning locked until Monday 12 AM IST (Sunday 18:30 UTC)');
       } catch (err) {
         console.error('❌ Error in contest-end detector:', err);
       }
     }, 5 * 60 * 1000); // Every 5 minutes
 
-    // Monday new-contest broadcast — runs every hour, fires Mon 07:30–07:59 UTC
+    // Monday IST new-contest broadcast — runs every hour, fires Sun 18:30–18:59 UTC (= Mon 12 AM IST)
     // Sends "new weekly contest started" message to all users once per week
     setInterval(async () => {
       try {
         const now = new Date();
-        const isMonday = now.getUTCDay() === 1;
-        const isResetHour = now.getUTCHours() === 7 && now.getUTCMinutes() >= 30;
-        if (!isMonday || !isResetHour) return;
+        // Sunday UTC 18:30 = Monday 12 AM IST (contest starts)
+        const isMondayIST = now.getUTCDay() === 0;
+        const isResetHour = now.getUTCHours() === 18 && now.getUTCMinutes() >= 30;
+        if (!isMondayIST || !isResetHour) return;
 
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
         const botUsername = process.env.TELEGRAM_BOT_USERNAME || process.env.BOT_USERNAME || '';
@@ -398,7 +399,7 @@ app.use((req, res, next) => {
           `🥇 1st Place — <b>$${top1Prize}</b>\n` +
           `🥈 2nd Place — <b>$${top2Prize}</b>\n` +
           `🥉 3rd Place — <b>$${top3Prize}</b>\n\n` +
-          `The contest runs until <b>Sunday 23:30 UTC</b>.\n` +
+          `The contest runs until <b>Sunday midnight IST (12 AM IST)</b>.\n` +
           `Start earning stars now! 👇`;
 
         const replyMarkup = botUsername ? {
@@ -414,7 +415,7 @@ app.use((req, res, next) => {
           AND COALESCE(banned, false) = false
         `);
 
-        log(`📢 Monday broadcast: sending new-contest message to ${allUsers.rows.length} users…`);
+        log(`📢 Monday IST broadcast: sending new-contest message to ${allUsers.rows.length} users…`);
 
         let sent = 0, failed = 0;
         for (const row of allUsers.rows) {
@@ -439,7 +440,7 @@ app.use((req, res, next) => {
           await new Promise(r => setTimeout(r, 35));
         }
 
-        log(`✅ Monday broadcast done — ${sent} delivered, ${failed} failed`);
+        log(`✅ Monday IST broadcast done — ${sent} delivered, ${failed} failed`);
       } catch (err) {
         console.error('❌ Error in Monday contest broadcast:', err);
       }
@@ -455,22 +456,23 @@ app.use((req, res, next) => {
       }
     }, 30 * 60 * 1000); // Every 30 minutes
 
-    // Weekly star reset — runs every hour, fires on Monday UTC 07:30–07:59
+    // Weekly star reset — runs every hour, fires on Sunday UTC 18:30–18:59 (= Monday 12 AM IST)
     // Saves top-50 snapshot then resets weekly_stars = 0 for all users
     setInterval(async () => {
       try {
         const now = new Date();
-        const isMonday = now.getUTCDay() === 1;
-        const isResetHour = now.getUTCHours() === 7 && now.getUTCMinutes() >= 30;
-        if (!isMonday || !isResetHour) return;
+        // Sunday UTC 18:30 = Monday 12 AM IST — contest week starts fresh
+        const isMondayIST = now.getUTCDay() === 0;
+        const isResetHour = now.getUTCHours() === 18 && now.getUTCMinutes() >= 30;
+        if (!isMondayIST || !isResetHour) return;
 
         const { db } = await import('./db');
         const { users, leaderboardSnapshots } = await import('../shared/schema');
         const { sql } = await import('drizzle-orm');
 
-        // Calculate last week key (the week that just ended)
+        // Calculate last week key (the week that just ended = Saturday IST)
         const lastWeekDate = new Date(now);
-        lastWeekDate.setUTCDate(lastWeekDate.getUTCDate() - 1); // Sunday = last week
+        lastWeekDate.setUTCDate(lastWeekDate.getUTCDate() - 1); // Saturday UTC = last week
         const year = lastWeekDate.getUTCFullYear();
         const startOfYear = new Date(Date.UTC(year, 0, 1));
         const dayOfYear = Math.floor((lastWeekDate.getTime() - startOfYear.getTime()) / 86400000);

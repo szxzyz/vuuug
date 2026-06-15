@@ -356,8 +356,8 @@ export async function sendWeeklyLeaderboardReport(weekLabel?: string): Promise<b
 export async function checkAndSendWeeklyLeaderboardReport(): Promise<void> {
   try {
     const now = new Date();
-    // Send report and reset on Monday UTC (day 1), first check of the new week
-    if (now.getUTCDay() === 1) {
+    // Send report and reset on Sunday UTC 18:30+ (= Monday 12 AM IST), first check of the new week
+    if (now.getUTCDay() === 0 && now.getUTCHours() >= 18) {
       await sendWeeklyLeaderboardReport();
       await resetWeeklyContest();
     }
