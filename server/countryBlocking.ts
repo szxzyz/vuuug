@@ -226,32 +226,57 @@ export interface CountryLookupResult {
   isHosting: boolean;
 }
 
+// In-memory cache: avoid hammering ip-api.com on every request
+const ipCache = new Map<string, { result: CountryLookupResult; expiresAt: number }>();
+const IP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function getCountryFromIP(ip: string): Promise<CountryLookupResult> {
   if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
     return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
   }
+
+  // Return cached result if still fresh
+  const cached = ipCache.get(ip);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.result;
+  }
   
   try {
-    // Request extended fields including proxy, hosting, and mobile detection
-    // Fields: countryCode, country, status, proxy (VPN/proxy), hosting (datacenter/hosting)
-    const response = await fetch(`http://ip-api.com/json/${ip}?fields=countryCode,country,status,proxy,hosting`);
+    // 3-second timeout so a slow/unreachable ip-api never hangs the page load
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    // Use https so it works on networks that block plain HTTP
+    const response = await fetch(
+      `https://ip-api.com/json/${ip}?fields=countryCode,country,status,proxy,hosting`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
       console.error('IP-API request failed:', response.status);
       return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
     }
     const data = await response.json();
     if (data.status === 'success' && data.countryCode) {
-      return { 
+      const result: CountryLookupResult = { 
         countryCode: data.countryCode, 
         countryName: data.country || null,
         isVPN: data.proxy === true,
         isProxy: data.proxy === true,
         isHosting: data.hosting === true
       };
+      ipCache.set(ip, { result, expiresAt: Date.now() + IP_CACHE_TTL_MS });
+      return result;
     }
     return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
-  } catch (error) {
-    console.error('Error getting country from IP:', error);
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      console.warn(`IP-API timeout for ${ip} — allowing access`);
+    } else {
+      console.error('Error getting country from IP:', error);
+    }
+    // On any failure (timeout, network error), allow access — never block legitimate users
     return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
   }
 }
