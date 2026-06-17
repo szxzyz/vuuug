@@ -276,7 +276,8 @@ function App() {
   }, [isDevMode]);
 
   useEffect(() => {
-    if (isCheckingCountry || isCountryBlocked) {
+    // Don't wait for country check — run auth immediately in parallel
+    if (isCountryBlocked) {
       return;
     }
 
@@ -368,13 +369,13 @@ function App() {
       setIsAuthenticating(false);
       setIsChannelVerified(true);
     }
-  }, [isDevMode, isCheckingCountry, isCountryBlocked, checkMembership]);
+  }, [isDevMode, isCountryBlocked, checkMembership]);
 
   if (isBanned) {
     return <BanScreen reason={banReason} />;
   }
 
-  if (isCheckingCountry || isAuthenticating || isCheckingMembership) {
+  if (isAuthenticating || isCheckingMembership) {
     return <PageLoader />;
   }
 

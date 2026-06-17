@@ -2,11 +2,12 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-// MANDATORY: Hard Lock check for Telegram WebApp environment
-const isTelegram = !!(window as any).Telegram?.WebApp?.initData;
+// Telegram environment check — allow if Telegram WebApp SDK is present
+// (initData can be empty on proxy/older clients — don't block on that alone)
+const tg = (window as any).Telegram?.WebApp;
+const isTelegram = !!(tg && (tg.initData !== undefined || tg.platform || tg.version));
 
 if (!isTelegram && process.env.NODE_ENV === "production") {
-  // Completely block rendering and show a dead screen
   document.body.innerHTML = `
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #000; color: #ff4d4d; font-family: sans-serif; text-align: center; padding: 20px;">
       <h1 style="font-size: 24px; margin-bottom: 10px;">🛑 ACCESS DENIED</h1>
