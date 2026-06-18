@@ -2,12 +2,18 @@ import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { showNotification } from "@/components/AppNotification";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { useAdFlow } from "@/hooks/useAdFlow";
 import PromoCodeInput from "@/components/PromoCodeInput";
-import { FaBullhorn, FaRobot, FaHandshake } from "react-icons/fa";
 import { useLanguage } from "@/hooks/useLanguage";
+
+declare global {
+  interface Window {
+    Adsgram?: {
+      init: (params: { blockId: string; debug?: boolean }) => { show: () => Promise<void>; destroy: () => void };
+    };
+  }
+}
 
 const BLUE   = '#3b82f6';
 const BLUE_D = '#2563eb';
@@ -44,6 +50,7 @@ interface AppSettings {
   checkAnnouncementReward?: number;
   adsgramCheckinReward?: number;
   firstActiveReferralReward?: number;
+  channelUrl?: string;
   [key: string]: any;
 }
 
@@ -83,7 +90,7 @@ function EmptyRow({ label }: { label: string }) {
 function LoadingRow() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
-      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.06)', flexShrink: 0, animation: 'pulse 1.5s ease-in-out infinite' }} />
+      <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,0.06)', flexShrink: 0, animation: 'pulse 1.5s ease-in-out infinite' }} />
       <div style={{ flex: 1 }}>
         <div style={{ height: 12, width: '60%', background: 'rgba(255,255,255,0.06)', borderRadius: 6, marginBottom: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
         <div style={{ height: 10, width: '40%', background: 'rgba(255,255,255,0.04)', borderRadius: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
@@ -165,65 +172,198 @@ function AdRow({ platform, name, reward, limit, count, loading, disabled, onWatc
   );
 }
 
-function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdownTasks, onGo, onClaim, isLast, claimLabel, channelLabel, botLabel, partnerLabel }: {
+/* ── Unified action button style ── */
+const BTN_BASE: React.CSSProperties = {
+  flexShrink: 0,
+  width: 72,
+  height: 36,
+  border: 'none',
+  borderRadius: 10,
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  letterSpacing: '0.02em',
+  transition: 'opacity 0.15s',
+};
+
+/* ── Daily Mission Card ── */
+function DailyMissionCard({
+  icon,
+  title,
+  description,
+  reward,
+  done,
+  busy,
+  btnLabel,
+  btnColor,
+  countdown,
+  claimReady,
+  onAction,
+  onClaim,
+  isLast,
+  isOneTime,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  reward: number;
+  done: boolean;
+  busy: boolean;
+  btnLabel: string;
+  btnColor: string;
+  countdown?: number;
+  claimReady?: boolean;
+  onAction: () => void;
+  onClaim: () => void;
+  isLast: boolean;
+  isOneTime?: boolean;
+}) {
+  return (
+    <>
+      <div style={{ padding: '14px 16px 0' }}>
+        {/* Top: icon + title + description */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flexShrink: 0, marginTop: 2 }}>{icon}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>{title}</span>
+              {isOneTime && (
+                <span style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, color: 'rgba(255,255,255,0.4)', fontSize: 9, fontWeight: 700, padding: '2px 5px' }}>ONE-TIME</span>
+              )}
+            </div>
+            <span style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2, display: 'block' }}>{description}</span>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 0 0' }} />
+
+        {/* Bottom: reward + button */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 14px' }}>
+          {/* Reward */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <img src="/pow-icon.png" alt="POW" style={{ width: 22, height: 22, objectFit: 'contain' }} />
+              <span style={{ color: TEXT, fontSize: 15, fontWeight: 800 }}>{reward.toLocaleString()}</span>
+            </div>
+          </div>
+
+          {/* Action */}
+          {done ? (
+            <div style={{ width: 72, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+          ) : countdown !== undefined ? (
+            <div style={{ ...BTN_BASE, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default' }}>
+              {countdown}s
+            </div>
+          ) : claimReady ? (
+            <button
+              onClick={onClaim}
+              disabled={busy}
+              style={{ ...BTN_BASE, background: busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #16a34a, #22c55e)', color: busy ? TEXT_DIM : '#fff', boxShadow: busy ? 'none' : '0 2px 12px rgba(34,197,94,0.35)', cursor: busy ? 'not-allowed' : 'pointer' }}
+              className="active:scale-95 transition-transform"
+            >
+              {busy ? <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> : 'Claim'}
+            </button>
+          ) : (
+            <button
+              onClick={onAction}
+              disabled={busy}
+              style={{ ...BTN_BASE, background: busy ? 'rgba(255,255,255,0.06)' : btnColor, color: busy ? TEXT_DIM : '#fff', boxShadow: busy ? 'none' : '0 2px 10px rgba(0,0,0,0.3)', cursor: busy ? 'not-allowed' : 'pointer' }}
+              className={busy ? '' : 'active:scale-95 transition-transform'}
+            >
+              {busy
+                ? <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                : btnLabel}
+            </button>
+          )}
+        </div>
+      </div>
+      {!isLast && <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />}
+    </>
+  );
+}
+
+/* ── Task type image icon ── */
+function TaskTypeIcon({ taskType }: { taskType: string }) {
+  const src = taskType === 'channel' || taskType === 'partner'
+    ? '/icon-channel.png'
+    : '/icon-game.png';
+  return (
+    <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <img src={src} alt={taskType} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+    </div>
+  );
+}
+
+/* ── Feed TaskRow – new card style matching DailyMissionCard ── */
+function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdownTasks, onGo, onClaim, isLast }: {
   task: Task; reward: number; loading: boolean;
   clickedTasks: Set<string>; claimReadyTasks: Set<string>; countdownTasks: Map<string, number>;
   onGo: (task: Task) => void; onClaim: (taskId: string) => void; isLast: boolean;
-  claimLabel: string; channelLabel: string; botLabel: string; partnerLabel: string;
 }) {
   const isClaimReady = claimReadyTasks.has(task.id);
   const isClicked = clickedTasks.has(task.id);
   const countdown = countdownTasks.get(task.id);
 
-  const iconSvg = task.taskType === 'channel' ? (
-    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <FaBullhorn size={16} color="#3b82f6" />
-    </div>
-  ) : task.taskType === 'partner' ? (
-    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(236,72,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <FaHandshake size={16} color="#ec4899" />
-    </div>
-  ) : (
-    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <FaRobot size={16} color="#8b5cf6" />
-    </div>
-  );
+  const accent = task.taskType === 'channel' ? '#3b82f6'
+    : task.taskType === 'partner' ? '#ec4899'
+    : '#8b5cf6';
 
-  const taskTypeLabel = task.taskType === 'channel' ? channelLabel
-    : task.taskType === 'partner' ? partnerLabel
-    : botLabel;
+  const typeLabel = task.taskType === 'channel' ? 'Channel' : task.taskType === 'partner' ? 'Partner' : 'Bot / Game';
 
   return (
     <>
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px', cursor: isClaimReady || isClicked ? 'default' : 'pointer', WebkitTapHighlightColor: 'transparent' }}
-        onClick={() => !isClaimReady && !isClicked && onGo(task)}
-      >
-        {iconSvg}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ color: TEXT, fontSize: 14, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, display: 'block' }}>{task.title}</span>
-          <span style={{ color: TEXT_DIM, fontSize: 11, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-            {task.taskType === 'channel'
-              ? <><FaBullhorn size={10} color="#3b82f6" /> {channelLabel}</>
-              : task.taskType === 'partner'
-              ? <><FaHandshake size={10} color="#ec4899" /> {partnerLabel}</>
-              : <><FaRobot size={10} color="#8b5cf6" /> {botLabel}</>}
-          </span>
+      <div style={{ padding: '14px 16px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <TaskTypeIcon taskType={task.taskType} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ color: TEXT, fontSize: 14, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, display: 'block' }}>{task.title}</span>
+            <span style={{ color: accent, fontSize: 11, marginTop: 2, fontWeight: 600, display: 'block' }}>{typeLabel}</span>
+          </div>
         </div>
-        <div style={{ flexShrink: 0 }}>
+
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 0 0' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <img src="/pow-icon.png" alt="POW" style={{ width: 22, height: 22, objectFit: 'contain' }} />
+            <span style={{ color: TEXT, fontSize: 15, fontWeight: 800 }}>{reward.toLocaleString()}</span>
+          </div>
+
           {!isClicked ? (
-            <span style={{ background: `${BLUE}22`, borderRadius: 8, color: BLUE, fontSize: 11, fontWeight: 800, padding: '5px 9px', display: 'inline-block' }}>+{reward} POW</span>
+            <button
+              onClick={() => onGo(task)}
+              style={{ ...BTN_BASE, background: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`, color: '#fff', boxShadow: '0 2px 10px rgba(37,99,235,0.35)' }}
+              className="active:scale-95 transition-transform"
+            >
+              Go
+            </button>
           ) : countdown !== undefined ? (
-            <span style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, color: TEXT_DIM, display: 'inline-block' }}>{countdown}s</span>
-          ) : (
+            <div style={{ ...BTN_BASE, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default' }}>
+              {countdown}s
+            </div>
+          ) : isClaimReady ? (
             <button
               onClick={e => { e.stopPropagation(); onClaim(task.id); }}
               disabled={loading}
-              style={{ background: loading ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #16a34a, #22c55e)', border: 'none', borderRadius: 10, padding: '9px 12px', fontSize: 12, fontWeight: 800, color: loading ? TEXT_DIM : '#fff', cursor: loading ? 'not-allowed' : 'pointer', boxShadow: loading ? 'none' : '0 2px 12px rgba(34,197,94,0.35)' }}
+              style={{ ...BTN_BASE, background: loading ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #16a34a, #22c55e)', color: loading ? TEXT_DIM : '#fff', boxShadow: loading ? 'none' : '0 2px 12px rgba(34,197,94,0.35)', cursor: loading ? 'not-allowed' : 'pointer' }}
               className="active:scale-95 transition-transform"
             >
-              {loading ? '…' : claimLabel}
+              {loading ? '…' : 'Claim'}
             </button>
+          ) : (
+            <div style={{ width: 72, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
           )}
         </div>
       </div>
@@ -247,33 +387,14 @@ function MainTabs({ active, onChange, allLabel, dailyLabel, partnerLabel }: {
     { id: 'partner', label: partnerLabel },
   ];
   return (
-    <div style={{
-      display: 'flex',
-      background: 'rgba(255,255,255,0.06)',
-      borderRadius: 14,
-      padding: 4,
-      marginBottom: 16,
-      gap: 2,
-    }}>
+    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 14, padding: 4, marginBottom: 16, gap: 2 }}>
       {tabs.map(tab => {
         const isActive = active === tab.id;
         return (
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            style={{
-              flex: 1,
-              padding: '9px 0',
-              borderRadius: 11,
-              border: 'none',
-              background: isActive ? '#fff' : 'transparent',
-              cursor: 'pointer',
-              transition: 'all 0.18s',
-              fontSize: 13,
-              fontWeight: 700,
-              color: isActive ? '#000' : 'rgba(255,255,255,0.5)',
-              letterSpacing: '0.01em',
-            }}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 11, border: 'none', background: isActive ? '#fff' : 'transparent', cursor: 'pointer', transition: 'all 0.18s', fontSize: 13, fontWeight: 700, color: isActive ? '#000' : 'rgba(255,255,255,0.5)', letterSpacing: '0.01em' }}
             className="active:scale-95"
           >
             {tab.label}
@@ -292,11 +413,15 @@ export default function Missions() {
   const { data: adminData } = useQuery<{ isAdmin: boolean }>({ queryKey: ['/api/admin/check'], retry: false });
   const isAdmin = adminData?.isAdmin || false;
   const [activeTab, setActiveTab] = useState<MainTab>('all');
+
+  /* Feed task state */
   const [clickedTasks, setClickedTasks] = useState<Set<string>>(new Set());
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [claimReadyTasks, setClaimReadyTasks] = useState<Set<string>>(new Set());
   const [countdownTasks, setCountdownTasks] = useState<Map<string, number>>(new Map());
+
+  /* Ad platform state */
   const [adLoadingPlatform, setAdLoadingPlatform] = useState<string | null>(null);
   const [platformCounts, setPlatformCounts] = useState({
     monetag: getPlatformCount('monetag'),
@@ -304,34 +429,57 @@ export default function Missions() {
     monetix: getPlatformCount('monetix'),
   });
 
-  const { showMonetagAd, showGigaPubAd, showMonetixAd } = useAdFlow();
+  /* Daily mission state */
+  const [claimingMission, setClaimingMission] = useState<string | null>(null);
 
+  /* Per-mission: countdown + claimReady */
+  const [missionCountdown, setMissionCountdown] = useState<Record<string, number>>({});
+  const [missionClaimReady, setMissionClaimReady] = useState<Record<string, boolean>>({});
+  const missionTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+
+  /* Queries */
   const { data: appSettings } = useQuery<AppSettings>({ queryKey: ['/api/app-settings'], retry: false });
-  const { data: missionsStatus, refetch: refetchMissions } = useQuery<any>({
-    queryKey: ['/api/missions/status'],
-    retry: false,
-    staleTime: 30000,
-  });
-  const { data: tasksData, isLoading: tasksLoading } = useQuery<{ success: boolean; tasks: Task[] }>({
-    queryKey: ["/api/advertiser-tasks"],
-    retry: false,
-    refetchOnMount: true,
-    staleTime: 10000,
-  });
+  const { data: missionsStatus, refetch: refetchMissions } = useQuery<any>({ queryKey: ['/api/missions/status'], retry: false, staleTime: 30000 });
+  const { data: tasksData, isLoading: tasksLoading } = useQuery<{ success: boolean; tasks: Task[] }>({ queryKey: ["/api/advertiser-tasks"], retry: false, refetchOnMount: true, staleTime: 10000 });
+  const { data: botInfo } = useQuery<{ username: string }>({ queryKey: ['/api/bot-info'], retry: false, staleTime: 300000 });
 
+  /* Derived values */
   const monetagReward = appSettings?.monetagMissionReward ?? 50;
   const monetagLimit  = appSettings?.monetagMissionLimit  ?? 10;
   const gigaPubReward = appSettings?.gigaPubMissionReward ?? 50;
   const gigaPubLimit  = appSettings?.gigaPubMissionLimit  ?? 10;
-  const monetixReward = appSettings?.monetixMissionReward ?? 1500;
-  const monetixLimit  = appSettings?.monetixMissionLimit  ?? 25;
   const channelReward = appSettings?.channelTaskReward || 30;
   const botReward     = appSettings?.botTaskReward     || 20;
   const partnerReward = appSettings?.partnerTaskReward  || 5;
 
-  const [claimingMission, setClaimingMission] = useState<string | null>(null);
+  const botUsername = botInfo?.username || (import.meta as any).env?.VITE_BOT_USERNAME || 'PaidAdzbot';
+  const referralLink = (user as any)?.referralCode
+    ? `https://t.me/${botUsername}?start=${(user as any).referralCode}`
+    : '';
+  const channelUrl = appSettings?.channelUrl || 'https://t.me/PaidAdzNews';
 
-  const claimSimpleMission = async (endpoint: string, missionKey: string) => {
+  /* ── helpers ── */
+
+  const startMissionCountdown = (key: string, cb: () => void, seconds = 3) => {
+    setMissionCountdown(prev => ({ ...prev, [key]: seconds }));
+    if (missionTimers.current[key]) clearInterval(missionTimers.current[key]);
+    missionTimers.current[key] = setInterval(() => {
+      setMissionCountdown(prev => {
+        const c = (prev[key] || 0) - 1;
+        if (c <= 0) {
+          clearInterval(missionTimers.current[key]);
+          delete missionTimers.current[key];
+          setMissionCountdown(p => { const n = { ...p }; delete n[key]; return n; });
+          setMissionClaimReady(p => ({ ...p, [key]: true }));
+          cb();
+          return prev;
+        }
+        return { ...prev, [key]: c };
+      });
+    }, 1000);
+  };
+
+  const claimMission = async (endpoint: string, missionKey: string) => {
     if (claimingMission) return;
     setClaimingMission(missionKey);
     try {
@@ -341,6 +489,7 @@ export default function Missions() {
         showNotification(`+${data.reward} POW ${t('claimed')}!`, 'success');
         queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
         refetchMissions();
+        setMissionClaimReady(p => { const n = { ...p }; delete n[missionKey]; return n; });
       } else {
         showNotification(data.error || t('failed'), 'error');
       }
@@ -351,12 +500,110 @@ export default function Missions() {
     }
   };
 
+  /* AdsGram helper */
+  const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
+    new Promise(resolve => {
+      if (!window.Adsgram) { resolve({ success: false, unavailable: true }); return; }
+      try {
+        window.Adsgram.init({ blockId: '34708' })
+          .show()
+          .then(() => resolve({ success: true, unavailable: false }))
+          .catch(() => resolve({ success: false, unavailable: false }));
+      } catch {
+        resolve({ success: false, unavailable: true });
+      }
+    });
+
+  /* ── Mission handlers ── */
+
+  const handleJustCheckIn = async (done: boolean) => {
+    if (done || claimingMission === 'adsgram_checkin') return;
+    if (missionClaimReady['adsgram_checkin']) {
+      await claimMission('/api/missions/adsgram-checkin/claim', 'adsgram_checkin');
+      return;
+    }
+    setClaimingMission('adsgram_checkin_loading');
+    try {
+      const result = await showAdsgramAd();
+      if (result.unavailable) { showNotification(t('no_ad_available') || 'No ad available right now', 'info'); return; }
+      if (!result.success) { showNotification(t('watch_full_ad') || 'Please watch the full ad', 'error'); return; }
+      setMissionClaimReady(p => ({ ...p, adsgram_checkin: true }));
+      await claimMission('/api/missions/adsgram-checkin/claim', 'adsgram_checkin');
+    } finally {
+      setClaimingMission(null);
+    }
+  };
+
+  const handleCheckForUpdates = (done: boolean) => {
+    if (done || claimingMission === 'check_announcement') return;
+    if (missionClaimReady['check_announcement']) {
+      claimMission('/api/missions/check-announcement/claim', 'check_announcement');
+      return;
+    }
+    if (missionCountdown['check_announcement'] !== undefined) return;
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg?.openTelegramLink) tg.openTelegramLink(channelUrl);
+    else if (tg?.openLink) tg.openLink(channelUrl);
+    else window.open(channelUrl, '_blank');
+    startMissionCountdown('check_announcement', () => {});
+  };
+
+  const handleShareWithFriends = (done: boolean) => {
+    if (done || claimingMission === 'share_referral') return;
+    if (missionClaimReady['share_referral']) {
+      claimMission('/api/missions/share-referral/claim', 'share_referral');
+      return;
+    }
+    if (missionCountdown['share_referral'] !== undefined) return;
+    if (!referralLink) { showNotification('Referral link not available', 'error'); return; }
+    const tg = (window as any).Telegram?.WebApp;
+    const shareText = `Join CashWatch and earn rewards! 💰\n${referralLink}`;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('Join CashWatch and earn rewards! 💰')}`;
+    if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
+    else if (tg?.openLink) tg.openLink(shareUrl);
+    else if (navigator.share) navigator.share({ title: 'CashWatch', text: shareText, url: referralLink }).catch(() => {});
+    else window.open(shareUrl, '_blank');
+    startMissionCountdown('share_referral', () => {});
+  };
+
+  const handleInviteFriend = (done: boolean) => {
+    if (done || claimingMission === 'first_active_referral') return;
+    if (missionClaimReady['first_active_referral']) {
+      claimMission('/api/missions/first-active-referral/claim', 'first_active_referral');
+      return;
+    }
+    if (missionCountdown['first_active_referral'] !== undefined) return;
+    if (!referralLink) { showNotification('Referral link not available', 'error'); return; }
+    const tg = (window as any).Telegram?.WebApp;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('Join CashWatch and earn rewards! 💰')}`;
+    if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
+    else if (tg?.openLink) tg.openLink(shareUrl);
+    else window.open(shareUrl, '_blank');
+    startMissionCountdown('first_active_referral', () => {});
+  };
+
+  /* Ad flow handlers */
+  const showMonetagAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
+    new Promise(resolve => {
+      const sdk = (window as any).Monetag;
+      if (!sdk) { resolve({ success: false, unavailable: true }); return; }
+      try {
+        sdk.showAd({ onComplete: () => resolve({ success: true, unavailable: false }), onError: () => resolve({ success: false, unavailable: false }) });
+      } catch { resolve({ success: false, unavailable: true }); }
+    });
+
+  const showGigaPubAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
+    new Promise(resolve => {
+      const sdk = (window as any).GigaPub;
+      if (!sdk) { resolve({ success: false, unavailable: true }); return; }
+      try {
+        sdk.showAd({ onComplete: () => resolve({ success: true, unavailable: false }), onError: () => resolve({ success: false, unavailable: false }) });
+      } catch { resolve({ success: false, unavailable: true }); }
+    });
+
   const claimMissionAdMutation = useMutation({
     mutationFn: async (platform: string) => {
-      const response = await fetch('/api/missions/ads/watch', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ platform }),
-      });
+      const response = await fetch('/api/missions/ads/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ platform }) });
       const data = await response.json();
       if (!data.success) throw new Error(data.message || t('failed'));
       return data;
@@ -370,22 +617,16 @@ export default function Missions() {
     onError: (error: Error) => showNotification(error.message, 'error'),
   });
 
-  const handleWatchAd = useCallback(async (platform: 'monetag' | 'gigapub' | 'monetix') => {
-    const limitMap = { monetag: monetagLimit, gigapub: gigaPubLimit, monetix: monetixLimit };
+  const handleWatchAd = useCallback(async (platform: 'monetag' | 'gigapub') => {
+    const limitMap = { monetag: monetagLimit, gigapub: gigaPubLimit };
     const limit = limitMap[platform];
-    if (getPlatformCount(platform) >= limit) { showNotification(`${t('daily_limit_short')} (${limit}${t('per_day')})`, 'info'); return; }
+    if (getPlatformCount(platform) >= limit) { showNotification(`Daily limit (${limit}/day)`, 'info'); return; }
     if (adLoadingPlatform) return;
     setAdLoadingPlatform(platform);
     try {
       let result: { success: boolean; unavailable: boolean };
-      if (platform === 'monetag') {
-        const r = await showMonetagAd();
-        result = { success: r.success, unavailable: r.unavailable };
-      } else if (platform === 'gigapub') {
-        result = await showGigaPubAd();
-      } else {
-        result = await showMonetixAd();
-      }
+      if (platform === 'monetag') result = await showMonetagAd();
+      else result = await showGigaPubAd();
       if (result.unavailable) { showNotification(t('no_ad_available'), 'info'); return; }
       if (!result.success)    { showNotification(t('watch_full_ad'), 'error'); return; }
       await claimMissionAdMutation.mutateAsync(platform);
@@ -394,14 +635,13 @@ export default function Missions() {
     } finally {
       setAdLoadingPlatform(null);
     }
-  }, [monetagLimit, gigaPubLimit, monetixLimit, adLoadingPlatform, showMonetagAd, showGigaPubAd, showMonetixAd, claimMissionAdMutation, t]);
+  }, [monetagLimit, gigaPubLimit, adLoadingPlatform, claimMissionAdMutation, t]);
 
+  /* Feed task handlers */
   const clickTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       setLoadingTaskId(taskId);
-      const response = await fetch(`/api/advertiser-tasks/${taskId}/click`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-      });
+      const response = await fetch(`/api/advertiser-tasks/${taskId}/click`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include" });
       const data = await response.json();
       if (!data.success) throw new Error(data.message);
       return data;
@@ -464,16 +704,89 @@ export default function Missions() {
     task.taskType === 'partner' ? partnerReward : task.taskType === 'channel' ? channelReward : botReward;
 
   const adPlatforms = [
-    { id: 'monetag' as const, name: 'Monetag',  reward: monetagReward, limit: monetagLimit,  count: platformCounts.monetag },
-    { id: 'gigapub' as const, name: 'GiGaPub',  reward: gigaPubReward, limit: gigaPubLimit,  count: platformCounts.gigapub },
+    { id: 'monetag' as const, name: 'Monetag', reward: monetagReward, limit: monetagLimit, count: platformCounts.monetag },
+    { id: 'gigapub' as const, name: 'GiGaPub', reward: gigaPubReward, limit: gigaPubLimit, count: platformCounts.gigapub },
   ];
 
-  const cardStyle = {
-    background: CARD,
-    borderRadius: 18,
-    overflow: 'hidden' as const,
-    marginBottom: 16,
-  };
+  const cardStyle = { background: CARD, borderRadius: 18, overflow: 'hidden' as const, marginBottom: 16 };
+
+  /* Mission data */
+  const shareReferralM       = missionsStatus?.shareReferral;
+  const checkAnnouncementM   = missionsStatus?.checkAnnouncement;
+  const adsgramCheckinM      = missionsStatus?.adsgramCheckin;
+  const firstActiveReferralM = missionsStatus?.firstActiveReferral;
+
+  const dailyMissions = [
+    {
+      key: 'adsgram_checkin',
+      title: 'Just check in',
+      description: 'Check in and get a reward',
+      reward: adsgramCheckinM?.reward || appSettings?.adsgramCheckinReward || 1000,
+      done: !!adsgramCheckinM?.claimed,
+      btnLabel: 'Claim',
+      btnColor: 'linear-gradient(135deg, #ea6c0f, #f97316)',
+      icon: (
+        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src="/icon-checkin.png" alt="check in" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+      ),
+      onAction: () => handleJustCheckIn(!!adsgramCheckinM?.claimed),
+      onClaim: () => claimMission('/api/missions/adsgram-checkin/claim', 'adsgram_checkin'),
+      busy: claimingMission === 'adsgram_checkin' || claimingMission === 'adsgram_checkin_loading',
+    },
+    {
+      key: 'check_announcement',
+      title: 'Check for updates',
+      description: 'Find out the latest updates',
+      reward: checkAnnouncementM?.reward || appSettings?.checkAnnouncementReward || 1000,
+      done: !!checkAnnouncementM?.claimed,
+      btnLabel: 'Go',
+      btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
+      icon: (
+        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src="/icon-telegram.png" alt="updates" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+      ),
+      onAction: () => handleCheckForUpdates(!!checkAnnouncementM?.claimed),
+      onClaim: () => claimMission('/api/missions/check-announcement/claim', 'check_announcement'),
+      busy: claimingMission === 'check_announcement',
+    },
+    {
+      key: 'share_referral',
+      title: 'Share with friends',
+      description: 'Invite your friends and earn USD together',
+      reward: shareReferralM?.reward || appSettings?.shareReferralReward || 1000,
+      done: !!shareReferralM?.claimed,
+      btnLabel: 'Share',
+      btnColor: 'linear-gradient(135deg, #7c3aed, #8b5cf6)',
+      icon: (
+        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src="/icon-share.png" alt="share" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+      ),
+      onAction: () => handleShareWithFriends(!!shareReferralM?.claimed),
+      onClaim: () => claimMission('/api/missions/share-referral/claim', 'share_referral'),
+      busy: claimingMission === 'share_referral',
+    },
+    {
+      key: 'first_active_referral',
+      title: 'Invite 1 friend',
+      description: 'Invite and receive 20% of your friends earnings',
+      reward: firstActiveReferralM?.reward || appSettings?.firstActiveReferralReward || 2500,
+      done: !!firstActiveReferralM?.claimed,
+      btnLabel: 'Go',
+      btnColor: 'linear-gradient(135deg, #ca8a04, #eab308)',
+      isOneTime: true,
+      icon: (
+        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src="/icon-invite.png" alt="invite" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+      ),
+      onAction: () => handleInviteFriend(!!firstActiveReferralM?.claimed),
+      onClaim: () => claimMission('/api/missions/first-active-referral/claim', 'first_active_referral'),
+      busy: claimingMission === 'first_active_referral',
+    },
+  ];
 
   return (
     <Layout>
@@ -485,16 +798,13 @@ export default function Missions() {
           <p style={{ fontSize: 13, color: TEXT_DIM, marginTop: 4 }}>{t('complete_tasks_earn')}</p>
         </div>
 
-        {/* Banner — Create Task */}
+        {/* Banner */}
         <div
           style={{ borderRadius: 18, overflow: 'hidden', position: 'relative', height: 90, marginBottom: 20, cursor: isAdmin ? 'pointer' : 'default' }}
           className="active:scale-[0.98] transition-transform"
           onClick={() => {
-            if (isAdmin) {
-              setLocation("/task/create");
-            } else {
-              showNotification(t('coming_soon_label'), "info");
-            }
+            if (isAdmin) setLocation("/task/create");
+            else showNotification(t('coming_soon_label'), "info");
           }}
         >
           <img src="/spiderman-banner.jpg" alt="Create Task" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 35%' }} />
@@ -520,14 +830,8 @@ export default function Missions() {
           </div>
         </div>
 
-        {/* Main Tabs */}
-        <MainTabs
-          active={activeTab}
-          onChange={setActiveTab}
-          allLabel={t('all_tab')}
-          dailyLabel={t('daily_tab')}
-          partnerLabel={t('partner_tab')}
-        />
+        {/* Tabs */}
+        <MainTabs active={activeTab} onChange={setActiveTab} allLabel={t('all_tab')} dailyLabel={t('daily_tab')} partnerLabel={t('partner_tab')} />
 
         {/* ── ALL TAB ── */}
         {activeTab === 'all' && (
@@ -536,20 +840,33 @@ export default function Missions() {
             <div style={cardStyle}>
               {adPlatforms.map((p, i) => (
                 <AdRow
-                  key={p.id}
-                  platform={p.id}
-                  name={p.name}
-                  reward={p.reward}
-                  limit={p.limit}
-                  count={p.count}
-                  loading={adLoadingPlatform === p.id}
-                  disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
-                  onWatch={() => handleWatchAd(p.id)}
-                  isLast={i === adPlatforms.length - 1}
-                  doneLabel={t('done_label')}
-                  watchLabel={t('watch_label')}
-                  loadingLabel={t('loading_ellipsis')}
-                  perDayLabel={t('per_day')}
+                  key={p.id} platform={p.id} name={p.name} reward={p.reward} limit={p.limit} count={p.count}
+                  loading={adLoadingPlatform === p.id} disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
+                  onWatch={() => handleWatchAd(p.id)} isLast={i === adPlatforms.length - 1}
+                  doneLabel={t('done_label')} watchLabel={t('watch_label')} loadingLabel={t('loading_ellipsis')} perDayLabel={t('per_day')}
+                />
+              ))}
+            </div>
+
+            <SectionLabel title="Daily Tasks" />
+            <div style={cardStyle}>
+              {dailyMissions.map((m, i) => (
+                <DailyMissionCard
+                  key={m.key}
+                  icon={m.icon}
+                  title={m.title}
+                  description={m.description}
+                  reward={m.reward}
+                  done={m.done}
+                  busy={m.busy}
+                  btnLabel={m.btnLabel}
+                  btnColor={m.btnColor}
+                  countdown={missionCountdown[m.key]}
+                  claimReady={missionClaimReady[m.key]}
+                  onAction={m.onAction}
+                  onClaim={m.onClaim}
+                  isLast={i === dailyMissions.length - 1}
+                  isOneTime={(m as any).isOneTime}
                 />
               ))}
             </div>
@@ -557,30 +874,15 @@ export default function Missions() {
             <SectionLabel title={t('all_tasks_label')} />
             <div style={cardStyle}>
               {tasksLoading ? (
-                <>
-                  <LoadingRow />
-                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
-                  <LoadingRow />
-                </>
+                <><LoadingRow /><div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} /><LoadingRow /></>
               ) : allTasks.length === 0 ? (
                 <EmptyRow label={t('no_tasks_available')} />
               ) : (
                 allTasks.map((task, i) => (
                   <TaskRow
-                    key={task.id}
-                    task={task}
-                    reward={getReward(task)}
-                    loading={loadingTaskId === task.id}
-                    clickedTasks={clickedTasks}
-                    claimReadyTasks={claimReadyTasks}
-                    countdownTasks={countdownTasks}
-                    onGo={handleTaskGo}
-                    onClaim={id => clickTaskMutation.mutate(id)}
-                    isLast={i === allTasks.length - 1}
-                    claimLabel={t('claim_label')}
-                    channelLabel={t('channel_label')}
-                    botLabel={t('bot_website_label')}
-                    partnerLabel={t('partner_label')}
+                    key={task.id} task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
+                    clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
+                    onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={i === allTasks.length - 1}
                   />
                 ))
               )}
@@ -595,137 +897,35 @@ export default function Missions() {
             <div style={cardStyle}>
               {adPlatforms.map((p, i) => (
                 <AdRow
-                  key={p.id}
-                  platform={p.id}
-                  name={p.name}
-                  reward={p.reward}
-                  limit={p.limit}
-                  count={p.count}
-                  loading={adLoadingPlatform === p.id}
-                  disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
-                  onWatch={() => handleWatchAd(p.id)}
-                  isLast={i === adPlatforms.length - 1}
-                  doneLabel={t('done_label')}
-                  watchLabel={t('watch_label')}
-                  loadingLabel={t('loading_ellipsis')}
-                  perDayLabel={t('per_day')}
+                  key={p.id} platform={p.id} name={p.name} reward={p.reward} limit={p.limit} count={p.count}
+                  loading={adLoadingPlatform === p.id} disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
+                  onWatch={() => handleWatchAd(p.id)} isLast={i === adPlatforms.length - 1}
+                  doneLabel={t('done_label')} watchLabel={t('watch_label')} loadingLabel={t('loading_ellipsis')} perDayLabel={t('per_day')}
                 />
               ))}
             </div>
 
-            <SectionLabel title="Daily Missions" />
+            <SectionLabel title="Daily Tasks" />
             <div style={cardStyle}>
-              {/* Share Referral */}
-              {(() => {
-                const m = missionsStatus?.shareReferral;
-                const done = m?.claimed;
-                const reward = m?.reward || appSettings?.shareReferralReward || 1000;
-                const busy = claimingMission === 'share_referral';
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
-                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>Share Referral Link</span>
-                        <span style={{ background: `${BLUE}22`, borderRadius: 5, color: BLUE, fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
-                      </div>
-                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed today' : 'Share your referral link daily'}</div>
-                    </div>
-                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/share-referral/claim', 'share_referral')} disabled={done || busy}
-                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`, color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
-                      {busy ? '...' : done ? 'Done' : 'Claim'}
-                    </button>
-                  </div>
-                );
-              })()}
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
-
-              {/* Check Announcement */}
-              {(() => {
-                const m = missionsStatus?.checkAnnouncement;
-                const done = m?.claimed;
-                const reward = m?.reward || appSettings?.checkAnnouncementReward || 1000;
-                const busy = claimingMission === 'check_announcement';
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(6,182,212,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
-                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>Check Announcements</span>
-                        <span style={{ background: 'rgba(6,182,212,0.15)', borderRadius: 5, color: '#06b6d4', fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
-                      </div>
-                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed today' : 'Check the latest announcements'}</div>
-                    </div>
-                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/check-announcement/claim', 'check_announcement')} disabled={done || busy}
-                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #0891b2, #06b6d4)', color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
-                      {busy ? '...' : done ? 'Done' : 'Claim'}
-                    </button>
-                  </div>
-                );
-              })()}
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
-
-              {/* Adsgram Check-in */}
-              {(() => {
-                const m = missionsStatus?.adsgramCheckin;
-                const done = m?.claimed;
-                const reward = m?.reward || appSettings?.adsgramCheckinReward || 1000;
-                const busy = claimingMission === 'adsgram_checkin';
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(249,115,22,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
-                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>Adsgram Daily Check-in</span>
-                        <span style={{ background: 'rgba(249,115,22,0.15)', borderRadius: 5, color: '#f97316', fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
-                      </div>
-                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed today' : 'Daily Adsgram check-in reward'}</div>
-                    </div>
-                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/adsgram-checkin/claim', 'adsgram_checkin')} disabled={done || busy}
-                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #ea6c0f, #f97316)', color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
-                      {busy ? '...' : done ? 'Done' : 'Claim'}
-                    </button>
-                  </div>
-                );
-              })()}
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
-
-              {/* First Active Referral (one-time) */}
-              {(() => {
-                const m = missionsStatus?.firstActiveReferral;
-                const done = m?.claimed;
-                const reward = m?.reward || appSettings?.firstActiveReferralReward || 2500;
-                const busy = claimingMission === 'first_active_referral';
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(234,179,8,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
-                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>First Active Referral</span>
-                        <span style={{ background: 'rgba(234,179,8,0.15)', borderRadius: 5, color: '#eab308', fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
-                        <span style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 5, color: 'rgba(255,255,255,0.4)', fontSize: 9, fontWeight: 700, padding: '2px 5px' }}>ONE-TIME</span>
-                      </div>
-                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed' : 'Get your first active referral'}</div>
-                    </div>
-                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/first-active-referral/claim', 'first_active_referral')} disabled={done || busy}
-                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #ca8a04, #eab308)', color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
-                      {busy ? '...' : done ? 'Done' : 'Claim'}
-                    </button>
-                  </div>
-                );
-              })()}
+              {dailyMissions.map((m, i) => (
+                <DailyMissionCard
+                  key={m.key}
+                  icon={m.icon}
+                  title={m.title}
+                  description={m.description}
+                  reward={m.reward}
+                  done={m.done}
+                  busy={m.busy}
+                  btnLabel={m.btnLabel}
+                  btnColor={m.btnColor}
+                  countdown={missionCountdown[m.key]}
+                  claimReady={missionClaimReady[m.key]}
+                  onAction={m.onAction}
+                  onClaim={m.onClaim}
+                  isLast={i === dailyMissions.length - 1}
+                  isOneTime={(m as any).isOneTime}
+                />
+              ))}
             </div>
           </>
         )}
@@ -742,20 +942,9 @@ export default function Missions() {
               ) : (
                 partnerTasks.map((task, i) => (
                   <TaskRow
-                    key={task.id}
-                    task={task}
-                    reward={getReward(task)}
-                    loading={loadingTaskId === task.id}
-                    clickedTasks={clickedTasks}
-                    claimReadyTasks={claimReadyTasks}
-                    countdownTasks={countdownTasks}
-                    onGo={handleTaskGo}
-                    onClaim={id => clickTaskMutation.mutate(id)}
-                    isLast={i === partnerTasks.length - 1}
-                    claimLabel={t('claim_label')}
-                    channelLabel={t('channel_label')}
-                    botLabel={t('bot_website_label')}
-                    partnerLabel={t('partner_label')}
+                    key={task.id} task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
+                    clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
+                    onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={i === partnerTasks.length - 1}
                   />
                 ))
               )}
