@@ -246,6 +246,7 @@ export const advertiserTasks = pgTable("advertiser_tasks", {
   advertiserId: varchar("advertiser_id").references(() => users.id).notNull(),
   taskType: varchar("task_type").notNull(), // "channel" or "bot" or "partner"
   title: text("title").notNull(),
+  description: text("description"), // Optional task description (admin-editable)
   link: text("link").notNull(),
   totalClicksRequired: integer("total_clicks_required").notNull(),
   currentClicks: integer("current_clicks").default(0).notNull(),
