@@ -69,6 +69,15 @@ try {
   console.log('⚠️ Admin settings key migration skipped:', err);
 }
 
+// Migration: add description column to advertiser_tasks if missing
+try {
+  const { db } = await import('./db');
+  const { sql: sqlRaw } = await import('drizzle-orm');
+  await db.execute(sqlRaw`ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS description text`);
+} catch (err) {
+  console.log('⚠️ advertiser_tasks.description migration skipped:', err);
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

@@ -4037,6 +4037,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
         starsLocked: getSetting('stars_locked', 'false') === 'true',
+        // Daily mission rewards
+        shareReferralReward: parseInt(getSetting('share_referral_reward', '1000')),
+        checkAnnouncementReward: parseInt(getSetting('check_announcement_reward', '1000')),
+        adsgramCheckinReward: parseInt(getSetting('adsgram_checkin_reward', '1000')),
+        firstActiveReferralReward: parseInt(getSetting('first_active_referral_reward', '2500')),
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);
@@ -4422,7 +4427,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin users list
   app.get('/api/admin/users', authenticateAdmin, async (req: any, res) => {
     try {
-      const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+      const q = (req.query.q as string || '').trim().toLowerCase();
+      let allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+
+      if (q) {
+        allUsers = allUsers.filter(u => {
+          const tid = (u.telegram_id || '').toLowerCase();
+          const fn = (u.first_name || '').toLowerCase();
+          const ln = (u.last_name || '').toLowerCase();
+          const un = (u.username || '').toLowerCase();
+          const rc = (u.referralCode || '').toLowerCase();
+          const pc = (u.personalCode || '').toLowerCase();
+          return tid.includes(q) || fn.includes(q) || ln.includes(q) || un.includes(q) || rc.includes(q) || pc.includes(q) || `${fn} ${ln}`.includes(q);
+        });
+      }
+
       res.json(allUsers.map(u => ({
         ...u,
         id: u.id,
@@ -9083,6 +9102,21 @@ ${walletAddress}
       const shareStoryMission = missions.find(m => m.missionType === 'share_story');
       const dailyCheckinMission = missions.find(m => m.missionType === 'daily_checkin');
       const checkForUpdatesMission = missions.find(m => m.missionType === 'check_for_updates');
+      const shareReferralMission = missions.find(m => m.missionType === 'share_referral');
+      const checkAnnouncementMission = missions.find(m => m.missionType === 'check_announcement');
+      const adsgramCheckinMission = missions.find(m => m.missionType === 'adsgram_checkin');
+
+      // first_active_referral is permanent (not daily) — check all-time
+      const firstActiveReferralMission = await db.query.dailyMissions.findFirst({
+        where: and(
+          eq(dailyMissions.userId, userId),
+          eq(dailyMissions.missionType, 'first_active_referral')
+        ),
+      });
+
+      // Fetch mission reward settings
+      const settingsRows = await db.select().from(adminSettings);
+      const getS = (key: string, def: string) => settingsRows.find((s: any) => s.settingKey === key)?.settingValue || def;
 
       res.json({
         success: true,
@@ -9097,6 +9131,26 @@ ${walletAddress}
         checkForUpdates: {
           completed: checkForUpdatesMission?.completed || false,
           claimed: !!checkForUpdatesMission?.claimedAt,
+        },
+        shareReferral: {
+          completed: shareReferralMission?.completed || false,
+          claimed: !!shareReferralMission?.claimedAt,
+          reward: parseInt(getS('share_referral_reward', '1000')),
+        },
+        checkAnnouncement: {
+          completed: checkAnnouncementMission?.completed || false,
+          claimed: !!checkAnnouncementMission?.claimedAt,
+          reward: parseInt(getS('check_announcement_reward', '1000')),
+        },
+        adsgramCheckin: {
+          completed: adsgramCheckinMission?.completed || false,
+          claimed: !!adsgramCheckinMission?.claimedAt,
+          reward: parseInt(getS('adsgram_checkin_reward', '1000')),
+        },
+        firstActiveReferral: {
+          completed: firstActiveReferralMission?.completed || false,
+          claimed: !!firstActiveReferralMission?.claimedAt,
+          reward: parseInt(getS('first_active_referral_reward', '2500')),
         },
       });
     } catch (error) {
@@ -9742,6 +9796,279 @@ ${walletAddress}
     } catch (error) {
       console.error('❌ Error unblocking country:', error);
       res.status(500).json({ error: 'Failed to unblock country' });
+    }
+  });
+
+  // ─── FEATURE 1: Admin Balance Adjustment ────────────────────────────────────
+  app.post('/api/admin/users/:id/adjust-balance', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { action, currency, amount, reason } = req.body;
+
+      if (!['add', 'deduct', 'set'].includes(action)) return res.status(400).json({ error: 'Invalid action. Use add|deduct|set' });
+      if (!['pow', 'star', 'usd'].includes(currency)) return res.status(400).json({ error: 'Invalid currency. Use pow|star|usd' });
+      const amt = parseFloat(amount);
+      if (isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Invalid amount' });
+
+      const targetUser = await storage.getUser(id);
+      if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+      let fieldKey = currency === 'pow' ? 'balance' : currency === 'star' ? 'starBalance' : 'usdBalance';
+      const current = parseFloat((targetUser as any)[fieldKey]?.toString() || '0');
+
+      let newVal: number;
+      if (action === 'add') newVal = current + amt;
+      else if (action === 'deduct') newVal = Math.max(0, current - amt);
+      else newVal = amt;
+
+      const updateData: any = { updatedAt: new Date() };
+      updateData[fieldKey] = newVal.toString();
+      await db.update(users).set(updateData).where(eq(users.id, id));
+
+      const txSource = `admin_${action}_${currency}`;
+      const txType = action === 'deduct' ? 'deduction' : 'addition';
+      await db.insert(transactions).values({
+        userId: id,
+        amount: amt.toString(),
+        type: txType,
+        source: txSource,
+        description: reason ? `Admin adjustment: ${reason}` : `Admin ${action} ${currency.toUpperCase()}`,
+      });
+
+      res.json({ success: true, previous: current, newBalance: newVal, currency, action, amount: amt });
+    } catch (error) {
+      console.error('❌ Error adjusting balance:', error);
+      res.status(500).json({ error: 'Failed to adjust balance' });
+    }
+  });
+
+  // GET audit log for a user (balance transactions)
+  app.get('/api/admin/users/:id/balance-log', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const logs = await db.select().from(transactions)
+        .where(and(eq(transactions.userId, id), sql`source LIKE 'admin_%'`))
+        .orderBy(desc(transactions.createdAt))
+        .limit(50);
+      res.json({ success: true, logs });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch balance log' });
+    }
+  });
+
+  // ─── FEATURE 2: Promo Code Toggle / Edit ─────────────────────────────────────
+  app.put('/api/admin/promo-codes/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { isActive, rewardAmount } = req.body;
+
+      const updateData: any = {};
+      if (typeof isActive === 'boolean') updateData.isActive = isActive;
+      if (rewardAmount !== undefined) {
+        const ra = parseFloat(rewardAmount);
+        if (!isNaN(ra) && ra >= 0) updateData.rewardAmount = ra.toString();
+      }
+
+      if (Object.keys(updateData).length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+      await db.update(promoCodes).set(updateData).where(eq(promoCodes.id, id));
+      res.json({ success: true });
+    } catch (error) {
+      console.error('❌ Error updating promo code:', error);
+      res.status(500).json({ error: 'Failed to update promo code' });
+    }
+  });
+
+  // ─── FEATURE 3: 4 New Daily Missions ─────────────────────────────────────────
+
+  // Helper to claim a daily mission with configurable reward setting key
+  async function claimDailyMission(userId: string, missionType: string, rewardSettingKey: string, defaultReward: number, description: string) {
+    const today = getTodayDate();
+    const settings = await db.select().from(adminSettings);
+    const getSetting = (key: string, def: string) => settings.find((s: any) => s.settingKey === key)?.settingValue || def;
+    const reward = parseInt(getSetting(rewardSettingKey, String(defaultReward)));
+
+    const existing = await db.query.dailyMissions.findFirst({
+      where: and(
+        eq(dailyMissions.userId, userId),
+        eq(dailyMissions.missionType, missionType),
+        eq(dailyMissions.resetDate, today)
+      ),
+    });
+    if (existing?.claimedAt) throw new Error('Already claimed today');
+
+    if (existing) {
+      await db.update(dailyMissions).set({ completed: true, claimedAt: new Date() }).where(eq(dailyMissions.id, existing.id));
+    } else {
+      await db.insert(dailyMissions).values({ userId, missionType, completed: true, claimedAt: new Date(), resetDate: today });
+    }
+
+    const user = await storage.getUser(userId);
+    if (user) {
+      const current = parseFloat(user.balance?.toString() || '0');
+      await db.update(users).set({ balance: (current + reward).toString(), updatedAt: new Date() }).where(eq(users.id, userId));
+    }
+    await db.insert(transactions).values({ userId, amount: reward.toString(), type: 'addition', source: `mission_${missionType}`, description });
+    return reward;
+  }
+
+  app.post('/api/missions/share-referral/claim', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const reward = await claimDailyMission(userId, 'share_referral', 'share_referral_reward', 1000, 'Share Referral Mission Reward');
+      res.json({ success: true, reward });
+    } catch (error: any) {
+      if (error.message === 'Already claimed today') return res.status(400).json({ error: error.message });
+      console.error('❌ share-referral claim error:', error);
+      res.status(500).json({ error: 'Failed to claim' });
+    }
+  });
+
+  app.post('/api/missions/check-announcement/claim', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const reward = await claimDailyMission(userId, 'check_announcement', 'check_announcement_reward', 1000, 'Check Announcement Mission Reward');
+      res.json({ success: true, reward });
+    } catch (error: any) {
+      if (error.message === 'Already claimed today') return res.status(400).json({ error: error.message });
+      console.error('❌ check-announcement claim error:', error);
+      res.status(500).json({ error: 'Failed to claim' });
+    }
+  });
+
+  app.post('/api/missions/adsgram-checkin/claim', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const reward = await claimDailyMission(userId, 'adsgram_checkin', 'adsgram_checkin_reward', 1000, 'Adsgram Check-in Mission Reward');
+      res.json({ success: true, reward });
+    } catch (error: any) {
+      if (error.message === 'Already claimed today') return res.status(400).json({ error: error.message });
+      console.error('❌ adsgram-checkin claim error:', error);
+      res.status(500).json({ error: 'Failed to claim' });
+    }
+  });
+
+  app.post('/api/missions/first-active-referral/claim', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      // For first active referral — not daily resettable, check all-time
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      const settings = await db.select().from(adminSettings);
+      const getSetting = (key: string, def: string) => settings.find((s: any) => s.settingKey === key)?.settingValue || def;
+      const reward = parseInt(getSetting('first_active_referral_reward', '2500'));
+
+      // Check if ever claimed (use a special non-resetting date)
+      const existing = await db.query.dailyMissions.findFirst({
+        where: and(
+          eq(dailyMissions.userId, userId),
+          eq(dailyMissions.missionType, 'first_active_referral')
+        ),
+      });
+      if (existing?.claimedAt) return res.status(400).json({ error: 'Already claimed' });
+
+      // Check user has at least 1 active referral
+      const activeReferrals = await db.query.referrals.findMany({
+        where: and(eq(referrals.referrerId, userId), eq(referrals.status, 'active')),
+        limit: 1,
+      });
+      if (activeReferrals.length === 0) return res.status(400).json({ error: 'No active referrals yet' });
+
+      if (existing) {
+        await db.update(dailyMissions).set({ completed: true, claimedAt: new Date() }).where(eq(dailyMissions.id, existing.id));
+      } else {
+        await db.insert(dailyMissions).values({ userId, missionType: 'first_active_referral', completed: true, claimedAt: new Date(), resetDate: 'permanent' });
+      }
+      const current = parseFloat(user.balance?.toString() || '0');
+      await db.update(users).set({ balance: (current + reward).toString(), updatedAt: new Date() }).where(eq(users.id, userId));
+      await db.insert(transactions).values({ userId, amount: reward.toString(), type: 'addition', source: 'mission_first_active_referral', description: 'First Active Referral Mission Reward' });
+      res.json({ success: true, reward });
+    } catch (error) {
+      console.error('❌ first-active-referral claim error:', error);
+      res.status(500).json({ error: 'Failed to claim' });
+    }
+  });
+
+  // ─── FEATURE 4: Task Edit ─────────────────────────────────────────────────────
+  app.put('/api/admin/tasks/:id/edit', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { title, description, totalClicksRequired, costPerClick, status } = req.body;
+
+      const updateData: any = { updatedAt: new Date() };
+      if (title !== undefined) updateData.title = title;
+      if (description !== undefined) updateData.description = description;
+      if (totalClicksRequired !== undefined) {
+        const n = parseInt(totalClicksRequired);
+        if (!isNaN(n) && n > 0) updateData.totalClicksRequired = n;
+      }
+      if (costPerClick !== undefined) {
+        const c = parseFloat(costPerClick);
+        if (!isNaN(c) && c > 0) updateData.costPerClick = c.toString();
+      }
+      if (status !== undefined && ['under_review', 'running', 'paused', 'completed', 'rejected'].includes(status)) {
+        updateData.status = status;
+      }
+
+      await db.update(advertiserTasks).set(updateData).where(eq(advertiserTasks.id, id));
+      res.json({ success: true });
+    } catch (error) {
+      console.error('❌ Error editing task:', error);
+      res.status(500).json({ error: 'Failed to edit task' });
+    }
+  });
+
+  // ─── FEATURE 6: Advanced User Search (update existing route) — see below ──────
+  // (Existing GET /api/admin/users route updated via in-place edit)
+
+  // ─── FEATURE 7: Withdrawal Analytics ─────────────────────────────────────────
+  app.get('/api/admin/users/:id/analytics', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      // Count friends
+      const allReferrals = await db.query.referrals.findMany({ where: eq(referrals.referrerId, id) });
+      const activeReferralsCount = allReferrals.filter((r: any) => r.status === 'active').length;
+
+      // Count completed tasks
+      const completedTasksCount = await db.query.taskClicks.findMany({ where: eq(taskClicks.userId, id) });
+
+      // Recent transactions
+      const recentTx = await db.select().from(transactions)
+        .where(eq(transactions.userId, id))
+        .orderBy(desc(transactions.createdAt))
+        .limit(5);
+
+      const ageMs = user.createdAt ? Date.now() - new Date(user.createdAt).getTime() : 0;
+      const ageDays = Math.floor(ageMs / 86400000);
+
+      res.json({
+        success: true,
+        analytics: {
+          uid: user.referralCode || user.personalCode,
+          joinDate: user.createdAt,
+          ageDays,
+          totalFriends: allReferrals.length,
+          activeFriends: activeReferralsCount,
+          adsWatched: user.adsWatched || 0,
+          tasksCompleted: completedTasksCount.length,
+          totalEarned: user.totalEarned?.toString() || '0',
+          balance: user.balance?.toString() || '0',
+          usdBalance: user.usdBalance?.toString() || '0',
+          recentTransactions: recentTx,
+          banned: user.banned || false,
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error fetching user analytics:', error);
+      res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
