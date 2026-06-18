@@ -40,6 +40,10 @@ interface AppSettings {
   gigaPubMissionLimit?: number;
   monetixMissionReward?: number;
   monetixMissionLimit?: number;
+  shareReferralReward?: number;
+  checkAnnouncementReward?: number;
+  adsgramCheckinReward?: number;
+  firstActiveReferralReward?: number;
   [key: string]: any;
 }
 
@@ -303,6 +307,11 @@ export default function Missions() {
   const { showMonetagAd, showGigaPubAd, showMonetixAd } = useAdFlow();
 
   const { data: appSettings } = useQuery<AppSettings>({ queryKey: ['/api/app-settings'], retry: false });
+  const { data: missionsStatus, refetch: refetchMissions } = useQuery<any>({
+    queryKey: ['/api/missions/status'],
+    retry: false,
+    staleTime: 30000,
+  });
   const { data: tasksData, isLoading: tasksLoading } = useQuery<{ success: boolean; tasks: Task[] }>({
     queryKey: ["/api/advertiser-tasks"],
     retry: false,
@@ -319,6 +328,28 @@ export default function Missions() {
   const channelReward = appSettings?.channelTaskReward || 30;
   const botReward     = appSettings?.botTaskReward     || 20;
   const partnerReward = appSettings?.partnerTaskReward  || 5;
+
+  const [claimingMission, setClaimingMission] = useState<string | null>(null);
+
+  const claimSimpleMission = async (endpoint: string, missionKey: string) => {
+    if (claimingMission) return;
+    setClaimingMission(missionKey);
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        showNotification(`+${data.reward} POW ${t('claimed')}!`, 'success');
+        queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+        refetchMissions();
+      } else {
+        showNotification(data.error || t('failed'), 'error');
+      }
+    } catch (e: any) {
+      showNotification(e.message || t('something_went_wrong'), 'error');
+    } finally {
+      setClaimingMission(null);
+    }
+  };
 
   const claimMissionAdMutation = useMutation({
     mutationFn: async (platform: string) => {
@@ -580,6 +611,121 @@ export default function Missions() {
                   perDayLabel={t('per_day')}
                 />
               ))}
+            </div>
+
+            <SectionLabel title="Daily Missions" />
+            <div style={cardStyle}>
+              {/* Share Referral */}
+              {(() => {
+                const m = missionsStatus?.shareReferral;
+                const done = m?.claimed;
+                const reward = m?.reward || appSettings?.shareReferralReward || 1000;
+                const busy = claimingMission === 'share_referral';
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
+                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>Share Referral Link</span>
+                        <span style={{ background: `${BLUE}22`, borderRadius: 5, color: BLUE, fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
+                      </div>
+                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed today' : 'Share your referral link daily'}</div>
+                    </div>
+                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/share-referral/claim', 'share_referral')} disabled={done || busy}
+                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`, color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
+                      {busy ? '...' : done ? 'Done' : 'Claim'}
+                    </button>
+                  </div>
+                );
+              })()}
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
+
+              {/* Check Announcement */}
+              {(() => {
+                const m = missionsStatus?.checkAnnouncement;
+                const done = m?.claimed;
+                const reward = m?.reward || appSettings?.checkAnnouncementReward || 1000;
+                const busy = claimingMission === 'check_announcement';
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(6,182,212,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
+                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>Check Announcements</span>
+                        <span style={{ background: 'rgba(6,182,212,0.15)', borderRadius: 5, color: '#06b6d4', fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
+                      </div>
+                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed today' : 'Check the latest announcements'}</div>
+                    </div>
+                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/check-announcement/claim', 'check_announcement')} disabled={done || busy}
+                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #0891b2, #06b6d4)', color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
+                      {busy ? '...' : done ? 'Done' : 'Claim'}
+                    </button>
+                  </div>
+                );
+              })()}
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
+
+              {/* Adsgram Check-in */}
+              {(() => {
+                const m = missionsStatus?.adsgramCheckin;
+                const done = m?.claimed;
+                const reward = m?.reward || appSettings?.adsgramCheckinReward || 1000;
+                const busy = claimingMission === 'adsgram_checkin';
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(249,115,22,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
+                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>Adsgram Daily Check-in</span>
+                        <span style={{ background: 'rgba(249,115,22,0.15)', borderRadius: 5, color: '#f97316', fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
+                      </div>
+                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed today' : 'Daily Adsgram check-in reward'}</div>
+                    </div>
+                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/adsgram-checkin/claim', 'adsgram_checkin')} disabled={done || busy}
+                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #ea6c0f, #f97316)', color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
+                      {busy ? '...' : done ? 'Done' : 'Claim'}
+                    </button>
+                  </div>
+                );
+              })()}
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
+
+              {/* First Active Referral (one-time) */}
+              {(() => {
+                const m = missionsStatus?.firstActiveReferral;
+                const done = m?.claimed;
+                const reward = m?.reward || appSettings?.firstActiveReferralReward || 2500;
+                const busy = claimingMission === 'first_active_referral';
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: done ? 'rgba(74,222,128,0.15)' : 'rgba(234,179,8,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {done ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' as const }}>
+                        <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>First Active Referral</span>
+                        <span style={{ background: 'rgba(234,179,8,0.15)', borderRadius: 5, color: '#eab308', fontSize: 10, fontWeight: 800, padding: '2px 6px' }}>+{reward} POW</span>
+                        <span style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 5, color: 'rgba(255,255,255,0.4)', fontSize: 9, fontWeight: 700, padding: '2px 5px' }}>ONE-TIME</span>
+                      </div>
+                      <div style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2 }}>{done ? '✓ Claimed' : 'Get your first active referral'}</div>
+                    </div>
+                    <button onClick={() => !done && !busy && claimSimpleMission('/api/missions/first-active-referral/claim', 'first_active_referral')} disabled={done || busy}
+                      style={{ flexShrink: 0, background: done ? 'rgba(255,255,255,0.06)' : busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #ca8a04, #eab308)', color: done ? 'rgba(255,255,255,0.3)' : busy ? 'rgba(255,255,255,0.4)' : '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 12, fontWeight: 800, cursor: done || busy ? 'not-allowed' : 'pointer' }}>
+                      {busy ? '...' : done ? 'Done' : 'Claim'}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </>
         )}

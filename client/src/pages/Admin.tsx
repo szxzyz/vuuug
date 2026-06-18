@@ -253,13 +253,29 @@ export default function AdminPage() {
     enabled: isAdmin,
   });
 
+  // Fetch pending withdrawals
+  const { data: pendingWithdrawalsData, refetch: refetchPending } = useQuery({
+    queryKey: ["/api/admin/withdrawals/pending"],
+    queryFn: () => apiRequest("GET", "/api/admin/withdrawals/pending").then(res => res.json()),
+    refetchInterval: 15000,
+    enabled: isAdmin,
+  });
+
   // Fetch processed withdrawals
-  const { data: payoutLogsData } = useQuery({
+  const { data: processedWithdrawalsData, refetch: refetchProcessed } = useQuery({
     queryKey: ["/api/admin/withdrawals/processed"],
     queryFn: () => apiRequest("GET", "/api/admin/withdrawals/processed").then(res => res.json()),
     refetchInterval: 30000,
     enabled: isAdmin,
   });
+
+  // Combine pending + processed into one list (pending first)
+  const payoutLogsData = {
+    withdrawals: [
+      ...(pendingWithdrawalsData?.withdrawals || []),
+      ...(processedWithdrawalsData?.withdrawals || []),
+    ]
+  };
 
   if (adminLoading) {
     return (
@@ -651,10 +667,14 @@ function BanUserButton({ user, onSuccess }: { user: any; onSuccess: () => void }
   );
 }
 
-type UserProfileTab = 'overview' | 'tasks' | 'ads' | 'referrals' | 'withdrawals' | 'bans';
+type UserProfileTab = 'overview' | 'tasks' | 'ads' | 'referrals' | 'withdrawals' | 'bans' | 'balance';
 
 function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<UserProfileTab>('overview');
+  const [balanceForm, setBalanceForm] = useState({ action: 'add', currency: 'pow', amount: '', reason: '' });
+  const [isAdjusting, setIsAdjusting] = useState(false);
+
   const { data: userTasks } = useQuery({
     queryKey: ["/api/admin/user-tasks", user.id],
     queryFn: () => apiRequest("GET", `/api/admin/user-tasks/${user.id}`).then(res => res.json()),
@@ -680,14 +700,42 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
     queryFn: () => apiRequest("GET", `/api/admin/user-ban-history/${user.id}`).then(res => res.json()),
     enabled: activeTab === 'bans',
   });
+  const { data: balanceLog } = useQuery({
+    queryKey: ["/api/admin/balance-log", user.id],
+    queryFn: () => apiRequest("GET", `/api/admin/users/${user.id}/balance-log`).then(res => res.json()),
+    enabled: activeTab === 'balance',
+  });
+
+  const handleAdjustBalance = async () => {
+    const amt = parseFloat(balanceForm.amount);
+    if (isNaN(amt) || amt < 0) { showNotification('Enter valid amount', 'error'); return; }
+    setIsAdjusting(true);
+    try {
+      const res = await apiRequest('POST', `/api/admin/users/${user.id}/adjust-balance`, balanceForm);
+      const data = await res.json();
+      if (data.success) {
+        showNotification(`Balance updated: ${data.previous} → ${data.newBalance}`, 'success');
+        setBalanceForm({ ...balanceForm, amount: '', reason: '' });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/balance-log", user.id] });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      } else {
+        showNotification(data.error || 'Failed', 'error');
+      }
+    } catch (e: any) {
+      showNotification(e.message || 'Error', 'error');
+    } finally {
+      setIsAdjusting(false);
+    }
+  };
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview' },
+    { id: 'balance' as const, label: 'Balance' },
     { id: 'tasks' as const, label: 'Tasks' },
     { id: 'ads' as const, label: 'Ads' },
     { id: 'referrals' as const, label: 'Referrals' },
     { id: 'withdrawals' as const, label: 'Withdrawals' },
-    { id: 'bans' as const, label: 'Ban History' },
+    { id: 'bans' as const, label: 'Bans' },
   ];
 
   const formatPOW = (value: any) => {
@@ -897,6 +945,70 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           )}
         </div>
       )}
+
+      {activeTab === 'balance' && (
+        <div className="space-y-3">
+          <div className="bg-white/5 border border-white/10 p-3 rounded">
+            <p className="text-xs text-muted-foreground mb-2 font-semibold">Current Balances</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div><p className="text-xs text-muted-foreground">POW</p><p className="font-bold text-[#4cd3ff]">{Math.round(parseFloat(user.balance || '0')).toLocaleString()}</p></div>
+              <div><p className="text-xs text-muted-foreground">STAR</p><p className="font-bold text-yellow-400">{Math.round(parseFloat(user.starBalance || '0'))}</p></div>
+              <div><p className="text-xs text-muted-foreground">USD</p><p className="font-bold text-green-400">${parseFloat(user.usdBalance || '0').toFixed(2)}</p></div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 p-3 rounded space-y-2">
+            <p className="text-xs text-muted-foreground font-semibold">Adjust Balance</p>
+            <div className="grid grid-cols-3 gap-1">
+              {(['add', 'deduct', 'set'] as const).map(a => (
+                <Button key={a} size="sm" variant={balanceForm.action === a ? 'default' : 'outline'}
+                  onClick={() => setBalanceForm(f => ({ ...f, action: a }))}
+                  className={`h-7 text-xs ${balanceForm.action === a && a === 'add' ? 'bg-green-600' : balanceForm.action === a && a === 'deduct' ? 'bg-red-600' : balanceForm.action === a ? 'bg-blue-600' : ''}`}>
+                  {a === 'add' ? '➕ Add' : a === 'deduct' ? '➖ Deduct' : '🔧 Set'}
+                </Button>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {(['pow', 'star', 'usd'] as const).map(c => (
+                <Button key={c} size="sm" variant={balanceForm.currency === c ? 'default' : 'outline'}
+                  onClick={() => setBalanceForm(f => ({ ...f, currency: c }))}
+                  className="h-7 text-xs">
+                  {c.toUpperCase()}
+                </Button>
+              ))}
+            </div>
+            <Input type="number" placeholder="Amount" value={balanceForm.amount} min="0"
+              onChange={e => setBalanceForm(f => ({ ...f, amount: e.target.value }))} className="h-8 text-sm" />
+            <Input placeholder="Reason (optional)" value={balanceForm.reason}
+              onChange={e => setBalanceForm(f => ({ ...f, reason: e.target.value }))} className="h-8 text-sm" />
+            <Button onClick={handleAdjustBalance} disabled={isAdjusting || !balanceForm.amount} className="w-full h-8 text-sm">
+              {isAdjusting ? 'Processing...' : `${balanceForm.action === 'add' ? '➕ Add' : balanceForm.action === 'deduct' ? '➖ Deduct' : '🔧 Set'} ${balanceForm.amount || '0'} ${balanceForm.currency.toUpperCase()}`}
+            </Button>
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-2 font-semibold">Adjustment History</p>
+            {(balanceLog?.logs?.length || 0) === 0 ? (
+              <p className="text-center text-muted-foreground py-3 text-xs">No adjustments</p>
+            ) : (
+              <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                {balanceLog.logs.map((log: any) => (
+                  <div key={log.id} className="bg-white/5 p-2 rounded border border-white/10 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className={log.type === 'addition' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                        {log.type === 'addition' ? '+' : '-'}{parseFloat(log.amount).toLocaleString()}
+                      </span>
+                      <span className="text-muted-foreground">{log.source?.replace('admin_', '')}</span>
+                      <span className="text-muted-foreground">{log.createdAt ? new Date(log.createdAt).toLocaleDateString() : 'N/A'}</span>
+                    </div>
+                    {log.description && <p className="text-muted-foreground mt-0.5">{log.description}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -914,10 +1026,16 @@ function UserManagementSection({ usersData }: { usersData: any }) {
   const filteredUsers = users.filter((user: any) => {
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
+    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim().toLowerCase();
     return (
       user.personalCode?.toLowerCase().includes(search) ||
       user.referralCode?.toLowerCase().includes(search) ||
-      user.firstName?.toLowerCase().includes(search)
+      user.firstName?.toLowerCase().includes(search) ||
+      user.lastName?.toLowerCase().includes(search) ||
+      user.username?.toLowerCase().includes(search) ||
+      user.telegramId?.toString().includes(search) ||
+      user.telegram_id?.toString().includes(search) ||
+      fullName.includes(search)
     );
   });
 
@@ -948,7 +1066,7 @@ function UserManagementSection({ usersData }: { usersData: any }) {
         
         {activeView === 'list' && (
           <Input
-            placeholder="Search by UID or name..."
+            placeholder="Search by name, @username, UID, Telegram ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-8 text-sm"
@@ -1148,7 +1266,7 @@ function PromoCreatorSection() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-2 max-h-[300px] overflow-y-auto border border-white/10 rounded-lg p-2">
+        <div className="space-y-2 max-h-[350px] overflow-y-auto border border-white/10 rounded-lg p-2">
           {promoCodes.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground text-sm"><i className="fas fa-gift text-2xl mb-2"></i><p>No codes</p></div>
           ) : (
@@ -1161,7 +1279,26 @@ function PromoCreatorSection() {
                       <code className="font-bold text-sm bg-white/10 px-1.5 py-0.5 rounded text-[#4cd3ff]">{promo.code}</code>
                       <Button size="sm" variant="ghost" onClick={() => copyToClipboard(promo.code)} className="h-5 w-5 p-0"><i className="fas fa-copy text-[10px]"></i></Button>
                     </div>
-                    <Badge className={`${status.color} text-[10px]`}>{status.label}</Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge className={`${status.color} text-[10px]`}>{status.label}</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className={`h-6 text-[10px] px-2 ${promo.isActive ? 'border-red-500/50 text-red-400 hover:bg-red-500/10' : 'border-green-500/50 text-green-400 hover:bg-green-500/10'}`}
+                        onClick={async () => {
+                          try {
+                            const res = await apiRequest('PUT', `/api/admin/promo-codes/${promo.id}`, { isActive: !promo.isActive });
+                            const d = await res.json();
+                            if (d.success) {
+                              showNotification(promo.isActive ? 'Code disabled' : 'Code enabled', 'success');
+                              queryClient.invalidateQueries({ queryKey: ["/api/admin/promo-codes"] });
+                            }
+                          } catch (e) { showNotification('Failed', 'error'); }
+                        }}
+                      >
+                        {promo.isActive ? 'Disable' : 'Enable'}
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>{promo.rewardType === 'USD' ? `$${parseFloat(promo.rewardAmount).toFixed(2)}` : `${Math.round(parseFloat(promo.rewardAmount))} ${promo.rewardType || 'POW'}`}</span><span>{promo.usageCount || 0}/{promo.usageLimit || '∞'}</span></div>
                 </div>
@@ -1177,10 +1314,74 @@ function PromoCreatorSection() {
 type PayoutTab = 'all' | 'pending' | 'approved' | 'rejected';
 
 function PayoutLogsSection({ data }: { data: any }) {
-  const [statusFilter, setStatusFilter] = useState<PayoutTab>('all');
+  const queryClient = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState<PayoutTab>('pending');
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const itemsPerPage = 6;
+  const itemsPerPage = 10;
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const refreshAll = () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/admin/withdrawals/pending'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/admin/withdrawals/processed'] });
+  };
+
+  const handleApprove = async (withdrawalId: string) => {
+    setActionLoading(withdrawalId + '_approve');
+    try {
+      const res = await apiRequest('POST', `/api/admin/withdrawals/${withdrawalId}/approve`, { adminNotes: 'Approved via admin panel' });
+      const d = await res.json();
+      if (d.success) {
+        showNotification('✅ Withdrawal approved', 'success');
+        refreshAll();
+      } else {
+        showNotification(d.message || 'Failed to approve', 'error');
+      }
+    } catch { showNotification('Failed to approve', 'error'); }
+    setActionLoading(null);
+  };
+
+  const openRejectDialog = (withdrawalId: string) => {
+    setRejectTarget(withdrawalId);
+    setRejectReason('');
+    setRejectDialogOpen(true);
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    setActionLoading(rejectTarget + '_reject');
+    setRejectDialogOpen(false);
+    try {
+      const res = await apiRequest('POST', `/api/admin/withdrawals/${rejectTarget}/reject`, { reason: rejectReason || 'Rejected by admin', adminNotes: rejectReason || 'Rejected by admin' });
+      const d = await res.json();
+      if (d.success) {
+        showNotification('❌ Withdrawal rejected', 'success');
+        refreshAll();
+      } else {
+        showNotification(d.message || 'Failed to reject', 'error');
+      }
+    } catch { showNotification('Failed to reject', 'error'); }
+    setActionLoading(null);
+    setRejectTarget(null);
+  };
+
+  const openAnalytics = async (userId: string) => {
+    setAnalyticsOpen(true);
+    setAnalyticsData(null);
+    setAnalyticsLoading(true);
+    try {
+      const res = await apiRequest('GET', `/api/admin/users/${userId}/analytics`);
+      const d = await res.json();
+      if (d.success) setAnalyticsData(d.analytics);
+    } catch (e) { /* ignore */ }
+    setAnalyticsLoading(false);
+  };
   const payouts = data?.withdrawals || [];
 
   const pendingCount = payouts.filter((p: any) => p.status === 'pending').length;
@@ -1244,21 +1445,50 @@ function PayoutLogsSection({ data }: { data: any }) {
               <TableRow>
                 <TableHead className="text-xs">User</TableHead>
                 <TableHead className="text-xs">Amount</TableHead>
+                <TableHead className="text-xs">Wallet</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
-                <TableHead className="text-xs">Date</TableHead>
+                <TableHead className="text-xs">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedPayouts.map((payout: any) => {
-                const username = payout.user?.telegramUsername || payout.user?.username || payout.user?.firstName || payout.user?.referralCode || payout.user?.personalCode || 'N/A';
-                const displayUsername = username.startsWith('@') ? username : (payout.user?.telegramUsername || payout.user?.username ? `@${payout.user?.telegramUsername || payout.user?.username}` : username);
+                const username = payout.user?.username || payout.user?.firstName || payout.user?.telegram_id || 'N/A';
+                const displayUsername = payout.user?.username ? `@${payout.user.username}` : (payout.user?.firstName || payout.user?.telegram_id || 'N/A');
                 const usdAmount = parseFloat(payout.amount || '0');
+                const isPending = payout.status === 'pending';
+                const isApprovingThis = actionLoading === payout.id + '_approve';
+                const isRejectingThis = actionLoading === payout.id + '_reject';
+                const wallet = payout.details?.walletAddress || payout.details?.paymentDetails || payout.details?.address || '—';
                 return (
-                  <TableRow key={payout.id} className="hover:bg-white/5">
-                    <TableCell className="text-xs py-2 font-medium text-[#4cd3ff]">{displayUsername}</TableCell>
+                  <TableRow key={payout.id} className={`hover:bg-white/5 ${isPending ? 'bg-yellow-500/5' : ''}`}>
+                    <TableCell className="text-xs py-2">
+                      <div className="font-medium text-[#4cd3ff]">{displayUsername}</div>
+                      <div className="text-[10px] text-muted-foreground">${usdAmount.toFixed(4)}</div>
+                    </TableCell>
                     <TableCell className="text-xs py-2 font-semibold text-green-400">${usdAmount.toFixed(2)}</TableCell>
+                    <TableCell className="text-[10px] py-2 text-muted-foreground max-w-[80px]">
+                      <span className="truncate block font-mono" title={wallet}>{wallet.length > 12 ? wallet.slice(0, 10) + '…' : wallet}</span>
+                    </TableCell>
                     <TableCell className="py-2">{getStatusBadge(payout.status)}</TableCell>
-                    <TableCell className="text-[10px] py-2 text-muted-foreground">{new Date(payout.createdAt || payout.created_on).toLocaleDateString()}</TableCell>
+                    <TableCell className="py-2">
+                      <div className="flex items-center gap-1">
+                        {isPending && (
+                          <>
+                            <Button size="sm" variant="ghost" onClick={() => handleApprove(payout.id)} disabled={!!actionLoading} className="h-6 px-2 text-[10px] text-green-400 hover:bg-green-500/10 border border-green-500/30">
+                              {isApprovingThis ? <i className="fas fa-spinner fa-spin"></i> : '✓'}
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => openRejectDialog(payout.id)} disabled={!!actionLoading} className="h-6 px-2 text-[10px] text-red-400 hover:bg-red-500/10 border border-red-500/30">
+                              {isRejectingThis ? <i className="fas fa-spinner fa-spin"></i> : '✗'}
+                            </Button>
+                          </>
+                        )}
+                        {payout.userId && (
+                          <Button size="sm" variant="ghost" onClick={() => openAnalytics(payout.userId)} className="h-6 px-2 text-[10px] text-[#4cd3ff] hover:bg-[#4cd3ff]/10">
+                            <i className="fas fa-chart-bar"></i>
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -1277,6 +1507,111 @@ function PayoutLogsSection({ data }: { data: any }) {
           </div>
         )}
       </div>
+
+      {/* Analytics Dialog */}
+      <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <i className="fas fa-chart-bar text-[#4cd3ff]"></i>
+              User Analytics
+            </DialogTitle>
+          </DialogHeader>
+          {analyticsLoading ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+              <i className="fas fa-spinner fa-spin mr-2"></i>Loading...
+            </div>
+          ) : analyticsData ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">UID</div>
+                  <div className="font-mono font-bold text-[#4cd3ff]">{analyticsData.uid || 'N/A'}</div>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">Account Age</div>
+                  <div className="font-bold">{analyticsData.ageDays}d</div>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">Ads Watched</div>
+                  <div className="font-bold text-green-400">{analyticsData.adsWatched}</div>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">Tasks Done</div>
+                  <div className="font-bold text-blue-400">{analyticsData.tasksCompleted}</div>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">Total Friends</div>
+                  <div className="font-bold">{analyticsData.totalFriends}</div>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">Active Friends</div>
+                  <div className="font-bold text-green-400">{analyticsData.activeFriends}</div>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">POW Balance</div>
+                  <div className="font-bold text-yellow-400">{parseInt(analyticsData.balance || '0').toLocaleString()}</div>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2 space-y-0.5">
+                  <div className="text-muted-foreground">USD Balance</div>
+                  <div className="font-bold text-green-400">${parseFloat(analyticsData.usdBalance || '0').toFixed(4)}</div>
+                </div>
+              </div>
+              {analyticsData.banned && (
+                <div className="text-xs text-red-400 bg-red-500/10 rounded-lg p-2 flex items-center gap-2">
+                  <i className="fas fa-ban"></i> This user is banned
+                </div>
+              )}
+              {analyticsData.recentTransactions?.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">Recent Transactions</div>
+                  <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                    {analyticsData.recentTransactions.map((tx: any) => (
+                      <div key={tx.id} className="flex items-center justify-between text-[10px] bg-white/5 rounded px-2 py-1">
+                        <span className="text-muted-foreground truncate max-w-[120px]">{tx.type || tx.transactionType}</span>
+                        <span className={tx.direction === 'credit' || tx.amount > 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                          {tx.direction === 'credit' ? '+' : ''}{tx.amountUsd ? `$${parseFloat(tx.amountUsd).toFixed(4)}` : `${parseInt(tx.amount || '0').toLocaleString()} POW`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground text-sm">No data available</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <i className="fas fa-times-circle text-red-400"></i>
+              Reject Withdrawal
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Optionally provide a rejection reason for the user.</p>
+            <Input
+              placeholder="Reason (optional)..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="h-8 text-sm"
+            />
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => setRejectDialogOpen(false)} className="text-xs h-8">
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleReject} className="text-xs h-8 bg-red-600 hover:bg-red-700 text-white">
+                Confirm Reject
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1819,6 +2154,10 @@ function SettingsSection() {
         gigaPubMissionLimit: parseInt(settings.gigaPubMissionLimit) || 10,
         monetixMissionReward: parseInt(settings.monetixMissionReward) || 1500,
         monetixMissionLimit: parseInt(settings.monetixMissionLimit) || 25,
+        shareReferralReward: parseInt((settings as any).shareReferralReward) || 1000,
+        checkAnnouncementReward: parseInt((settings as any).checkAnnouncementReward) || 1000,
+        adsgramCheckinReward: parseInt((settings as any).adsgramCheckinReward) || 1000,
+        firstActiveReferralReward: parseInt((settings as any).firstActiveReferralReward) || 2500,
       });
       
       const result = await response.json();
@@ -2509,6 +2848,44 @@ function SettingsSection() {
               </div>
               <p className="text-xs text-muted-foreground">Current: {settingsData?.monetixMissionReward || 1500} POW · {settingsData?.monetixMissionLimit || 25} ads/day</p>
             </div>
+
+            {/* Daily Missions Divider */}
+            <div className="md:col-span-2 p-3 border rounded-lg bg-purple-500/5 border-purple-500/20">
+              <p className="text-xs text-purple-400 font-semibold mb-1">✅ Daily Mission Rewards</p>
+              <p className="text-xs text-muted-foreground">Rewards given when users complete daily missions (once per day).</p>
+            </div>
+
+            {/* Share Referral Mission */}
+            <div className="p-3 border rounded-lg border-blue-500/20 bg-blue-500/5">
+              <Label className="text-xs font-semibold text-blue-400 block mb-2">🔗 Share Referral (daily)</Label>
+              <Input type="number" value={(settings as any).shareReferralReward || '1000'}
+                onChange={(e) => setSettings({ ...settings, shareReferralReward: e.target.value } as any)}
+                placeholder="1000" min="0" className="h-8" />
+            </div>
+
+            {/* Check Announcement Mission */}
+            <div className="p-3 border rounded-lg border-cyan-500/20 bg-cyan-500/5">
+              <Label className="text-xs font-semibold text-cyan-400 block mb-2">📢 Check Announcement (daily)</Label>
+              <Input type="number" value={(settings as any).checkAnnouncementReward || '1000'}
+                onChange={(e) => setSettings({ ...settings, checkAnnouncementReward: e.target.value } as any)}
+                placeholder="1000" min="0" className="h-8" />
+            </div>
+
+            {/* Adsgram Checkin Mission */}
+            <div className="p-3 border rounded-lg border-orange-500/20 bg-orange-500/5">
+              <Label className="text-xs font-semibold text-orange-400 block mb-2">🎯 Adsgram Check-in (daily)</Label>
+              <Input type="number" value={(settings as any).adsgramCheckinReward || '1000'}
+                onChange={(e) => setSettings({ ...settings, adsgramCheckinReward: e.target.value } as any)}
+                placeholder="1000" min="0" className="h-8" />
+            </div>
+
+            {/* First Active Referral Mission */}
+            <div className="p-3 border rounded-lg border-yellow-500/20 bg-yellow-500/5">
+              <Label className="text-xs font-semibold text-yellow-400 block mb-2">⭐ First Active Referral (one-time)</Label>
+              <Input type="number" value={(settings as any).firstActiveReferralReward || '2500'}
+                onChange={(e) => setSettings({ ...settings, firstActiveReferralReward: e.target.value } as any)}
+                placeholder="2500" min="0" className="h-8" />
+            </div>
           </div>
         )}
 
@@ -2729,6 +3106,41 @@ interface AdminTask {
 function TaskManagementSection() {
   const queryClient = useQueryClient();
   const [activeTaskFilter, setActiveTaskFilter] = useState<'pending' | 'all'>('pending');
+  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ title: '', description: '', totalClicksRequired: '', costPerClick: '', status: '' });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const openEdit = (task: any) => {
+    setEditForm({
+      title: task.title || '',
+      description: task.description || '',
+      totalClicksRequired: task.totalClicksRequired?.toString() || '',
+      costPerClick: task.costPerClick?.toString() || '',
+      status: task.status || '',
+    });
+    setEditingTask(task);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTask) return;
+    setIsSavingEdit(true);
+    try {
+      const res = await apiRequest('PUT', `/api/admin/tasks/${editingTask.id}/edit`, editForm);
+      const data = await res.json();
+      if (data.success) {
+        showNotification('Task updated', 'success');
+        setEditingTask(null);
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/all-tasks"] });
+      } else {
+        showNotification(data.error || 'Failed', 'error');
+      }
+    } catch (e: any) {
+      showNotification(e.message || 'Error', 'error');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const { data: pendingTasksData, isLoading: pendingLoading } = useQuery({
     queryKey: ["/api/admin/pending-tasks"],
@@ -2978,6 +3390,15 @@ function TaskManagementSection() {
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={() => openEdit(task)}
+                  className="text-xs text-[#4cd3ff] hover:text-[#6ddeff] hover:bg-[#4cd3ff]/10"
+                >
+                  <i className="fas fa-pencil-alt mr-1"></i>
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => deleteTask(task.id)}
                   className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
                 >
@@ -2989,6 +3410,55 @@ function TaskManagementSection() {
           ))}
         </div>
       )}
+
+      {/* Task Edit Dialog */}
+      <Dialog open={!!editingTask} onOpenChange={() => setEditingTask(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <i className="fas fa-pencil-alt text-[#4cd3ff]"></i>
+              Edit Task
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground">Title</label>
+              <Input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} className="h-8 text-sm mt-1" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Description (optional)</label>
+              <Input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} className="h-8 text-sm mt-1" placeholder="Short description..." />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground">Total Clicks</label>
+                <Input type="number" value={editForm.totalClicksRequired} onChange={e => setEditForm(f => ({ ...f, totalClicksRequired: e.target.value }))} className="h-8 text-sm mt-1" min="1" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Cost/Click (TON)</label>
+                <Input type="number" value={editForm.costPerClick} onChange={e => setEditForm(f => ({ ...f, costPerClick: e.target.value }))} className="h-8 text-sm mt-1" step="0.0001" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Status</label>
+              <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                className="w-full mt-1 h-8 text-sm rounded-md border border-white/20 bg-background px-2">
+                <option value="under_review">Under Review</option>
+                <option value="running">Running</option>
+                <option value="paused">Paused</option>
+                <option value="completed">Completed</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setEditingTask(null)} className="flex-1 text-xs">Cancel</Button>
+              <Button size="sm" onClick={handleSaveEdit} disabled={isSavingEdit} className="flex-1 text-xs">
+                {isSavingEdit ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
