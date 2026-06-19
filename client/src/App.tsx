@@ -405,8 +405,21 @@ function App() {
     ? `${window.location.origin}/tonconnect-manifest.json`
     : 'https://paidadz.xyz/tonconnect-manifest.json';
 
+  // Detect if running inside Telegram Mini App
+  const isTelegramEnv = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp?.initData;
+
   return (
-    <TonConnectUIProvider manifestUrl={manifestUrl}>
+    <TonConnectUIProvider
+      manifestUrl={manifestUrl}
+      actionsConfiguration={{
+        // In Telegram Mini App, tell TonKeeper to return via tgback (Telegram deep link)
+        returnStrategy: isTelegramEnv ? 'tgback' : 'back',
+        twaReturnUrl: 'back' as any,
+      }}
+      uiPreferences={{
+        theme: 'DARK',
+      }}
+    >
       <QueryClientProvider client={queryClient}>
         <LanguageProvider>
           <TooltipProvider>
