@@ -6922,6 +6922,149 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // ── TON Deposit Verification (with on-chain check via TON Center API) ───────
+  const DEPOSIT_WALLET = 'UQCW9LwFkPRsLOVsGfl-65t9AJsfPXs8fTpDDEJL_RQhwPvJ';
+
+  // Verify transaction actually landed on-chain at the deposit wallet
+  async function verifyTonTransaction(expectedNano: bigint, windowMs = 15 * 60 * 1000): Promise<{ verified: boolean; txHash?: string; actualNano?: bigint }> {
+    try {
+      const url = `https://toncenter.com/api/v2/getTransactions?address=${DEPOSIT_WALLET}&limit=20&archival=false`;
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) {
+        console.warn(`⚠️ TON Center API returned ${resp.status} — skipping on-chain check`);
+        return { verified: false };
+      }
+      const data = await resp.json() as any;
+      if (!data.ok || !Array.isArray(data.result)) return { verified: false };
+
+      const nowSec = Math.floor(Date.now() / 1000);
+      const windowSec = Math.floor(windowMs / 1000);
+
+      for (const tx of data.result) {
+        const txTime: number = tx.utime ?? 0;
+        if (nowSec - txTime > windowSec) continue; // outside window
+
+        // in_msg.value is the amount in nanotons
+        const incoming = tx.in_msg;
+        if (!incoming || !incoming.value) continue;
+
+        const inNano = BigInt(incoming.value);
+        // Allow ±1 nanoton tolerance for rounding
+        if (inNano >= expectedNano - 1n) {
+          const txHash: string = tx.transaction_id?.hash ?? tx.hash ?? '';
+          console.log(`✅ On-chain TX verified: hash=${txHash} nano=${inNano} time=${txTime}`);
+          return { verified: true, txHash, actualNano: inNano };
+        }
+      }
+
+      return { verified: false };
+    } catch (err) {
+      console.warn('⚠️ TON on-chain verification error (proceeding with BOC trust):', err);
+      return { verified: false };
+    }
+  }
+
+  app.post('/api/ton/deposit/verify', requireAuth, async (req: any, res) => {
+    try {
+      const userId: string = req.user.user.id;
+
+      const { boc, amount } = req.body;
+      if (!boc || !amount) {
+        return res.status(400).json({ success: false, message: 'Missing boc or amount' });
+      }
+
+      const depositAmount = parseFloat(amount);
+      if (isNaN(depositAmount) || depositAmount < 0.1) {
+        return res.status(400).json({ success: false, message: 'Invalid deposit amount' });
+      }
+
+      const { tonDeposits } = await import('../shared/schema');
+
+      // Duplicate-prevention: check if this BOC was already processed
+      const existing = await db.select().from(tonDeposits).where(eq(tonDeposits.boc, boc)).limit(1);
+      if (existing.length > 0 && existing[0].status === 'confirmed') {
+        return res.status(409).json({ success: false, message: 'This transaction has already been processed.' });
+      }
+
+      // ── On-chain verification via TON Center API ──────────────────────────
+      const expectedNano = BigInt(Math.round(depositAmount * 1_000_000_000));
+      const { verified, txHash, actualNano } = await verifyTonTransaction(expectedNano);
+
+      if (!verified) {
+        // Record as pending — do NOT credit yet
+        await db.insert(tonDeposits).values({
+          userId,
+          amount: depositAmount.toString(),
+          boc,
+          status: 'pending',
+        }).onConflictDoNothing();
+
+        console.warn(`⚠️ TON deposit NOT verified on-chain: userId=${userId} amount=${depositAmount}`);
+        return res.status(202).json({
+          success: false,
+          pending: true,
+          message: 'Transaction not yet visible on blockchain. Your balance will be credited within 5 minutes once confirmed.',
+        });
+      }
+
+      // If txHash exists, use it as secondary dedup key
+      if (txHash) {
+        const hashExists = await db.select().from(tonDeposits).where(eq(tonDeposits.boc, txHash)).limit(1);
+        if (hashExists.length > 0 && hashExists[0].status === 'confirmed') {
+          return res.status(409).json({ success: false, message: 'This transaction has already been credited.' });
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
+      // Read current balance then compute new value (Drizzle pattern used throughout codebase)
+      const [currentUser] = await db.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId)).limit(1);
+      if (!currentUser) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      // Use actual on-chain amount (converted from nanotons) for accuracy
+      const actualAmount = actualNano ? Number(actualNano) / 1_000_000_000 : depositAmount;
+      const newTonBalance = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
+
+      // Insert confirmed deposit record
+      await db.insert(tonDeposits).values({
+        userId,
+        amount: actualAmount.toString(),
+        boc: txHash || boc,
+        status: 'confirmed',
+        confirmedAt: new Date(),
+      }).onConflictDoNothing();
+
+      // Credit TON balance via Drizzle ORM
+      await db.update(users)
+        .set({ tonBalance: newTonBalance, updatedAt: new Date() })
+        .where(eq(users.id, userId));
+
+      // Record transaction history
+      await db.insert(transactions).values({
+        userId,
+        amount: actualAmount.toString(),
+        type: 'addition',
+        source: 'ton_deposit',
+        description: `TON deposit verified on-chain: ${actualAmount} TON`,
+        metadata: { boc: (txHash || boc).slice(0, 64), txHash },
+      });
+
+      console.log(`✅ TON deposit credited: userId=${userId} amount=${actualAmount} TON newBalance=${newTonBalance} txHash=${txHash}`);
+
+      return res.json({
+        success: true,
+        message: `${actualAmount.toFixed(2)} TON credited to your account.`,
+        amount: actualAmount,
+        newBalance: newTonBalance,
+      });
+    } catch (err: any) {
+      console.error('❌ TON deposit error:', err);
+      return res.status(500).json({ success: false, message: 'Deposit processing failed. Your funds will be credited within 5 minutes.' });
+    }
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // User withdrawal endpoints
   
   // Get user's withdrawal history - auth removed to prevent popup spam

@@ -663,6 +663,21 @@ export async function ensureDatabaseSchema(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_lb_snapshot_week ON leaderboard_snapshots(week_key, rank)`);
     console.log('✅ [MIGRATION] leaderboard_snapshots table ensured');
 
+    // TON Deposits table — prevents duplicate blockchain deposit credits
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ton_deposits (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        amount DECIMAL(30, 10) NOT NULL,
+        boc TEXT NOT NULL UNIQUE,
+        status VARCHAR DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW(),
+        confirmed_at TIMESTAMP
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ton_deposits_user ON ton_deposits(user_id)`);
+    console.log('✅ [MIGRATION] ton_deposits table ensured');
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
