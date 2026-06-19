@@ -14,7 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown } from "lucide-react";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Trophy, Settings, Shield, Star, CheckCircle2, XCircle, Megaphone, AlertTriangle, Plus, Minus, Wrench, Target, Hash } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -140,7 +140,7 @@ function ContestSection() {
                     <span className="text-sm text-white truncate">{name}</span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-2">
-                    <span className="text-xs text-amber-400 font-semibold">⭐ {stars}</span>
+                    <span className="text-xs text-amber-400 font-semibold flex items-center gap-1"><Star size={11} className="inline"/>{stars}</span>
                     {prize && <span className="text-xs text-emerald-400 font-semibold">{prize}</span>}
                   </div>
                 </div>
@@ -153,12 +153,12 @@ function ContestSection() {
       {/* Result banner */}
       {result && (
         <div className={`rounded-xl p-4 border text-sm ${result.success ? 'bg-emerald-900/30 border-emerald-500/40 text-emerald-300' : 'bg-rose-900/30 border-rose-500/40 text-rose-300'}`}>
-          <p className="font-semibold mb-1">{result.success ? '✅ Reset Complete' : '❌ Reset Failed'}</p>
+          <p className="font-semibold mb-1 flex items-center gap-1">{result.success ? <CheckCircle2 size={14}/> : <XCircle size={14}/>}{result.success ? 'Reset Complete' : 'Reset Failed'}</p>
           <p>{result.message}</p>
           {result.success && (
             <div className="mt-2 flex gap-4 text-xs text-white/60">
-              <span>👥 Users reset: <b className="text-white">{result.usersReset}</b></span>
-              <span>📣 Notified: <b className="text-white">{result.winnersNotified ? 'Yes' : 'No'}</b></span>
+              <span className="flex items-center gap-1"><Users size={11}/>Users reset: <b className="text-white">{result.usersReset}</b></span>
+              <span className="flex items-center gap-1"><Megaphone size={11}/>Notified: <b className="text-white">{result.winnersNotified ? 'Yes' : 'No'}</b></span>
             </div>
           )}
         </div>
@@ -205,16 +205,16 @@ function ContestSection() {
               You are about to end the weekly contest. This will:
             </p>
             <ul className="text-sm text-gray-400 space-y-1 list-none pl-2">
-              <li>📣 Send winner list to all admins on Telegram</li>
-              <li>⭐ Reset <b className="text-white">star_balance</b> + <b className="text-white">weekly_stars</b> to 0</li>
-              <li>🔢 Affect <b className="text-white">{entries.length > 0 ? `${entries.length}+` : 'all'}</b> users</li>
+              <li className="flex items-center gap-1"><Megaphone size={12}/>Send winner list to all admins on Telegram</li>
+              <li className="flex items-center gap-1"><Star size={12}/>Reset <b className="text-white">star_balance</b> + <b className="text-white">weekly_stars</b> to 0</li>
+              <li className="flex items-center gap-1"><Hash size={12}/>Affect <b className="text-white">{entries.length > 0 ? `${entries.length}+` : 'all'}</b> users</li>
             </ul>
             {weekLabel.trim() && (
               <p className="text-xs bg-amber-900/30 border border-amber-500/30 text-amber-300 rounded-lg px-3 py-2">
                 Week override: <b>{weekLabel.trim()}</b>
               </p>
             )}
-            <p className="text-xs text-rose-400 font-medium">⚠️ This action cannot be undone.</p>
+            <p className="text-xs text-rose-400 font-medium flex items-center gap-1"><AlertTriangle size={12}/>This action cannot be undone.</p>
             <div className="flex gap-2 pt-1">
               <Button variant="outline" onClick={() => setConfirmOpen(false)} className="flex-1 h-9 border-white/10 text-gray-300">
                 Cancel
@@ -335,23 +335,25 @@ export default function AdminPage() {
 
         {/* Tabs Navigation - Move to Top */}
         <Tabs defaultValue="summary" className="w-full">
-          <TabsList className="flex w-full overflow-x-auto mb-3 h-auto p-1 gap-0.5 [&::-webkit-scrollbar]:hidden">
-            {[
-              { value: 'summary', label: '📊 Summary' },
-              { value: 'tasks', label: '📋 Tasks' },
-              { value: 'users', label: '👥 Users' },
-              { value: 'promos', label: '🎫 Promos' },
-              { value: 'payouts', label: '💸 Payouts' },
-              { value: 'bans', label: '🚫 Bans' },
-              { value: 'contest', label: '🏆 Contest' },
-              { value: 'settings', label: '⚙️ Settings' },
-              ...(can('manage_admins') ? [{ value: 'admins', label: '🛡 Admins' }] : []),
-            ].map(tab => (
-              <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap">
-                {tab.label}
+          <div className="overflow-x-auto mb-3 [&::-webkit-scrollbar]:hidden" style={{ WebkitOverflowScrolling: 'touch' } as any}>
+          <TabsList className="flex w-max min-w-full h-auto p-1 gap-0.5">
+            {([
+              { value: 'summary',  icon: <BarChart2 size={13}/>,    label: 'Summary' },
+              { value: 'tasks',    icon: <ClipboardList size={13}/>, label: 'Tasks' },
+              { value: 'users',    icon: <Users size={13}/>,         label: 'Users' },
+              { value: 'promos',   icon: <Tag size={13}/>,           label: 'Promos' },
+              { value: 'payouts',  icon: <Wallet size={13}/>,        label: 'Payouts' },
+              { value: 'bans',     icon: <ShieldOff size={13}/>,     label: 'Bans' },
+              { value: 'contest',  icon: <Trophy size={13}/>,        label: 'Contest' },
+              { value: 'settings', icon: <Settings size={13}/>,      label: 'Settings' },
+              ...(can('manage_admins') ? [{ value: 'admins', icon: <Shield size={13}/>, label: 'Admins' }] : []),
+            ] as { value: string; icon: React.ReactNode; label: string }[]).map(tab => (
+              <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap flex items-center gap-1">
+                {tab.icon}{tab.label}
               </TabsTrigger>
             ))}
           </TabsList>
+          </div>
 
           {/* Summary Tab - Clean Minimal Design */}
           <TabsContent value="summary" className="mt-0 space-y-4">
@@ -964,7 +966,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
                 <Button key={a} size="sm" variant={balanceForm.action === a ? 'default' : 'outline'}
                   onClick={() => setBalanceForm(f => ({ ...f, action: a }))}
                   className={`h-7 text-xs ${balanceForm.action === a && a === 'add' ? 'bg-green-600' : balanceForm.action === a && a === 'deduct' ? 'bg-red-600' : balanceForm.action === a ? 'bg-blue-600' : ''}`}>
-                  {a === 'add' ? '➕ Add' : a === 'deduct' ? '➖ Deduct' : '🔧 Set'}
+                  {a === 'add' ? <><Plus size={11}/>Add</> : a === 'deduct' ? <><Minus size={11}/>Deduct</> : <><Wrench size={11}/>Set</>}
                 </Button>
               ))}
             </div>
@@ -982,7 +984,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             <Input placeholder="Reason (optional)" value={balanceForm.reason}
               onChange={e => setBalanceForm(f => ({ ...f, reason: e.target.value }))} className="h-8 text-sm" />
             <Button onClick={handleAdjustBalance} disabled={isAdjusting || !balanceForm.amount} className="w-full h-8 text-sm">
-              {isAdjusting ? 'Processing...' : `${balanceForm.action === 'add' ? '➕ Add' : balanceForm.action === 'deduct' ? '➖ Deduct' : '🔧 Set'} ${balanceForm.amount || '0'} ${balanceForm.currency.toUpperCase()}`}
+              {isAdjusting ? 'Processing...' : <span className="flex items-center gap-1 justify-center">{balanceForm.action === 'add' ? <Plus size={12}/> : balanceForm.action === 'deduct' ? <Minus size={12}/> : <Wrench size={12}/>}{balanceForm.action === 'add' ? 'Add' : balanceForm.action === 'deduct' ? 'Deduct' : 'Set'} {balanceForm.amount || '0'} {balanceForm.currency.toUpperCase()}</span>}
             </Button>
           </div>
 
@@ -2851,7 +2853,7 @@ function SettingsSection() {
 
             {/* Daily Missions Divider */}
             <div className="md:col-span-2 p-3 border rounded-lg bg-purple-500/5 border-purple-500/20">
-              <p className="text-xs text-purple-400 font-semibold mb-1">✅ Daily Mission Rewards</p>
+              <p className="text-xs text-purple-400 font-semibold mb-1 flex items-center gap-1"><CheckCircle2 size={12}/>Daily Mission Rewards</p>
               <p className="text-xs text-muted-foreground">Rewards given when users complete daily missions (once per day).</p>
             </div>
 
@@ -2873,7 +2875,7 @@ function SettingsSection() {
 
             {/* Adsgram Checkin Mission */}
             <div className="p-3 border rounded-lg border-orange-500/20 bg-orange-500/5">
-              <Label className="text-xs font-semibold text-orange-400 block mb-2">🎯 Adsgram Check-in (daily)</Label>
+              <Label className="text-xs font-semibold text-orange-400 flex items-center gap-1 mb-2"><Target size={12}/>Adsgram Check-in (daily)</Label>
               <Input type="number" value={(settings as any).adsgramCheckinReward || '1000'}
                 onChange={(e) => setSettings({ ...settings, adsgramCheckinReward: e.target.value } as any)}
                 placeholder="1000" min="0" className="h-8" />
@@ -2881,7 +2883,7 @@ function SettingsSection() {
 
             {/* First Active Referral Mission */}
             <div className="p-3 border rounded-lg border-yellow-500/20 bg-yellow-500/5">
-              <Label className="text-xs font-semibold text-yellow-400 block mb-2">⭐ First Active Referral (one-time)</Label>
+              <Label className="text-xs font-semibold text-yellow-400 flex items-center gap-1 mb-2"><Star size={12}/>First Active Referral (one-time)</Label>
               <Input type="number" value={(settings as any).firstActiveReferralReward || '2500'}
                 onChange={(e) => setSettings({ ...settings, firstActiveReferralReward: e.target.value } as any)}
                 placeholder="2500" min="0" className="h-8" />

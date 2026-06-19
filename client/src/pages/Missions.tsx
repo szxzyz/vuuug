@@ -189,104 +189,59 @@ const BTN_BASE: React.CSSProperties = {
   transition: 'opacity 0.15s',
 };
 
-/* ── Daily Mission Card ── */
+/* ── Daily Mission Card — compact single-row like AdRow ── */
 function DailyMissionCard({
-  icon,
-  title,
-  description,
-  reward,
-  done,
-  busy,
-  btnLabel,
-  btnColor,
-  countdown,
-  claimReady,
-  onAction,
-  onClaim,
-  isLast,
-  isOneTime,
+  icon, title, reward, done, busy, btnLabel, btnColor,
+  countdown, claimReady, onAction, onClaim, isOneTime,
 }: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  reward: number;
-  done: boolean;
-  busy: boolean;
-  btnLabel: string;
-  btnColor: string;
-  countdown?: number;
-  claimReady?: boolean;
-  onAction: () => void;
-  onClaim: () => void;
-  isLast: boolean;
-  isOneTime?: boolean;
+  icon: React.ReactNode; title: string; reward: number;
+  done: boolean; busy: boolean; btnLabel: string; btnColor: string;
+  countdown?: number; claimReady?: boolean;
+  onAction: () => void; onClaim: () => void;
+  isLast: boolean; isOneTime?: boolean;
 }) {
   return (
-    <>
-      <div style={{ padding: '14px 16px 0' }}>
-        {/* Top: icon + title + description */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ flexShrink: 0, marginTop: 2 }}>{icon}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: TEXT, fontSize: 14, fontWeight: 800 }}>{title}</span>
-              {isOneTime && (
-                <span style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, color: 'rgba(255,255,255,0.4)', fontSize: 9, fontWeight: 700, padding: '2px 5px' }}>ONE-TIME</span>
-              )}
-            </div>
-            <span style={{ color: TEXT_DIM, fontSize: 12, marginTop: 2, display: 'block' }}>{description}</span>
-          </div>
-        </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px' }}>
+      {/* Icon box */}
+      <div style={{ flexShrink: 0, width: 42, height: 42, borderRadius: 11, background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        {icon}
+      </div>
 
-        {/* Divider */}
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 0 0' }} />
-
-        {/* Bottom: reward + button */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 14px' }}>
-          {/* Reward */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: TEXT, fontSize: 15, fontWeight: 800 }}>{reward.toLocaleString()}</span>
-              <span style={{ color: TEXT_DIM, fontSize: 12, fontWeight: 600 }}>POW</span>
-            </div>
-          </div>
-
-          {/* Action */}
-          {done ? (
-            <div style={{ width: 72, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </div>
-          ) : countdown !== undefined ? (
-            <div style={{ ...BTN_BASE, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default' }}>
-              {countdown}s
-            </div>
-          ) : claimReady ? (
-            <button
-              onClick={onClaim}
-              disabled={busy}
-              style={{ ...BTN_BASE, background: busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #16a34a, #22c55e)', color: busy ? TEXT_DIM : '#fff', boxShadow: busy ? 'none' : '0 2px 12px rgba(34,197,94,0.35)', cursor: busy ? 'not-allowed' : 'pointer' }}
-              className="active:scale-95 transition-transform"
-            >
-              {busy ? <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> : 'Claim'}
-            </button>
-          ) : (
-            <button
-              onClick={onAction}
-              disabled={busy}
-              style={{ ...BTN_BASE, background: busy ? 'rgba(255,255,255,0.06)' : btnColor, color: busy ? TEXT_DIM : '#fff', boxShadow: busy ? 'none' : '0 2px 10px rgba(0,0,0,0.3)', cursor: busy ? 'not-allowed' : 'pointer' }}
-              className={busy ? '' : 'active:scale-95 transition-transform'}
-            >
-              {busy
-                ? <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                : btnLabel}
-            </button>
+      {/* Title + reward */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ color: TEXT, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+          {isOneTime && (
+            <span style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, color: 'rgba(255,255,255,0.35)', fontSize: 8, fontWeight: 700, padding: '1px 4px', flexShrink: 0 }}>1×</span>
           )}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
+          <span style={{ color: BLUE, fontSize: 12, fontWeight: 800 }}>+{reward.toLocaleString()}</span>
+          <span style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 600 }}>POW</span>
+        </div>
       </div>
-      {!isLast && <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />}
-    </>
+
+      {/* Action button */}
+      {done ? (
+        <div style={{ flexShrink: 0, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+      ) : countdown !== undefined ? (
+        <div style={{ ...BTN_BASE, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default', flexShrink: 0 }}>
+          {countdown}s
+        </div>
+      ) : claimReady ? (
+        <button onClick={onClaim} disabled={busy} style={{ ...BTN_BASE, flexShrink: 0, background: busy ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#16a34a,#22c55e)', color: busy ? TEXT_DIM : '#fff', boxShadow: busy ? 'none' : '0 2px 10px rgba(34,197,94,0.3)', cursor: busy ? 'not-allowed' : 'pointer' }} className="active:scale-95 transition-transform">
+          {busy ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> : 'Claim'}
+        </button>
+      ) : (
+        <button onClick={onAction} disabled={busy} style={{ ...BTN_BASE, flexShrink: 0, background: busy ? 'rgba(255,255,255,0.06)' : btnColor, color: busy ? TEXT_DIM : '#fff', boxShadow: busy ? 'none' : '0 2px 10px rgba(0,0,0,0.25)', cursor: busy ? 'not-allowed' : 'pointer' }} className={busy ? '' : 'active:scale-95 transition-transform'}>
+          {busy ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> : btnLabel}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -296,14 +251,14 @@ function TaskTypeIcon({ taskType }: { taskType: string }) {
     ? '/icon-channel.png'
     : '/icon-game.png';
   return (
-    <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ width: 34, height: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <img src={src} alt={taskType} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
     </div>
   );
 }
 
-/* ── Feed TaskRow – new card style matching DailyMissionCard ── */
-function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdownTasks, onGo, onClaim, isLast }: {
+/* ── Feed TaskRow – compact single-row layout ── */
+function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdownTasks, onGo, onClaim }: {
   task: Task; reward: number; loading: boolean;
   clickedTasks: Set<string>; claimReadyTasks: Set<string>; countdownTasks: Map<string, number>;
   onGo: (task: Task) => void; onClaim: (taskId: string) => void; isLast: boolean;
@@ -316,59 +271,48 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
     : task.taskType === 'partner' ? '#ec4899'
     : '#8b5cf6';
 
-  const typeLabel = task.taskType === 'channel' ? 'Channel' : task.taskType === 'partner' ? 'Partner' : 'Bot / Game';
+  const typeLabel = task.taskType === 'channel' ? 'Channel'
+    : task.taskType === 'partner' ? 'Partner'
+    : 'Bot / Game';
 
   return (
-    <>
-      <div style={{ padding: '14px 16px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <TaskTypeIcon taskType={task.taskType} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ color: TEXT, fontSize: 14, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, display: 'block' }}>{task.title}</span>
-            <span style={{ color: accent, fontSize: 11, marginTop: 2, fontWeight: 600, display: 'block' }}>{typeLabel}</span>
-          </div>
-        </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px' }}>
+      {/* Icon box */}
+      <div style={{ flexShrink: 0, width: 42, height: 42, borderRadius: 11, background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <TaskTypeIcon taskType={task.taskType} />
+      </div>
 
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 0 0' }} />
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ color: TEXT, fontSize: 15, fontWeight: 800 }}>{reward.toLocaleString()}</span>
-            <span style={{ color: TEXT_DIM, fontSize: 12, fontWeight: 600 }}>POW</span>
-          </div>
-
-          {!isClicked ? (
-            <button
-              onClick={() => onGo(task)}
-              style={{ ...BTN_BASE, background: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`, color: '#fff', boxShadow: '0 2px 10px rgba(37,99,235,0.35)' }}
-              className="active:scale-95 transition-transform"
-            >
-              Go
-            </button>
-          ) : countdown !== undefined ? (
-            <div style={{ ...BTN_BASE, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default' }}>
-              {countdown}s
-            </div>
-          ) : isClaimReady ? (
-            <button
-              onClick={e => { e.stopPropagation(); onClaim(task.id); }}
-              disabled={loading}
-              style={{ ...BTN_BASE, background: loading ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #16a34a, #22c55e)', color: loading ? TEXT_DIM : '#fff', boxShadow: loading ? 'none' : '0 2px 12px rgba(34,197,94,0.35)', cursor: loading ? 'not-allowed' : 'pointer' }}
-              className="active:scale-95 transition-transform"
-            >
-              {loading ? '…' : 'Claim'}
-            </button>
-          ) : (
-            <div style={{ width: 72, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </div>
-          )}
+      {/* Title + reward */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ color: TEXT, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, display: 'block' }}>{task.title}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+          <span style={{ color: accent, fontSize: 12, fontWeight: 800 }}>+{reward.toLocaleString()}</span>
+          <span style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 600 }}>POW</span>
+          <span style={{ color: TEXT_DIM, fontSize: 10, fontWeight: 500, opacity: 0.6 }}>· {typeLabel}</span>
         </div>
       </div>
-      {!isLast && <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />}
-    </>
+
+      {/* Button */}
+      {!isClicked ? (
+        <button onClick={() => onGo(task)} style={{ ...BTN_BASE, flexShrink: 0, background: `linear-gradient(135deg,${BLUE_D},${BLUE})`, color: '#fff', boxShadow: '0 2px 10px rgba(37,99,235,0.35)' }} className="active:scale-95 transition-transform">
+          Go
+        </button>
+      ) : countdown !== undefined ? (
+        <div style={{ ...BTN_BASE, flexShrink: 0, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default' }}>
+          {countdown}s
+        </div>
+      ) : isClaimReady ? (
+        <button onClick={e => { e.stopPropagation(); onClaim(task.id); }} disabled={loading} style={{ ...BTN_BASE, flexShrink: 0, background: loading ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#16a34a,#22c55e)', color: loading ? TEXT_DIM : '#fff', boxShadow: loading ? 'none' : '0 2px 12px rgba(34,197,94,0.35)', cursor: loading ? 'not-allowed' : 'pointer' }} className="active:scale-95 transition-transform">
+          {loading ? '…' : 'Claim'}
+        </button>
+      ) : (
+        <div style={{ flexShrink: 0, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -505,7 +449,7 @@ export default function Missions() {
     new Promise(resolve => {
       if (!window.Adsgram) { resolve({ success: false, unavailable: true }); return; }
       try {
-        window.Adsgram.init({ blockId: '34708' })
+        window.Adsgram.init({ blockId: 'int-35652' })
           .show()
           .then(() => resolve({ success: true, unavailable: false }))
           .catch(() => resolve({ success: false, unavailable: false }));
@@ -732,11 +676,7 @@ export default function Missions() {
       done: !!adsgramCheckinM?.claimed,
       btnLabel: 'Claim',
       btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
-      icon: (
-        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <img src="/icon-checkin.png" alt="check in" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-        </div>
-      ),
+      icon: <img src="/icon-checkin.png" alt="check in" style={{ width: 42, height: 42, objectFit: 'contain', transform: 'scale(1.5)', transformOrigin: 'center' }} />,
       onAction: () => handleJustCheckIn(!!adsgramCheckinM?.claimed),
       onClaim: () => claimMission('/api/missions/adsgram-checkin/claim', 'adsgram_checkin'),
       busy: claimingMission === 'adsgram_checkin' || claimingMission === 'adsgram_checkin_loading',
@@ -750,7 +690,7 @@ export default function Missions() {
       btnLabel: 'Go',
       btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
       icon: (
-        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 34, height: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src="/icon-telegram.png" alt="updates" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
       ),
@@ -767,7 +707,7 @@ export default function Missions() {
       btnLabel: 'Share',
       btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
       icon: (
-        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 34, height: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src="/icon-share.png" alt="share" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
       ),
@@ -785,7 +725,7 @@ export default function Missions() {
       btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
       isOneTime: true,
       icon: (
-        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 34, height: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src="/icon-invite.png" alt="invite" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
       ),
@@ -832,7 +772,6 @@ export default function Missions() {
                   <DailyMissionCard
                     icon={m.icon}
                     title={m.title}
-                    description={m.description}
                     reward={m.reward}
                     done={m.done}
                     busy={m.busy}
@@ -892,7 +831,6 @@ export default function Missions() {
                   <DailyMissionCard
                     icon={m.icon}
                     title={m.title}
-                    description={m.description}
                     reward={m.reward}
                     done={m.done}
                     busy={m.busy}

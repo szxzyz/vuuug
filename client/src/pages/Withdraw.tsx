@@ -370,40 +370,60 @@ export default function Withdraw() {
             <div className="space-y-3">
               <div className="space-y-2">
                 {paymentSystems.map((system) => (
-                  <button
-                    key={system.id}
-                    onClick={() => {
-                      setSelectedMethod(system.id);
-                      if (system.id === 'TON') tonConnectUI.openModal();
-                    }}
-                    className={`w-full flex items-center p-3 rounded-lg transition-all ${
-                      selectedMethod === system.id
-                        ? 'bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]'
-                        : 'bg-[#1C1C1E] hover:bg-[#2C2C2E]'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                      selectedMethod === system.id ? 'border-[#4cd3ff] bg-[#4cd3ff]' : 'border-[#aaa]'
-                    }`}>
-                      {selectedMethod === system.id && <Check className="w-3 h-3 text-black" />}
-                    </div>
-                    <div className="flex items-center gap-2 ml-2 flex-1">
-                      <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
-                        <img src="/images/ton.png" alt="TON" className="w-6 h-6 object-cover" />
+                  <div key={system.id} className="relative">
+                    <button
+                      onClick={() => {
+                        setSelectedMethod(system.id);
+                        if (system.id === 'TON' && !isWalletConnected) tonConnectUI.openModal();
+                      }}
+                      className={`w-full flex items-center p-3 rounded-lg transition-all ${
+                        selectedMethod === system.id
+                          ? 'bg-[#4cd3ff]/10 ring-1 ring-[#4cd3ff]'
+                          : 'bg-[#1C1C1E] hover:bg-[#2C2C2E]'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                        selectedMethod === system.id ? 'border-[#4cd3ff] bg-[#4cd3ff]' : 'border-[#aaa]'
+                      }`}>
+                        {selectedMethod === system.id && <Check className="w-3 h-3 text-black" />}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-white text-sm font-medium">{system.name}</span>
-                        {system.id === 'TON' && (
-                          <span className="text-xs font-semibold" style={{ color: isWalletConnected ? '#4ade80' : '#0098EA' }}>
-                            {isWalletConnected
-                              ? `${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`
-                              : t('connect')}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-2 ml-2 flex-1">
+                        <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
+                          <img src="/images/ton.png" alt="TON" className="w-6 h-6 object-cover" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white text-sm font-medium">{system.name}</span>
+                          {system.id === 'TON' && (
+                            <span className="text-xs font-semibold" style={{ color: isWalletConnected ? '#4ade80' : '#0098EA' }}>
+                              {isWalletConnected
+                                ? `${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`
+                                : t('connect')}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <span className="text-xs text-[#aaa] flex-shrink-0">({system.fee}% {t('fee_label')})</span>
-                  </button>
+                      <span className="text-xs text-[#aaa] flex-shrink-0 mr-1">({system.fee}% {t('fee_label')})</span>
+                    </button>
+
+                    {/* Disconnect button — shown when TON wallet is connected */}
+                    {system.id === 'TON' && isWalletConnected && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await tonConnectUI.disconnect();
+                        }}
+                        title="Disconnect wallet"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                          <polyline points="16 17 21 12 16 7"/>
+                          <line x1="21" y1="12" x2="9" y2="12"/>
+                        </svg>
+                        Change
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
 
