@@ -246,8 +246,8 @@ function DailyMissionCard({
           {/* Reward */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <img src="/pow-icon.png" alt="POW" style={{ width: 22, height: 22, objectFit: 'contain' }} />
               <span style={{ color: TEXT, fontSize: 15, fontWeight: 800 }}>{reward.toLocaleString()}</span>
+              <span style={{ color: TEXT_DIM, fontSize: 12, fontWeight: 600 }}>POW</span>
             </div>
           </div>
 
@@ -296,7 +296,7 @@ function TaskTypeIcon({ taskType }: { taskType: string }) {
     ? '/icon-channel.png'
     : '/icon-game.png';
   return (
-    <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <img src={src} alt={taskType} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
     </div>
   );
@@ -333,8 +333,8 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <img src="/pow-icon.png" alt="POW" style={{ width: 22, height: 22, objectFit: 'contain' }} />
             <span style={{ color: TEXT, fontSize: 15, fontWeight: 800 }}>{reward.toLocaleString()}</span>
+            <span style={{ color: TEXT_DIM, fontSize: 12, fontWeight: 600 }}>POW</span>
           </div>
 
           {!isClicked ? (
@@ -557,29 +557,36 @@ export default function Missions() {
     if (missionCountdown['share_referral'] !== undefined) return;
     if (!referralLink) { showNotification('Referral link not available', 'error'); return; }
     const tg = (window as any).Telegram?.WebApp;
-    const shareText = `Join CashWatch and earn rewards! 💰\n${referralLink}`;
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('Join CashWatch and earn rewards! 💰')}`;
+    const shareText = `Join Paid Adz and earn rewards! 💰\n${referralLink}`;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('Join Paid Adz and earn rewards! 💰')}`;
     if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
     else if (tg?.openLink) tg.openLink(shareUrl);
-    else if (navigator.share) navigator.share({ title: 'CashWatch', text: shareText, url: referralLink }).catch(() => {});
+    else if (navigator.share) navigator.share({ title: 'Paid Adz', text: shareText, url: referralLink }).catch(() => {});
     else window.open(shareUrl, '_blank');
     startMissionCountdown('share_referral', () => {});
   };
 
-  const handleInviteFriend = (done: boolean) => {
+  const handleInviteFriend = async (done: boolean) => {
     if (done || claimingMission === 'first_active_referral') return;
     if (missionClaimReady['first_active_referral']) {
       claimMission('/api/missions/first-active-referral/claim', 'first_active_referral');
       return;
     }
-    if (missionCountdown['first_active_referral'] !== undefined) return;
-    if (!referralLink) { showNotification('Referral link not available', 'error'); return; }
-    const tg = (window as any).Telegram?.WebApp;
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('Join CashWatch and earn rewards! 💰')}`;
-    if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
-    else if (tg?.openLink) tg.openLink(shareUrl);
-    else window.open(shareUrl, '_blank');
-    startMissionCountdown('first_active_referral', () => {});
+    setClaimingMission('first_active_referral_checking');
+    try {
+      const res = await fetch('/api/missions/referral-status', { credentials: 'include' });
+      const data = await res.json();
+      if (data.hasActiveReferral) {
+        setMissionClaimReady(p => ({ ...p, first_active_referral: true }));
+        await claimMission('/api/missions/first-active-referral/claim', 'first_active_referral');
+      } else {
+        showNotification('No active referral found yet. Invite a friend to join first!', 'info');
+      }
+    } catch {
+      showNotification('Could not check referral status. Try again.', 'error');
+    } finally {
+      setClaimingMission(null);
+    }
   };
 
   /* Ad flow handlers */
@@ -708,7 +715,7 @@ export default function Missions() {
     { id: 'gigapub' as const, name: 'GiGaPub', reward: gigaPubReward, limit: gigaPubLimit, count: platformCounts.gigapub },
   ];
 
-  const cardStyle = { background: CARD, borderRadius: 18, overflow: 'hidden' as const, marginBottom: 16 };
+  const cardStyle = { background: CARD, borderRadius: 18, overflow: 'hidden' as const, marginBottom: 8 };
 
   /* Mission data */
   const shareReferralM       = missionsStatus?.shareReferral;
@@ -724,9 +731,9 @@ export default function Missions() {
       reward: adsgramCheckinM?.reward || appSettings?.adsgramCheckinReward || 1000,
       done: !!adsgramCheckinM?.claimed,
       btnLabel: 'Claim',
-      btnColor: 'linear-gradient(135deg, #ea6c0f, #f97316)',
+      btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
       icon: (
-        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src="/icon-checkin.png" alt="check in" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
       ),
@@ -743,7 +750,7 @@ export default function Missions() {
       btnLabel: 'Go',
       btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
       icon: (
-        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src="/icon-telegram.png" alt="updates" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
       ),
@@ -758,9 +765,9 @@ export default function Missions() {
       reward: shareReferralM?.reward || appSettings?.shareReferralReward || 1000,
       done: !!shareReferralM?.claimed,
       btnLabel: 'Share',
-      btnColor: 'linear-gradient(135deg, #7c3aed, #8b5cf6)',
+      btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
       icon: (
-        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src="/icon-share.png" alt="share" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
       ),
@@ -774,11 +781,11 @@ export default function Missions() {
       description: 'Invite and receive 20% of your friends earnings',
       reward: firstActiveReferralM?.reward || appSettings?.firstActiveReferralReward || 2500,
       done: !!firstActiveReferralM?.claimed,
-      btnLabel: 'Go',
-      btnColor: 'linear-gradient(135deg, #ca8a04, #eab308)',
+      btnLabel: 'Check',
+      btnColor: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
       isOneTime: true,
       icon: (
-        <div style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src="/icon-invite.png" alt="invite" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
       ),
@@ -790,37 +797,7 @@ export default function Missions() {
 
   return (
     <Layout>
-      <main style={{ maxWidth: 480, margin: '0 auto', padding: '16px 16px 100px' }}>
-
-        {/* Header */}
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: TEXT, margin: 0 }}>{t('mission_title')}</h1>
-          <p style={{ fontSize: 13, color: TEXT_DIM, marginTop: 4 }}>{t('complete_tasks_earn')}</p>
-        </div>
-
-        {/* Banner */}
-        <div
-          style={{ borderRadius: 18, overflow: 'hidden', position: 'relative', height: 90, marginBottom: 20, cursor: isAdmin ? 'pointer' : 'default' }}
-          className="active:scale-[0.98] transition-transform"
-          onClick={() => {
-            if (isAdmin) setLocation("/task/create");
-            else showNotification(t('coming_soon_label'), "info");
-          }}
-        >
-          <img src="/spiderman-banner.jpg" alt="Create Task" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 35%' }} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 60%, rgba(0,0,0,0.1) 100%)' }} />
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 18px' }}>
-            <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', lineHeight: 1.2 }}>{t('i_want_task_here')}</span>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 }}>
-              {isAdmin ? t('create_your_own_task') : `🔒 ${t('coming_soon_label')}`}
-            </span>
-          </div>
-          {!isAdmin && (
-            <div style={{ position: 'absolute', top: 10, right: 12, background: 'rgba(255,200,0,0.18)', border: '1px solid rgba(255,200,0,0.45)', borderRadius: 8, padding: '3px 10px' }}>
-              <span style={{ fontSize: 10, fontWeight: 900, color: '#ffd700', letterSpacing: '0.08em' }}>{t('coming_soon_label').toUpperCase()}</span>
-            </div>
-          )}
-        </div>
+      <main style={{ maxWidth: 480, margin: '0 auto', padding: '16px 16px 20px' }}>
 
         {/* Promo Code */}
         <SectionLabel title={t('promo_code_label')} />
@@ -849,44 +826,47 @@ export default function Missions() {
             </div>
 
             <SectionLabel title="Daily Tasks" />
-            <div style={cardStyle}>
-              {dailyMissions.map((m, i) => (
-                <DailyMissionCard
-                  key={m.key}
-                  icon={m.icon}
-                  title={m.title}
-                  description={m.description}
-                  reward={m.reward}
-                  done={m.done}
-                  busy={m.busy}
-                  btnLabel={m.btnLabel}
-                  btnColor={m.btnColor}
-                  countdown={missionCountdown[m.key]}
-                  claimReady={missionClaimReady[m.key]}
-                  onAction={m.onAction}
-                  onClaim={m.onClaim}
-                  isLast={i === dailyMissions.length - 1}
-                  isOneTime={(m as any).isOneTime}
-                />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+              {dailyMissions.map(m => (
+                <div key={m.key} style={cardStyle}>
+                  <DailyMissionCard
+                    icon={m.icon}
+                    title={m.title}
+                    description={m.description}
+                    reward={m.reward}
+                    done={m.done}
+                    busy={m.busy}
+                    btnLabel={m.btnLabel}
+                    btnColor={m.btnColor}
+                    countdown={missionCountdown[m.key]}
+                    claimReady={missionClaimReady[m.key]}
+                    onAction={m.onAction}
+                    onClaim={m.onClaim}
+                    isLast={true}
+                    isOneTime={(m as any).isOneTime}
+                  />
+                </div>
               ))}
             </div>
 
             <SectionLabel title={t('all_tasks_label')} />
-            <div style={cardStyle}>
-              {tasksLoading ? (
-                <><LoadingRow /><div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} /><LoadingRow /></>
-              ) : allTasks.length === 0 ? (
-                <EmptyRow label={t('no_tasks_available')} />
-              ) : (
-                allTasks.map((task, i) => (
-                  <TaskRow
-                    key={task.id} task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
-                    clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
-                    onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={i === allTasks.length - 1}
-                  />
-                ))
-              )}
-            </div>
+            {tasksLoading ? (
+              <div style={cardStyle}><LoadingRow /></div>
+            ) : allTasks.length === 0 ? (
+              <div style={cardStyle}><EmptyRow label={t('no_tasks_available')} /></div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {allTasks.map(task => (
+                  <div key={task.id} style={cardStyle}>
+                    <TaskRow
+                      task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
+                      clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
+                      onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 
@@ -906,25 +886,26 @@ export default function Missions() {
             </div>
 
             <SectionLabel title="Daily Tasks" />
-            <div style={cardStyle}>
-              {dailyMissions.map((m, i) => (
-                <DailyMissionCard
-                  key={m.key}
-                  icon={m.icon}
-                  title={m.title}
-                  description={m.description}
-                  reward={m.reward}
-                  done={m.done}
-                  busy={m.busy}
-                  btnLabel={m.btnLabel}
-                  btnColor={m.btnColor}
-                  countdown={missionCountdown[m.key]}
-                  claimReady={missionClaimReady[m.key]}
-                  onAction={m.onAction}
-                  onClaim={m.onClaim}
-                  isLast={i === dailyMissions.length - 1}
-                  isOneTime={(m as any).isOneTime}
-                />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {dailyMissions.map(m => (
+                <div key={m.key} style={cardStyle}>
+                  <DailyMissionCard
+                    icon={m.icon}
+                    title={m.title}
+                    description={m.description}
+                    reward={m.reward}
+                    done={m.done}
+                    busy={m.busy}
+                    btnLabel={m.btnLabel}
+                    btnColor={m.btnColor}
+                    countdown={missionCountdown[m.key]}
+                    claimReady={missionClaimReady[m.key]}
+                    onAction={m.onAction}
+                    onClaim={m.onClaim}
+                    isLast={true}
+                    isOneTime={(m as any).isOneTime}
+                  />
+                </div>
               ))}
             </div>
           </>
@@ -934,21 +915,23 @@ export default function Missions() {
         {activeTab === 'partner' && (
           <>
             <SectionLabel title={t('partner_tab')} />
-            <div style={cardStyle}>
-              {tasksLoading ? (
-                <LoadingRow />
-              ) : partnerTasks.length === 0 ? (
-                <EmptyRow label={t('no_tasks_available')} />
-              ) : (
-                partnerTasks.map((task, i) => (
-                  <TaskRow
-                    key={task.id} task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
-                    clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
-                    onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={i === partnerTasks.length - 1}
-                  />
-                ))
-              )}
-            </div>
+            {tasksLoading ? (
+              <div style={cardStyle}><LoadingRow /></div>
+            ) : partnerTasks.length === 0 ? (
+              <div style={cardStyle}><EmptyRow label={t('no_tasks_available')} /></div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {partnerTasks.map(task => (
+                  <div key={task.id} style={cardStyle}>
+                    <TaskRow
+                      task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
+                      clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
+                      onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 
