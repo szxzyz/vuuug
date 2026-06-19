@@ -380,6 +380,17 @@ export const leaderboardSnapshots = pgTable("leaderboard_snapshots", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// TON Deposits table - tracks blockchain deposits to prevent duplicates
+export const tonDeposits = pgTable("ton_deposits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  amount: decimal("amount", { precision: 30, scale: 10 }).notNull(),
+  boc: text("boc").notNull().unique(), // Transaction BOC (unique to prevent duplicates)
+  status: varchar("status").default("pending"), // pending | confirmed | failed
+  createdAt: timestamp("created_at").defaultNow(),
+  confirmedAt: timestamp("confirmed_at"),
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
