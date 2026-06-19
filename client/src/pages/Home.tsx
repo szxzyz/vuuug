@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
-import Header from "@/components/Header";
 import IncomeStatistics from "@/components/IncomeStatistics";
 import AdWatchingSection from "@/components/AdWatchingSection";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,13 +8,13 @@ import React from "react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAdFlow } from "@/hooks/useAdFlow";
 import { useLocation } from "wouter";
-import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight, Globe } from "lucide-react";
+import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
 import { FaTrophy, FaMedal } from "react-icons/fa";
 import { DiamondIcon } from "@/components/DiamondIcon";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
 import { apiRequest, getTelegramInitData } from "@/lib/queryClient";
-import { useLanguage, Language } from "@/hooks/useLanguage";
+import { useLanguage } from "@/hooks/useLanguage";
 
 // Unified Task Interface
 interface UnifiedTask {
@@ -57,8 +56,7 @@ export default function Home() {
   const { isAdmin } = useAdmin();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const { language, setLanguage, t } = useLanguage();
-  const [langPickerOpen, setLangPickerOpen] = useState(false);
+  const { language, t } = useLanguage();
 
   const [isConverting, setIsConverting] = useState(false);
   const [isClaimingStreak, setIsClaimingStreak] = useState(false);
@@ -702,7 +700,6 @@ export default function Home() {
 
   return (
     <Layout>
-      <Header />
       <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 10 }}>
         {/* Balance Section — left aligned */}
         <div className="mb-3 px-1">
@@ -710,16 +707,6 @@ export default function Home() {
             <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               {t('balance')}
             </p>
-            <button
-              onClick={() => setLangPickerOpen(true)}
-              className="flex items-center gap-1.5 active:scale-95 transition-transform"
-              style={{ background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
-            >
-              <Globe className="w-4 h-4" />
-              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.03em' }}>
-                {language === 'en' ? 'EN' : language === 'ru' ? 'RU' : 'AR'}
-              </span>
-            </button>
           </div>
 
           {/* Main USD balance */}
@@ -958,63 +945,6 @@ export default function Home() {
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Language Picker Popup */}
-      {langPickerOpen && (
-        <div
-          className="fixed inset-0 z-[200] flex items-end justify-center"
-          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
-          onClick={() => setLangPickerOpen(false)}
-        >
-          <div
-            className="w-full max-w-sm mb-6 mx-4 rounded-2xl overflow-hidden"
-            style={{ background: '#111', border: '1px solid rgba(255,255,255,0.1)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="p-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-              <p className="text-white text-sm font-semibold text-center">{t('select_language')}</p>
-            </div>
-            {([
-              { code: 'en', flag: '🇬🇧', name: 'English' },
-              { code: 'ru', flag: '🇷🇺', name: 'Русский' },
-              { code: 'ar', flag: '🇸🇦', name: 'العربية' },
-            ] as { code: Language; flag: string; name: string }[]).map(({ code, flag, name }) => (
-              <button
-                key={code}
-                onClick={() => {
-                  setLanguage(code);
-                  showNotification(t('language_changed'), 'success');
-                  setLangPickerOpen(false);
-                }}
-                className="w-full flex items-center justify-between p-4 transition-all hover:bg-white/5 active:bg-white/10"
-                style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{flag}</span>
-                  <span className="text-white text-sm font-medium">{name}</span>
-                </div>
-                {language === code && (
-                  <div
-                    className="w-5 h-5 rounded-full flex items-center justify-center"
-                    style={{ background: 'rgba(0,123,255,0.2)', border: '1px solid rgba(0,123,255,0.5)' }}
-                  >
-                    <Check className="w-3 h-3 text-blue-400" />
-                  </div>
-                )}
-              </button>
-            ))}
-            <div className="p-4">
-              <button
-                onClick={() => setLangPickerOpen(false)}
-                className="w-full py-3 rounded-xl text-sm font-semibold text-white/60 transition-all hover:text-white"
-                style={{ background: 'rgba(255,255,255,0.05)' }}
-              >
-                {t('cancel')}
-              </button>
             </div>
           </div>
         </div>
