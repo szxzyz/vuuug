@@ -1069,8 +1069,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(users.id, userId));
       }
       
-      // Add referral link with fallback bot username - use /start flow for reliable referral tracking
-      const botUsername = process.env.BOT_USERNAME || "MoneyAdzbot";
+      // Add referral link - bot username fetched live from Telegram Bot API
+      const { getBotUsername } = await import('./telegram');
+      const botUsername = await getBotUsername();
       const referralLink = `https://t.me/${botUsername}?start=${user.referralCode}`;
       
       res.json({
@@ -3084,8 +3085,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null) ||
                     'https://vuuug.onrender.com';
       
-      // Build the referral URL using /start flow for reliable referral tracking
-      const botUsername = process.env.BOT_USERNAME || 'MoneyAdzbot';
+      // Build the referral URL - bot username fetched live from Telegram Bot API
+      const { getBotUsername: getBotUsernameForShare } = await import('./telegram');
+      const botUsername = await getBotUsernameForShare();
       const webAppUrl = `https://t.me/${botUsername}?start=${user.referralCode}`;
       
       // Get share banner image URL
@@ -9396,7 +9398,8 @@ ${walletAddress}
         return res.status(500).json({ error: 'Bot not configured' });
       }
 
-      const botUsername = process.env.BOT_USERNAME || 'MoneyAdzbot';
+      const { getBotUsername: getBotUsernameForMission } = await import('./telegram');
+      const botUsername = await getBotUsernameForMission();
       const referralLink = `https://t.me/${botUsername}?start=${user.referralCode}`;
       
       const appUrl = process.env.RENDER_EXTERNAL_URL || 
@@ -9507,7 +9510,8 @@ ${walletAddress}
         return res.status(400).json({ error: 'Referral code not found' });
       }
 
-      const botUsername = process.env.BOT_USERNAME || 'MoneyAdzbot';
+      const { getBotUsername: getBotUsernameForReferral } = await import('./telegram');
+      const botUsername = await getBotUsernameForReferral();
       const referralLink = `https://t.me/${botUsername}?start=${user.referralCode}`;
 
       // Return just the referral link for the new share flow
@@ -9911,6 +9915,21 @@ ${walletAddress}
     await db.insert(transactions).values({ userId, amount: reward.toString(), type: 'addition', source: `mission_${missionType}`, description });
     return reward;
   }
+
+  app.get('/api/missions/referral-status', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const activeReferrals = await db.query.referrals.findMany({
+        where: and(eq(referrals.referrerId, userId), eq(referrals.status, 'active')),
+        limit: 1,
+      });
+      res.json({ success: true, hasActiveReferral: activeReferrals.length > 0, count: activeReferrals.length });
+    } catch (error) {
+      console.error('❌ referral-status error:', error);
+      res.status(500).json({ error: 'Failed to check referral status' });
+    }
+  });
 
   app.post('/api/missions/share-referral/claim', requireAuth, async (req: any, res) => {
     try {

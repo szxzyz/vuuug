@@ -225,60 +225,41 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
         deviceInfo
       );
       
-      if (deviceValidation.shouldBan) {
-        // CRITICAL: Create or update user as banned to persist the ban in database
-        let bannedUser;
-        const existingUser = await storage.getUserByTelegramId(telegramUser.id.toString());
-        
-        if (existingUser) {
-          // User exists, ban them
-          await banUserForMultipleAccounts(
-            existingUser.id,
-            deviceValidation.reason || "Multiple accounts detected on the same device"
-          );
-          bannedUser = existingUser;
-        } else {
-          // User doesn't exist yet, create them as banned
-          const { user: newBannedUser } = await storage.upsertTelegramUser(telegramUser.id.toString(), {
-            email: `${telegramUser.username || telegramUser.id}@telegram.user`,
-            firstName: telegramUser.first_name,
-            lastName: telegramUser.last_name,
-            username: telegramUser.username,
-            personalCode: telegramUser.username || telegramUser.id.toString(),
-            withdrawBalance: '0',
-            totalEarnings: '0',
-            adsWatched: 0,
-            dailyAdsWatched: 0,
-            dailyEarnings: '0',
-            level: 1,
-            flagged: false,
-            banned: true,  // Create as banned
-            bannedReason: deviceValidation.reason || "Multiple accounts detected on the same device",
-            referralCode: '',
-          });
-          bannedUser = newBannedUser;
-        }
-        
-        // Save deviceId for banned user so future logins are also caught
-        if (bannedUser && deviceInfo?.deviceId) {
-          try {
+      // Same device, different Telegram account → seamlessly load the original/primary account.
+      // We never ban for this — just redirect to their real account.
+      if (deviceValidation.redirectToPrimary && deviceValidation.primaryAccountId) {
+        try {
+          const [primaryUser] = await db.select().from(users).where(eq(users.id, deviceValidation.primaryAccountId));
+          if (primaryUser && !primaryUser.banned) {
+            console.log(`🔄 Same-device login: serving primary account ${primaryUser.id} instead of new Telegram ${telegramUser.id}`);
+            // Update last login tracking for the primary account
             await db.update(users).set({
-              deviceId: deviceInfo.deviceId,
-              lastLoginIp: deviceInfo.ip,
-              isPrimaryAccount: false,
-            }).where(eq(users.id, bannedUser.id));
-          } catch (e) {
-            console.error('Failed to save deviceId for banned user:', e);
-          }
-        }
+              lastLoginAt: new Date(),
+              lastLoginIp: clientIP,
+              lastLoginUserAgent: userAgent,
+            }).where(eq(users.id, primaryUser.id));
 
-        console.log(`🚫 Duplicate account banned: ${bannedUser.id} (Telegram: ${telegramUser.id})`);
-        
-        return res.status(403).json({ 
-          banned: true,
-          message: "Your account has been banned for violating our multi-account policy. Only one account per device is allowed. Contact support: https://t.me/szxzyz",
-          reason: deviceValidation.reason
-        });
+            req.user = { telegramUser, user: primaryUser };
+            req.session.user = req.user;
+            return next();
+          }
+        } catch (e) {
+          console.error('⚠️ Failed to load primary account, falling through to normal login:', e);
+        }
+      }
+
+      // Hard ban only if the account itself is explicitly flagged (manual admin ban).
+      // Automated device-conflict bans are disabled in favour of account recovery above.
+      if (deviceValidation.shouldBan) {
+        const existingUser = await storage.getUserByTelegramId(telegramUser.id.toString());
+        if (existingUser?.banned) {
+          console.log(`🚫 Manually-banned account attempted login: ${existingUser.id}`);
+          return res.status(403).json({
+            banned: true,
+            message: "Your account has been banned. Contact support: https://t.me/szxzyz",
+            reason: existingUser.bannedReason || "Account banned"
+          });
+        }
       }
     }
     

@@ -108,7 +108,9 @@ export async function validateDeviceAndDetectDuplicate(
 ): Promise<{
   isValid: boolean;
   shouldBan: boolean;
+  redirectToPrimary?: boolean;
   primaryAccountId?: string;
+  primaryTelegramId?: string;
   duplicateAccountIds?: string[];
   reason?: string;
 }> {
@@ -155,22 +157,26 @@ export async function validateDeviceAndDetectDuplicate(
         .where(eq(users.lastLoginIp, ip));
     }
 
-    // Combine and deduplicate
+    // Only deviceId matches are used for ban decisions.
+    // IP-only matches are NOT a ban signal — many legitimate users share IPs
+    // (hotspots, WiFi, NAT, mobile carriers). We log them for monitoring only.
     const allRelatedUsers = [...existingUsersWithDevice];
-    for (const ipUser of existingUsersWithIP) {
-      if (!allRelatedUsers.find(u => u.id === ipUser.id)) {
-        allRelatedUsers.push(ipUser);
+
+    // Log IP-only matches for monitoring (no ban action)
+    if (ip && existingUsersWithIP.length > 0) {
+      const ipOnlyUsers = existingUsersWithIP.filter(u => !allRelatedUsers.find(x => x.id === u.id));
+      if (ipOnlyUsers.length > 0) {
+        console.log(`ℹ️ Shared IP (${ip}): ${ipOnlyUsers.length} other user(s) on same network — normal for hotspot/WiFi. No ban action.`);
       }
     }
 
-    // Enhanced check: IP + browser fingerprint correlation
-    // If same IP and similar fingerprint, likely same person with multiple accounts
-    if (ip && fingerprint && allRelatedUsers.length > 0) {
+    // Enhanced check: same deviceId + high fingerprint similarity → extra logging
+    if (fingerprint && allRelatedUsers.length > 0) {
       for (const existingUser of allRelatedUsers) {
         if (existingUser.telegram_id !== telegramId && existingUser.deviceFingerprint) {
           const similarity = calculateFingerprintSimilarity(fingerprint, existingUser.deviceFingerprint);
-          if (similarity > 0.75) {
-            console.log(`🔍 High fingerprint similarity detected (${Math.round(similarity * 100)}%) for IP ${ip}`);
+          if (similarity > 0.85) {
+            console.log(`🔍 Very high fingerprint similarity (${Math.round(similarity * 100)}%) + same device for telegram ${telegramId}`);
           }
         }
       }
@@ -227,22 +233,21 @@ export async function validateDeviceAndDetectDuplicate(
       };
     }
 
-    const primaryAccount = allRelatedUsers.find(
-      u => u.isPrimaryAccount === true
-    ) || allRelatedUsers[0];
+    // Find the primary (original) account registered to this device
+    const primaryAccount = allRelatedUsers.find(u => u.isPrimaryAccount === true) || allRelatedUsers[0];
 
-    // Filter out admin accounts from duplicate list
-    const duplicateAccountIds = allRelatedUsers
-      .filter(u => u.telegram_id !== telegramId && !u.banned && 
-        u.role !== 'admin' && !(ADMIN_TELEGRAM_ID && u.telegram_id === ADMIN_TELEGRAM_ID))
-      .map(u => u.id);
+    // Policy: same device → seamlessly load the primary account, never ban.
+    // Banning due to device conflicts causes false positives and bad UX.
+    // The person simply gets logged in as their original account.
+    console.log(`🔄 Same device (${deviceInfo.deviceId}) — redirecting new login to primary account ${primaryAccount.id} (telegram: ${primaryAccount.telegram_id})`);
 
     return {
       isValid: false,
-      shouldBan: true,
+      shouldBan: false,
+      redirectToPrimary: true,
       primaryAccountId: primaryAccount.id,
-      duplicateAccountIds,
-      reason: "Multiple accounts detected on the same device/network - only one account per device is allowed"
+      primaryTelegramId: primaryAccount.telegram_id,
+      reason: "Same device — loading your existing account"
     };
   } catch (error) {
     console.error("Device validation error:", error);
