@@ -12,6 +12,8 @@ declare global {
     Adsgram?: {
       init: (params: { blockId: string; debug?: boolean }) => { show: () => Promise<void>; destroy: () => void };
     };
+    show_11123429?: (type?: string) => Promise<void>;
+    showGiga?: () => Promise<void>;
   }
 }
 
@@ -536,20 +538,32 @@ export default function Missions() {
   /* Ad flow handlers */
   const showMonetagAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
     new Promise(resolve => {
-      const sdk = (window as any).Monetag;
-      if (!sdk) { resolve({ success: false, unavailable: true }); return; }
-      try {
-        sdk.showAd({ onComplete: () => resolve({ success: true, unavailable: false }), onError: () => resolve({ success: false, unavailable: false }) });
-      } catch { resolve({ success: false, unavailable: true }); }
+      // SDK exposes window.show_11123429 via data-sdk attribute in index.html
+      if (typeof window.show_11123429 !== 'function') {
+        resolve({ success: false, unavailable: true }); return;
+      }
+      window.show_11123429()
+        .then(() => resolve({ success: true, unavailable: false }))
+        .catch((err: any) => {
+          const msg = String(err?.message || err || '').toLowerCase();
+          const noFill = msg.includes('no ad') || msg.includes('no fill') || msg.includes('unavailable') || msg.includes('empty');
+          resolve({ success: false, unavailable: noFill });
+        });
     });
 
   const showGigaPubAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
     new Promise(resolve => {
-      const sdk = (window as any).GigaPub;
-      if (!sdk) { resolve({ success: false, unavailable: true }); return; }
-      try {
-        sdk.showAd({ onComplete: () => resolve({ success: true, unavailable: false }), onError: () => resolve({ success: false, unavailable: false }) });
-      } catch { resolve({ success: false, unavailable: true }); }
+      // SDK exposes window.showGiga via gigapub script in index.html
+      if (typeof window.showGiga !== 'function') {
+        resolve({ success: false, unavailable: true }); return;
+      }
+      window.showGiga()
+        .then(() => resolve({ success: true, unavailable: false }))
+        .catch((err: any) => {
+          const msg = String(err?.message || err?.error || err || '').toLowerCase();
+          const noFill = msg.includes('no ad') || msg.includes('no fill') || msg.includes('unavailable') || msg.includes('empty');
+          resolve({ success: false, unavailable: noFill });
+        });
     });
 
   const claimMissionAdMutation = useMutation({
