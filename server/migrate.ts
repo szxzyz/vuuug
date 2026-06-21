@@ -8,7 +8,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const pool = new Pool({ 
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 10000,
+    statement_timeout: 15000,
   });
   const db = drizzle(pool, { schema });
   
