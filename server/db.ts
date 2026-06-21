@@ -15,6 +15,8 @@ const isLocalDb = connectionString.includes('localhost') || connectionString.inc
 
 export const pool = new Pool({
   connectionString,
+  connectionTimeoutMillis: 10000,
+  statement_timeout: 30000,
   ...(isLocalDb ? {} : { ssl: { rejectUnauthorized: false } }),
 });
 
