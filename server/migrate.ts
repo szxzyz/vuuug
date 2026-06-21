@@ -10,7 +10,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10000,
-    statement_timeout: 15000,
+    statement_timeout: 30000,
   });
   const db = drizzle(pool, { schema });
   
@@ -683,7 +683,8 @@ export async function ensureDatabaseSchema(): Promise<void> {
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
-    console.error('❌ [MIGRATION] Critical error ensuring database schema:', error);
-    throw new Error(`Database migration failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('⚠️ [MIGRATION] Some migration steps failed (server will still start):', error instanceof Error ? error.message : error);
+  } finally {
+    await pool.end();
   }
 }
