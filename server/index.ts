@@ -5,9 +5,23 @@ import { setupAuth } from "./auth";
 import { ensureDatabaseSchema } from "./migrate";
 import { countryBlockingMiddleware } from "./countryBlocking";
 
+// ─── PROXY SETUP (for Telegram API access on restricted networks) ───────────
+const TELEGRAM_PROXY = process.env.TELEGRAM_PROXY_URL || process.env.HTTPS_PROXY || '';
+if (TELEGRAM_PROXY) {
+  try {
+    const { setGlobalDispatcher, ProxyAgent } = await import('undici');
+    const dispatcher = new ProxyAgent({ uri: TELEGRAM_PROXY });
+    setGlobalDispatcher(dispatcher);
+    console.log(`✅ Proxy configured for all outgoing requests: ${TELEGRAM_PROXY}`);
+  } catch (e) {
+    console.log('⚠️ Failed to configure proxy:', e);
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // CRITICAL: Run database migrations before ANYTHING else
 // This ensures the telegram_id column exists before any database operations
-console.log('🚀 Starting CashWatch server...');
+console.log('🚀 Starting Paid Adz server...');
 await ensureDatabaseSchema();
 console.log('✅ Database schema verified, starting server setup...');
 
