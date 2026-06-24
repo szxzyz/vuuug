@@ -187,8 +187,23 @@ export default function Home() {
       }
       return data;
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       showNotification("Convert successful.", "success");
+
+      // Instantly update cache with new balance values from server response
+      if (data.newPowBalance !== undefined || data.newUsdBalance !== undefined) {
+        queryClient.setQueryData(["/api/auth/user"], (old: any) => {
+          if (!old) return old;
+          return {
+            ...old,
+            ...(data.newPowBalance !== undefined && { balance: String(Math.round(data.newPowBalance)) }),
+            ...(data.newUsdBalance !== undefined && { usdBalance: data.newUsdBalance }),
+            ...(data.newTonBalance !== undefined && { tonBalance: data.newTonBalance }),
+            ...(data.newStarBalance !== undefined && { starBalance: data.newStarBalance }),
+          };
+        });
+      }
+
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
     },
