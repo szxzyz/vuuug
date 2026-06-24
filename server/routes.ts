@@ -5675,16 +5675,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         await tx.update(users).set(updateData).where(eq(users.id, userId));
+
+        // Log the conversion as a transaction record
+        await tx.insert(transactions).values({
+          userId,
+          amount: String(-convertAmount),
+          type: 'debit',
+          source: 'convert',
+          description: `Converted ${convertAmount.toLocaleString()} POW to ${convertedCurrency}`,
+        });
         
         return {
           powAmount: convertAmount,
           convertedAmount,
           convertedCurrency,
-          newPowBalance
+          newPowBalance,
+          newUsdBalance: updateData.usdBalance ?? user.usdBalance,
+          newTonBalance: updateData.tonBalance ?? user.tonBalance,
+          newStarBalance: updateData.starBalance ?? user.starBalance,
         };
       });
       
-      sendRealtimeUpdate(userId, { type: 'balance_update' });
+      // Send actual new balance values so frontend updates INSTANTLY without waiting for refetch
+      sendRealtimeUpdate(userId, {
+        type: 'balance_update',
+        balance: String(result.newPowBalance),
+        usdBalance: result.newUsdBalance,
+        tonBalance: result.newTonBalance,
+        starBalance: result.newStarBalance,
+      });
       
       res.json({
         success: true,
@@ -5775,6 +5794,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updatedAt: new Date()
           })
           .where(eq(users.id, userId));
+
+        // Log the conversion as a transaction record
+        await tx.insert(transactions).values({
+          userId,
+          amount: String(-convertAmount),
+          type: 'debit',
+          source: 'convert',
+          description: `Converted ${convertAmount.toLocaleString()} POW to TON`,
+        });
         
         console.log(`✅ POW to TON conversion successful: ${convertAmount} POW → ${tonAmount.toFixed(6)} TON`);
         

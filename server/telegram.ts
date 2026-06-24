@@ -160,7 +160,7 @@ export async function verifyChannelMembership(userId: number, channelIdOrUsernam
         
         // Valid membership statuses: 'creator', 'administrator', 'member'
         // Invalid statuses: 'left', 'kicked', 'restricted'
-        const validStatuses = ['creator', 'administrator', 'member'];
+        const validStatuses = ['creator', 'administrator', 'member', 'subscriber'];
         const isValid = validStatuses.includes(member.status);
         
         console.log(`🔍 User ${userId} status in ${channelIdentifier}: ${member.status} (valid: ${isValid})`);
