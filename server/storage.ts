@@ -494,10 +494,10 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // Check and activate referral bonuses after ad watch (must happen before commission processing)
-    if (earning.source === 'ad_watch') {
-      await this.checkAndActivateReferralBonus(earning.userId);
-    }
+    // NOTE: Referral bonus activation is handled by the /api/ads/watch route handler
+    // (server/routes.ts) which also pushes WebSocket updates to referrers.
+    // Do NOT call checkAndActivateReferralBonus here to avoid double-activation
+    // race conditions when two concurrent ad watches hit addEarning simultaneously.
     
     // NOTE: Referral commissions are processed by the /api/ads/watch route handler
     // using admin-configured L1/L2 rates. Do NOT call processReferralCommission here
