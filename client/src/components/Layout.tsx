@@ -27,6 +27,7 @@ export default function Layout({ children }: LayoutProps) {
   });
 
   const [photoError, setPhotoError] = useState(false);
+  const [photoLoaded, setPhotoLoaded] = useState(false);
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -115,20 +116,26 @@ export default function Layout({ children }: LayoutProps) {
             >
               {isAdminNavMode ? (
                 <ShieldCheck className="w-8 h-8 transition-all" strokeWidth={2.5} />
-              ) : userPhotoUrl && !photoError ? (
-                <img
-                  src={userPhotoUrl}
-                  alt="Profile"
-                  onError={() => setPhotoError(true)}
-                  className={`w-8 h-8 rounded-full object-cover transition-all ${
-                    isHomeActive ? "ring-2 ring-white" : "ring-1 ring-white/20"
-                  }`}
-                />
               ) : (
-                <div className={`w-8 h-8 rounded-full bg-[#2a2a2a] flex items-center justify-center transition-all ${
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all relative ${
                   isHomeActive ? "ring-2 ring-white" : "ring-1 ring-white/20"
-                }`}>
-                  <User className="w-5 h-5" />
+                } bg-[#2a2a2a]`}>
+                  {/* Fallback icon — always visible unless photo loaded */}
+                  {(!photoLoaded || photoError) && (
+                    <User className="w-5 h-5 text-[#6E6E73]" />
+                  )}
+                  {/* Photo — hidden until fully loaded */}
+                  {userPhotoUrl && !photoError && (
+                    <img
+                      src={userPhotoUrl}
+                      alt="Profile"
+                      onLoad={() => setPhotoLoaded(true)}
+                      onError={() => { setPhotoError(true); setPhotoLoaded(false); }}
+                      className={`absolute inset-0 w-full h-full rounded-full object-cover transition-opacity duration-200 ${
+                        photoLoaded ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    />
+                  )}
                 </div>
               )}
             </button>
