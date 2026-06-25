@@ -71,6 +71,7 @@ export default function Withdraw() {
     refetchOnMount: true,
     refetchOnWindowFocus: false,
     staleTime: 0,
+    placeholderData: (prev) => prev,
   });
 
   const { data: appSettings } = useQuery<any>({
