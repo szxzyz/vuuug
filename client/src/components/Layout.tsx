@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import { useSeasonEnd } from "@/lib/SeasonEndContext";
 import BanScreen from "@/components/BanScreen";
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useState } from "react";
 import { useLanguage } from "@/hooks/useLanguage";
 
 interface LayoutProps {
@@ -26,6 +26,7 @@ export default function Layout({ children }: LayoutProps) {
     retry: false,
   });
 
+  const [photoError, setPhotoError] = useState(false);
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -99,8 +100,8 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {!showSeasonEnd && (
-        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-auto h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl">
-          <div className="flex justify-center items-center h-full px-6 gap-8">
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-auto h-16 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl">
+          <div className="flex justify-center items-center h-full px-7 gap-8">
 
             <button
               onClick={handleHomeButtonClick}
@@ -113,23 +114,21 @@ export default function Layout({ children }: LayoutProps) {
               }`}
             >
               {isAdminNavMode ? (
-                <ShieldCheck
-                  className="w-6 h-6 transition-all"
-                  strokeWidth={2.5}
-                />
-              ) : userPhotoUrl ? (
+                <ShieldCheck className="w-8 h-8 transition-all" strokeWidth={2.5} />
+              ) : userPhotoUrl && !photoError ? (
                 <img
                   src={userPhotoUrl}
                   alt="Profile"
-                  className={`w-6 h-6 rounded-full object-cover transition-all ${
-                    isHomeActive ? "ring-2 ring-white" : ""
+                  onError={() => setPhotoError(true)}
+                  className={`w-8 h-8 rounded-full object-cover transition-all ${
+                    isHomeActive ? "ring-2 ring-white" : "ring-1 ring-white/20"
                   }`}
                 />
               ) : (
-                <div className={`w-6 h-6 rounded-full bg-[#2a2a2a] flex items-center justify-center ${
-                  isHomeActive ? "ring-2 ring-white" : ""
+                <div className={`w-8 h-8 rounded-full bg-[#2a2a2a] flex items-center justify-center transition-all ${
+                  isHomeActive ? "ring-2 ring-white" : "ring-1 ring-white/20"
                 }`}>
-                  <User className="w-4 h-4" />
+                  <User className="w-5 h-5" />
                 </div>
               )}
             </button>
@@ -148,7 +147,7 @@ export default function Layout({ children }: LayoutProps) {
                     }`}
                   >
                     <Icon 
-                      className="w-6 h-6 transition-all"
+                      className="w-8 h-8 transition-all"
                       strokeWidth={isActive ? 2.5 : 2}
                     />
                   </button>
