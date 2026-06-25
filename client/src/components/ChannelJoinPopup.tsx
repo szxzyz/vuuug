@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/hooks/useLanguage";
 
 interface MembershipStatus {
@@ -21,6 +21,9 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
   const [membershipStatus, setMembershipStatus] = useState<MembershipStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
+  const [autoCheckCountdown, setAutoCheckCountdown] = useState<number | null>(null);
+  const autoCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   const checkMembership = async (isInitialCheck = false) => {
     if (isChecking) return;
@@ -73,6 +76,38 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
     }
   }, [telegramId, hasInitialized]);
 
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (autoCheckTimerRef.current) clearTimeout(autoCheckTimerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
+  // Start auto-check countdown after user clicks join
+  const startAutoCheck = () => {
+    if (autoCheckTimerRef.current) clearTimeout(autoCheckTimerRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+
+    setAutoCheckCountdown(5);
+
+    // Countdown display
+    let remaining = 5;
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      setAutoCheckCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(countdownRef.current!);
+        setAutoCheckCountdown(null);
+      }
+    }, 1000);
+
+    // Auto-trigger check after 5 seconds (Telegram API needs time to reflect join)
+    autoCheckTimerRef.current = setTimeout(() => {
+      checkMembership(false);
+    }, 5000);
+  };
+
   const openChannel = () => {
     const url = membershipStatus?.channelUrl || 'https://t.me/PaidAdzNews';
     if (window.Telegram?.WebApp?.openTelegramLink) {
@@ -80,6 +115,7 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
     } else {
       window.open(url, '_blank');
     }
+    startAutoCheck();
   };
 
   const openGroup = () => {
@@ -89,6 +125,7 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
     } else {
       window.open(url, '_blank');
     }
+    startAutoCheck();
   };
 
   const channelJoined = membershipStatus?.channelMember ?? false;
@@ -239,8 +276,22 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
               </button>
             </div>
 
+            {/* Auto-check countdown message */}
+            {autoCheckCountdown !== null && (
+              <div
+                className="mb-4 py-2.5 px-3 rounded-xl text-center text-xs"
+                style={{
+                  background: 'rgba(0,123,255,0.08)',
+                  border: '1px solid rgba(0,123,255,0.2)',
+                  color: 'rgba(96,165,250,0.9)',
+                }}
+              >
+                ⏳ Verifying automatically in {autoCheckCountdown}s...
+              </div>
+            )}
+
             {/* Error message */}
-            {error && (
+            {error && autoCheckCountdown === null && (
               <div
                 className="mb-4 py-2.5 px-3 rounded-xl text-center text-xs"
                 style={{
@@ -256,7 +307,7 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
             {/* Verify button */}
             <button
               onClick={() => checkMembership(false)}
-              disabled={isChecking}
+              disabled={isChecking || autoCheckCountdown !== null}
               className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
               style={{
                 background: 'linear-gradient(135deg, #007BFF 0%, #60a5fa 100%)',

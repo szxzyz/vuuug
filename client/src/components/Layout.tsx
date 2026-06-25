@@ -99,12 +99,12 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {!showSeasonEnd && (
-        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-48px)] max-w-md h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl">
-          <div className="flex justify-around items-center h-full px-4">
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-auto h-14 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl">
+          <div className="flex justify-center items-center h-full px-6 gap-8">
 
             <button
               onClick={handleHomeButtonClick}
-              className={`flex flex-col items-center justify-center min-w-[64px] transition-all duration-300 ${
+              className={`flex flex-col items-center justify-center transition-all duration-300 ${
                 isAdminNavMode
                   ? "text-yellow-400 scale-105"
                   : isHomeActive
@@ -114,29 +114,24 @@ export default function Layout({ children }: LayoutProps) {
             >
               {isAdminNavMode ? (
                 <ShieldCheck
-                  className="w-6 h-6 mb-1 transition-all"
+                  className="w-6 h-6 transition-all"
                   strokeWidth={2.5}
                 />
               ) : userPhotoUrl ? (
                 <img
                   src={userPhotoUrl}
                   alt="Profile"
-                  className={`w-6 h-6 rounded-full object-cover transition-all mb-1 ${
+                  className={`w-6 h-6 rounded-full object-cover transition-all ${
                     isHomeActive ? "ring-2 ring-white" : ""
                   }`}
                 />
               ) : (
-                <div className={`w-6 h-6 rounded-full bg-[#2a2a2a] flex items-center justify-center mb-1 ${
+                <div className={`w-6 h-6 rounded-full bg-[#2a2a2a] flex items-center justify-center ${
                   isHomeActive ? "ring-2 ring-white" : ""
                 }`}>
                   <User className="w-4 h-4" />
                 </div>
               )}
-              <span className={`text-[10px] font-semibold tracking-wide uppercase ${
-                isAdminNavMode ? 'opacity-100 text-yellow-400' : isHomeActive ? 'opacity-100' : 'opacity-70'
-              }`}>
-                {isAdminNavMode ? t('admin') : t('home')}
-              </span>
             </button>
 
             {navItems.map((item) => {
@@ -146,19 +141,16 @@ export default function Layout({ children }: LayoutProps) {
               return (
                 <Link key={item.href} href={item.href}>
                   <button
-                    className={`flex flex-col items-center justify-center min-w-[64px] transition-all duration-300 ${
+                    className={`flex flex-col items-center justify-center transition-all duration-300 ${
                       isActive 
                         ? "text-white scale-105" 
                         : "text-[#6E6E73] hover:text-white/80"
                     }`}
                   >
                     <Icon 
-                      className="w-6 h-6 mb-1 transition-all"
+                      className="w-6 h-6 transition-all"
                       strokeWidth={isActive ? 2.5 : 2}
                     />
-                    <span className={`text-[10px] font-semibold tracking-wide uppercase ${isActive ? 'opacity-100' : 'opacity-70'}`}>
-                      {t(item.labelKey)}
-                    </span>
                   </button>
                 </Link>
               );
