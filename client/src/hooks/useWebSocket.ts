@@ -120,26 +120,21 @@ export function useWebSocket() {
             case 'balance_update':
               console.log('💰 Real-time balance update received:', message);
               
-              // Force update the cache with new balance values
+              // Immediately update cache with new values from server — no refetch flash
               queryClient.setQueryData(['/api/auth/user'], (oldUser: any) => {
                 if (!oldUser) return oldUser;
-                return {
-                  ...oldUser,
-                  tonBalance: (message as any).tonBalance ?? oldUser.tonBalance,
-                  balance: (message as any).balance ?? oldUser.balance,
-                  usdBalance: (message as any).usdBalance ?? oldUser.usdBalance,
-                  starBalance: (message as any).starBalance ?? oldUser.starBalance,
-                  weeklyStars: (message as any).weeklyStars ?? oldUser.weeklyStars,
-                };
+                const updated = { ...oldUser };
+                if ((message as any).balance !== undefined) updated.balance = (message as any).balance;
+                if ((message as any).usdBalance !== undefined) updated.usdBalance = (message as any).usdBalance;
+                if ((message as any).tonBalance !== undefined) updated.tonBalance = (message as any).tonBalance;
+                if ((message as any).starBalance !== undefined) updated.starBalance = (message as any).starBalance;
+                if ((message as any).weeklyStars !== undefined) updated.weeklyStars = (message as any).weeklyStars;
+                return updated;
               });
-              
-              // Also invalidate to ensure everything is perfectly in sync
-              queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-              queryClient.invalidateQueries({ queryKey: ['/api/leaderboard/weekly'] });
-              
-              if (message.message) {
-                showNotification("Balance Updated", "success");
-              }
+
+              // Soft-invalidate in background (no immediate refetch, just marks stale)
+              queryClient.invalidateQueries({ queryKey: ['/api/auth/user'], refetchType: 'none' });
+              queryClient.invalidateQueries({ queryKey: ['/api/leaderboard/weekly'], refetchType: 'none' });
               break;
               
             case 'promotion_approved':
