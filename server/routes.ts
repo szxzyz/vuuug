@@ -603,7 +603,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 2. CHANNEL/GROUP JOIN CHECK - verify with Telegram Bot API
+      // 2. ADMIN BYPASS — admins and already-verified users skip the Telegram API check
+      if (isAdmin(telegramId)) {
+        console.log(`✅ Admin ${telegramId} bypasses channel check`);
+        if (user) await storage.updateUserVerificationStatus(user.id, true);
+        return res.json({
+          success: true,
+          isVerified: true,
+          channelMember: true,
+          groupMember: true,
+          channelUrl: channelConfig.channelUrl,
+          groupUrl: channelConfig.groupUrl,
+          channelName: channelConfig.channelName,
+          groupName: channelConfig.groupName
+        });
+      }
+
+      // 3. ALREADY VERIFIED IN DB — skip live Telegram API call
+      if (user?.isChannelGroupVerified) {
+        console.log(`✅ User ${telegramId} already verified in DB — skipping live check`);
+        return res.json({
+          success: true,
+          isVerified: true,
+          channelMember: true,
+          groupMember: true,
+          channelUrl: channelConfig.channelUrl,
+          groupUrl: channelConfig.groupUrl,
+          channelName: channelConfig.channelName,
+          groupName: channelConfig.groupName
+        });
+      }
+
+      // 4. CHANNEL/GROUP JOIN CHECK - verify with Telegram Bot API
       let channelMember = false;
       let groupMember = false;
 
@@ -627,9 +658,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isVerified = channelMember && groupMember;
       console.log(`🔍 check-membership for ${telegramId}: channel=${channelMember} group=${groupMember} verified=${isVerified}`);
 
-      // Update user status in database to match current membership state
-      if (user) {
-        await storage.updateUserVerificationStatus(user.id, isVerified);
+      // Update user status in database when verified
+      if (isVerified && user) {
+        await storage.updateUserVerificationStatus(user.id, true);
       }
 
       res.json({
@@ -684,7 +715,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: false, isVerified: false, channelMember: false, groupMember: false, channelUrl: channelConfig.channelUrl, groupUrl: channelConfig.groupUrl, channelName: channelConfig.channelName, groupName: channelConfig.groupName });
       }
 
-      const userId = parseInt(telegramUser.id.toString(), 10);
+      const telegramIdStr = telegramUser.id.toString();
+      const userId = parseInt(telegramIdStr, 10);
+      const { storage: s } = await import('./storage');
+      const dbUser = await s.getUserByTelegramId(telegramIdStr);
+
+      // Admin bypass — always let admins through
+      if (isAdmin(telegramIdStr)) {
+        if (dbUser) await s.updateUserVerificationStatus(dbUser.id, true);
+        return res.json({ success: true, isVerified: true, channelMember: true, groupMember: true, channelUrl: channelConfig.channelUrl, groupUrl: channelConfig.groupUrl, channelName: channelConfig.channelName, groupName: channelConfig.groupName });
+      }
+
+      // Already verified in DB — skip live Telegram API call
+      if (dbUser?.isChannelGroupVerified) {
+        return res.json({ success: true, isVerified: true, channelMember: true, groupMember: true, channelUrl: channelConfig.channelUrl, groupUrl: channelConfig.groupUrl, channelName: channelConfig.channelName, groupName: channelConfig.groupName });
+      }
+
       const { verifyChannelMembership } = await import('./telegram');
 
       let channelMember = false;
@@ -704,10 +750,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const isVerified = channelMember && groupMember;
 
-      if (isVerified) {
-        const { storage: s } = await import('./storage');
-        const dbUser = await s.getUserByTelegramId(telegramUser.id.toString());
-        if (dbUser) await s.updateUserVerificationStatus(dbUser.id, true);
+      if (isVerified && dbUser) {
+        await s.updateUserVerificationStatus(dbUser.id, true);
       }
 
       res.json({
