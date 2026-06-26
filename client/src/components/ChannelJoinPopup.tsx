@@ -24,8 +24,11 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
   const [autoCheckCountdown, setAutoCheckCountdown] = useState<number | null>(null);
   const autoCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef(0);
+  const MAX_AUTO_RETRIES = 3;
+  const RETRY_DELAYS = [8000, 13000, 20000]; // ms: progressively longer to allow Telegram API to propagate
 
-  const checkMembership = async (isInitialCheck = false) => {
+  const checkMembership = async (isInitialCheck = false, isAutoRetry = false) => {
     if (isChecking) return;
     setIsChecking(true);
     setError(null);
@@ -41,6 +44,7 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
       const data = await response.json();
 
       if (data.success && data.isVerified) {
+        retryCountRef.current = 0;
         onVerified();
         return;
       }
@@ -56,11 +60,47 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
         });
       }
 
+      // Auto-retry logic: Telegram API can be slow to reflect membership changes.
+      // Automatically retry up to MAX_AUTO_RETRIES times with increasing delays.
+      if (isAutoRetry && retryCountRef.current < MAX_AUTO_RETRIES) {
+        const delay = RETRY_DELAYS[retryCountRef.current];
+        retryCountRef.current += 1;
+        const delaySec = Math.ceil(delay / 1000);
+        setAutoCheckCountdown(delaySec);
+
+        let remaining = delaySec;
+        if (countdownRef.current) clearInterval(countdownRef.current);
+        countdownRef.current = setInterval(() => {
+          remaining -= 1;
+          setAutoCheckCountdown(remaining);
+          if (remaining <= 0) {
+            clearInterval(countdownRef.current!);
+            setAutoCheckCountdown(null);
+          }
+        }, 1000);
+
+        if (autoCheckTimerRef.current) clearTimeout(autoCheckTimerRef.current);
+        autoCheckTimerRef.current = setTimeout(() => {
+          checkMembership(false, true);
+        }, delay);
+        return; // Don't show error yet — still retrying
+      }
+
       if (!isInitialCheck && !data.isVerified) {
         setError(t('not_member_yet'));
       }
     } catch (err) {
       console.error('Membership check error:', err);
+      if (isAutoRetry && retryCountRef.current < MAX_AUTO_RETRIES) {
+        // Network error during auto-retry — schedule next retry
+        const delay = RETRY_DELAYS[retryCountRef.current];
+        retryCountRef.current += 1;
+        if (autoCheckTimerRef.current) clearTimeout(autoCheckTimerRef.current);
+        autoCheckTimerRef.current = setTimeout(() => {
+          checkMembership(false, true);
+        }, delay);
+        return;
+      }
       if (!isInitialCheck) {
         setError(t('not_member_yet'));
       }
@@ -84,15 +124,20 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
     };
   }, []);
 
-  // Start auto-check countdown after user clicks join
+  // Start auto-check countdown after user clicks join.
+  // Resets the retry counter so each new join attempt gets a fresh set of retries.
   const startAutoCheck = () => {
     if (autoCheckTimerRef.current) clearTimeout(autoCheckTimerRef.current);
     if (countdownRef.current) clearInterval(countdownRef.current);
 
-    setAutoCheckCountdown(5);
+    retryCountRef.current = 0; // reset retries on each new join click
+    setError(null);
 
-    // Countdown display
-    let remaining = 5;
+    const initialDelay = RETRY_DELAYS[0]; // 8 seconds for first check
+    const delaySec = Math.ceil(initialDelay / 1000);
+    setAutoCheckCountdown(delaySec);
+
+    let remaining = delaySec;
     countdownRef.current = setInterval(() => {
       remaining -= 1;
       setAutoCheckCountdown(remaining);
@@ -102,10 +147,10 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
       }
     }, 1000);
 
-    // Auto-trigger check after 5 seconds (Telegram API needs time to reflect join)
+    // First auto-check fires after initialDelay; if not verified, retries automatically
     autoCheckTimerRef.current = setTimeout(() => {
-      checkMembership(false);
-    }, 5000);
+      checkMembership(false, true);
+    }, initialDelay);
   };
 
   const openChannel = () => {
