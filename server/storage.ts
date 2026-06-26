@@ -921,9 +921,10 @@ export class DatabaseStorage implements IStorage {
       const givePOW = referralRewardPOWEnabled || (!referralRewardPOWEnabled && !referralRewardUSDEnabled && referralRewardEnabled);
       const giveUSD = referralRewardUSDEnabled;
 
-      // Activate each pending referral — mark completed FIRST to prevent double-payment on retry
+      // Activate each pending referral — use atomic conditional update to prevent race-condition
+      // double-payments. Only credit reward if this process was the one that flipped the status.
       for (const referral of pendingReferrals) {
-        await db
+        const atomicUpdate = await db
           .update(referrals)
           .set({
             status: 'completed',
@@ -931,7 +932,14 @@ export class DatabaseStorage implements IStorage {
             usdRewardAmount: giveUSD ? referralRewardUSD : '0',
             bugRewardAmount: '0'
           })
-          .where(eq(referrals.id, referral.id));
+          .where(and(eq(referrals.id, referral.id), eq(referrals.status, 'pending')))
+          .returning({ id: referrals.id });
+
+        if (atomicUpdate.length === 0) {
+          // Another concurrent call already activated this referral — skip to avoid duplicate reward
+          console.log(`⚠️ Referral ${referral.id} was already activated by a concurrent process — skipping duplicate reward`);
+          continue;
+        }
 
         if (givePOW && referralRewardPOW > 0) {
           await this.addEarning({
@@ -3619,12 +3627,28 @@ export class DatabaseStorage implements IStorage {
             .limit(1);
           if (anyExisting.length > 0) continue;
 
+          // Check if the referee already watched enough ads — if so, insert as completed
+          // to avoid re-triggering a reward for users who were already paid
+          const [adCountRow] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(earnings)
+            .where(and(
+              eq(earnings.userId, u.userId),
+              eq(earnings.source, 'ad_watch'),
+            ));
+          const adsAlreadyWatched = Number(adCountRow?.count || 0);
+          const repairAdsRequired = parseInt(await this.getAppSetting('referral_ads_required', '1'));
+
+          const insertStatus = adsAlreadyWatched >= repairAdsRequired ? 'completed' : 'pending';
           await db.insert(referrals).values({
             referrerId: referrer.id,
             refereeId: u.userId,
             rewardAmount: '0.01',
-            status: 'pending',
+            status: insertStatus,
           });
+          if (insertStatus === 'completed') {
+            console.log(`  ℹ️ Inserted referral as 'completed' (referee already watched ${adsAlreadyWatched} ads — no duplicate reward)`);
+          }
           stats.referralsCreated++;
           stats.usersLinked++;
           console.log(`  ✅ Created missing referral: ${referrer.id} → ${u.userId}`);
