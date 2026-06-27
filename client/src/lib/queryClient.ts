@@ -17,33 +17,22 @@ async function throwIfResNotOk(res: Response) {
 // Helper function to get Telegram data with proper WebApp detection
 const getTelegramInitData = (): string | null => {
   if (typeof window !== 'undefined') {
-    // Check if we're in development environment first
     const hostname = window.location.hostname;
     const isDev = hostname === 'localhost' || 
                   hostname.includes('replit.app') || 
                   hostname.includes('replit.dev') ||
                   hostname.includes('127.0.0.1');
     
-    // For development, check URL params fallback
     if (isDev) {
       const urlParams = new URLSearchParams(window.location.search);
       const tgData = urlParams.get('tgData');
-      if (tgData) {
-        console.log('✅ Found Telegram data from URL params (testing mode)');
-        return tgData;
-      }
-      console.log('🔧 Development environment detected - backend will use development mode authentication');
-      console.log('ℹ️ In development, authentication bypasses Telegram requirements');
+      if (tgData) return tgData;
       return null;
     }
     
-    // Production: Strictly require valid Telegram WebApp initData
     if (window.Telegram?.WebApp?.initData) {
       const initData = window.Telegram.WebApp.initData;
-      if (initData && initData.trim() !== '') {
-        console.log('✅ Found Telegram WebApp initData:', initData.substring(0, 50) + '...');
-        return initData;
-      }
+      if (initData && initData.trim() !== '') return initData;
     }
     
     return null;
@@ -52,6 +41,80 @@ const getTelegramInitData = (): string | null => {
 };
 
 export { getTelegramInitData };
+
+// ─── Device fingerprint + platform headers ───────────────────────────────────
+// Sent with every request so the server can do accurate risk scoring.
+// No sensitive data — only browser environment metadata.
+
+let _cachedDeviceId: string | null = null;
+
+function getDeviceId(): string {
+  if (_cachedDeviceId) return _cachedDeviceId;
+  // Use existing stored ID or generate a new stable one
+  try {
+    let id = localStorage.getItem('_paid_adz_did');
+    if (!id) {
+      const arr = new Uint8Array(16);
+      crypto.getRandomValues(arr);
+      id = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem('_paid_adz_did', id);
+    }
+    _cachedDeviceId = id;
+    return id;
+  } catch {
+    // localStorage unavailable (private mode etc.)
+    return 'nls_' + Math.random().toString(36).slice(2, 18);
+  }
+}
+
+function buildDeviceFingerprint(): string {
+  try {
+    const tg = (window as any).Telegram?.WebApp;
+    const fp: Record<string, unknown> = {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      languages: navigator.languages?.join(','),
+      screenW: screen.width,
+      screenH: screen.height,
+      colorDepth: screen.colorDepth,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      cookieEnabled: navigator.cookieEnabled,
+      doNotTrack: navigator.doNotTrack,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+      deviceMemory: (navigator as any).deviceMemory,
+      // Telegram-specific signals
+      tgPlatform: tg?.platform,
+      tgVersion: tg?.version,
+      tgColorScheme: tg?.colorScheme,
+      tgIsExpanded: tg?.isExpanded,
+    };
+    return JSON.stringify(fp);
+  } catch {
+    return JSON.stringify({ userAgent: navigator.userAgent, platform: navigator.platform });
+  }
+}
+
+function getTelegramPlatform(): string {
+  try {
+    return (window as any).Telegram?.WebApp?.platform || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function buildSecurityHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    headers['x-device-id'] = getDeviceId();
+    headers['x-device-fingerprint'] = buildDeviceFingerprint();
+    headers['x-tg-platform'] = getTelegramPlatform();
+  } catch {
+    // Never break requests due to header building errors
+  }
+  return headers;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function apiRequest(
   method: string,
@@ -64,11 +127,13 @@ export async function apiRequest(
     headers["Content-Type"] = "application/json";
   }
   
-  // Add Telegram authentication data to headers
   const telegramData = getTelegramInitData();
   if (telegramData) {
     headers["x-telegram-data"] = telegramData;
   }
+
+  // Attach device + platform headers for server-side risk scoring
+  Object.assign(headers, buildSecurityHeaders());
 
   const res = await fetch(url, {
     method,
@@ -89,11 +154,13 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     const headers: Record<string, string> = {};
     
-    // Add Telegram authentication data to headers for queries too
     const telegramData = getTelegramInitData();
     if (telegramData) {
       headers["x-telegram-data"] = telegramData;
     }
+
+    // Attach device + platform headers for server-side risk scoring
+    Object.assign(headers, buildSecurityHeaders());
 
     const res = await fetch(queryKey.join("/") as string, {
       headers,
