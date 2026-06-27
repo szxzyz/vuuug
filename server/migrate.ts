@@ -139,6 +139,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
       // Add daily login streak tracking columns
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_login_streak INTEGER DEFAULT 0`);
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_login_date TEXT`);
+      // Add risk scoring & platform detection columns (anti-bot system)
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS suspicion_score INTEGER DEFAULT 0`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS platform VARCHAR(20)`);
       
       // Alter existing balance columns to new precision (safely handle existing data)
       await db.execute(sql`ALTER TABLE users ALTER COLUMN balance TYPE DECIMAL(20, 0) USING ROUND(balance)`);

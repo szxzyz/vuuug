@@ -14,6 +14,7 @@ import {
   createBanLog,
   type DeviceInfo 
 } from "./deviceTracking";
+import { computeRiskScore, persistRiskScore, checkRateLimit } from "./fraudDetection";
 import { users } from "../shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
@@ -309,6 +310,38 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
     } catch (trackingError) {
       console.error('⚠️ Failed to update user tracking data:', trackingError);
     }
+
+    // ── Risk scoring (non-blocking, fire-and-forget) ──────────────────────
+    // Compute and persist a risk score for every login. Does NOT ban.
+    // Only used for admin visibility and flagging (score >= 56).
+    setImmediate(async () => {
+      try {
+        // Rate-limit guard: skip scoring if user is hammering the auth endpoint
+        if (checkRateLimit(`auth:${upsertedUser.id}`, 20)) return;
+
+        const riskResult = await computeRiskScore({
+          telegramId: telegramUser.id.toString(),
+          userId: upsertedUser.id,
+          deviceId: deviceInfo?.deviceId,
+          fingerprint: deviceInfo?.fingerprint,
+          ip: clientIP,
+          userAgent,
+          initData: telegramData as string,
+          appVersion: appVersion || null,
+          includeBehavior: false, // behavior analysis only at ad-watch time
+        });
+
+        await persistRiskScore(upsertedUser.id, riskResult);
+
+        if (riskResult.level !== 'LOW') {
+          console.log(`⚠️ Login risk [${riskResult.level}] score=${riskResult.score} user=${upsertedUser.id} platform=${riskResult.platformInfo.platform}`);
+        }
+      } catch (riskErr) {
+        // Never let risk scoring break auth
+        console.error('⚠️ Risk scoring failed (non-critical):', riskErr);
+      }
+    });
+    // ─────────────────────────────────────────────────────────────────────
     
     // Send welcome message for new users with referral code
     if (isNewUser) {

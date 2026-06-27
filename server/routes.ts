@@ -28,6 +28,7 @@ import crypto from "crypto";
 import { sendTelegramMessage, sendUserTelegramNotification, sendWelcomeMessage, handleTelegramMessage, setupTelegramWebhook, verifyChannelMembership, sendSharePhotoToChat, withdrawalAdminMessages } from "./telegram";
 import { authenticateTelegram, requireAuth, optionalAuth } from "./auth";
 import { isAuthenticated } from "./replitAuth";
+import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
 
 // Store WebSocket connections for real-time updates
@@ -1426,6 +1427,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
       console.log(`ℹ️ Ad session bg time for user ${userId}: ${bgDuration}ms (total: ${sessionAgeMs}ms)`);
+
+      // 6. Per-user rate limit: max 10 ad reward requests per minute (prevents replay spam)
+      if (checkRateLimit(`ad:${userId}`, 10)) {
+        return res.status(429).json({
+          message: 'Too many requests. Please slow down.',
+          errorType: 'rate_limit',
+        });
+      }
+
+      // 7. Behavioral bot detection (non-blocking — runs after marking session used)
+      //    HIGH/CRITICAL risk = flag user but still give reward for now.
+      //    Blocking based on behavior alone would cause false positives.
+      setImmediate(async () => {
+        try {
+          const behavior = await analyzeAdBehavior(userId);
+          if (behavior.riskContribution >= 35) {
+            console.log(`🤖 Behavioral risk detected for ${userId}: score=${behavior.riskContribution} — ${behavior.notes.join(', ')}`);
+            // Persist updated risk score (behavior only, non-blocking)
+            const clientIP = req.headers['x-forwarded-for']?.toString()?.split(',')[0]?.trim()
+              || req.headers['x-real-ip']?.toString()
+              || req.socket?.remoteAddress || 'unknown';
+            const { db: dbInner } = await import('./db');
+            const { users: usersTable } = await import('../shared/schema');
+            const { eq: eqInner, sql: sqlInner } = await import('drizzle-orm');
+            await dbInner.execute(sqlInner`
+              UPDATE users SET
+                suspicion_score = LEAST(100, COALESCE(suspicion_score, 0) + ${Math.round(behavior.riskContribution * 0.4)}),
+                flagged = CASE WHEN LEAST(100, COALESCE(suspicion_score, 0) + ${Math.round(behavior.riskContribution * 0.4)}) >= 56 THEN true ELSE flagged END,
+                flag_reason = CASE WHEN LEAST(100, COALESCE(suspicion_score, 0) + ${Math.round(behavior.riskContribution * 0.4)}) >= 56
+                  THEN ${'Bot behavior: ' + behavior.notes.slice(0, 2).join('; ')}
+                  ELSE flag_reason END,
+                updated_at = NOW()
+              WHERE id = ${userId}
+            `);
+          }
+        } catch (behaviorErr) {
+          // Never block ad reward on analysis failure
+        }
+      });
 
       // ✅ All checks passed — mark session used, update cooldown, decay abuse score
       adUsedSessions.set(sessionId, Date.now());
