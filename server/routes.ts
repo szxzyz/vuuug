@@ -930,25 +930,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (cachedUserId) {
           console.log('✅ Using cached user_id from headers:', cachedUserId);
           
-          if (effectiveStartParam) {
-            console.log(`🔄 Returning user has startParam=${effectiveStartParam} - attempting referral bind for existing user`);
-            try {
-              const existingUser = await storage.getUserByTelegramId(cachedUserId);
-              if (existingUser && !existingUser.referredBy) {
-                const referrer = await storage.getUserByReferralCode(effectiveStartParam);
-                if (referrer && referrer.id !== existingUser.id) {
-                  const existingReferral = await storage.getReferralByUsers(referrer.id, existingUser.id);
-                  if (!existingReferral) {
-                    await storage.createReferral(referrer.id, existingUser.id);
-                    console.log(`✅ Late referral created for returning user: ${referrer.id} -> ${existingUser.id}`);
-                    return res.json({ success: true, user: cachedUserId, referralProcessed: true });
-                  }
-                }
-              }
-            } catch (lateRefErr) {
-              console.error('⚠️ Late referral processing failed:', lateRefErr);
-            }
-          }
+          // NOTE: Late referral binding for existing users is intentionally disabled.
+          // Referrals are only created when a brand-new account is registered via a ref link.
+          // Allowing existing users to be bound post-join is a spam/cheating vector.
           return res.json({ success: true, user: cachedUserId, referralProcessed: false });
         }
         
@@ -987,8 +971,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralCode: '',
       });
       
-      // Process referral if startParam (referral code) was provided
-      // CRITICAL FIX: Process referrals for BOTH new users AND existing users who don't have a referrer yet
+      // Process referral ONLY for brand-new users joining via a referral link.
+      // Existing users clicking promo links must NOT be retroactively linked — that is a spam vector.
       let referralProcessed = false;
       const finalStartParam = effectiveStartParam || startParam;
 
@@ -1001,7 +985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Don't fail authentication if welcome message fails
         }
       }
-      if (finalStartParam && finalStartParam !== telegramUser.id.toString()) {
+      if (isNewUser && finalStartParam && finalStartParam !== telegramUser.id.toString()) {
         console.log(`🔄 Processing Mini App referral: referralCode=${finalStartParam}, user=${telegramUser.id}, isNewUser=${isNewUser}`);
         try {
           // First, find the referrer by referral code
@@ -8025,6 +8009,21 @@ ${walletAddress}
             method: result.withdrawal.method,
             message: `Your withdrawal of ${result.withdrawal.amount} TON has been approved and processed`
           });
+
+          // Also send a balance_update so the frontend refreshes balance AND stars correctly
+          // This prevents the "stars disappeared after withdrawal" display bug
+          try {
+            const freshUser = await storage.getUser(result.withdrawal.userId);
+            if (freshUser) {
+              sendRealtimeUpdate(result.withdrawal.userId, {
+                type: 'balance_update',
+                balance: freshUser.balance,
+                usdBalance: freshUser.usdBalance,
+                starBalance: Number(freshUser.starBalance || 0),
+                weeklyStars: Number((freshUser as any).weeklyStars || 0),
+              });
+            }
+          } catch (_) {}
           
           // Broadcast to all admins for instant UI update
           broadcastUpdate({
