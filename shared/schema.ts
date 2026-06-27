@@ -108,6 +108,9 @@ export const users = pgTable("users", {
   weeklyStars: integer("weekly_stars").default(0),
   weeklyStarWeek: text("weekly_star_week"),
   language: varchar("language", { length: 5 }).default("en"),
+  // Risk scoring & platform detection
+  suspicionScore: integer("suspicion_score").default(0),
+  platform: varchar("platform", { length: 20 }),        // android/ios/tdesktop/web/unknown/script
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
