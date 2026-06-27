@@ -357,8 +357,11 @@ export function useAuth() {
     queryKey: ["/api/auth/user"],
     retry: 3, // Retry up to 3 times for network issues
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
-    // Use cached data as initial data for instant rendering
+    // Use cached data as placeholder for instant rendering
+    // initialDataUpdatedAt: 0 tells React Query the cached data is immediately stale
+    // so it ALWAYS refetches from server on mount — fixing the Home/Withdraw balance mismatch
     initialData: cachedData,
+    initialDataUpdatedAt: 0,
     // CRITICAL FIX: Always refetch from database on mount to ensure fresh data
     refetchOnMount: true,
     // Refetch on window focus to keep data in sync
