@@ -1317,6 +1317,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
         starsLocked: getSetting('stars_locked', 'false') === 'true',
+        minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
+        maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
+        maxWithdrawalsPerDay: parseInt(getSetting('maxWithdrawalsPerDay', '1')),
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -2547,7 +2550,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(withdrawals)
         .where(and(
           eq(withdrawals.userId, userId),
-          sql`${withdrawals.status} IN ('completed', 'approved')`
+          sql`LOWER(CAST(${withdrawals.status} AS TEXT)) IN ('completed', 'approved')`
         ))
         .orderBy(desc(withdrawals.createdAt))
         .limit(1);
@@ -4107,6 +4110,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
         starsLocked: getSetting('stars_locked', 'false') === 'true',
+        minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
+        maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
+        maxWithdrawalsPerDay: parseInt(getSetting('maxWithdrawalsPerDay', '1')),
         // Daily mission rewards
         shareReferralReward: parseInt(getSetting('share_referral_reward', '1000')),
         checkAnnouncementReward: parseInt(getSetting('check_announcement_reward', '1000')),
@@ -7352,7 +7358,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, skipAuth: true });
       }
       
-      const { method, starPackage, amount: requestedAmount, withdrawalPackage, tonWalletAddress } = req.body;
+      const { method, starPackage, withdrawalPackage, tonWalletAddress } = req.body;
+      const customAmount: number | null = req.body.amount != null ? parseFloat(req.body.amount) : null;
 
       console.log('📝 Withdrawal request received:', { userId, method, starPackage, withdrawalPackage });
 
@@ -7379,6 +7386,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({
           success: false,
           message: 'Cannot create new request until current one is processed'
+        });
+      }
+
+      // Check daily withdrawal limit
+      const [dailyLimitSetting] = await db
+        .select({ settingValue: adminSettings.settingValue })
+        .from(adminSettings)
+        .where(eq(adminSettings.settingKey, 'maxWithdrawalsPerDay'))
+        .limit(1);
+      const maxWithdrawalsPerDay = parseInt(dailyLimitSetting?.settingValue || '1');
+
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayWithdrawals = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(withdrawals)
+        .where(and(
+          eq(withdrawals.userId, userId),
+          gte(withdrawals.createdAt, todayStart),
+          sql`LOWER(CAST(${withdrawals.status} AS TEXT)) != 'rejected'`
+        ));
+      const todayCount = Number(todayWithdrawals[0]?.count ?? 0);
+      if (todayCount >= maxWithdrawalsPerDay) {
+        return res.status(400).json({
+          success: false,
+          message: `Daily withdrawal limit reached. You can only withdraw ${maxWithdrawalsPerDay} time${maxWithdrawalsPerDay !== 1 ? 's' : ''} per day.`
         });
       }
 
@@ -7500,7 +7533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .from(withdrawals)
             .where(and(
               eq(withdrawals.userId, String(userId)),
-              sql`${withdrawals.status} IN ('completed', 'approved')`
+              sql`LOWER(CAST(${withdrawals.status} AS TEXT)) IN ('completed', 'approved')`
             ))
             .orderBy(desc(withdrawals.createdAt))
             .limit(1);
@@ -7538,7 +7571,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // STAR is only used for weekly contest — no withdrawal gate
         let packageUsdAmount: number | null = null;
         
-        if (withdrawalPackage && withdrawalPackage !== 'FULL') {
+        if (customAmount !== null && !isNaN(customAmount) && customAmount > 0) {
+          // Custom amount from new UI — validate against admin min/max settings
+          const [minAmtSetting] = await tx
+            .select({ settingValue: adminSettings.settingValue })
+            .from(adminSettings)
+            .where(eq(adminSettings.settingKey, 'minimumWithdrawAmount'))
+            .limit(1);
+          const minAmt = parseFloat(minAmtSetting?.settingValue || '0.20');
+          
+          const [maxAmtSetting] = await tx
+            .select({ settingValue: adminSettings.settingValue })
+            .from(adminSettings)
+            .where(eq(adminSettings.settingKey, 'maximumWithdrawAmount'))
+            .limit(1);
+          const maxAmt = parseFloat(maxAmtSetting?.settingValue || '0.50');
+          
+          if (customAmount < minAmt) {
+            throw new Error(`Minimum withdrawal is $${minAmt.toFixed(2)}`);
+          }
+          if (customAmount > maxAmt) {
+            throw new Error(`Maximum withdrawal is $${maxAmt.toFixed(2)}`);
+          }
+          const currentBalanceForCustom = parseFloat(user.usdBalance || '0');
+          if (currentBalanceForCustom < customAmount) {
+            throw new Error(`Insufficient balance. You need $${customAmount.toFixed(2)}.`);
+          }
+          packageUsdAmount = customAmount;
+        } else if (withdrawalPackage && withdrawalPackage !== 'FULL') {
           const selectedPkg = withdrawalPackagesConfig.find((p: any) => p.usd === withdrawalPackage);
           if (!selectedPkg) {
             throw new Error('Invalid withdrawal package selected');
