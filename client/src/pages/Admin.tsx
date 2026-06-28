@@ -14,7 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Trophy, Settings, Shield, Star, CheckCircle2, XCircle, Megaphone, AlertTriangle, Plus, Minus, Wrench, Target, Hash } from "lucide-react";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Trophy, Settings, Shield, Star, CheckCircle2, XCircle, Megaphone, AlertTriangle, Plus, Minus, Wrench, Target, Hash, ShieldAlert, Eye, Trash2 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -344,6 +344,7 @@ export default function AdminPage() {
               { value: 'promos',   icon: <Tag size={13}/>,           label: 'Promos' },
               { value: 'payouts',  icon: <Wallet size={13}/>,        label: 'Payouts' },
               { value: 'bans',     icon: <ShieldOff size={13}/>,     label: 'Bans' },
+              { value: 'security', icon: <ShieldAlert size={13}/>,   label: 'Security' },
               { value: 'contest',  icon: <Trophy size={13}/>,        label: 'Contest' },
               { value: 'settings', icon: <Settings size={13}/>,      label: 'Settings' },
               ...(can('manage_admins') ? [{ value: 'admins', icon: <Shield size={13}/>, label: 'Admins' }] : []),
@@ -453,6 +454,11 @@ export default function AdminPage() {
             <BanLogsSection />
           </TabsContent>
           
+          {/* Security Tab */}
+          <TabsContent value="security" className="mt-0">
+            <SecuritySection />
+          </TabsContent>
+
           {/* Contest Tab */}
           <TabsContent value="contest" className="mt-0">
             <ContestSection />
@@ -3757,6 +3763,284 @@ function AdminManagementSection() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECURITY SECTION — Risk score dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+function SecuritySection() {
+  const queryClient = useQueryClient();
+  const [minScore, setMinScore] = useState(1);
+  const [filterLevel, setFilterLevel] = useState<'ALL' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [clearingId, setClearingId] = useState<string | null>(null);
+  const itemsPerPage = 10;
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['/api/admin/suspicious-users', minScore],
+    queryFn: () =>
+      apiRequest('GET', `/api/admin/suspicious-users?limit=200&minScore=${minScore}`)
+        .then(r => r.json()),
+    refetchInterval: 60000,
+  });
+
+  const allUsers: any[] = data?.users || [];
+  const summary = data?.summary || { critical: 0, high: 0, medium: 0, total: 0 };
+
+  const filtered = allUsers.filter(u => {
+    if (filterLevel !== 'ALL' && u.riskLevel !== filterLevel) return false;
+    if (searchTerm) {
+      const s = searchTerm.toLowerCase();
+      return (
+        u.username?.toLowerCase().includes(s) ||
+        u.firstName?.toLowerCase().includes(s) ||
+        u.referralCode?.toLowerCase().includes(s) ||
+        u.lastLoginIp?.includes(s) ||
+        u.platform?.toLowerCase().includes(s) ||
+        u.flagReason?.toLowerCase().includes(s)
+      );
+    }
+    return true;
+  });
+
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const handleClear = async (userId: string) => {
+    setClearingId(userId);
+    try {
+      const res = await apiRequest('POST', `/api/admin/users/${userId}/clear-suspicion`);
+      const result = await res.json();
+      if (result.success) {
+        showNotification('Suspicion score cleared');
+        queryClient.invalidateQueries({ queryKey: ['/api/admin/suspicious-users'] });
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (e: any) {
+      showNotification(e.message || 'Failed to clear score', 'error');
+    } finally {
+      setClearingId(null);
+    }
+  };
+
+  const riskColor = (level: string) => {
+    if (level === 'CRITICAL') return 'text-red-400 border-red-500/40 bg-red-500/10';
+    if (level === 'HIGH')     return 'text-orange-400 border-orange-500/40 bg-orange-500/10';
+    if (level === 'MEDIUM')   return 'text-yellow-400 border-yellow-500/40 bg-yellow-500/10';
+    return 'text-gray-400 border-white/10 bg-white/5';
+  };
+
+  const platformIcon = (p: string) => {
+    if (p === 'android')  return '🤖';
+    if (p === 'ios')      return '🍎';
+    if (p === 'tdesktop') return '🖥️';
+    if (p === 'web' || p === 'webz' || p === 'webk') return '🌐';
+    if (p === 'script')   return '⚠️';
+    return '❓';
+  };
+
+  const scoreBar = (score: number) => {
+    const pct = Math.min(100, score);
+    const color = score >= 76 ? 'bg-red-500' : score >= 56 ? 'bg-orange-500' : score >= 31 ? 'bg-yellow-500' : 'bg-emerald-500';
+    return (
+      <div className="w-full bg-white/10 rounded-full h-1.5 mt-1">
+        <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-4 gap-2">
+        <div className="bg-gradient-to-br from-red-500/20 to-red-500/5 p-3 rounded text-center border border-red-500/30 cursor-pointer" onClick={() => { setFilterLevel('CRITICAL'); setCurrentPage(1); }}>
+          <p className="text-2xl font-bold text-red-400">{summary.critical}</p>
+          <p className="text-xs text-muted-foreground">Critical</p>
+        </div>
+        <div className="bg-gradient-to-br from-orange-500/20 to-orange-500/5 p-3 rounded text-center border border-orange-500/30 cursor-pointer" onClick={() => { setFilterLevel('HIGH'); setCurrentPage(1); }}>
+          <p className="text-2xl font-bold text-orange-400">{summary.high}</p>
+          <p className="text-xs text-muted-foreground">High</p>
+        </div>
+        <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 p-3 rounded text-center border border-yellow-500/30 cursor-pointer" onClick={() => { setFilterLevel('MEDIUM'); setCurrentPage(1); }}>
+          <p className="text-2xl font-bold text-yellow-400">{summary.medium}</p>
+          <p className="text-xs text-muted-foreground">Medium</p>
+        </div>
+        <div className="bg-gradient-to-br from-[#4cd3ff]/20 to-[#4cd3ff]/5 p-3 rounded text-center border border-[#4cd3ff]/30 cursor-pointer" onClick={() => { setFilterLevel('ALL'); setCurrentPage(1); }}>
+          <p className="text-2xl font-bold text-[#4cd3ff]">{summary.total}</p>
+          <p className="text-xs text-muted-foreground">Total</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <Input
+          placeholder="Search user, IP, platform…"
+          value={searchTerm}
+          onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+          className="h-7 text-xs flex-1 min-w-[160px] bg-[#121212] border-white/10"
+        />
+        {(['ALL', 'MEDIUM', 'HIGH', 'CRITICAL'] as const).map(level => (
+          <Button
+            key={level}
+            size="sm"
+            variant="outline"
+            onClick={() => { setFilterLevel(level); setCurrentPage(1); }}
+            className={`text-xs h-7 ${filterLevel === level
+              ? level === 'CRITICAL' ? 'bg-red-500/20 border-red-500 text-red-400'
+              : level === 'HIGH'     ? 'bg-orange-500/20 border-orange-500 text-orange-400'
+              : level === 'MEDIUM'   ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
+              : 'bg-[#4cd3ff]/20 border-[#4cd3ff] text-[#4cd3ff]'
+              : 'border-white/20 text-muted-foreground'}`}
+          >
+            {level}
+          </Button>
+        ))}
+        <Button size="sm" variant="ghost" onClick={() => refetch()} className="h-7 text-xs text-muted-foreground">
+          <i className="fas fa-sync mr-1 text-[10px]"></i> Refresh
+        </Button>
+      </div>
+
+      {/* Min Score slider */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="shrink-0">Min score: <span className="text-white font-medium">{minScore}</span></span>
+        <input
+          type="range" min={1} max={76} value={minScore}
+          onChange={e => { setMinScore(+e.target.value); setCurrentPage(1); }}
+          className="flex-1 accent-[#4cd3ff]"
+        />
+      </div>
+
+      {/* Table */}
+      {isLoading ? (
+        <div className="space-y-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="bg-muted h-14 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <ShieldAlert size={32} className="mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No suspicious users found</p>
+          <p className="text-xs mt-1">Lower the minimum score or remove filters</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {paginated.map((user: any) => (
+            <div key={user.id} className="bg-[#121212] border border-white/10 rounded-xl overflow-hidden">
+              {/* Row */}
+              <div className="flex items-center gap-3 p-3">
+                {/* Score badge */}
+                <div className={`shrink-0 w-12 h-12 rounded-lg flex flex-col items-center justify-center border ${riskColor(user.riskLevel)}`}>
+                  <span className="text-lg font-bold leading-none">{user.suspicionScore}</span>
+                  <span className="text-[9px] uppercase tracking-wide opacity-70">{user.riskLevel}</span>
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm font-medium text-white truncate">
+                      {user.firstName || user.username || user.referralCode || user.id.slice(0, 8)}
+                    </span>
+                    {user.username && <span className="text-xs text-muted-foreground">@{user.username}</span>}
+                    <span className="text-xs" title={user.platform}>{platformIcon(user.platform)} {user.platform}</span>
+                    {user.flagged && (
+                      <Badge variant="outline" className="text-[9px] h-4 px-1 border-orange-500/50 text-orange-400">Flagged</Badge>
+                    )}
+                    {user.banned && (
+                      <Badge variant="outline" className="text-[9px] h-4 px-1 border-red-500/50 text-red-400">Banned</Badge>
+                    )}
+                  </div>
+                  {scoreBar(user.suspicionScore)}
+                  <div className="flex gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
+                    <span>IP: {user.lastLoginIp || '—'}</span>
+                    <span>Ads: {user.adsWatched ?? 0}</span>
+                    {user.appVersion && <span>v{user.appVersion}</span>}
+                    {user.lastLoginAt && <span>{new Date(user.lastLoginAt).toLocaleDateString()}</span>}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-[#4cd3ff]"
+                    onClick={() => setExpandedId(expandedId === user.id ? null : user.id)}
+                    title="View details"
+                  >
+                    <Eye size={13} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-400"
+                    onClick={() => handleClear(user.id)}
+                    disabled={clearingId === user.id}
+                    title="Clear suspicion score"
+                  >
+                    {clearingId === user.id
+                      ? <i className="fas fa-spinner fa-spin text-[10px]" />
+                      : <Trash2 size={13} />}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Expanded details */}
+              {expandedId === user.id && (
+                <div className="border-t border-white/10 px-3 py-2 bg-[#0d0d0d] space-y-1.5">
+                  {user.flagReason && (
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Flag reason: </span>
+                      <span className="text-orange-300">{user.flagReason}</span>
+                    </div>
+                  )}
+                  {user.lastLoginUserAgent && (
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">User-Agent: </span>
+                      <span className="text-gray-300 break-all">{user.lastLoginUserAgent.slice(0, 200)}</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <div><span className="text-muted-foreground">Telegram ID: </span><span className="text-gray-300">{user.telegramId || '—'}</span></div>
+                    <div><span className="text-muted-foreground">Referral: </span><span className="text-gray-300">{user.referralCode || '—'}</span></div>
+                    <div><span className="text-muted-foreground">Balance: </span><span className="text-gray-300">{user.balance ?? 0} POW</span></div>
+                    <div><span className="text-muted-foreground">Joined: </span><span className="text-gray-300">{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}</span></div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] border-red-500/40 text-red-400 hover:bg-red-500/10"
+                      onClick={() => handleClear(user.id)}
+                      disabled={clearingId === user.id}
+                    >
+                      <Trash2 size={10} className="mr-1" /> Clear Score & Unflag
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-2 pt-1">
+              <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>
+                ← Prev
+              </Button>
+              <span className="text-xs text-muted-foreground">{currentPage} / {totalPages}</span>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)}>
+                Next →
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
