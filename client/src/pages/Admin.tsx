@@ -1965,8 +1965,9 @@ function SettingsSection() {
     l1CommissionPercent: '20',
     l2CommissionPercent: '4',
     walletChangeFee: '100',
-    minimumWithdrawalUSD: '1.00',
-    minimumWithdrawalTON: '0.5',
+    minimumWithdrawAmount: '0.20',
+    maximumWithdrawAmount: '0.50',
+    maxWithdrawalsPerDay: '1',
     withdrawalFeeTON: '5',
     withdrawalFeeUSD: '3',
     withdrawalGroupChatId: '-1002480439556',
@@ -2021,8 +2022,9 @@ function SettingsSection() {
         l1CommissionPercent: settingsData.l1CommissionPercent?.toString() || '20',
         l2CommissionPercent: settingsData.l2CommissionPercent?.toString() || '4',
         walletChangeFee: settingsData.walletChangeFee?.toString() || '100',
-        minimumWithdrawalUSD: settingsData.minimumWithdrawalUSD?.toString() || '1.00',
-        minimumWithdrawalTON: settingsData.minimumWithdrawalTON?.toString() || '0.5',
+        minimumWithdrawAmount: settingsData.minimumWithdrawAmount?.toString() || '0.20',
+        maximumWithdrawAmount: settingsData.maximumWithdrawAmount?.toString() || '0.50',
+        maxWithdrawalsPerDay: settingsData.maxWithdrawalsPerDay?.toString() || '1',
         withdrawalFeeTON: settingsData.withdrawalFeeTON?.toString() || '5',
         withdrawalFeeUSD: settingsData.withdrawalFeeUSD?.toString() || '3',
         withdrawalGroupChatId: settingsData.withdrawalGroupChatId?.toString() || '-1002480439556',
@@ -2084,8 +2086,9 @@ function SettingsSection() {
     const adLimit = parseInt(settings.dailyAdLimit);
     const reward = parseInt(settings.rewardPerAd);
     const walletFee = parseInt(settings.walletChangeFee);
-    const minWithdrawalUSD = parseFloat(settings.minimumWithdrawalUSD);
-    const minWithdrawalTON = parseFloat(settings.minimumWithdrawalTON);
+    const minWithdrawAmount = parseFloat(settings.minimumWithdrawAmount);
+    const maxWithdrawAmount = parseFloat(settings.maximumWithdrawAmount);
+    const maxWithdrawalsPerDay = parseInt(settings.maxWithdrawalsPerDay) || 1;
     const withdrawalFeeTON = parseFloat(settings.withdrawalFeeTON);
     const withdrawalFeeUSD = parseFloat(settings.withdrawalFeeUSD);
     const channelCost = parseFloat(settings.channelTaskCost);
@@ -2119,8 +2122,9 @@ function SettingsSection() {
         l1CommissionPercent: parseFloat(settings.l1CommissionPercent) || 20,
         l2CommissionPercent: parseFloat(settings.l2CommissionPercent) || 4,
         walletChangeFee: walletFee,
-        minimumWithdrawalUSD: minWithdrawalUSD,
-        minimumWithdrawalTON: minWithdrawalTON,
+        minimumWithdrawAmount: minWithdrawAmount,
+        maximumWithdrawAmount: maxWithdrawAmount,
+        maxWithdrawalsPerDay: maxWithdrawalsPerDay,
         withdrawalFeeTON: withdrawalFeeTON,
         withdrawalFeeUSD: withdrawalFeeUSD,
         withdrawalGroupChatId: settings.withdrawalGroupChatId,
@@ -2432,21 +2436,59 @@ function SettingsSection() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="minimum-withdrawal-ton" className="text-sm font-semibold">
-                <i className="fas fa-gem mr-2 text-blue-600"></i>
-                Min USD (TON Method)
+              <Label htmlFor="minimum-withdraw-amount" className="text-sm font-semibold">
+                <i className="fas fa-arrow-down mr-2 text-green-500"></i>
+                Minimum Withdrawal Amount (USD)
               </Label>
               <Input
-                id="minimum-withdrawal-ton"
+                id="minimum-withdraw-amount"
                 type="number"
-                value={settings.minimumWithdrawalTON}
-                onChange={(e) => setSettings({ ...settings, minimumWithdrawalTON: e.target.value })}
-                placeholder="0.5"
+                value={settings.minimumWithdrawAmount}
+                onChange={(e) => setSettings({ ...settings, minimumWithdrawAmount: e.target.value })}
+                placeholder="0.20"
                 min="0"
                 step="0.01"
               />
               <p className="text-xs text-muted-foreground">
-                Current: ${settingsData?.minimumWithdrawalTON || 0.5}
+                Current: ${settingsData?.minimumWithdrawAmount || 0.20}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maximum-withdraw-amount" className="text-sm font-semibold">
+                <i className="fas fa-arrow-up mr-2 text-orange-500"></i>
+                Maximum Withdrawal Amount (USD)
+              </Label>
+              <Input
+                id="maximum-withdraw-amount"
+                type="number"
+                value={settings.maximumWithdrawAmount}
+                onChange={(e) => setSettings({ ...settings, maximumWithdrawAmount: e.target.value })}
+                placeholder="0.50"
+                min="0"
+                step="0.01"
+              />
+              <p className="text-xs text-muted-foreground">
+                Current: ${settingsData?.maximumWithdrawAmount || 0.50}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="max-withdrawals-per-day" className="text-sm font-semibold">
+                <i className="fas fa-calendar-day mr-2 text-purple-500"></i>
+                Max Withdrawals Per Day
+              </Label>
+              <Input
+                id="max-withdrawals-per-day"
+                type="number"
+                value={settings.maxWithdrawalsPerDay}
+                onChange={(e) => setSettings({ ...settings, maxWithdrawalsPerDay: e.target.value })}
+                placeholder="1"
+                min="1"
+                step="1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Current: {settingsData?.maxWithdrawalsPerDay ?? 1} per day
               </p>
             </div>
 
