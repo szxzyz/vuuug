@@ -1,10 +1,23 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Globe, Check, Plus } from "lucide-react";
 import { useLanguage, Language } from "@/hooks/useLanguage";
 import { showNotification } from "@/components/AppNotification";
 import TopUpPopup from "@/components/TopUpPopup";
+
+const LANG_META: { code: Language; flag: string; name: string; label: string }[] = [
+  { code: 'en', flag: '🇬🇧', name: 'English',            label: 'EN' },
+  { code: 'ru', flag: '🇷🇺', name: 'Русский',            label: 'RU' },
+  { code: 'ar', flag: '🇸🇦', name: 'العربية',             label: 'AR' },
+  { code: 'uk', flag: '🇺🇦', name: 'Українська',          label: 'UK' },
+  { code: 'de', flag: '🇩🇪', name: 'Deutsch',             label: 'DE' },
+  { code: 'zh', flag: '🇨🇳', name: '中文',                label: 'ZH' },
+  { code: 'pt', flag: '🇧🇷', name: 'Português (Brasil)',  label: 'PT' },
+  { code: 'es', flag: '🇪🇸', name: 'Español',             label: 'ES' },
+  { code: 'vi', flag: '🇻🇳', name: 'Tiếng Việt',          label: 'VI' },
+  { code: 'bn', flag: '🇧🇩', name: 'বাংলা',               label: 'BN' },
+];
 
 export default function Header() {
   const { data: user } = useQuery<any>({
@@ -20,9 +33,8 @@ export default function Header() {
   const isHomePage = location === "/";
   const isCreateTaskPage = location === "/create-task" || location === "/task/create";
 
-  const ICON = 20;
+  const ICON = 22;
 
-  // ── Balance calculations ──────────────────────────────────────
   const usdBalance = parseFloat(user?.usdBalance || "0");
   const usdFormatted = usdBalance.toFixed(3);
 
@@ -46,15 +58,28 @@ export default function Header() {
     ? (tonBalance / 1000).toFixed(1) + 'k'
     : tonBalance.toFixed(2);
 
+  const currentLangMeta = LANG_META.find(l => l.code === language) || LANG_META[0];
+
   const divider = (
-    <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
+    <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.10)', flexShrink: 0, margin: '0 2px' }} />
   );
 
-  // ── Language picker popup (shared across pages) ───────────────
+  const balanceItem = (icon: React.ReactNode, value: string, label?: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, height: 36 }}>
+      <div style={{ width: ICON, height: ICON, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {icon}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.1 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '0.01em' }}>{value}</span>
+        {label && <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</span>}
+      </div>
+    </div>
+  );
+
   const langPicker = langPickerOpen && (
     <div
       className="fixed inset-0 z-[200] flex items-end justify-center"
-      style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
       onClick={() => setLangPickerOpen(false)}
     >
       <div
@@ -65,35 +90,33 @@ export default function Header() {
         <div className="p-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
           <p className="text-white text-sm font-semibold text-center">{t('select_language')}</p>
         </div>
-        {([
-          { code: 'en', flag: '🇬🇧', name: 'English' },
-          { code: 'ru', flag: '🇷🇺', name: 'Русский' },
-          { code: 'ar', flag: '🇸🇦', name: 'العربية' },
-        ] as { code: Language; flag: string; name: string }[]).map(({ code, flag, name }) => (
-          <button
-            key={code}
-            onClick={() => {
-              setLanguage(code);
-              showNotification(t('language_changed'), 'success');
-              setLangPickerOpen(false);
-            }}
-            className="w-full flex items-center justify-between p-4 transition-all hover:bg-white/5 active:bg-white/10"
-            style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">{flag}</span>
-              <span className="text-white text-sm font-medium">{name}</span>
-            </div>
-            {language === code && (
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: 'rgba(0,123,255,0.2)', border: '1px solid rgba(0,123,255,0.5)' }}
-              >
-                <Check className="w-3 h-3 text-blue-400" />
+        <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+          {LANG_META.map(({ code, flag, name }) => (
+            <button
+              key={code}
+              onClick={() => {
+                setLanguage(code);
+                showNotification(t('language_changed'), 'success');
+                setLangPickerOpen(false);
+              }}
+              className="w-full flex items-center justify-between p-4 transition-all hover:bg-white/5 active:bg-white/10"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{flag}</span>
+                <span className="text-white text-sm font-medium">{name}</span>
               </div>
-            )}
-          </button>
-        ))}
+              {language === code && (
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center"
+                  style={{ background: 'rgba(0,123,255,0.2)', border: '1px solid rgba(0,123,255,0.5)' }}
+                >
+                  <Check className="w-3 h-3 text-blue-400" />
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
         <div className="p-4">
           <button
             onClick={() => setLangPickerOpen(false)}
@@ -107,119 +130,122 @@ export default function Header() {
     </div>
   );
 
-  // ── HOME PAGE: TON balance + Language button ──────────────────
+  const headerBase = "fixed top-0 left-0 right-0 z-40 w-full";
+  const headerStyle: React.CSSProperties = {
+    background: '#000',
+    borderBottom: '1px solid rgba(255,255,255,0.07)',
+    height: 64,
+    display: 'flex',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 16,
+  };
+
   if (isHomePage) {
     return (
       <>
         {langPicker}
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-md h-12 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl flex items-center justify-between px-4">
-          {/* Language button — left side */}
+        <div className={headerBase} style={headerStyle}>
           <button
             onClick={() => setLangPickerOpen(true)}
-            className="flex items-center gap-1.5 active:scale-95 transition-transform"
-            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+            className="flex items-center gap-2 active:scale-95 transition-transform"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '6px 12px', cursor: 'pointer' }}
           >
-            <Globe style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.55)' }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.04em' }}>
-              {language === 'en' ? 'EN' : language === 'ru' ? 'RU' : 'AR'}
+            <Globe style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.6)' }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.06em' }}>
+              {currentLangMeta.label}
             </span>
           </button>
 
-          {/* TON Balance — right side */}
-          <div className="flex items-center gap-1.5">
-            <img src="/images/ton.png" alt="TON" style={{ width: ICON, height: ICON, objectFit: 'cover', borderRadius: '50%', flexShrink: 0 }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{tonFormatted} TON</span>
-          </div>
+          <div style={{ flex: 1 }} />
+
+          {balanceItem(
+            <img src="/images/ton.png" alt="TON" style={{ width: ICON, height: ICON, objectFit: 'cover', borderRadius: '50%' }} />,
+            `${tonFormatted} TON`
+          )}
         </div>
       </>
     );
   }
 
-  // ── CREATE-TASK PAGE: POW + TON + Top Up ─────────────────────
   if (isCreateTaskPage) {
     return (
       <>
         {langPicker}
         <TopUpPopup open={topUpOpen} onOpenChange={setTopUpOpen} />
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-32px)] max-w-md h-12 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl flex items-center justify-between px-3">
-
-          {/* LEFT: POW */}
-          <div className="flex items-center gap-1" style={{ minWidth: 0 }}>
-            <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <div className={headerBase} style={headerStyle}>
+          {balanceItem(
+            <div style={{ width: ICON, height: ICON, borderRadius: '50%', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
-            </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>{powFormatted}</span>
-          </div>
+            </div>,
+            powFormatted
+          )}
 
-          <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
+          {divider}
 
-          {/* CENTER: TON */}
-          <div className="flex items-center gap-1" style={{ minWidth: 0 }}>
-            <img src="/images/ton.png" alt="TON" style={{ width: 18, height: 18, objectFit: 'cover', borderRadius: '50%', flexShrink: 0 }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>{tonFormatted} TON</span>
-          </div>
+          {balanceItem(
+            <img src="/images/ton.png" alt="TON" style={{ width: ICON, height: ICON, objectFit: 'cover', borderRadius: '50%' }} />,
+            `${tonFormatted} TON`
+          )}
 
-          <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
+          <div style={{ flex: 1 }} />
 
-          {/* RIGHT: Top Up button — always visible */}
           <button
             onClick={() => setTopUpOpen(true)}
             className="flex items-center gap-1 text-white font-bold rounded-full active:scale-95 transition-transform"
             style={{
               background: 'linear-gradient(135deg, #4cd3ff 0%, #007BFF 100%)',
-              boxShadow: '0 2px 10px rgba(0,123,255,0.5)',
-              padding: '6px 12px',
+              boxShadow: '0 2px 10px rgba(0,123,255,0.4)',
+              padding: '7px 14px',
               fontSize: 12,
               flexShrink: 0,
             }}
           >
-            <Plus style={{ width: 11, height: 11 }} />
+            <Plus style={{ width: 12, height: 12 }} />
             Top Up
           </button>
-
         </div>
       </>
     );
   }
 
-  // ── ALL OTHER PAGES: Star + POW + USD + TON (icon side-by-side value, evenly spaced) ──
   return (
     <>
       {langPicker}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-md h-12 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl flex items-center justify-between px-4">
+      <div className={headerBase} style={headerStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, justifyContent: 'space-between' }}>
+          {balanceItem(
+            <img src="/star-bug.png" alt="STAR" style={{ width: ICON, height: ICON, objectFit: 'contain' }} />,
+            starFormatted,
+            'STAR'
+          )}
 
-        {/* STAR */}
-        <div className="flex items-center gap-1">
-          <img src="/star-bug.png" alt="STAR" style={{ width: ICON, height: ICON, objectFit: 'contain', flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{starFormatted}</span>
+          {divider}
+
+          {balanceItem(
+            <div style={{ width: ICON, height: ICON, borderRadius: '50%', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
+            </div>,
+            powFormatted,
+            'POW'
+          )}
+
+          {divider}
+
+          {balanceItem(
+            <img src="/usdt.png" alt="USD" style={{ width: ICON, height: ICON, objectFit: 'contain' }} />,
+            usdFormatted,
+            'USD'
+          )}
+
+          {divider}
+
+          {balanceItem(
+            <img src="/images/ton.png" alt="TON" style={{ width: ICON, height: ICON, objectFit: 'cover', borderRadius: '50%' }} />,
+            tonFormatted,
+            'TON'
+          )}
         </div>
-
-        <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
-
-        {/* POW */}
-        <div className="flex items-center gap-1">
-          <div style={{ width: ICON, height: ICON, borderRadius: '50%', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
-          </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{powFormatted}</span>
-        </div>
-
-        <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
-
-        {/* USD */}
-        <div className="flex items-center gap-1">
-          <img src="/usdt.png" alt="USD" style={{ width: ICON, height: ICON, objectFit: 'contain', flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{usdFormatted}</span>
-        </div>
-
-        <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
-
-        {/* TON */}
-        <div className="flex items-center gap-1">
-          <img src="/images/ton.png" alt="TON" style={{ width: ICON, height: ICON, objectFit: 'cover', borderRadius: '50%', flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{tonFormatted}</span>
-        </div>
-
       </div>
     </>
   );
