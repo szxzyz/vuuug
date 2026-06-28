@@ -4710,6 +4710,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Security / Suspicious Users endpoint ─────────────────────────────────
+  // Returns top users sorted by suspicion_score with risk signals
+  app.get('/api/admin/suspicious-users', authenticateAdmin, async (req: any, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const minScore = parseInt(req.query.minScore as string) || 1;
+
+      const rows = await db.execute(sql`
+        SELECT
+          id,
+          telegram_id,
+          username,
+          first_name,
+          last_name,
+          referral_code,
+          suspicion_score,
+          platform,
+          flagged,
+          flag_reason,
+          banned,
+          last_login_ip,
+          last_login_user_agent,
+          app_version,
+          last_login_at,
+          ads_watched,
+          balance,
+          created_at
+        FROM users
+        WHERE suspicion_score >= ${minScore}
+        ORDER BY suspicion_score DESC
+        LIMIT ${limit}
+      `);
+
+      const users = (rows.rows as any[]).map(u => ({
+        id: u.id,
+        telegramId: u.telegram_id,
+        username: u.username,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        referralCode: u.referral_code,
+        suspicionScore: u.suspicion_score ?? 0,
+        platform: u.platform || 'unknown',
+        flagged: u.flagged,
+        flagReason: u.flag_reason,
+        banned: u.banned,
+        lastLoginIp: u.last_login_ip,
+        lastLoginUserAgent: u.last_login_user_agent,
+        appVersion: u.app_version,
+        lastLoginAt: u.last_login_at,
+        adsWatched: u.ads_watched,
+        balance: u.balance,
+        createdAt: u.created_at,
+        riskLevel: u.suspicion_score >= 76 ? 'CRITICAL'
+                 : u.suspicion_score >= 56 ? 'HIGH'
+                 : u.suspicion_score >= 31 ? 'MEDIUM'
+                 : 'LOW',
+      }));
+
+      // Summary counts
+      const critical = users.filter(u => u.riskLevel === 'CRITICAL').length;
+      const high     = users.filter(u => u.riskLevel === 'HIGH').length;
+      const medium   = users.filter(u => u.riskLevel === 'MEDIUM').length;
+
+      res.json({ users, summary: { critical, high, medium, total: users.length } });
+    } catch (err) {
+      console.error('Error fetching suspicious users:', err);
+      res.status(500).json({ success: false, message: 'Failed to fetch suspicious users' });
+    }
+  });
+
+  // ── Clear suspicion score for a user ─────────────────────────────────────
+  app.post('/api/admin/users/:id/clear-suspicion', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      await db.execute(sql`
+        UPDATE users
+        SET suspicion_score = 0,
+            flagged = false,
+            flag_reason = NULL,
+            updated_at = NOW()
+        WHERE id = ${id}
+      `);
+      res.json({ success: true, message: 'Suspicion score cleared' });
+    } catch (err) {
+      console.error('Error clearing suspicion score:', err);
+      res.status(500).json({ success: false, message: 'Failed to clear suspicion score' });
+    }
+  });
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Admin self-unban endpoint (for emergency recovery when admin is accidentally banned)
   app.post('/api/admin/self-unban', async (req: any, res) => {
     try {
