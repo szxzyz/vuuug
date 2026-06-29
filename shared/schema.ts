@@ -253,9 +253,11 @@ export const advertiserTasks = pgTable("advertiser_tasks", {
   link: text("link").notNull(),
   totalClicksRequired: integer("total_clicks_required").notNull(),
   currentClicks: integer("current_clicks").default(0).notNull(),
-  costPerClick: decimal("cost_per_click", { precision: 30, scale: 10 }).default("0.0003").notNull(), // 0.0003 TON per click (500 clicks = 0.15 TON)
+  costPerClick: decimal("cost_per_click", { precision: 30, scale: 10 }).default("0.0003").notNull(),
   totalCost: decimal("total_cost", { precision: 30, scale: 10 }).notNull(),
   status: varchar("status").default("under_review").notNull(), // under_review, running, paused, completed, rejected
+  verificationRequired: boolean("verification_required").default(false).notNull(),
+  channelVerified: boolean("channel_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   completedAt: timestamp("completed_at"),
