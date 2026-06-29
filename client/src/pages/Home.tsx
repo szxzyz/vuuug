@@ -829,8 +829,6 @@ export default function Home() {
           <AdWatchingSection user={user} />
         </div>
 
-        {/* Statistics Section */}
-        <IncomeStatistics />
 
       </main>
 
