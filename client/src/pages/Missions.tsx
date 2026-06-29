@@ -6,6 +6,7 @@ import { useState, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import PromoCodeInput from "@/components/PromoCodeInput";
 import { useLanguage } from "@/hooks/useLanguage";
+import AdvertiserTaskSheet from "@/components/AdvertiserTaskSheet";
 
 declare global {
   interface Window {
@@ -36,6 +37,8 @@ interface Task {
   advertiserId: string;
   createdAt: string;
   completedAt?: string;
+  verificationRequired?: boolean;
+  channelVerified?: boolean;
 }
 
 interface AppSettings {
@@ -366,6 +369,7 @@ export default function Missions() {
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [claimReadyTasks, setClaimReadyTasks] = useState<Set<string>>(new Set());
   const [countdownTasks, setCountdownTasks] = useState<Map<string, number>>(new Map());
+  const [activeTaskSheet, setActiveTaskSheet] = useState<Task | null>(null);
 
   /* Ad platform state */
   const [adLoadingPlatform, setAdLoadingPlatform] = useState<string | null>(null);
@@ -625,6 +629,12 @@ export default function Missions() {
 
   const handleTaskGo = (task: Task) => {
     if (!task.link || claimReadyTasks.has(task.id) || clickedTasks.has(task.id)) return;
+    // Bot/channel tasks → open interactive sheet
+    if (task.taskType === 'bot' || task.taskType === 'channel') {
+      setActiveTaskSheet(task);
+      return;
+    }
+    // Other tasks → direct open + countdown
     let link = task.link.trim();
     if (!link.startsWith('http')) link = 'https://' + link;
     const tg = (window as any).Telegram?.WebApp;
@@ -893,6 +903,19 @@ export default function Missions() {
           @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.5} }
         `}</style>
       </main>
+
+      {/* ── Advertiser task completion sheet (bot / channel) ── */}
+      <AdvertiserTaskSheet
+        task={activeTaskSheet}
+        open={activeTaskSheet !== null}
+        reward={activeTaskSheet ? getReward(activeTaskSheet) : 0}
+        onClose={() => setActiveTaskSheet(null)}
+        claiming={loadingTaskId === activeTaskSheet?.id}
+        onClaim={id => {
+          setActiveTaskSheet(null);
+          clickTaskMutation.mutate(id);
+        }}
+      />
     </Layout>
   );
 }
