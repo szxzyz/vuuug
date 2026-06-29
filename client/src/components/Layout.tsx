@@ -14,6 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import { useSeasonEnd } from "@/lib/SeasonEndContext";
 import BanScreen from "@/components/BanScreen";
+import CreatePanel from "@/components/CreatePanel";
 import { useRef, useCallback, useState } from "react";
 import { useLanguage } from "@/hooks/useLanguage";
 
@@ -36,6 +37,7 @@ export default function Layout({ children }: LayoutProps) {
   const [photoError, setPhotoError] = useState(false);
   const [photoLoaded, setPhotoLoaded] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,14 +84,10 @@ export default function Layout({ children }: LayoutProps) {
     telegramPhotoUrl || user?.profileImageUrl || user?.profileUrl || null;
 
   const isHomeActive = location === "/";
-  const isCreateActive =
-    location === "/task/create" || location === "/create-task";
 
   const handlePlusClick = () => {
     if (isAdmin) {
-      navigate("/task/create");
-    } else {
-      setShowComingSoon(true);
+      setPanelOpen((prev) => !prev);
     }
   };
 
@@ -214,136 +212,45 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Floating "+" circular button — only shown for admins */}
           {isAdmin && (
-          <motion.button
-            onClick={handlePlusClick}
-            whileTap={{ scale: 0.9 }}
-            whileHover={{ scale: 1.05 }}
-            className="flex items-center justify-center rounded-full shadow-2xl flex-shrink-0"
-            style={{
-              width: "56px",
-              height: "56px",
-              background: isCreateActive
-                ? "rgba(59,130,246,0.25)"
-                : "rgba(28,28,30,0.9)",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-              border: isCreateActive
-                ? "1px solid rgba(59,130,246,0.5)"
-                : "none",
-              transition: "all 0.25s ease",
-            }}
-            aria-label="Create Task"
-          >
-            <Plus
+            <motion.button
+              onClick={handlePlusClick}
+              whileTap={{ scale: 0.88 }}
+              whileHover={{ scale: 1.06 }}
+              animate={{ rotate: panelOpen ? 45 : 0 }}
+              transition={{ type: "spring", stiffness: 380, damping: 22 }}
+              className="flex items-center justify-center rounded-full flex-shrink-0"
               style={{
-                width: "24px",
-                height: "24px",
-                color: isCreateActive
-                  ? "rgb(96,165,250)"
-                  : "rgba(255,255,255,0.85)",
-                strokeWidth: 2,
-                transition: "color 0.22s ease",
+                width: "56px",
+                height: "56px",
+                background: panelOpen
+                  ? "rgba(255,255,255,0.14)"
+                  : "rgba(28,28,30,0.9)",
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
+                border: panelOpen
+                  ? "1px solid rgba(255,255,255,0.18)"
+                  : "none",
+                boxShadow: panelOpen
+                  ? "0 0 0 6px rgba(255,255,255,0.05)"
+                  : "0 8px 24px rgba(0,0,0,0.45)",
               }}
-            />
-          </motion.button>
+              aria-label="Create"
+            >
+              <Plus
+                style={{
+                  width: "24px",
+                  height: "24px",
+                  color: "rgba(255,255,255,0.9)",
+                  strokeWidth: 2.2,
+                }}
+              />
+            </motion.button>
           )}
         </div>
       )}
 
-      {/* Coming Soon popup */}
-      <AnimatePresence>
-        {showComingSoon && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="fixed inset-0 z-[60]"
-              style={{ background: "rgba(0,0,0,0.55)" }}
-              onClick={() => setShowComingSoon(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 24, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 16, scale: 0.96 }}
-              transition={{ duration: 0.22, ease: [0.34, 1.56, 0.64, 1] }}
-              className="fixed z-[61] bottom-28 left-1/2 -translate-x-1/2"
-              style={{ minWidth: "220px" }}
-            >
-              <div
-                className="flex flex-col items-center gap-3 text-center"
-                style={{
-                  background: "rgba(28,28,30,0.96)",
-                  backdropFilter: "blur(24px)",
-                  WebkitBackdropFilter: "blur(24px)",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: "20px",
-                  boxShadow:
-                    "0 24px 48px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4)",
-                  padding: "20px 24px",
-                }}
-              >
-                <div
-                  className="flex items-center justify-center"
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "50%",
-                    background: "rgba(255,255,255,0.07)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                  }}
-                >
-                  <Plus
-                    style={{
-                      width: "22px",
-                      height: "22px",
-                      color: "rgba(255,255,255,0.7)",
-                    }}
-                  />
-                </div>
-                <div>
-                  <p
-                    style={{
-                      color: "#fff",
-                      fontWeight: 600,
-                      fontSize: "15px",
-                      marginBottom: "4px",
-                    }}
-                  >
-                    Coming Soon
-                  </p>
-                  <p
-                    style={{
-                      color: "rgba(255,255,255,0.45)",
-                      fontSize: "13px",
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    This feature is currently under development.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowComingSoon(false)}
-                  style={{
-                    marginTop: "4px",
-                    padding: "8px 28px",
-                    borderRadius: "20px",
-                    background: "rgba(255,255,255,0.1)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    color: "rgba(255,255,255,0.8)",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                  }}
-                >
-                  Got it
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Create Panel — admin only */}
+      <CreatePanel open={panelOpen} onClose={() => setPanelOpen(false)} />
     </div>
   );
 }
