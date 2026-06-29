@@ -6388,9 +6388,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/advertiser-tasks/create', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      const { taskType, title, link, totalClicksRequired } = req.body;
+      const { taskType, title, link, totalClicksRequired, verificationRequired, channelVerified } = req.body;
 
-      console.log('📝 Task creation request:', { userId, taskType, title, link, totalClicksRequired });
+      console.log('📝 Task creation request:', { userId, taskType, title, link, totalClicksRequired, verificationRequired, channelVerified });
 
       // Validation
       if (!taskType || !title || !link || !totalClicksRequired) {
@@ -6458,6 +6458,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           costPerClick: "0",
           totalCost: "0",
           status: "running",
+          verificationRequired: false,
+          channelVerified: false,
         });
 
         console.log('✅ Partner task created:', task);
@@ -6492,6 +6494,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           costPerClick: "0",
           totalCost: "0",
           status: "running",
+          verificationRequired: verificationRequired === true,
+          channelVerified: channelVerified === true,
         });
 
         console.log('✅ Admin task saved to database:', task);
@@ -6565,6 +6569,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           costPerClick: costPerClickTON.toFixed(10),
           totalCost: totalCostTON.toFixed(10),
           status: "under_review",
+          verificationRequired: verificationRequired === true,
+          channelVerified: channelVerified === true,
         });
 
         console.log('✅ Task saved to database:', task);

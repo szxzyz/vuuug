@@ -3164,6 +3164,8 @@ export class DatabaseStorage implements IStorage {
     costPerClick: string;
     totalCost: string;
     status?: string;
+    verificationRequired?: boolean;
+    channelVerified?: boolean;
   }): Promise<any> {
     const [task] = await db
       .insert(advertiserTasks)
@@ -3177,6 +3179,8 @@ export class DatabaseStorage implements IStorage {
         totalCost: taskData.totalCost,
         status: taskData.status || 'under_review',
         currentClicks: 0,
+        verificationRequired: taskData.verificationRequired ?? false,
+        channelVerified: taskData.channelVerified ?? false,
       })
       .returning();
     
