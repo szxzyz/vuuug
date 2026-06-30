@@ -741,7 +741,7 @@ export default function Home() {
             <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.38)', lineHeight: 1 }}>.{usdDec}</span>
           </div>
 
-          {/* POW & STAR — stacked vertically */}
+          {/* POW balance only */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
@@ -749,12 +749,6 @@ export default function Home() {
               </div>
               <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
                 {formatBalance(balancePAD)} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>POW</span>
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <img src="/star-bug.png" alt="STAR" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0 }} />
-              <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
-                {formatBalance(parseInt((user as any)?.weeklyStars || "0"))} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>STAR</span>
               </span>
             </div>
           </div>
