@@ -79,10 +79,10 @@ export default function Withdraw() {
   const { data: validReferralData, isLoading: isLoadingReferrals, isFetched: isReferralsFetched } = useQuery<{ validReferralCount: number }>({
     queryKey: ['/api/referrals/valid-count'],
     retry: false,
-    staleTime: 60000,
+    staleTime: 0,
     gcTime: 300000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   const { data: withdrawalsResponse, refetch: refetchWithdrawals, isLoading: withdrawalsLoading } = useQuery<WithdrawalsResponse>({

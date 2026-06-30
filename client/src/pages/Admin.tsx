@@ -2003,6 +2003,12 @@ function SettingsSection() {
     minimumConvertPowToStar: '1000',
     weeklyGiveawayAmount: '10',
     weeklyContestEndDate: '',
+    monthlyContestStartDate: '',
+    monthlyContestEndDate: '',
+    monthlyContestTopUsers: '20',
+    weeklyReferralStartDate: '',
+    weeklyReferralEndDate: '',
+    weeklyReferralTopUsers: '10',
     monetagMissionReward: '50',
     monetagMissionLimit: '10',
     adexiumMissionReward: '50',
@@ -2060,6 +2066,12 @@ function SettingsSection() {
         minimumConvertPowToStar: settingsData.minimumConvertPowToStar?.toString() || '1000',
         weeklyGiveawayAmount: settingsData.weeklyGiveawayAmount?.toString() || '10',
         weeklyContestEndDate: settingsData.weeklyContestEndDate?.toString() || '',
+        monthlyContestStartDate: settingsData.monthlyContestStartDate?.toString() || '',
+        monthlyContestEndDate: settingsData.monthlyContestEndDate?.toString() || '',
+        monthlyContestTopUsers: settingsData.monthlyContestTopUsers?.toString() || '20',
+        weeklyReferralStartDate: settingsData.weeklyReferralStartDate?.toString() || '',
+        weeklyReferralEndDate: settingsData.weeklyReferralEndDate?.toString() || '',
+        weeklyReferralTopUsers: settingsData.weeklyReferralTopUsers?.toString() || '10',
         monetagMissionReward: settingsData.monetagMissionReward?.toString() || '50',
         monetagMissionLimit: settingsData.monetagMissionLimit?.toString() || '10',
         adexiumMissionReward: settingsData.adexiumMissionReward?.toString() || '50',
@@ -2158,6 +2170,12 @@ function SettingsSection() {
         minimumConvertPowToStar: parseInt(settings.minimumConvertPowToStar) || 1000,
         weeklyGiveawayAmount: parseFloat(settings.weeklyGiveawayAmount) || 10,
         weeklyContestEndDate: settings.weeklyContestEndDate || '',
+        monthlyContestStartDate: (settings as any).monthlyContestStartDate || '',
+        monthlyContestEndDate: (settings as any).monthlyContestEndDate || '',
+        monthlyContestTopUsers: parseInt((settings as any).monthlyContestTopUsers) || 20,
+        weeklyReferralStartDate: (settings as any).weeklyReferralStartDate || '',
+        weeklyReferralEndDate: (settings as any).weeklyReferralEndDate || '',
+        weeklyReferralTopUsers: parseInt((settings as any).weeklyReferralTopUsers) || 10,
         monetagMissionReward: parseInt(settings.monetagMissionReward) || 50,
         monetagMissionLimit: parseInt(settings.monetagMissionLimit) || 10,
         adexiumMissionReward: parseInt(settings.adexiumMissionReward) || 50,
@@ -2961,7 +2979,7 @@ function SettingsSection() {
 
             <div className="space-y-2 md:col-span-2 p-3 border rounded-lg border-cyan-500/20 bg-cyan-500/5">
               <Label htmlFor="weekly-contest-end" className="text-sm font-semibold text-cyan-400">
-                <i className="fas fa-clock mr-2"></i>Weekly Contest End Date
+                <i className="fas fa-clock mr-2"></i>Weekly Contest End Date (Legacy)
               </Label>
               <Input
                 id="weekly-contest-end"
@@ -2972,6 +2990,80 @@ function SettingsSection() {
               <p className="text-xs text-muted-foreground">
                 Timer shown on Leaderboard Contest Info tab. Current: {settingsData?.weeklyContestEndDate || 'Not set'}
               </p>
+            </div>
+
+            {/* Monthly Contest Settings */}
+            <div className="space-y-3 md:col-span-2 p-3 border rounded-lg border-blue-500/20 bg-blue-500/5">
+              <Label className="text-sm font-semibold text-blue-400">
+                <i className="fas fa-trophy mr-2"></i>Monthly Contest Settings
+              </Label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input
+                    type="datetime-local"
+                    value={(settings as any).monthlyContestStartDate || ''}
+                    onChange={(e) => setSettings({ ...settings, monthlyContestStartDate: e.target.value } as any)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">End Date</Label>
+                  <Input
+                    type="datetime-local"
+                    value={(settings as any).monthlyContestEndDate || ''}
+                    onChange={(e) => setSettings({ ...settings, monthlyContestEndDate: e.target.value } as any)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Top N Users</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={(settings as any).monthlyContestTopUsers || '20'}
+                    onChange={(e) => setSettings({ ...settings, monthlyContestTopUsers: e.target.value } as any)}
+                    placeholder="20"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Monthly Leaderboard — sorted by stars earned. Current top: {settingsData?.monthlyContestTopUsers || 20} users</p>
+            </div>
+
+            {/* Weekly Referral Contest Settings */}
+            <div className="space-y-3 md:col-span-2 p-3 border rounded-lg border-green-500/20 bg-green-500/5">
+              <Label className="text-sm font-semibold text-green-400">
+                <i className="fas fa-users mr-2"></i>Weekly Referral Contest Settings
+              </Label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input
+                    type="datetime-local"
+                    value={(settings as any).weeklyReferralStartDate || ''}
+                    onChange={(e) => setSettings({ ...settings, weeklyReferralStartDate: e.target.value } as any)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">End Date</Label>
+                  <Input
+                    type="datetime-local"
+                    value={(settings as any).weeklyReferralEndDate || ''}
+                    onChange={(e) => setSettings({ ...settings, weeklyReferralEndDate: e.target.value } as any)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Top N Users</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={(settings as any).weeklyReferralTopUsers || '10'}
+                    onChange={(e) => setSettings({ ...settings, weeklyReferralTopUsers: e.target.value } as any)}
+                    placeholder="10"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Weekly Referral Leaderboard — sorted by verified invites (users who watched 1+ ad). Current top: {settingsData?.weeklyReferralTopUsers || 10} users</p>
             </div>
 
             <div className="space-y-2">
