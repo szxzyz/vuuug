@@ -1320,6 +1320,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
         maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
         maxWithdrawalsPerDay: parseInt(getSetting('maxWithdrawalsPerDay', '1')),
+        monthlyContestStartDate: getSetting('monthly_contest_start_date', ''),
+        monthlyContestEndDate: getSetting('monthly_contest_end_date', ''),
+        monthlyContestTopUsers: parseInt(getSetting('monthly_contest_top_users', '20')),
+        weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
+        weeklyReferralEndDate: getSetting('weekly_referral_end_date', ''),
+        weeklyReferralTopUsers: parseInt(getSetting('weekly_referral_top_users', '10')),
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -2354,6 +2360,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Referral leaderboard — top N users by verified referral count
+  app.get('/api/leaderboard/referral', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id;
+      const allSettings = await db.select().from(adminSettings);
+      const getSetting = (key: string, def: string) => allSettings.find(s => s.settingKey === key)?.settingValue || def;
+      const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
+
+      const rows = await db.execute(sql`
+        SELECT
+          r.referrer_id  AS "userId",
+          u.username     AS "username",
+          u.first_name   AS "firstName",
+          COUNT(*)::int  AS "referralCount"
+        FROM referrals r
+        JOIN users u ON u.id = r.referrer_id
+        WHERE r.status = 'active'
+          AND COALESCE(u.banned, false) = false
+        GROUP BY r.referrer_id, u.username, u.first_name
+        ORDER BY "referralCount" DESC
+        LIMIT ${topN}
+      `);
+
+      const leaderboard = (rows.rows as any[]).map((row, i) => ({
+        userId: row.userId,
+        username: row.username,
+        firstName: row.firstName,
+        referralCount: Number(row.referralCount),
+        rank: i + 1,
+      }));
+
+      const myEntry = leaderboard.find(e => e.userId === userId);
+      let userRank: { rank: number; referralCount: number } | null = null;
+      if (myEntry) {
+        userRank = { rank: myEntry.rank, referralCount: myEntry.referralCount };
+      } else if (userId) {
+        const myCountRows = await db.execute(sql`
+          SELECT COUNT(*)::int AS cnt FROM referrals
+          WHERE referrer_id = ${userId} AND status = 'active'
+        `);
+        const myCount = Number((myCountRows.rows as any[])[0]?.cnt || 0);
+        if (myCount > 0) {
+          const aboveRows = await db.execute(sql`
+            SELECT COUNT(DISTINCT referrer_id)::int AS cnt FROM referrals
+            WHERE status = 'active'
+            GROUP BY referrer_id
+            HAVING COUNT(*) > ${myCount}
+          `);
+          userRank = { rank: (aboveRows.rows as any[]).length + 1, referralCount: myCount };
+        }
+      }
+
+      res.json({
+        leaderboard,
+        userRank,
+        topN,
+        startDate: getSetting('weekly_referral_start_date', ''),
+        endDate: getSetting('weekly_referral_end_date', ''),
+      });
+    } catch (error) {
+      console.error('Referral leaderboard error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.get('/api/leaderboard/monthly', async (req: any, res) => {
     try {
       // Get userId from session if available (optional - for rank calculation)
@@ -2513,9 +2584,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get valid referral count (friends who watched at least 1 ad)
-  app.get('/api/referrals/valid-count', async (req: any, res) => {
+  app.get('/api/referrals/valid-count', authenticateTelegram, async (req: any, res) => {
     try {
-      const userId = req.session?.user?.user?.id || req.user?.user?.id;
+      const userId = req.user?.user?.id || req.session?.user?.user?.id;
       
       if (!userId) {
         return res.json({ validReferralCount: 0 });
