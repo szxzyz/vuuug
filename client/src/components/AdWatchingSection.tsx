@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { FaPlay } from "react-icons/fa";
 import { FiShield, FiZap } from "react-icons/fi";
 import { showNotification } from "@/components/AppNotification";
 import { useAdSession } from "@/hooks/useAdSession";
@@ -30,9 +29,9 @@ const GAP  = 10;   // gap between cards
 
 // ─── Ad card definitions ──────────────────────────────────────────────────────
 const AD_CARDS = [
-  { id: 1, title: "Classic Ads",  accentColor: "#4cd3ff" },
-  { id: 2, title: "Video Ads",    accentColor: "#a78bfa" },
-  { id: 3, title: "Rich Ads",     accentColor: "#34d399" },
+  { id: 1, title: "AdsGram",  accentColor: "#4cd3ff", image: "/adsgram-logo.jpg",  handle: "@adsgram_ai"   },
+  { id: 2, title: "MonetaG",  accentColor: "#a78bfa", image: "/monetag-logo.jpg",  handle: "@thatminiapp"  },
+  { id: 3, title: "Gigapub",  accentColor: "#34d399", image: "/gigapub-logo.jpg", handle: "@gigapub"       },
 ];
 
 const TABS = [
@@ -363,17 +362,9 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   return (
     <>
       <div className="mb-4">
-        {/* Title */}
-        <div className="mb-3 px-4">
-          <h2 className="text-[15px] font-extrabold text-white tracking-widest uppercase mb-0.5">
-            {t("viewing_ads")}
-          </h2>
-          <p className="text-[#666] text-xs">{t("get_paid_watching")}</p>
-        </div>
-
-        {/* Tabs */}
+        {/* Tabs — full width within container padding */}
         <div
-          className="flex items-center mb-4 mx-4"
+          className="flex items-center mb-3"
           style={{ background: "#1a1a1a", borderRadius: 14, padding: "4px", gap: 2 }}
         >
           {TABS.map((tab) => {
@@ -398,6 +389,14 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           })}
         </div>
 
+        {/* Title — below tabs, centered */}
+        <div className="mb-3 text-center">
+          <h2 className="text-[15px] font-extrabold text-white tracking-widest uppercase mb-0.5">
+            {t("viewing_ads")}
+          </h2>
+          <p className="text-[#666] text-xs">{t("get_paid_watching")}</p>
+        </div>
+
         {/* Carousel — negative margins break out of px-4 page padding so overflow:hidden clips at screen edges not content box */}
         <div
           ref={containerRef}
@@ -419,7 +418,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
             }}
           >
             {AD_CARDS.map((card, index) => {
-              // card width computed from a CSS calc relative to parent, but we set it via JS after measure
               const cw = `calc(100% - ${PAD + PEEK + GAP}px)`;
               return (
                 <div
@@ -433,72 +431,43 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                     cursor: "pointer",
                   }}
                   onClick={() => {
-                    // Only fire click if not dragging
                     const dragged = Math.abs(trackXRef.current - baseTrackXRef.current) > 6;
                     if (dragged) return;
                     if (index !== activeIdxRef.current) snapTo(index);
                     else handleStartEarning();
                   }}
                 >
-                  {/* Adsgram header */}
+                  {/* Card header: image + Sponsored by + handle */}
                   <div
-                    className="flex items-center gap-2 px-3 py-2.5"
+                    className="flex items-center gap-3 px-3 py-2.5"
                     style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
                   >
+                    {/* Brand image */}
                     <div
-                      className="flex items-center justify-center rounded-lg"
-                      style={{ width: 28, height: 28, background: "rgba(76,211,255,0.1)", flexShrink: 0 }}
-                    >
-                      <span style={{ fontSize: 13 }}>📡</span>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p className="text-white font-bold" style={{ fontSize: 11, lineHeight: 1.2 }}>Adsgram</p>
-                      <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", lineHeight: 1.2 }}>
-                        Sponsored by @adsgram_ai
-                      </p>
-                    </div>
-                    <span
                       style={{
-                        fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase",
-                        padding: "2px 7px", borderRadius: 99,
-                        background: "rgba(76,211,255,0.1)", color: "#4cd3ff",
+                        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                        overflow: "hidden", background: `${card.accentColor}18`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
                       }}
                     >
-                      AD
-                    </span>
-                  </div>
-
-                  {/* Image / visual — 100px */}
-                  <div
-                    style={{
-                      height: 100, position: "relative", overflow: "hidden",
-                      background: "linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}
-                  >
-                    <div style={{
-                      position: "absolute", inset: 0,
-                      background: `radial-gradient(circle at 50% 50%, ${card.accentColor}15 0%, transparent 65%)`,
-                    }} />
-                    {/* Corner marks */}
-                    {[["top-2 left-2", "borderTop borderLeft"], ["top-2 right-2", "borderTop borderRight"],
-                      ["bottom-2 left-2", "borderBottom borderLeft"], ["bottom-2 right-2", "borderBottom borderRight"]].map(([pos], ci) => (
-                      <div key={ci} className={`absolute ${pos}`} style={{
-                        width: 14, height: 14,
-                        borderTop:    ci < 2  ? `1.5px solid ${card.accentColor}28` : undefined,
-                        borderBottom: ci >= 2 ? `1.5px solid ${card.accentColor}28` : undefined,
-                        borderLeft:   ci % 2 === 0 ? `1.5px solid ${card.accentColor}28` : undefined,
-                        borderRight:  ci % 2 === 1 ? `1.5px solid ${card.accentColor}28` : undefined,
-                      }} />
-                    ))}
-                    <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                      <div style={{
-                        width: 40, height: 40, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                        background: `${card.accentColor}1a`,
-                      }}>
-                        <FaPlay size={14} style={{ color: card.accentColor, marginLeft: 2 }} />
-                      </div>
-                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontWeight: 500 }}>Tap to watch</span>
+                      {card.image ? (
+                        <img
+                          src={card.image}
+                          alt={card.title}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 20 }}>📢</span>
+                      )}
+                    </div>
+                    {/* Sponsored by + handle */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", lineHeight: 1.3, marginBottom: 2 }}>
+                        Sponsored by
+                      </p>
+                      <p className="text-white font-bold" style={{ fontSize: 13, lineHeight: 1.2 }}>
+                        {card.handle}
+                      </p>
                     </div>
                   </div>
 
