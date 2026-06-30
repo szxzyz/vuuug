@@ -2046,7 +2046,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // ── CURRENT WEEK ──────────────────────────────────────────────────────
 
-      // Top 50 users sorted by weekly_stars (ad watch only, 2 stars per ad)
+      // Read monthly contest top N from admin settings
+      const allAdminSettings = await db.select().from(adminSettings);
+      const getAdminSetting = (key: string, def: string) =>
+        allAdminSettings.find(s => s.settingKey === key)?.settingValue || def;
+      const monthlyTopN = parseInt(getAdminSetting('monthly_contest_top_users', '20'));
+      const monthlyEndDate = getAdminSetting('monthly_contest_end_date', '');
+      const monthlyStartDate = getAdminSetting('monthly_contest_start_date', '');
+
+      // Top N users sorted by weekly_stars
       const top50 = await db
         .select({
           userId: users.id,
@@ -2062,7 +2070,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               AND COALESCE(${users.banned}, false) = false`
         )
         .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
-        .limit(50);
+        .limit(Math.max(monthlyTopN, 50));
 
       const leaderboard = top50.map((u, i) => ({
         ...u,
@@ -2099,6 +2107,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currentWeek,
         lastWeek: getISOWeekOffset(1),
         isLastWeek: false,
+        topN: monthlyTopN,
+        endDate: monthlyEndDate,
+        startDate: monthlyStartDate,
       });
     } catch (error) {
       console.error('Leaderboard error:', error);
