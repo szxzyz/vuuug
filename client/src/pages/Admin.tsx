@@ -107,49 +107,6 @@ function ContestSection() {
 
   return (
     <div className="space-y-4">
-      {/* Current standings card */}
-      <div className="bg-[#121212] border border-white/10 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-white flex items-center gap-2">
-            <i className="fas fa-star text-amber-400"></i> Current Standings
-          </p>
-          <button onClick={() => refetchLb()} className="text-xs text-gray-500 hover:text-white transition-colors">
-            <i className="fas fa-sync-alt"></i>
-          </button>
-        </div>
-
-        {lbLoading ? (
-          <div className="space-y-2">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-8 bg-[#1a1a1a] rounded animate-pulse" />
-            ))}
-          </div>
-        ) : entries.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-4">No participants yet this week.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {entries.slice(0, 10).map((e: any, i: number) => {
-              const rank = e.rank ?? i + 1;
-              const name = e.firstName || e.username || `User ${rank}`;
-              const stars = (e.starBalance ?? e.weeklyStars ?? 0).toLocaleString();
-              const prize = e.prize ?? '';
-              return (
-                <div key={e.userId ?? i} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-sm w-6 shrink-0">{rankEmoji(rank)}</span>
-                    <span className="text-sm text-white truncate">{name}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-2">
-                    <span className="text-xs text-amber-400 font-semibold flex items-center gap-1"><Star size={11} className="inline"/>{stars}</span>
-                    {prize && <span className="text-xs text-emerald-400 font-semibold">{prize}</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
       {/* Result banner */}
       {result && (
         <div className={`rounded-xl p-4 border text-sm ${result.success ? 'bg-emerald-900/30 border-emerald-500/40 text-emerald-300' : 'bg-rose-900/30 border-rose-500/40 text-rose-300'}`}>
@@ -1964,7 +1921,6 @@ function SettingsSection() {
     rewardPerAd: '2',
     l1CommissionPercent: '20',
     l2CommissionPercent: '4',
-    walletChangeFee: '100',
     minimumWithdrawAmount: '0.20',
     maximumWithdrawAmount: '0.50',
     maxWithdrawalsPerDay: '1',
@@ -1978,7 +1934,6 @@ function SettingsSection() {
     channelTaskReward: '30',
     botTaskReward: '20',
     partnerTaskReward: '5',
-    minimumConvertPOW: '100',
     minimumClicks: '500',
     seasonBroadcastActive: false,
     referralRewardEnabled: false,
@@ -1996,13 +1951,8 @@ function SettingsSection() {
     streakReward: '100',
     shareTaskReward: '1000',
     communityTaskReward: '1000',
-    // STAR currency settings (weekly contest only)
+    // STAR currency settings
     starRewardPerAd: '1',
-    starRewardPerTask: '10',
-    powToStarRate: '1',
-    minimumConvertPowToStar: '1000',
-    weeklyGiveawayAmount: '10',
-    weeklyContestEndDate: '',
     monthlyContestStartDate: '',
     monthlyContestEndDate: '',
     monthlyContestTopUsers: '20',
@@ -2027,7 +1977,6 @@ function SettingsSection() {
         rewardPerAd: settingsData.rewardPerAd?.toString() || '2',
         l1CommissionPercent: settingsData.l1CommissionPercent?.toString() || '20',
         l2CommissionPercent: settingsData.l2CommissionPercent?.toString() || '4',
-        walletChangeFee: settingsData.walletChangeFee?.toString() || '100',
         minimumWithdrawAmount: settingsData.minimumWithdrawAmount?.toString() || '0.20',
         maximumWithdrawAmount: settingsData.maximumWithdrawAmount?.toString() || '0.50',
         maxWithdrawalsPerDay: settingsData.maxWithdrawalsPerDay?.toString() || '1',
@@ -2041,7 +1990,6 @@ function SettingsSection() {
         channelTaskReward: settingsData.channelTaskReward?.toString() || '30',
         botTaskReward: settingsData.botTaskReward?.toString() || '20',
         partnerTaskReward: settingsData.partnerTaskReward?.toString() || '5',
-        minimumConvertPOW: settingsData.minimumConvertPOW?.toString() || '100',
         minimumClicks: settingsData.minimumClicks?.toString() || '500',
         seasonBroadcastActive: settingsData.seasonBroadcastActive || false,
         referralRewardEnabled: settingsData.referralRewardEnabled || false,
@@ -2059,13 +2007,8 @@ function SettingsSection() {
         streakReward: settingsData.streakReward?.toString() || '100',
         shareTaskReward: settingsData.shareTaskReward?.toString() || '1000',
         communityTaskReward: settingsData.communityTaskReward?.toString() || '1000',
-        // STAR currency settings (weekly contest only)
+        // STAR currency settings
         starRewardPerAd: settingsData.starRewardPerAd?.toString() || '1',
-        starRewardPerTask: settingsData.starRewardPerTask?.toString() || '10',
-        powToStarRate: settingsData.powToStarRate?.toString() || '1',
-        minimumConvertPowToStar: settingsData.minimumConvertPowToStar?.toString() || '1000',
-        weeklyGiveawayAmount: settingsData.weeklyGiveawayAmount?.toString() || '10',
-        weeklyContestEndDate: settingsData.weeklyContestEndDate?.toString() || '',
         monthlyContestStartDate: settingsData.monthlyContestStartDate?.toString() || '',
         monthlyContestEndDate: settingsData.monthlyContestEndDate?.toString() || '',
         monthlyContestTopUsers: settingsData.monthlyContestTopUsers?.toString() || '20',
@@ -2097,7 +2040,6 @@ function SettingsSection() {
   const handleSaveSettings = async () => {
     const adLimit = parseInt(settings.dailyAdLimit);
     const reward = parseInt(settings.rewardPerAd);
-    const walletFee = parseInt(settings.walletChangeFee);
     const minWithdrawAmount = parseFloat(settings.minimumWithdrawAmount);
     const maxWithdrawAmount = parseFloat(settings.maximumWithdrawAmount);
     const maxWithdrawalsPerDay = parseInt(settings.maxWithdrawalsPerDay) || 1;
@@ -2110,7 +2052,6 @@ function SettingsSection() {
     const channelReward = parseInt(settings.channelTaskReward);
     const botReward = parseInt(settings.botTaskReward);
     const partnerReward = parseInt(settings.partnerTaskReward);
-    const minConvertPAD = parseInt(settings.minimumConvertPOW);
     const minClicks = parseInt(settings.minimumClicks);
     const refRewardUSD = parseFloat(settings.referralRewardUSD);
     const refRewardPAD = parseInt(settings.referralRewardPOW);
@@ -2133,7 +2074,6 @@ function SettingsSection() {
         rewardPerAd: reward,
         l1CommissionPercent: parseFloat(settings.l1CommissionPercent) || 20,
         l2CommissionPercent: parseFloat(settings.l2CommissionPercent) || 4,
-        walletChangeFee: walletFee,
         minimumWithdrawAmount: minWithdrawAmount,
         maximumWithdrawAmount: maxWithdrawAmount,
         maxWithdrawalsPerDay: maxWithdrawalsPerDay,
@@ -2147,7 +2087,6 @@ function SettingsSection() {
         channelTaskReward: channelReward,
         botTaskReward: botReward,
         partnerTaskReward: partnerReward,
-        minimumConvertPOW: minConvertPAD,
         minimumClicks: minClicks,
         seasonBroadcastActive: settings.seasonBroadcastActive,
         referralRewardEnabled: settings.referralRewardPOWEnabled || settings.referralRewardUSDEnabled,
@@ -2163,13 +2102,8 @@ function SettingsSection() {
         streakReward: parseInt(settings.streakReward) || 100,
         shareTaskReward: parseInt(settings.shareTaskReward) || 1000,
         communityTaskReward: parseInt(settings.communityTaskReward) || 1000,
-        // STAR currency settings (weekly contest only)
+        // STAR currency settings
         starRewardPerAd: parseInt(settings.starRewardPerAd) || 1,
-        starRewardPerTask: parseInt(settings.starRewardPerTask) || 10,
-        powToStarRate: parseInt(settings.powToStarRate) || 1,
-        minimumConvertPowToStar: parseInt(settings.minimumConvertPowToStar) || 1000,
-        weeklyGiveawayAmount: parseFloat(settings.weeklyGiveawayAmount) || 10,
-        weeklyContestEndDate: settings.weeklyContestEndDate || '',
         monthlyContestStartDate: (settings as any).monthlyContestStartDate || '',
         monthlyContestEndDate: (settings as any).monthlyContestEndDate || '',
         monthlyContestTopUsers: parseInt((settings as any).monthlyContestTopUsers) || 20,
@@ -2757,60 +2691,6 @@ function SettingsSection() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="bug-reward-per-task" className="text-sm font-semibold">
-                <i className="fas fa-tasks mr-2 text-lime-600"></i>
-                STAR Per Task
-              </Label>
-              <Input
-                id="bug-reward-per-task"
-                type="number"
-                value={settings.starRewardPerTask}
-                onChange={(e) => setSettings({ ...settings, starRewardPerTask: e.target.value })}
-                placeholder="10"
-                min="0"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.starRewardPerTask || 10} STAR
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="pad-to-bug-rate" className="text-sm font-semibold">
-                <i className="fas fa-exchange-alt mr-2 text-lime-600"></i>
-                POW to STAR Rate
-              </Label>
-              <Input
-                id="pad-to-bug-rate"
-                type="number"
-                value={settings.powToStarRate}
-                onChange={(e) => setSettings({ ...settings, powToStarRate: e.target.value })}
-                placeholder="1"
-                min="1"
-              />
-              <p className="text-xs text-muted-foreground">
-                1 POW = {settingsData?.powToStarRate || 1} STAR
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="minimum-convert-pad-to-bug" className="text-sm font-semibold">
-                <i className="fas fa-coins mr-2 text-lime-600"></i>
-                Min POW to Convert to STAR
-              </Label>
-              <Input
-                id="minimum-convert-pad-to-bug"
-                type="number"
-                value={settings.minimumConvertPowToStar}
-                onChange={(e) => setSettings({ ...settings, minimumConvertPowToStar: e.target.value })}
-                placeholder="1000"
-                min="1"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumConvertPowToStar || 1000} POW
-              </p>
-            </div>
-
           </div>
         )}
 
@@ -2959,39 +2839,6 @@ function SettingsSection() {
 
         {activeCategory === 'other' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-2 md:col-span-2 p-3 border rounded-lg border-yellow-500/20 bg-yellow-500/5">
-              <Label htmlFor="weekly-giveaway-amount" className="text-sm font-semibold text-yellow-400">
-                <i className="fas fa-trophy mr-2"></i>Weekly Giveaway Prize Pool (USD)
-              </Label>
-              <Input
-                id="weekly-giveaway-amount"
-                type="number"
-                value={settings.weeklyGiveawayAmount}
-                onChange={(e) => setSettings({ ...settings, weeklyGiveawayAmount: e.target.value })}
-                placeholder="10"
-                min="0"
-                step="0.5"
-              />
-              <p className="text-xs text-muted-foreground">
-                Displayed on the Home page weekly contest banner. Current: ${settingsData?.weeklyGiveawayAmount || 10}
-              </p>
-            </div>
-
-            <div className="space-y-2 md:col-span-2 p-3 border rounded-lg border-cyan-500/20 bg-cyan-500/5">
-              <Label htmlFor="weekly-contest-end" className="text-sm font-semibold text-cyan-400">
-                <i className="fas fa-clock mr-2"></i>Weekly Contest End Date (Legacy)
-              </Label>
-              <Input
-                id="weekly-contest-end"
-                type="datetime-local"
-                value={settings.weeklyContestEndDate}
-                onChange={(e) => setSettings({ ...settings, weeklyContestEndDate: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Timer shown on Leaderboard Contest Info tab. Current: {settingsData?.weeklyContestEndDate || 'Not set'}
-              </p>
-            </div>
-
             {/* Monthly Contest Settings */}
             <div className="space-y-3 md:col-span-2 p-3 border rounded-lg border-blue-500/20 bg-blue-500/5">
               <Label className="text-sm font-semibold text-blue-400">
@@ -3064,40 +2911,6 @@ function SettingsSection() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">Weekly Referral Leaderboard — sorted by verified invites (users who watched 1+ ad). Current top: {settingsData?.weeklyReferralTopUsers || 10} users</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="wallet-change-fee" className="text-sm font-semibold">
-                <i className="fas fa-exchange-alt mr-2 text-yellow-600"></i>
-                Wallet Change Fee (POW)
-              </Label>
-              <Input
-                id="wallet-change-fee"
-                type="number"
-                value={settings.walletChangeFee}
-                onChange={(e) => setSettings({ ...settings, walletChangeFee: e.target.value })}
-                placeholder="5000"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.walletChangeFee || 5000} POW
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="minimum-convert-pad" className="text-sm font-semibold">
-                <i className="fas fa-repeat mr-2 text-indigo-600"></i>
-                Min Convert (POW)
-              </Label>
-              <Input
-                id="minimum-convert-pad"
-                type="number"
-                value={settings.minimumConvertPOW}
-                onChange={(e) => setSettings({ ...settings, minimumConvertPOW: e.target.value })}
-                placeholder="100"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.minimumConvertPOW || 100} POW
-              </p>
             </div>
 
             <div className="space-y-2 p-3 border rounded-lg">
