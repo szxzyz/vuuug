@@ -29,9 +29,9 @@ const GAP  = 10;   // gap between cards
 
 // ─── Ad card definitions ──────────────────────────────────────────────────────
 const AD_CARDS = [
-  { id: 1, title: "AdsGram",  accentColor: "#4cd3ff", image: "/adsgram-logo.jpg",  handle: "@adsgram_ai"   },
-  { id: 2, title: "MonetaG",  accentColor: "#a78bfa", image: "/monetag-logo.jpg",  handle: "@thatminiapp"  },
-  { id: 3, title: "Gigapub",  accentColor: "#34d399", image: "/gigapub-logo.jpg", handle: "@gigapub"       },
+  { id: 1, title: "AdsGram",  accentColor: "#3b82f6", image: "/adsgram-logo.jpg"  },
+  { id: 2, title: "MonetaG",  accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
+  { id: 3, title: "Gigapub",  accentColor: "#3b82f6", image: "/gigapub-logo.jpg"  },
 ];
 
 const TABS = [
@@ -427,7 +427,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                     width: cw,
                     borderRadius: 18,
                     overflow: "hidden",
-                    background: "#111",
+                    background: "#1a1a1a",
                     cursor: "pointer",
                   }}
                   onClick={() => {
@@ -437,10 +437,9 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                     else handleStartEarning();
                   }}
                 >
-                  {/* Card header: image + Sponsored by + handle */}
+                  {/* Card header: image + name */}
                   <div
                     className="flex items-center gap-3 px-3 py-2.5"
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
                   >
                     {/* Brand image */}
                     <div
@@ -460,23 +459,19 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                         <span style={{ fontSize: 20 }}>📢</span>
                       )}
                     </div>
-                    {/* Sponsored by + handle */}
+                    {/* Sponsored by + brand name */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", lineHeight: 1.3, marginBottom: 2 }}>
                         Sponsored by
                       </p>
                       <p className="text-white font-bold" style={{ fontSize: 13, lineHeight: 1.2 }}>
-                        {card.handle}
+                        {card.title}
                       </p>
                     </div>
                   </div>
 
                   {/* Body */}
                   <div style={{ padding: "10px 12px 12px" }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 8, letterSpacing: "-0.2px" }}>
-                      {card.title}
-                    </p>
-
                     {/* Reward + Limit */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                       <div>
@@ -487,7 +482,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                           <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#0a0a0a", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
                             <img src="/pow-icon.png?v=2" alt="POW" style={{ width: "90%", height: "90%", objectFit: "contain" }} />
                           </div>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: card.accentColor }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: "#ffffff" }}>
                             {POW_REWARD}
                             <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontWeight: 600, marginLeft: 3 }}>POW</span>
                           </span>
@@ -519,8 +514,8 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                         letterSpacing: "0.02em",
                         background: isLimitReached
                           ? "rgba(255,255,255,0.06)"
-                          : `linear-gradient(135deg, ${card.accentColor}bb 0%, ${card.accentColor} 100%)`,
-                        color: isLimitReached ? "rgba(255,255,255,0.3)" : "#000",
+                          : "#3b82f6",
+                        color: isLimitReached ? "rgba(255,255,255,0.3)" : "#fff",
                         opacity: isShowingAds && index !== activeIndex ? 0.5 : 1,
                         transition: "opacity 0.2s",
                       }}
@@ -532,7 +527,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                             : <><FiZap    size={12} style={{ animation: "spin 0.8s linear infinite" }} /> {t("loading_ad")}</>
                           }
                         </span>
-                      ) : isLimitReached ? "Limit Reached" : t("start_earning")}
+                      ) : isLimitReached ? "Limit Reached" : "Get POW"}
                     </button>
                   </div>
                 </div>
