@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, CheckCircle2, AlertCircle, Clock } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
-const DEPOSIT_WALLET = "UQCW9LwFkPRsLOVsGfl-65t9AJsfPXs8fTpDDEJL_RQhwPvJ";
+const DEPOSIT_WALLET = "UQC4E8orjioFZB3ePOKzlhjMWLLpTDjIk7ZRY2YS6K_fEdxL";
 const MIN_DEPOSIT = 0.1;
 
 interface TopUpPopupProps {
