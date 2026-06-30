@@ -14,6 +14,20 @@ import { useAdmin } from "@/hooks/useAdmin";
 import ChannelJoinPopup from "@/components/ChannelJoinPopup";
 import { LanguageProvider } from "@/hooks/useLanguage";
 
+// Eagerly import frequently-visited pages — no Suspense flash on navigation
+import Home from "@/pages/Home";
+import Missions from "@/pages/Missions";
+import Leaderboard from "@/pages/Leaderboard";
+import Affiliates from "@/pages/Affiliates";
+import Withdraw from "@/pages/Withdraw";
+import Landing from "@/pages/Landing";
+
+// Lazy-load heavy/rare pages only
+const Admin = lazy(() => import("@/pages/Admin"));
+const CreateTask = lazy(() => import("@/pages/CreateTask"));
+const CountryControls = lazy(() => import("@/pages/CountryControls"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+
 declare global {
   interface Window {
     show_11123429: (type?: string) => Promise<void>;
@@ -23,58 +37,93 @@ declare global {
   }
 }
 
-const Home = lazy(() => import("@/pages/Home"));
-const Landing = lazy(() => import("@/pages/Landing"));
-const Admin = lazy(() => import("@/pages/Admin"));
-const Affiliates = lazy(() => import("@/pages/Affiliates"));
-const CreateTask = lazy(() => import("@/pages/CreateTask"));
-const Withdraw = lazy(() => import("@/pages/Withdraw"));
-const CountryControls = lazy(() => import("@/pages/CountryControls"));
-const Missions = lazy(() => import("@/pages/Missions"));
-const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
-const NotFound = lazy(() => import("@/pages/not-found"));
+// 7 frames — user-provided images showing letter-by-letter reveal
+const LOADER_FRAMES = [
+  '/pa-frame1.jpg',
+  '/pa-frame2.jpg',
+  '/pa-frame3.jpg',
+  '/pa-frame4.jpg',
+  '/pa-frame5.jpg',
+  '/pa-frame6.jpg',
+  '/pa-frame7.jpg',
+];
+// How long each frame stays (ms) — last frame stays until app is ready
+const FRAME_DURATIONS = [500, 350, 350, 350, 350, 350, 999999];
 
 const PageLoader = memo(function PageLoader() {
+  const [frame, setFrame] = useState(0);
+  const [showDots, setShowDots] = useState(false);
+
+  useEffect(() => {
+    let current = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
+    function advance() {
+      current += 1;
+      if (current < LOADER_FRAMES.length) {
+        setFrame(current);
+        if (current === LOADER_FRAMES.length - 1) {
+          // Last frame reached — show bouncing dots
+          setTimeout(() => setShowDots(true), 200);
+        } else {
+          timer = setTimeout(advance, FRAME_DURATIONS[current]);
+        }
+      }
+    }
+
+    timer = setTimeout(advance, FRAME_DURATIONS[0]);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#000', padding: '0 24px' }}>
+    <div style={{
+      position: 'fixed', inset: 0,
+      background: '#000',
+    }}>
       <style>{`
-        @keyframes powFadeIn { 0%{opacity:0;transform:scale(0.8) translateY(12px)} 100%{opacity:1;transform:scale(1) translateY(0)} }
-        @keyframes textSlideUp { 0%{opacity:0;transform:translateY(16px)} 100%{opacity:1;transform:translateY(0)} }
-        @keyframes barFill { 0%{width:0%} 100%{width:85%} }
-        @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
-        @keyframes ringPulse { 0%,100%{opacity:0.4;transform:scale(1)} 50%{opacity:0.8;transform:scale(1.05)} }
+        @keyframes dotBounce {
+          0%,80%,100%{ transform:translateY(0); opacity:0.3; }
+          40%        { transform:translateY(-8px); opacity:1; }
+        }
+        @keyframes dotsIn {
+          from{ opacity:0; }
+          to  { opacity:1; }
+        }
       `}</style>
 
-      <div style={{ animation: 'powFadeIn 0.55s cubic-bezier(0.34,1.56,0.64,1) both', marginBottom: 28 }}>
-        <div style={{ position: 'relative', width: 110, height: 110 }}>
-          <div style={{ position: 'absolute', inset: -8, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,123,255,0.4) 0%, transparent 70%)', animation: 'ringPulse 2s ease-in-out infinite' }} />
-          <div style={{ width: 110, height: 110, borderRadius: '50%', background: 'linear-gradient(135deg, #111 0%, #1a1a1a 100%)', border: '2px solid rgba(0,123,255,0.5)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 30px rgba(0,123,255,0.2)' }}>
-            <img
-              src="/pow-icon.png"
-              alt="POW"
-              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
-            />
-          </div>
+      {/* All frames stacked — only the active one is visible, NO remount = NO blink */}
+      {LOADER_FRAMES.map((src, i) => (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            objectFit: 'contain',
+            opacity: i === frame ? 1 : 0,
+            transition: i === frame ? 'none' : 'none',
+            pointerEvents: 'none',
+          }}
+        />
+      ))}
+
+      {/* Bouncing dots — appear on last frame */}
+      {showDots && (
+        <div style={{
+          position: 'absolute', bottom: 60, left: 0, right: 0,
+          display: 'flex', justifyContent: 'center', gap: 9,
+          animation: 'dotsIn 0.3s ease both',
+        }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{
+              width: 8, height: 8, borderRadius: '50%', background: '#fff',
+              animation: `dotBounce 1.1s ${i * 0.18}s ease-in-out infinite`,
+              opacity: 0.3,
+            }} />
+          ))}
         </div>
-      </div>
-
-      <div style={{ animation: 'textSlideUp 0.5s 0.2s ease both', textAlign: 'center', marginBottom: 10 }}>
-        <h1 style={{ fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: '-0.5px', margin: 0, lineHeight: 1 }}>
-          Paid Adz
-        </h1>
-      </div>
-
-      <div style={{ animation: 'textSlideUp 0.5s 0.35s ease both', textAlign: 'center', marginBottom: 48 }}>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', margin: 0, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500 }}>
-          Watch Ads · Earn POW
-        </p>
-      </div>
-
-      <div style={{ animation: 'textSlideUp 0.5s 0.45s ease both', width: '100%', maxWidth: 200 }}>
-        <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99, overflow: 'hidden' }}>
-          <div style={{ height: '100%', borderRadius: 99, background: 'linear-gradient(90deg, #007BFF, #60a5fa)', animation: 'barFill 2.2s 0.5s ease-in-out both' }} />
-        </div>
-      </div>
+      )}
     </div>
   );
 });
@@ -171,8 +220,15 @@ function App() {
   const [isAuthenticating, setIsAuthenticating] = useState(true);
   const [isChannelVerified, setIsChannelVerified] = useState<boolean | null>(null);
   const [isCheckingMembership, setIsCheckingMembership] = useState(false);
-  
+  // Minimum 2.6s so the full letter animation is always visible
+  const [minDisplayDone, setMinDisplayDone] = useState(false);
+
   const isDevMode = import.meta.env.DEV || import.meta.env.MODE === 'development';
+
+  useEffect(() => {
+    const t = setTimeout(() => setMinDisplayDone(true), 2600);
+    return () => clearTimeout(t);
+  }, []);
 
   const checkCountry = useCallback(async () => {
     try {
@@ -375,7 +431,7 @@ function App() {
     return <BanScreen reason={banReason} />;
   }
 
-  if (isAuthenticating || isCheckingMembership) {
+  if (!minDisplayDone || isAuthenticating || isCheckingMembership) {
     return <PageLoader />;
   }
 
