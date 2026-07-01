@@ -76,6 +76,13 @@ export default function Home() {
 
   const { runAdFlow } = useAdFlow();
 
+  const { data: leaderboardData } = useQuery<{
+    userEarnerRank?: { rank: number; totalEarnings: string } | null;
+  }>({
+    queryKey: ['/api/leaderboard/monthly'],
+    retry: false,
+  });
+
   const { data: appSettings } = useQuery<any>({
     queryKey: ['/api/app-settings'],
     retry: false,
@@ -510,6 +517,7 @@ export default function Home() {
   };
   
   const displayName = getDisplayName();
+  const userRank = leaderboardData?.userEarnerRank?.rank;
   const canClaimStreak = timeUntilNextClaim === "Available now" && !hasClaimed;
 
   const botUsername = import.meta.env.VITE_BOT_USERNAME || 'PaidAdzbot';
@@ -767,8 +775,9 @@ export default function Home() {
 
         {/* Weekly Contest Banner */}
         <div
-          className="mt-4 mb-2 rounded-2xl overflow-hidden relative"
+          className="mt-4 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
           style={{ height: 96 }}
+          onClick={() => window.location.href = '/leaderboard'}
         >
           <img
             src="/daily-contest-banner.jpg"
