@@ -353,7 +353,7 @@ export function useAuth() {
   // Try to use cached data first for instant loading
   const cachedData = getCachedUserData();
   
-  const { data: user, isLoading, isFetched, refetch, dataUpdatedAt } = useQuery({
+  const { data: user, isLoading, isFetching, isFetched, refetch, dataUpdatedAt } = useQuery({
     queryKey: ["/api/auth/user"],
     retry: 3, // Retry up to 3 times for network issues
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
@@ -475,6 +475,8 @@ export function useAuth() {
   return {
     user,
     isLoading,
+    isFetching,
+    dataUpdatedAt,
     isAuthenticated: !!user,
     authenticateWithTelegramWebApp,
     isTelegramAuthenticating: telegramAuthMutation.isPending,
