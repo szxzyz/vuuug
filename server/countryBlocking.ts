@@ -246,9 +246,9 @@ export async function getCountryFromIP(ip: string): Promise<CountryLookupResult>
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    // ip-api.com free tier REQUIRES http (https returns 403 without a paid key)
+    // Use https so it works on networks that block plain HTTP
     const response = await fetch(
-      `http://ip-api.com/json/${ip}?fields=countryCode,country,status,proxy,hosting`,
+      `https://ip-api.com/json/${ip}?fields=countryCode,country,status,proxy,hosting`,
       { signal: controller.signal }
     );
     clearTimeout(timeoutId);
