@@ -17,6 +17,7 @@ import { LanguageProvider } from "@/hooks/useLanguage";
 // Eagerly import frequently-visited pages — no Suspense flash on navigation
 import Home from "@/pages/Home";
 import Missions from "@/pages/Missions";
+import Leaderboard from "@/pages/Leaderboard";
 import Affiliates from "@/pages/Affiliates";
 import Withdraw from "@/pages/Withdraw";
 import Landing from "@/pages/Landing";
@@ -140,6 +141,7 @@ function Router() {
         <Route path="/admin" component={Admin} />
         <Route path="/admin/country-controls" component={CountryControls} />
         <Route path="/missions" component={Missions} />
+        <Route path="/leaderboard" component={Leaderboard} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
