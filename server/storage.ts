@@ -271,9 +271,13 @@ export class DatabaseStorage implements IStorage {
         RETURNING *
       `);
       const user = result.rows[0] as User;
-      
+
+      // db.execute() returns raw snake_case column names from PostgreSQL,
+      // so we must check both camelCase (Drizzle ORM) and snake_case (raw SQL).
+      const existingReferralCode = user.referralCode ?? (user as any).referral_code;
+
       // Ensure existing user has referral code
-      if (!user.referralCode) {
+      if (!existingReferralCode) {
         console.log('🔄 Generating missing referral code for existing user:', user.id);
         try {
           await this.generateReferralCode(user.id);
@@ -285,7 +289,7 @@ export class DatabaseStorage implements IStorage {
           return { user, isNewUser };
         }
       }
-      
+
       return { user, isNewUser };
     } else {
       // For new users, check if email already exists
