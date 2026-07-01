@@ -766,13 +766,7 @@ export default function Home() {
             )}
           </div>
 
-          {/* USD equivalent row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 14 }}>
-            <img src="/usdt.png" alt="USD" style={{ width: 16, height: 16, objectFit: 'contain', opacity: 0.6 }} />
-            <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
-              ${usdFormatted}
-            </span>
-          </div>
+          <div style={{ marginBottom: 14 }} />
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10 }}>
