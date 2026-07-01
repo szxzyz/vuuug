@@ -226,13 +226,64 @@ export interface CountryLookupResult {
   isHosting: boolean;
 }
 
-// In-memory cache: avoid hammering ip-api.com on every request
+// In-memory cache: avoid hammering external IP APIs on every request
 const ipCache = new Map<string, { result: CountryLookupResult; expiresAt: number }>();
-const IP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const IP_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes — longer TTL reduces API calls on VPS
+
+// Track IPs that are temporarily rate-limited to avoid hammering the API
+const rateLimitedUntil = new Map<string, number>();
+
+const ALLOW_RESULT: CountryLookupResult = { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
+
+async function fetchFromIpApi(ip: string, signal: AbortSignal): Promise<CountryLookupResult | null> {
+  // ip-api.com free tier REQUIRES HTTP (HTTPS returns 403 without a paid key)
+  const response = await fetch(
+    `http://ip-api.com/json/${ip}?fields=countryCode,country,status,proxy,hosting`,
+    { signal }
+  );
+  if (response.status === 403 || response.status === 429) {
+    // Rate limited — mark provider as unavailable for 10 minutes
+    rateLimitedUntil.set('ip-api', Date.now() + 10 * 60 * 1000);
+    return null;
+  }
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data.status === 'success' && data.countryCode) {
+    return {
+      countryCode: data.countryCode,
+      countryName: data.country || null,
+      isVPN: data.proxy === true,
+      isProxy: data.proxy === true,
+      isHosting: data.hosting === true,
+    };
+  }
+  return null;
+}
+
+async function fetchFromIpInfo(ip: string, signal: AbortSignal): Promise<CountryLookupResult | null> {
+  // ipinfo.io: free tier, 50k req/month, HTTPS supported, no proxy/VPN detection
+  const response = await fetch(`https://ipinfo.io/${ip}/json`, { signal });
+  if (response.status === 429) {
+    rateLimitedUntil.set('ipinfo', Date.now() + 10 * 60 * 1000);
+    return null;
+  }
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data.country) {
+    return {
+      countryCode: data.country,
+      countryName: data.country || null,
+      isVPN: false, // ipinfo free tier doesn't include VPN detection
+      isProxy: false,
+      isHosting: false,
+    };
+  }
+  return null;
+}
 
 export async function getCountryFromIP(ip: string): Promise<CountryLookupResult> {
   if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
-    return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
+    return ALLOW_RESULT;
   }
 
   // Return cached result if still fresh
@@ -240,44 +291,43 @@ export async function getCountryFromIP(ip: string): Promise<CountryLookupResult>
   if (cached && Date.now() < cached.expiresAt) {
     return cached.result;
   }
-  
-  try {
-    // 3-second timeout so a slow/unreachable ip-api never hangs the page load
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    // ip-api.com free tier REQUIRES http (https returns 403 without a paid key)
-    const response = await fetch(
-      `http://ip-api.com/json/${ip}?fields=countryCode,country,status,proxy,hosting`,
-      { signal: controller.signal }
-    );
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    let result: CountryLookupResult | null = null;
+
+    // Try ip-api.com first (has VPN/proxy detection)
+    const ipApiRateLimited = (rateLimitedUntil.get('ip-api') ?? 0) > Date.now();
+    if (!ipApiRateLimited) {
+      result = await fetchFromIpApi(ip, controller.signal).catch(() => null);
+    }
+
+    // Fallback to ipinfo.io if ip-api is rate-limited or failed
+    if (!result) {
+      const ipInfoRateLimited = (rateLimitedUntil.get('ipinfo') ?? 0) > Date.now();
+      if (!ipInfoRateLimited) {
+        result = await fetchFromIpInfo(ip, controller.signal).catch(() => null);
+      }
+    }
+
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      console.error('IP-API request failed:', response.status);
-      return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
-    }
-    const data = await response.json();
-    if (data.status === 'success' && data.countryCode) {
-      const result: CountryLookupResult = { 
-        countryCode: data.countryCode, 
-        countryName: data.country || null,
-        isVPN: data.proxy === true,
-        isProxy: data.proxy === true,
-        isHosting: data.hosting === true
-      };
+    if (result) {
       ipCache.set(ip, { result, expiresAt: Date.now() + IP_CACHE_TTL_MS });
       return result;
     }
-    return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
+
+    // Both providers failed or rate-limited — allow access
+    return ALLOW_RESULT;
   } catch (error: any) {
-    if (error?.name === 'AbortError') {
-      console.warn(`IP-API timeout for ${ip} — allowing access`);
-    } else {
-      console.error('Error getting country from IP:', error);
+    clearTimeout(timeoutId);
+    if (error?.name !== 'AbortError') {
+      console.warn(`IP lookup failed for ${ip}:`, error?.message ?? error);
     }
-    // On any failure (timeout, network error), allow access — never block legitimate users
-    return { countryCode: null, countryName: null, isVPN: false, isProxy: false, isHosting: false };
+    // On any failure (timeout, network error) — fail open, never block legitimate users
+    return ALLOW_RESULT;
   }
 }
 

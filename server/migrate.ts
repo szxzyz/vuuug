@@ -9,8 +9,8 @@ export async function ensureDatabaseSchema(): Promise<void> {
   const pool = new Pool({ 
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10000,
-    statement_timeout: 30000,
+    connectionTimeoutMillis: 15000,
+    statement_timeout: 60000,
   });
   const db = drizzle(pool, { schema });
   
@@ -20,13 +20,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
     // Enable pgcrypto extension for gen_random_uuid() support
     try {
       await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
-      console.log('✅ [MIGRATION] pgcrypto extension enabled');
-    } catch (error) {
-      console.log('⚠️ [MIGRATION] pgcrypto extension already exists or not available');
+    } catch {
+      // Already exists or not available — fine
     }
-    
-    // Create all essential tables with correct schema
-    
+
+    // ─── BATCH 1: Create all tables in one go ──────────────────────────────────
     // Sessions table - CRITICAL for connect-pg-simple authentication
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS sessions (
@@ -35,9 +33,8 @@ export async function ensureDatabaseSchema(): Promise<void> {
         expire TIMESTAMP(6) NOT NULL
       )
     `);
-    console.log('✅ [MIGRATION] Sessions table ensured');
-    
-    // Users table with full schema
+
+    // Users table — all known columns included so ALTER TABLE is a no-op on new DBs
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -80,131 +77,63 @@ export async function ensureDatabaseSchema(): Promise<void> {
         friends_invited INTEGER DEFAULT 0,
         first_ad_watched BOOLEAN DEFAULT false,
         last_reset_date TIMESTAMP,
+        extra_ads_watched_today INTEGER DEFAULT 0,
+        last_extra_ad_date TIMESTAMP,
+        ton_wallet_address TEXT,
+        ton_wallet_comment TEXT,
+        telegram_username_wallet TEXT,
+        cwallet_id TEXT,
+        wallet_updated_at TIMESTAMP,
+        pending_referral_bonus DECIMAL(12, 8) DEFAULT '0',
+        total_claimed_referral_bonus DECIMAL(12, 8) DEFAULT '0',
+        ton_balance DECIMAL(30, 10) DEFAULT '0',
+        usd_balance DECIMAL(30, 10) DEFAULT '0',
+        pdz_balance DECIMAL(30, 10) DEFAULT '0',
+        bug_balance DECIMAL(30, 10) DEFAULT '0',
+        usdt_wallet_address TEXT,
+        telegram_stars_username TEXT,
+        task_share_completed_today BOOLEAN DEFAULT false,
+        task_channel_completed_today BOOLEAN DEFAULT false,
+        task_community_completed_today BOOLEAN DEFAULT false,
+        task_checkin_completed_today BOOLEAN DEFAULT false,
+        app_version TEXT,
+        browser_fingerprint TEXT,
+        registered_at TIMESTAMP DEFAULT NOW(),
+        referrer_uid TEXT,
+        is_channel_group_verified BOOLEAN DEFAULT false,
+        last_membership_check TIMESTAMP,
+        language VARCHAR(5) DEFAULT 'en',
+        preferred_language VARCHAR(5) DEFAULT 'en',
+        hourly_ads_watched INTEGER DEFAULT 0,
+        last_hourly_reset TIMESTAMP,
+        last_bonus_claimed_date TEXT,
+        daily_login_streak INTEGER DEFAULT 0,
+        last_daily_login_date TEXT,
+        suspicion_score INTEGER DEFAULT 0,
+        platform VARCHAR(20),
+        monetag_ads_watched_today INTEGER DEFAULT 0,
+        gigapub_ads_watched_today INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Add missing columns to existing users table (for production databases)
-    try {
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_reason TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMP`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS device_id TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS device_fingerprint JSONB`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_primary_account BOOLEAN DEFAULT true`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_visited BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS app_shared BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS friends_invited INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_ad_watched BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS extra_ads_watched_today INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_extra_ad_date TIMESTAMP`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reset_date TIMESTAMP`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS ton_wallet_address TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS ton_wallet_comment TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_username_wallet TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS cwallet_id TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_updated_at TIMESTAMP`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_referral_bonus DECIMAL(12, 8) DEFAULT '0'`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS total_claimed_referral_bonus DECIMAL(12, 8) DEFAULT '0'`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS ton_balance DECIMAL(30, 10) DEFAULT '0'`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS usd_balance DECIMAL(30, 10) DEFAULT '0'`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pdz_balance DECIMAL(30, 10) DEFAULT '0'`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS bug_balance DECIMAL(30, 10) DEFAULT '0'`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS usdt_wallet_address TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_stars_username TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS task_share_completed_today BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS task_channel_completed_today BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS task_community_completed_today BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS task_checkin_completed_today BOOLEAN DEFAULT false`);
-      
-      // Add auto-ban system columns
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS app_version TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS browser_fingerprint TEXT`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS registered_at TIMESTAMP DEFAULT NOW()`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_uid TEXT`);
-      
-      // Add mandatory channel/group join verification columns
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_channel_group_verified BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_membership_check TIMESTAMP`);
-      // Add language column (schema uses 'language', not 'preferred_language')
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) DEFAULT 'en'`);
-      // Also keep preferred_language for backward compat with any existing rows
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(5) DEFAULT 'en'`);
 
-      // Add hourly ad refill tracking columns
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS hourly_ads_watched INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_hourly_reset TIMESTAMP`);
-      // Add daily activity bonus tracking column
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_bonus_claimed_date TEXT`);
-      // Add daily login streak tracking columns
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_login_streak INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_login_date TEXT`);
-      // Add risk scoring & platform detection columns (anti-bot system)
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS suspicion_score INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS platform VARCHAR(20)`);
-      
-      // Alter existing balance columns to new precision (safely handle existing data)
-      await db.execute(sql`ALTER TABLE users ALTER COLUMN balance TYPE DECIMAL(20, 0) USING ROUND(balance)`);
-      await db.execute(sql`ALTER TABLE users ALTER COLUMN usd_balance TYPE DECIMAL(30, 10)`);
-      await db.execute(sql`ALTER TABLE users ALTER COLUMN ton_balance TYPE DECIMAL(30, 10)`);
-      await db.execute(sql`ALTER TABLE users ALTER COLUMN pdz_balance TYPE DECIMAL(30, 10)`);
-      await db.execute(sql`ALTER TABLE users ALTER COLUMN total_earned TYPE DECIMAL(30, 10)`);
-      await db.execute(sql`ALTER TABLE users ALTER COLUMN total_earnings TYPE DECIMAL(30, 10)`);
-      await db.execute(sql`ALTER TABLE users ALTER COLUMN withdraw_balance TYPE DECIMAL(30, 10)`);
-      
-      console.log('✅ [MIGRATION] Missing user task and wallet columns added');
-    } catch (error) {
-      // Columns might already exist - this is fine
-      console.log('ℹ️ [MIGRATION] User task and wallet columns already exist or cannot be added');
-    }
-    
-    // Ensure referral_code column exists and has proper constraints
-    try {
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT`);
-      
-      // Backfill referral codes for users that don't have them
-      await db.execute(sql`
-        UPDATE users 
-        SET referral_code = 'REF' || UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 8))
-        WHERE referral_code IS NULL OR referral_code = ''
-      `);
-      
-      // Create unique constraint if it doesn't exist
-      await db.execute(sql`
-        DO $$ 
-        BEGIN 
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conname = 'users_referral_code_unique'
-          ) THEN
-            ALTER TABLE users ADD CONSTRAINT users_referral_code_unique UNIQUE (referral_code);
-          END IF;
-        END $$
-      `);
-      
-      console.log('✅ [MIGRATION] Referral code column and constraints ensured');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Referral code setup complete or already exists');
-    }
-    
-    // Earnings table
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS earnings (
         id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
         user_id VARCHAR NOT NULL REFERENCES users(id),
-        amount DECIMAL(12, 8) NOT NULL,
+        amount DECIMAL(30, 10) NOT NULL,
         source VARCHAR NOT NULL,
         description TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Transactions table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS transactions (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id VARCHAR NOT NULL REFERENCES users(id),
-        amount DECIMAL(12, 8) NOT NULL,
+        amount DECIMAL(30, 10) NOT NULL,
         type VARCHAR NOT NULL,
         source VARCHAR NOT NULL,
         description TEXT,
@@ -212,8 +141,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Withdrawals table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS withdrawals (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -225,61 +153,14 @@ export async function ensureDatabaseSchema(): Promise<void> {
         comment TEXT,
         transaction_hash VARCHAR,
         admin_notes TEXT,
+        deducted BOOLEAN DEFAULT false,
+        refunded BOOLEAN DEFAULT false,
+        rejection_reason TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Add comment column to existing withdrawals table if missing
-    try {
-      await db.execute(sql`ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS comment TEXT`);
-      console.log('✅ [MIGRATION] Comment column added to withdrawals table');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Comment column already exists in withdrawals table');
-    }
-    
-    // Add deducted and refunded columns to prevent double deduction/refund bugs
-    try {
-      await db.execute(sql`ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS deducted BOOLEAN DEFAULT false`);
-      await db.execute(sql`ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS refunded BOOLEAN DEFAULT false`);
-      
-      // For existing withdrawals created under OLD system (balance was deducted during approval, not submission):
-      // - Approved/Completed ones: Mark as deducted=true (balance was already taken during approval)
-      // - Rejected ones: Mark as deducted=false and refunded=false (balance was never taken, or was returned)
-      // - Pending ones: Mark as deducted=false (balance will be deducted when approved with compatibility logic)
-      
-      await db.execute(sql`
-        UPDATE withdrawals 
-        SET deducted = true 
-        WHERE status IN ('Approved', 'Successfull', 'paid') AND (deducted IS NULL OR deducted = false)
-      `);
-      
-      await db.execute(sql`
-        UPDATE withdrawals 
-        SET deducted = false, refunded = false
-        WHERE status = 'rejected' AND (deducted IS NULL OR refunded IS NULL)
-      `);
-      
-      await db.execute(sql`
-        UPDATE withdrawals 
-        SET deducted = false, refunded = false
-        WHERE status = 'pending' AND (deducted IS NULL OR refunded IS NULL)
-      `);
-      
-      console.log('✅ [MIGRATION] Deducted and refunded columns added to withdrawals table with correct legacy states');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Deducted and refunded columns already exist in withdrawals table');
-    }
-    
-    // Add rejection_reason column for admin rejection messages
-    try {
-      await db.execute(sql`ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS rejection_reason TEXT`);
-      console.log('✅ [MIGRATION] Rejection reason column added to withdrawals table');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Rejection reason column already exists in withdrawals table');
-    }
-    
-    // Promotions table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS promotions (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -297,8 +178,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Task completions table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS task_completions (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -310,8 +190,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         UNIQUE(promotion_id, user_id)
       )
     `);
-    
-    // User balances table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS user_balances (
         id SERIAL PRIMARY KEY,
@@ -321,21 +200,21 @@ export async function ensureDatabaseSchema(): Promise<void> {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Referrals table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS referrals (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
         referrer_id VARCHAR NOT NULL REFERENCES users(id),
         referee_id VARCHAR NOT NULL REFERENCES users(id),
         reward_amount DECIMAL(12, 5) DEFAULT '0.01',
+        usd_reward_amount DECIMAL(30, 10) DEFAULT '0',
+        bug_reward_amount DECIMAL(30, 10) DEFAULT '0',
         status VARCHAR DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT NOW(),
         UNIQUE(referrer_id, referee_id)
       )
     `);
-    
-    // Referral commissions table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS referral_commissions (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -346,13 +225,12 @@ export async function ensureDatabaseSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Promo codes table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS promo_codes (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
         code VARCHAR UNIQUE NOT NULL,
-        reward_amount DECIMAL(12, 2) NOT NULL,
+        reward_amount DECIMAL(30, 10) NOT NULL,
         reward_type VARCHAR DEFAULT 'PAD' NOT NULL,
         reward_currency VARCHAR DEFAULT 'USDT',
         usage_limit INTEGER,
@@ -364,27 +242,17 @@ export async function ensureDatabaseSchema(): Promise<void> {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Add reward_type column to existing promo_codes table if missing
-    try {
-      await db.execute(sql`ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_type VARCHAR DEFAULT 'PAD' NOT NULL`);
-      console.log('✅ [MIGRATION] Reward type column added to promo_codes table');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Reward type column already exists in promo_codes table');
-    }
-    
-    // Promo code usage tracking table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS promo_code_usage (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
         promo_code_id VARCHAR NOT NULL REFERENCES promo_codes(id),
         user_id VARCHAR NOT NULL REFERENCES users(id),
-        reward_amount DECIMAL(12, 2) NOT NULL,
+        reward_amount DECIMAL(30, 10) NOT NULL,
         used_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Daily tasks table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS daily_tasks (
         id SERIAL PRIMARY KEY,
@@ -403,8 +271,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         UNIQUE(user_id, task_level, reset_date)
       )
     `);
-    
-    // Admin settings table - for configurable app parameters
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS admin_settings (
         id SERIAL PRIMARY KEY,
@@ -416,69 +283,29 @@ export async function ensureDatabaseSchema(): Promise<void> {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Safely add unique constraint on setting_key after removing duplicates
-    try {
-      // Remove duplicate entries, keeping the one with the highest ID (most recent)
-      await db.execute(sql`
-        DELETE FROM admin_settings a
-        USING admin_settings b
-        WHERE a.id < b.id
-        AND a.setting_key = b.setting_key
-      `);
-      
-      // Add unique constraint if it doesn't exist
-      await db.execute(sql`
-        DO $$ 
-        BEGIN 
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conname = 'admin_settings_setting_key_unique'
-          ) THEN
-            ALTER TABLE admin_settings ADD CONSTRAINT admin_settings_setting_key_unique UNIQUE (setting_key);
-          END IF;
-        END $$
-      `);
-      
-      console.log('✅ [MIGRATION] admin_settings unique constraint ensured');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] admin_settings unique constraint already exists or cannot be added');
-    }
-    
-    // Initialize default admin settings if they don't exist
-    await db.execute(sql`
-      INSERT INTO admin_settings (setting_key, setting_value, description)
-      VALUES 
-        ('daily_ad_limit', '50', 'Maximum number of ads a user can watch per day'),
-        ('ad_reward_pad', '1000', 'PAD reward amount per ad watched'),
-        ('ad_reward_ton', '0.00010000', 'TON reward amount per ad watched'),
-        ('withdrawal_currency', 'TON', 'Currency used for withdrawal displays (TON or PAD)')
-      ON CONFLICT (setting_key) DO NOTHING
-    `);
-    
-    // Advertiser tasks table - CRITICAL for task creation system
-    console.log('🔄 [MIGRATION] Creating advertiser_tasks table...');
+
+    // Advertiser tasks table — ALL columns included to avoid ALTER TABLE on new DBs
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS advertiser_tasks (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
         advertiser_id VARCHAR NOT NULL REFERENCES users(id),
         task_type VARCHAR NOT NULL,
         title TEXT NOT NULL,
+        description TEXT,
         link TEXT NOT NULL,
         total_clicks_required INTEGER NOT NULL,
         current_clicks INTEGER DEFAULT 0 NOT NULL,
         cost_per_click DECIMAL(12, 8) DEFAULT 0.0003 NOT NULL,
         total_cost DECIMAL(12, 8) NOT NULL,
         status VARCHAR DEFAULT 'active' NOT NULL,
+        channel_verified BOOLEAN NOT NULL DEFAULT false,
+        verification_required BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
         completed_at TIMESTAMP
       )
     `);
-    console.log('✅ [MIGRATION] advertiser_tasks table created');
-    
-    // Task clicks tracking table - CRITICAL for preventing duplicate clicks
-    console.log('🔄 [MIGRATION] Creating task_clicks table...');
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS task_clicks (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -489,10 +316,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         UNIQUE(task_id, publisher_id)
       )
     `);
-    console.log('✅ [MIGRATION] task_clicks table created');
-    
-    // Ban logs table for auto-ban system
-    console.log('🔄 [MIGRATION] Creating ban_logs table...');
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS ban_logs (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -513,21 +337,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    console.log('✅ [MIGRATION] ban_logs table created');
-    
-    // Add missing columns to ban_logs if table already exists
-    try {
-      await db.execute(sql`ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS referrer_uid TEXT`);
-      await db.execute(sql`ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS telegram_id TEXT`);
-      await db.execute(sql`ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS app_version TEXT`);
-      await db.execute(sql`ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS browser_fingerprint TEXT`);
-      console.log('✅ [MIGRATION] ban_logs columns updated');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] ban_logs columns already exist');
-    }
-    
-    // Daily missions table for Share with Friends and Daily Check-in
-    console.log('🔄 [MIGRATION] Creating daily_missions table...');
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS daily_missions (
         id SERIAL PRIMARY KEY,
@@ -540,18 +350,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         CONSTRAINT daily_missions_user_type_date_unique UNIQUE (user_id, mission_type, reset_date)
       )
     `);
-    console.log('✅ [MIGRATION] daily_missions table created');
-    
-    // Create index for daily missions performance
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_missions_user_date ON daily_missions(user_id, reset_date)`);
-    
-    // Create index for ban logs performance
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_user_id ON ban_logs(banned_user_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_device_id ON ban_logs(device_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_ip ON ban_logs(ip)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_created_at ON ban_logs(created_at)`);
-    
-    // Promotion claims table
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS promotion_claims (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -562,9 +361,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         UNIQUE(promotion_id, user_id)
       )
     `);
-    
-    // Blocked countries table for geo-restriction
-    console.log('🔄 [MIGRATION] Creating blocked_countries table...');
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS blocked_countries (
         id SERIAL PRIMARY KEY,
@@ -572,58 +369,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    console.log('✅ [MIGRATION] blocked_countries table created');
-    
-    // Create index for blocked countries
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_blocked_countries_code ON blocked_countries(country_code)`);
 
-    // Create indexes for performance
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions(expire)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_earnings_user_id ON earnings(user_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_withdrawals_user_id ON withdrawals(user_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_promotions_status ON promotions(status)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_task_completions_user_id ON task_completions(user_id)`);
-    
-    // Update ad limits to new system (510 daily, 63 hourly)
-    await db.execute(sql`
-      INSERT INTO admin_settings (setting_key, setting_value, description)
-      VALUES
-        ('daily_ad_limit', '510', 'Maximum number of ads a user can watch per day'),
-        ('hourly_ad_limit', '63', 'Maximum number of ads a user can watch per hour (refills every hour)')
-      ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-    `);
-
-    // Admin roles table — stores role & permissions for each admin
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS admin_roles (
-        id SERIAL PRIMARY KEY,
-        telegram_id VARCHAR(20) NOT NULL UNIQUE,
-        name VARCHAR(100) DEFAULT 'Admin',
-        role VARCHAR(30) NOT NULL DEFAULT 'moderator',
-        permissions TEXT NOT NULL DEFAULT '[]',
-        added_by VARCHAR(20),
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    console.log('✅ [MIGRATION] admin_roles table ensured');
-
-
-    // Fix column precisions — ensure all amount columns support large values & full decimal precision
-    // These were originally created with numeric(12,2) or numeric(12,8) which caused overflow and rounding bugs
-    try {
-      await db.execute(sql`ALTER TABLE earnings ALTER COLUMN amount TYPE numeric(30,10)`);
-      await db.execute(sql`ALTER TABLE transactions ALTER COLUMN amount TYPE numeric(30,10)`);
-      await db.execute(sql`ALTER TABLE promo_codes ALTER COLUMN reward_amount TYPE numeric(30,10)`);
-      await db.execute(sql`ALTER TABLE promo_code_usage ALTER COLUMN reward_amount TYPE numeric(30,10)`);
-      console.log('✅ [MIGRATION] Amount column precisions fixed to numeric(30,10)');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Amount column precision fix skipped:', error);
-    }
-
-
-    // TON Deposits table — prevents duplicate blockchain deposit credits
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS ton_deposits (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -635,10 +381,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         confirmed_at TIMESTAMP
       )
     `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ton_deposits_user ON ton_deposits(user_id)`);
-    console.log('✅ [MIGRATION] ton_deposits table ensured');
 
-    // Spin data table — tracks daily free spin state per user
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS spin_data (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -652,9 +395,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    console.log('✅ [MIGRATION] spin_data table ensured');
 
-    // Spin history table — records every spin result
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS spin_history (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -665,39 +406,277 @@ export async function ensureDatabaseSchema(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_spin_history_user ON spin_history(user_id)`);
-    console.log('✅ [MIGRATION] spin_history table ensured');
 
-    // Add missing columns to referrals table (usd and bug reward amounts added later)
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS admin_roles (
+        id SERIAL PRIMARY KEY,
+        telegram_id VARCHAR(20) NOT NULL UNIQUE,
+        name VARCHAR(100) DEFAULT 'Admin',
+        role VARCHAR(30) NOT NULL DEFAULT 'moderator',
+        permissions TEXT NOT NULL DEFAULT '[]',
+        added_by VARCHAR(20),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    console.log('✅ [MIGRATION] All tables created');
+
+    // ─── BATCH 2: Indexes ──────────────────────────────────────────────────────
+    // Run all index creations together — each is idempotent (IF NOT EXISTS)
+    await Promise.all([
+      db.execute(sql`CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions(expire)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_earnings_user_id ON earnings(user_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_withdrawals_user_id ON withdrawals(user_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_promotions_status ON promotions(status)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_task_completions_user_id ON task_completions(user_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_missions_user_date ON daily_missions(user_id, reset_date)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_user_id ON ban_logs(banned_user_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_device_id ON ban_logs(device_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_ip ON ban_logs(ip)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_created_at ON ban_logs(created_at)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_blocked_countries_code ON blocked_countries(country_code)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ton_deposits_user ON ton_deposits(user_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS idx_spin_history_user ON spin_history(user_id)`),
+    ]).catch(() => {
+      // Indexes are performance-only; failure is non-fatal
+    });
+    console.log('✅ [MIGRATION] Indexes ensured');
+
+    // ─── BATCH 3: Backfill + unique constraints ────────────────────────────────
+    // Safely add unique constraint on admin_settings.setting_key
     try {
-      await db.execute(sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS usd_reward_amount DECIMAL(30, 10) DEFAULT '0'`);
-      await db.execute(sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS bug_reward_amount DECIMAL(30, 10) DEFAULT '0'`);
-      console.log('✅ [MIGRATION] referrals usd/bug reward columns ensured');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] referrals reward columns already exist');
+      await db.execute(sql`
+        DELETE FROM admin_settings a
+        USING admin_settings b
+        WHERE a.id < b.id AND a.setting_key = b.setting_key
+      `);
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'admin_settings_setting_key_unique'
+          ) THEN
+            ALTER TABLE admin_settings ADD CONSTRAINT admin_settings_setting_key_unique UNIQUE (setting_key);
+          END IF;
+        END $$
+      `);
+    } catch {
+      // Already exists
     }
 
-    // Add missing channel_verified column to advertiser_tasks
+    // Ensure referral codes for all users
     try {
-      await db.execute(sql`ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS channel_verified BOOLEAN NOT NULL DEFAULT false`);
-      console.log('✅ [MIGRATION] advertiser_tasks channel_verified column ensured');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] advertiser_tasks channel_verified already exists');
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT`);
+      await db.execute(sql`
+        UPDATE users
+        SET referral_code = 'REF' || UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 8))
+        WHERE referral_code IS NULL OR referral_code = ''
+      `);
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'users_referral_code_unique'
+          ) THEN
+            ALTER TABLE users ADD CONSTRAINT users_referral_code_unique UNIQUE (referral_code);
+          END IF;
+        END $$
+      `);
+    } catch {
+      // Already exists
     }
 
-    // Add missing monetag/gigapub per-provider ad tracking to users (also in index.ts but ensure here)
+    // Default admin settings
+    await db.execute(sql`
+      INSERT INTO admin_settings (setting_key, setting_value, description)
+      VALUES
+        ('daily_ad_limit', '510', 'Maximum number of ads a user can watch per day'),
+        ('hourly_ad_limit', '63', 'Maximum number of ads a user can watch per hour'),
+        ('ad_reward_pad', '1000', 'PAD reward amount per ad watched'),
+        ('ad_reward_ton', '0.00010000', 'TON reward amount per ad watched'),
+        ('withdrawal_currency', 'TON', 'Currency used for withdrawal displays (TON or PAD)')
+      ON CONFLICT (setting_key) DO NOTHING
+    `);
+    console.log('✅ [MIGRATION] Admin settings defaults ensured');
+
+    // ─── BATCH 4: ALTER TABLE for existing production DBs ─────────────────────
+    // These are all idempotent (ADD COLUMN IF NOT EXISTS). Batched into a few
+    // DO blocks so the total round-trips drop from 40+ to just a handful.
+
+    // Users: columns that may be missing on older production databases
     try {
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS monetag_ads_watched_today INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS gigapub_ads_watched_today INTEGER DEFAULT 0`);
-      console.log('✅ [MIGRATION] Per-provider ad tracking columns ensured in migration');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Per-provider ad tracking columns already exist');
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS extra_ads_watched_today INTEGER DEFAULT 0;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS last_extra_ad_date TIMESTAMP;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS ton_wallet_address TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS ton_wallet_comment TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_username_wallet TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS cwallet_id TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_updated_at TIMESTAMP;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_referral_bonus DECIMAL(12, 8) DEFAULT '0';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS total_claimed_referral_bonus DECIMAL(12, 8) DEFAULT '0';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS ton_balance DECIMAL(30, 10) DEFAULT '0';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS usd_balance DECIMAL(30, 10) DEFAULT '0';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS pdz_balance DECIMAL(30, 10) DEFAULT '0';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS bug_balance DECIMAL(30, 10) DEFAULT '0';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS usdt_wallet_address TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_stars_username TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS task_share_completed_today BOOLEAN DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS task_channel_completed_today BOOLEAN DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS task_community_completed_today BOOLEAN DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS task_checkin_completed_today BOOLEAN DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS app_version TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS browser_fingerprint TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS registered_at TIMESTAMP DEFAULT NOW();
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_uid TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS is_channel_group_verified BOOLEAN DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS last_membership_check TIMESTAMP;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) DEFAULT 'en';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(5) DEFAULT 'en';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS hourly_ads_watched INTEGER DEFAULT 0;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS last_hourly_reset TIMESTAMP;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS last_bonus_claimed_date TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_login_streak INTEGER DEFAULT 0;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_login_date TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS suspicion_score INTEGER DEFAULT 0;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS platform VARCHAR(20);
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS monetag_ads_watched_today INTEGER DEFAULT 0;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS gigapub_ads_watched_today INTEGER DEFAULT 0;
+        END $$
+      `);
+      console.log('✅ [MIGRATION] User columns ensured');
+    } catch (err) {
+      console.log('ℹ️ [MIGRATION] User column batch skipped (may already exist):', String(err).slice(0, 100));
     }
+
+    // Users: fix column precisions (separate block because TYPE changes can fail if type is already correct)
+    try {
+      await db.execute(sql`ALTER TABLE users ALTER COLUMN balance TYPE DECIMAL(20, 0) USING ROUND(balance)`);
+    } catch { /* already correct type */ }
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE users ALTER COLUMN usd_balance TYPE DECIMAL(30, 10);
+          ALTER TABLE users ALTER COLUMN ton_balance TYPE DECIMAL(30, 10);
+          ALTER TABLE users ALTER COLUMN pdz_balance TYPE DECIMAL(30, 10);
+          ALTER TABLE users ALTER COLUMN total_earned TYPE DECIMAL(30, 10);
+          ALTER TABLE users ALTER COLUMN total_earnings TYPE DECIMAL(30, 10);
+          ALTER TABLE users ALTER COLUMN withdraw_balance TYPE DECIMAL(30, 10);
+        END $$
+      `);
+    } catch { /* already correct type */ }
+
+    // Withdrawals: missing columns on older DBs
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS comment TEXT;
+          ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS deducted BOOLEAN DEFAULT false;
+          ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS refunded BOOLEAN DEFAULT false;
+          ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+        END $$
+      `);
+      // Backfill legacy withdrawal states
+      await db.execute(sql`
+        UPDATE withdrawals SET deducted = true
+        WHERE status IN ('Approved','Successfull','paid') AND (deducted IS NULL OR deducted = false)
+      `);
+      await db.execute(sql`
+        UPDATE withdrawals SET deducted = false, refunded = false
+        WHERE status IN ('rejected','pending') AND (deducted IS NULL OR refunded IS NULL)
+      `);
+    } catch { /* already exists */ }
+
+    // Advertiser tasks: columns that may be missing on older DBs
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS description TEXT;
+          ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS verification_required BOOLEAN NOT NULL DEFAULT false;
+          ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS channel_verified BOOLEAN NOT NULL DEFAULT false;
+        END $$
+      `);
+      console.log('✅ [MIGRATION] advertiser_tasks columns ensured');
+    } catch (err) {
+      console.log('ℹ️ [MIGRATION] advertiser_tasks columns already exist:', String(err).slice(0, 100));
+    }
+
+    // Referrals: usd/bug reward columns
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE referrals ADD COLUMN IF NOT EXISTS usd_reward_amount DECIMAL(30, 10) DEFAULT '0';
+          ALTER TABLE referrals ADD COLUMN IF NOT EXISTS bug_reward_amount DECIMAL(30, 10) DEFAULT '0';
+        END $$
+      `);
+    } catch { /* already exists */ }
+
+    // Ban logs: missing columns
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS referrer_uid TEXT;
+          ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS telegram_id TEXT;
+          ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS app_version TEXT;
+          ALTER TABLE ban_logs ADD COLUMN IF NOT EXISTS browser_fingerprint TEXT;
+        END $$
+      `);
+    } catch { /* already exists */ }
+
+    // Promo codes: reward_type column
+    try {
+      await db.execute(sql`ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_type VARCHAR DEFAULT 'PAD' NOT NULL`);
+    } catch { /* already exists */ }
+
+    // Fix amount column precisions for financial accuracy
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE earnings ALTER COLUMN amount TYPE numeric(30,10);
+          ALTER TABLE transactions ALTER COLUMN amount TYPE numeric(30,10);
+          ALTER TABLE promo_codes ALTER COLUMN reward_amount TYPE numeric(30,10);
+          ALTER TABLE promo_code_usage ALTER COLUMN reward_amount TYPE numeric(30,10);
+        END $$
+      `);
+      console.log('✅ [MIGRATION] Amount column precisions fixed to numeric(30,10)');
+    } catch { /* already correct */ }
+
+    // ─── BATCH 5: Admin settings snake_case migration ─────────────────────────
+    // Fix camelCase admin setting keys to snake_case (one-time migration)
+    try {
+      const allSettings = await db.execute(sql`SELECT id, setting_key FROM admin_settings`);
+      const toSnakeCase = (key: string) =>
+        key.replace(/([a-z\d])([A-Z])/g, '$1_$2')
+           .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+           .toLowerCase();
+
+      for (const row of (allSettings as any).rows ?? []) {
+        const correctKey = toSnakeCase(row.setting_key);
+        if (correctKey !== row.setting_key) {
+          await db.execute(sql`
+            INSERT INTO admin_settings (setting_key, setting_value, updated_at)
+            SELECT ${correctKey}, setting_value, NOW() FROM admin_settings WHERE id = ${row.id}
+            ON CONFLICT (setting_key) DO NOTHING
+          `);
+          await db.execute(sql`DELETE FROM admin_settings WHERE id = ${row.id}`);
+        }
+      }
+    } catch { /* non-critical */ }
 
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
-    console.error('⚠️ [MIGRATION] Some migration steps failed (server will still start):', error instanceof Error ? error.message : error);
+    console.error('⚠️ [MIGRATION] Migration error (server will still start):', error instanceof Error ? error.message : error);
   } finally {
     await pool.end();
   }
