@@ -714,15 +714,25 @@ export default function Home() {
   const [usdInt, usdDec] = usdFormatted.split('.');
 
   return (
-    <Layout>
-      <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 10 }}>
-        {/* Balance Section — left aligned */}
-        <div className="mb-3 px-1">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              {t('balance')}
-            </p>
-          </div>
+    <>
+      {/* ── Fixed Balance Header ─────────────────────────────────────────────
+          Sits at top:0, outside the Layout's AnimatePresence wrapper so it
+          never slides/fades with page transitions. Scrolling content slides
+          underneath it because of the matching paddingTop on <main> below. */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 30,
+        background: '#000',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        paddingBottom: 8,
+      }}>
+        <div style={{ maxWidth: 448, margin: '0 auto', paddingLeft: 16, paddingRight: 16, paddingTop: 10 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
+            {t('balance')}
+          </p>
 
           {/* Main USD balance */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 8 }}>
@@ -741,19 +751,17 @@ export default function Home() {
             <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.38)', lineHeight: 1 }}>.{usdDec}</span>
           </div>
 
-          {/* POW balance only */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
-              </div>
-              <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
-                {formatBalance(balancePAD)} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>POW</span>
-              </span>
+          {/* POW balance row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14 }}>
+            <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
             </div>
+            <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
+              {formatBalance(balancePAD)} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>POW</span>
+            </span>
           </div>
 
-          {/* Equal-width buttons */}
+          {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={() => setLocation('/withdraw')}
@@ -762,7 +770,6 @@ export default function Home() {
             >
               {t('withdraw_upper')}
             </button>
-
             <button
               onClick={handleConvertClick}
               className="active:scale-95 transition-transform"
@@ -772,10 +779,13 @@ export default function Home() {
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Weekly Contest Banner */}
+      <Layout>
+        <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 172 }}>
+          {/* Weekly Contest Banner */}
         <div
-          className="mt-4 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
+          className="mt-1 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
           style={{ height: 96 }}
           onClick={() => window.location.href = '/leaderboard'}
         >
@@ -958,5 +968,6 @@ export default function Home() {
       )}
 
     </Layout>
+    </>
   );
 }
