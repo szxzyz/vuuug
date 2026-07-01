@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { FiShield, FiZap } from "react-icons/fi";
@@ -22,11 +22,6 @@ interface AdWatchingSectionProps {
   user: any;
 }
 
-// ─── Layout constants ─────────────────────────────────────────────────────────
-const PAD  = 16;   // left padding (card 1 flush)
-const PEEK = 40;   // px of adjacent card visible on sides
-const GAP  = 10;   // gap between cards
-
 // ─── Ad card definitions ──────────────────────────────────────────────────────
 const AD_CARDS = [
   { id: 1, title: "AdsGram",  accentColor: "#3b82f6", image: "/adsgram-logo.jpg"  },
@@ -35,9 +30,8 @@ const AD_CARDS = [
 ];
 
 const TABS = [
-  { id: "all",     label: "All Ads" },
-  { id: "daily",   label: "Daily Ads" },
-  { id: "premium", label: "Premium Ads" },
+  { id: "daily",   label: "Daily Adz" },
+  { id: "premium", label: "Premium Adz" },
 ];
 
 export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
@@ -45,203 +39,14 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const { startSession, endSession, cancelSession } = useAdSession();
   const { t } = useLanguage();
 
-  const [activeTab, setActiveTab]         = useState("all");
+  const [activeTab, setActiveTab]         = useState("daily");
   const [activeIndex, setActiveIndex]     = useState(0);
   const [isShowingAds, setIsShowingAds]   = useState(false);
   const [currentAdStep, setCurrentAdStep] = useState<"idle" | "adsgram" | "verifying">("idle");
   const [showFailurePopup, setShowFailurePopup] = useState(false);
   const [pendingAdStart, setPendingAdStart]     = useState(false);
   const sessionRewardedRef = useRef(false);
-
-  // ─── Carousel DOM refs ────────────────────────────────────────────────────
-  const containerRef  = useRef<HTMLDivElement>(null);
-  const trackRef      = useRef<HTMLDivElement>(null);
-  const dotRefs       = useRef<(HTMLButtonElement | null)[]>([]);
-
-  // ─── Carousel state refs (no re-renders during drag) ─────────────────────
-  const containerWRef  = useRef(360);        // measured container width
-  const activeIdxRef   = useRef(0);
-  const trackXRef      = useRef(PAD);        // current track translateX
-  const baseTrackXRef  = useRef(PAD);        // track X at drag start
-  const isDraggingRef  = useRef(false);
-  const axisRef        = useRef<"h" | "v" | null>(null);
-  const startXRef      = useRef(0);
-  const startYRef      = useRef(0);
-  const lastXRef       = useRef(0);
-  const velRef         = useRef(0);
-  const lastTRef       = useRef(0);
-
-  // ─── Snap position math ───────────────────────────────────────────────────
-  // cardW = containerW - PAD - PEEK - GAP  →  card 1 shows with PAD on left, PEEK of next card shows right
-  const snapPositions = useCallback((w: number): number[] => {
-    const cw = w - PAD - PEEK - GAP;
-    return [
-      PAD,                                    // Card 1: flush left
-      w / 2 - 1.5 * cw - GAP,               // Card 2: centered
-      PEEK - 2 * cw - GAP,                   // Card 3: flush right
-    ];
-  }, []);
-
-  const cardWidth = (w: number) => w - PAD - PEEK - GAP;
-
-  // ─── Apply track transform directly on DOM ────────────────────────────────
-  const applyTrack = useCallback((x: number, animated: boolean) => {
-    if (!trackRef.current) return;
-    trackRef.current.style.transition = animated
-      ? "transform 0.36s cubic-bezier(0.25, 1, 0.5, 1)"
-      : "none";
-    trackRef.current.style.transform = `translateX(${x}px)`;
-    trackXRef.current = x;
-  }, []);
-
-  const updateDots = useCallback((idx: number) => {
-    dotRefs.current.forEach((dot, i) => {
-      if (!dot) return;
-      const active = i === idx;
-      dot.style.width      = active ? "22px" : "6px";
-      dot.style.background = active ? AD_CARDS[idx].accentColor : "rgba(255,255,255,0.18)";
-    });
-  }, []);
-
-  const snapTo = useCallback((index: number) => {
-    const clamped = Math.max(0, Math.min(AD_CARDS.length - 1, index));
-    activeIdxRef.current = clamped;
-    const positions = snapPositions(containerWRef.current);
-    applyTrack(positions[clamped], true);
-    updateDots(clamped);
-    setActiveIndex(clamped);
-  }, [applyTrack, updateDots, snapPositions]);
-
-  // ─── Measure container & initialise ──────────────────────────────────────
-  useLayoutEffect(() => {
-    if (!containerRef.current) return;
-    const w = containerRef.current.offsetWidth;
-    containerWRef.current = w || 360;
-    applyTrack(PAD, false);
-    updateDots(0);
-  }, [applyTrack, updateDots]);
-
-  // ─── Touch handlers ───────────────────────────────────────────────────────
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const onTouchStart = (e: TouchEvent) => {
-      const t = e.touches[0];
-      isDraggingRef.current = true;
-      axisRef.current       = null;
-      startXRef.current     = t.clientX;
-      startYRef.current     = t.clientY;
-      lastXRef.current      = t.clientX;
-      velRef.current        = 0;
-      lastTRef.current      = Date.now();
-      baseTrackXRef.current = trackXRef.current;
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isDraggingRef.current) return;
-      const touch = e.touches[0];
-      const dx    = touch.clientX - startXRef.current;
-      const dy    = touch.clientY - startYRef.current;
-
-      if (axisRef.current === null) {
-        if (Math.abs(dy) > Math.abs(dx) + 5) { axisRef.current = "v"; return; }
-        if (Math.abs(dx) > 5)                { axisRef.current = "h"; }
-        else return;
-      }
-      if (axisRef.current === "v") return;
-
-      e.preventDefault();
-
-      const now = Date.now();
-      const dt  = now - lastTRef.current;
-      if (dt > 0) velRef.current = (touch.clientX - lastXRef.current) / dt;
-      lastXRef.current = touch.clientX;
-      lastTRef.current = now;
-
-      const positions = snapPositions(containerWRef.current);
-      const min = positions[AD_CARDS.length - 1];
-      const max = positions[0];
-
-      let newX = baseTrackXRef.current + dx;
-      // Rubber-band at edges
-      if (newX > max) newX = max + (newX - max) * 0.28;
-      if (newX < min) newX = min + (newX - min) * 0.28;
-
-      applyTrack(newX, false);
-    };
-
-    const onTouchEnd = () => {
-      if (!isDraggingRef.current) return;
-      isDraggingRef.current = false;
-      if (axisRef.current !== "h") { axisRef.current = null; return; }
-      axisRef.current = null;
-
-      const cw        = cardWidth(containerWRef.current);
-      const dx        = trackXRef.current - baseTrackXRef.current;
-      const velocity  = velRef.current;
-      const THRESH    = cw * 0.22;
-      const VEL       = 0.3;
-
-      if (dx < -THRESH || velocity < -VEL)   snapTo(activeIdxRef.current + 1);
-      else if (dx > THRESH || velocity > VEL) snapTo(activeIdxRef.current - 1);
-      else                                     snapTo(activeIdxRef.current);
-    };
-
-    el.addEventListener("touchstart",  onTouchStart,  { passive: true  });
-    el.addEventListener("touchmove",   onTouchMove,   { passive: false });
-    el.addEventListener("touchend",    onTouchEnd,    { passive: true  });
-    el.addEventListener("touchcancel", onTouchEnd,    { passive: true  });
-    return () => {
-      el.removeEventListener("touchstart",  onTouchStart);
-      el.removeEventListener("touchmove",   onTouchMove);
-      el.removeEventListener("touchend",    onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, [applyTrack, snapTo, snapPositions]);
-
-  // ─── Mouse drag (desktop) ────────────────────────────────────────────────
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    isDraggingRef.current  = true;
-    axisRef.current        = "h";
-    startXRef.current      = e.clientX;
-    lastXRef.current       = e.clientX;
-    velRef.current         = 0;
-    lastTRef.current       = Date.now();
-    baseTrackXRef.current  = trackXRef.current;
-  }, []);
-
-  const onMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDraggingRef.current) return;
-    const now = Date.now();
-    const dt  = now - lastTRef.current;
-    if (dt > 0) velRef.current = (e.clientX - lastXRef.current) / dt;
-    lastXRef.current = e.clientX;
-    lastTRef.current = now;
-
-    const dx        = e.clientX - startXRef.current;
-    const positions = snapPositions(containerWRef.current);
-    const min = positions[AD_CARDS.length - 1];
-    const max = positions[0];
-    let newX = baseTrackXRef.current + dx;
-    if (newX > max) newX = max + (newX - max) * 0.28;
-    if (newX < min) newX = min + (newX - min) * 0.28;
-    applyTrack(newX, false);
-  }, [applyTrack, snapPositions]);
-
-  const onMouseUp = useCallback(() => {
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
-    const cw       = cardWidth(containerWRef.current);
-    const dx       = trackXRef.current - baseTrackXRef.current;
-    const velocity = velRef.current;
-    const THRESH   = cw * 0.22;
-    const VEL      = 0.3;
-    if (dx < -THRESH || velocity < -VEL)    snapTo(activeIdxRef.current + 1);
-    else if (dx > THRESH || velocity > VEL) snapTo(activeIdxRef.current - 1);
-    else                                     snapTo(activeIdxRef.current);
-  }, [snapTo]);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // ─── App settings & ad limits ────────────────────────────────────────────
   const { data: appSettings } = useQuery({
@@ -397,44 +202,26 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           <p className="text-[#666] text-xs">{t("get_paid_watching")}</p>
         </div>
 
-        {/* Carousel — negative margins break out of px-4 page padding so overflow:hidden clips at screen edges not content box */}
+        {/* Stacked cards — full page width, one below another */}
         <div
           ref={containerRef}
           className="select-none"
-          style={{ overflow: "hidden", touchAction: "pan-y", marginLeft: -16, marginRight: -16 }}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseUp}
+          style={{ display: "flex", flexDirection: "column", gap: 12 }}
         >
-          {/* Sliding track */}
-          <div
-            ref={trackRef}
-            style={{
-              display: "flex",
-              gap: GAP,
-              willChange: "transform",
-              transform: `translateX(${PAD}px)`,
-            }}
-          >
-            {AD_CARDS.map((card, index) => {
-              const cw = `calc(100% - ${PAD + PEEK + GAP}px)`;
+          {AD_CARDS.map((card, index) => {
               return (
                 <div
                   key={card.id}
                   style={{
-                    flexShrink: 0,
-                    width: cw,
+                    width: "100%",
                     borderRadius: 18,
                     overflow: "hidden",
                     background: "#1a1a1a",
                     cursor: "pointer",
                   }}
                   onClick={() => {
-                    const dragged = Math.abs(trackXRef.current - baseTrackXRef.current) > 6;
-                    if (dragged) return;
-                    if (index !== activeIdxRef.current) snapTo(index);
-                    else handleStartEarning();
+                    if (index !== activeIndex) { setActiveIndex(index); return; }
+                    handleStartEarning();
                   }}
                 >
                   {/* Card header: image + name */}
@@ -503,7 +290,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (index !== activeIdxRef.current) { snapTo(index); return; }
+                        if (index !== activeIndex) { setActiveIndex(index); return; }
                         handleStartEarning();
                       }}
                       disabled={isShowingAds || isLimitReached}
@@ -533,23 +320,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                 </div>
               );
             })}
-          </div>
-        </div>
-
-        {/* Dot indicators */}
-        <div style={{ display: "flex", justifyContent: "center", gap: 7, marginTop: 12 }}>
-          {AD_CARDS.map((_, i) => (
-            <button
-              key={i}
-              ref={(el) => { dotRefs.current[i] = el; }}
-              onClick={() => snapTo(i)}
-              style={{
-                height: 5, width: i === 0 ? 22 : 6, borderRadius: 3, border: "none", padding: 0, cursor: "pointer",
-                background: i === 0 ? AD_CARDS[0].accentColor : "rgba(255,255,255,0.18)",
-                transition: "all 0.32s cubic-bezier(0.34, 1.28, 0.64, 1)",
-              }}
-            />
-          ))}
         </div>
 
         {/* Status */}
