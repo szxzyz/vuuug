@@ -683,6 +683,62 @@ export async function ensureDatabaseSchema(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ton_deposits_user ON ton_deposits(user_id)`);
     console.log('✅ [MIGRATION] ton_deposits table ensured');
 
+    // Spin data table — tracks daily free spin state per user
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS spin_data (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL UNIQUE REFERENCES users(id),
+        free_spin_used BOOLEAN DEFAULT false,
+        extra_spins INTEGER DEFAULT 0,
+        spin_ads_watched INTEGER DEFAULT 0,
+        invite_spins_earned INTEGER DEFAULT 0,
+        last_spin_date VARCHAR,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('✅ [MIGRATION] spin_data table ensured');
+
+    // Spin history table — records every spin result
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS spin_history (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        reward_type VARCHAR NOT NULL,
+        reward_amount DECIMAL(30, 10) NOT NULL,
+        spin_type VARCHAR NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_spin_history_user ON spin_history(user_id)`);
+    console.log('✅ [MIGRATION] spin_history table ensured');
+
+    // Add missing columns to referrals table (usd and bug reward amounts added later)
+    try {
+      await db.execute(sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS usd_reward_amount DECIMAL(30, 10) DEFAULT '0'`);
+      await db.execute(sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS bug_reward_amount DECIMAL(30, 10) DEFAULT '0'`);
+      console.log('✅ [MIGRATION] referrals usd/bug reward columns ensured');
+    } catch (error) {
+      console.log('ℹ️ [MIGRATION] referrals reward columns already exist');
+    }
+
+    // Add missing channel_verified column to advertiser_tasks
+    try {
+      await db.execute(sql`ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS channel_verified BOOLEAN NOT NULL DEFAULT false`);
+      console.log('✅ [MIGRATION] advertiser_tasks channel_verified column ensured');
+    } catch (error) {
+      console.log('ℹ️ [MIGRATION] advertiser_tasks channel_verified already exists');
+    }
+
+    // Add missing monetag/gigapub per-provider ad tracking to users (also in index.ts but ensure here)
+    try {
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS monetag_ads_watched_today INTEGER DEFAULT 0`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS gigapub_ads_watched_today INTEGER DEFAULT 0`);
+      console.log('✅ [MIGRATION] Per-provider ad tracking columns ensured in migration');
+    } catch (error) {
+      console.log('ℹ️ [MIGRATION] Per-provider ad tracking columns already exist');
+    }
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
