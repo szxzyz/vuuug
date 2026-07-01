@@ -83,6 +83,8 @@ export const users = pgTable("users", {
   lastExtraAdDate: timestamp("last_extra_ad_date"),
   hourlyAdsWatched: integer("hourly_ads_watched").default(0),
   lastHourlyReset: timestamp("last_hourly_reset"),
+  monetagAdsWatchedToday: integer("monetag_ads_watched_today").default(0),
+  gigapubAdsWatchedToday: integer("gigapub_ads_watched_today").default(0),
   lastBonusClaimedDate: text("last_bonus_claimed_date"),
   // Wallet details
   tonWalletAddress: text("ton_wallet_address"),
