@@ -163,6 +163,23 @@ function broadcastUpdate(update: any) {
   return messagesSent;
 }
 
+// ── Contest active helper ───────────────────────────────────────────────────
+// Returns true when a monthly contest window is currently open.
+// Pass in the already-loaded adminSettings rows (to avoid extra DB round-trips).
+type AdminSettingRow = { settingKey: string; settingValue: string | null };
+function isMonthlyContestActive(settings: AdminSettingRow[], now = Date.now()): boolean {
+  const get = (key: string) => settings.find(s => s.settingKey === key)?.settingValue || '';
+  const startStr = get('monthly_contest_start_date');
+  const endStr   = get('monthly_contest_end_date');
+  if (!startStr) return false;                          // no start date → never active
+  const startMs = new Date(startStr).getTime();
+  if (isNaN(startMs) || now < startMs) return false;   // not yet started
+  if (!endStr) return true;                             // no end date → open-ended
+  const endMs = new Date(endStr).getTime();
+  return isNaN(endMs) || now <= endMs;                  // within window
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Super admin check — TELEGRAM_ADMIN_ID or SUPER_ADMIN_ID env var (the one true master admin)
 const isSuperAdmin = (telegramId: string): boolean => {
   const superAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || '').trim();
@@ -1624,9 +1641,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `);
         }
         
-        // Add STAR reward to weekly_stars (accumulates during the contest period)
-        // Stars always accumulate; leaderboard visibility is controlled by admin contest dates
-        if (starRewardPerAd > 0) {
+        // Add STAR reward to weekly_stars — ONLY during an active monthly contest window
+        const monthlyContestActive = isMonthlyContestActive(allAdminSettings as any);
+        if (starRewardPerAd > 0 && monthlyContestActive) {
           const currentWeek = getISOWeek();
           const userWeekStarWeek = (user as any).weeklyStarWeek;
           const weeklyReset = userWeekStarWeek !== currentWeek;
@@ -1638,7 +1655,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               updated_at       = NOW()
             WHERE id = ${userId}
           `);
-          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR for ${userId}`);
+          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR for ${userId} (contest active)`);
+        } else if (starRewardPerAd > 0) {
+          console.log(`⭐ Ad watch: star skipped for ${userId} — no active monthly contest`);
         }
         
         // Check and activate referral bonuses
@@ -1967,8 +1986,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // STEP 2: Give the reward (safe — slot is already locked above)
       if (milestone.starReward) {
-        // Stars always accumulate; leaderboard visibility is controlled by admin contest dates
-        {
+        // Only give stars during an active monthly contest window
+        const _msAllSettings = await db.select().from(adminSettings);
+        const _msContestActive = isMonthlyContestActive(_msAllSettings as any);
+        if (_msContestActive) {
           const starsToAdd = milestone.starReward;
           const freshUser = await storage.getUser(userId);
           const userWeek = (freshUser as any)?.weeklyStarWeek;
@@ -1981,7 +2002,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               updated_at       = NOW()
             WHERE id = ${userId}
           `);
-          console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR for ${userId}`);
+          console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR for ${userId} (contest active)`);
+        } else {
+          console.log(`⭐ Milestone ${milestoneIndex}: star skipped for ${userId} — no active monthly contest`);
         }
       } else if (milestone.usdReward) {
         // Credit USD directly to usd_balance — do NOT convert to PAD
@@ -4311,6 +4334,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
+        // Monthly star leaderboard contest dates — MUST be returned so admin panel
+        // doesn't overwrite them with empty strings on every save
+        monthlyContestStartDate: getSetting('monthly_contest_start_date', ''),
+        monthlyContestEndDate: getSetting('monthly_contest_end_date', ''),
+        monthlyContestTopUsers: parseInt(getSetting('monthly_contest_top_users', '20')),
+        // Weekly referral leaderboard contest dates
+        weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
+        weeklyReferralEndDate: getSetting('weekly_referral_end_date', ''),
+        weeklyReferralTopUsers: parseInt(getSetting('weekly_referral_top_users', '10')),
         starsLocked: getSetting('stars_locked', 'false') === 'true',
         minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
         maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
