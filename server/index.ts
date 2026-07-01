@@ -97,8 +97,10 @@ try {
   const { db } = await import('./db');
   const { sql: sqlRaw } = await import('drizzle-orm');
   await db.execute(sqlRaw`ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS description text`);
+  await db.execute(sqlRaw`ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS verification_required boolean NOT NULL DEFAULT false`);
+  console.log('✅ advertiser_tasks columns ensured');
 } catch (err) {
-  console.log('⚠️ advertiser_tasks.description migration skipped:', err);
+  console.log('⚠️ advertiser_tasks migration skipped:', err);
 }
 
 // Migration: add per-provider ad tracking columns
