@@ -1555,11 +1555,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } as any)
           .where(eq(users.id, userId));
         
-        // Add STAR reward to weekly_stars ONLY (2 stars per ad, no permanent star_balance update)
-        // Skip if stars are locked (contest ended, waiting for 07:30 UTC reset)
-        const starsLockedSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'stars_locked')).limit(1);
-        const starsLocked = starsLockedSetting[0]?.settingValue === 'true';
-        if (starRewardPerAd > 0 && !starsLocked) {
+        // Add STAR reward to weekly_stars (accumulates during the contest period)
+        // Stars always accumulate; leaderboard visibility is controlled by admin contest dates
+        if (starRewardPerAd > 0) {
           const currentWeek = getISOWeek();
           const userWeekStarWeek = (user as any).weeklyStarWeek;
           const weeklyReset = userWeekStarWeek !== currentWeek;
@@ -1571,9 +1569,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               updated_at       = NOW()
             WHERE id = ${userId}
           `);
-          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR (weekly only) for ${userId}`);
-        } else if (starsLocked) {
-          console.log(`🔒 Star earning locked for ${userId} — contest ended, waiting for Sunday midnight IST reset`);
+          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR for ${userId}`);
         }
         
         // Check and activate referral bonuses
@@ -1895,10 +1891,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // STEP 2: Give the reward (safe — slot is already locked above)
       if (milestone.starReward) {
-        // Check stars_locked — no stars while contest is paused
-        const starsLockedRow = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'stars_locked')).limit(1);
-        const milestoneStarsLocked = starsLockedRow[0]?.settingValue === 'true';
-        if (!milestoneStarsLocked) {
+        // Stars always accumulate; leaderboard visibility is controlled by admin contest dates
+        {
           const starsToAdd = milestone.starReward;
           const freshUser = await storage.getUser(userId);
           const userWeek = (freshUser as any)?.weeklyStarWeek;
@@ -1911,9 +1905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               updated_at       = NOW()
             WHERE id = ${userId}
           `);
-          console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR (weekly only) for ${userId}`);
-        } else {
-          console.log(`🔒 Milestone star reward skipped for ${userId} — contest ended, waiting for Monday 12 AM IST reset`);
+          console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR for ${userId}`);
         }
       } else if (milestone.usdReward) {
         // Credit USD directly to usd_balance — do NOT convert to PAD
@@ -2046,13 +2038,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // ── CURRENT WEEK ──────────────────────────────────────────────────────
 
-      // Read monthly contest top N from admin settings
+      // Read monthly contest settings from admin DB
       const allAdminSettings = await db.select().from(adminSettings);
       const getAdminSetting = (key: string, def: string) =>
         allAdminSettings.find(s => s.settingKey === key)?.settingValue || def;
       const monthlyTopN = parseInt(getAdminSetting('monthly_contest_top_users', '20'));
       const monthlyEndDate = getAdminSetting('monthly_contest_end_date', '');
       const monthlyStartDate = getAdminSetting('monthly_contest_start_date', '');
+
+      // ── Contest active gate ───────────────────────────────────────────────
+      // Only show data when admin has set a start date AND we are past it
+      const nowMs = Date.now();
+      const startDateMs = monthlyStartDate ? new Date(monthlyStartDate).getTime() : NaN;
+      const endDateMs   = monthlyEndDate   ? new Date(monthlyEndDate).getTime()   : NaN;
+      const contestStarted = !isNaN(startDateMs) && nowMs >= startDateMs;
+      const contestEnded   = contestStarted && !isNaN(endDateMs) && nowMs > endDateMs;
+
+      if (!contestStarted || contestEnded) {
+        return res.json({
+          leaderboard: [],
+          userRank: null,
+          userStars: 0,
+          userStarBalance: 0,
+          currentWeek,
+          topN: monthlyTopN,
+          endDate: monthlyEndDate,
+          startDate: monthlyStartDate,
+          contestActive: false,
+          contestEnded: !!contestEnded,
+          isLastWeek: false,
+        });
+      }
 
       // Top N users sorted by weekly_stars
       const top50 = await db
@@ -2378,7 +2394,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allSettings = await db.select().from(adminSettings);
       const getSetting = (key: string, def: string) => allSettings.find(s => s.settingKey === key)?.settingValue || def;
       const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
+      const startDateStr = getSetting('weekly_referral_start_date', '');
+      const endDateStr   = getSetting('weekly_referral_end_date', '');
 
+      // ── Contest active gate ───────────────────────────────────────────────
+      // Only show data when admin has set a start date AND we are past it
+      const nowMs = Date.now();
+      const startMs = startDateStr ? new Date(startDateStr).getTime() : NaN;
+      const endMs   = endDateStr   ? new Date(endDateStr).getTime()   : NaN;
+      const contestStarted = !isNaN(startMs) && nowMs >= startMs;
+      const contestEnded   = contestStarted && !isNaN(endMs) && nowMs > endMs;
+
+      if (!contestStarted || contestEnded) {
+        return res.json({
+          leaderboard: [],
+          userRank: null,
+          topN,
+          startDate: startDateStr,
+          endDate: endDateStr,
+          contestActive: false,
+          contestEnded: !!contestEnded,
+        });
+      }
+
+      // Only count referrals made DURING the contest period (after start date)
       const rows = await db.execute(sql`
         SELECT
           r.referrer_id  AS "userId",
@@ -2388,6 +2427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM referrals r
         JOIN users u ON u.id = r.referrer_id
         WHERE r.status = 'active'
+          AND r.created_at >= ${startDateStr}::timestamptz
           AND COALESCE(u.banned, false) = false
         GROUP BY r.referrer_id, u.username, u.first_name
         ORDER BY "referralCount" DESC
@@ -2409,13 +2449,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (userId) {
         const myCountRows = await db.execute(sql`
           SELECT COUNT(*)::int AS cnt FROM referrals
-          WHERE referrer_id = ${userId} AND status = 'active'
+          WHERE referrer_id = ${userId}
+            AND status = 'active'
+            AND created_at >= ${startDateStr}::timestamptz
         `);
         const myCount = Number((myCountRows.rows as any[])[0]?.cnt || 0);
         if (myCount > 0) {
           const aboveRows = await db.execute(sql`
             SELECT COUNT(DISTINCT referrer_id)::int AS cnt FROM referrals
             WHERE status = 'active'
+              AND created_at >= ${startDateStr}::timestamptz
             GROUP BY referrer_id
             HAVING COUNT(*) > ${myCount}
           `);
@@ -2427,8 +2470,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         leaderboard,
         userRank,
         topN,
-        startDate: getSetting('weekly_referral_start_date', ''),
-        endDate: getSetting('weekly_referral_end_date', ''),
+        startDate: startDateStr,
+        endDate: endDateStr,
+        contestActive: true,
       });
     } catch (error) {
       console.error('Referral leaderboard error:', error);
