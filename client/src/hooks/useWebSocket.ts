@@ -127,8 +127,6 @@ export function useWebSocket() {
                 if ((message as any).balance !== undefined) updated.balance = (message as any).balance;
                 if ((message as any).usdBalance !== undefined) updated.usdBalance = (message as any).usdBalance;
                 if ((message as any).tonBalance !== undefined) updated.tonBalance = (message as any).tonBalance;
-                if ((message as any).starBalance !== undefined) updated.starBalance = (message as any).starBalance;
-                if ((message as any).weeklyStars !== undefined) updated.weeklyStars = (message as any).weeklyStars;
                 return updated;
               });
 
@@ -139,15 +137,12 @@ export function useWebSocket() {
                 if ((message as any).balance !== undefined) updated.balance = (message as any).balance;
                 if ((message as any).usdBalance !== undefined) updated.usdBalance = (message as any).usdBalance;
                 if ((message as any).tonBalance !== undefined) updated.tonBalance = (message as any).tonBalance;
-                if ((message as any).starBalance !== undefined) updated.starBalance = (message as any).starBalance;
-                if ((message as any).weeklyStars !== undefined) updated.weeklyStars = (message as any).weeklyStars;
                 return updated;
               });
 
               // Soft-invalidate in background (no immediate refetch, just marks stale)
               queryClient.invalidateQueries({ queryKey: ['/api/auth/user'], refetchType: 'none' });
               queryClient.invalidateQueries({ queryKey: ['/api/user/stats'], refetchType: 'none' });
-              queryClient.invalidateQueries({ queryKey: ['/api/leaderboard/weekly'], refetchType: 'none' });
               break;
               
             case 'promotion_approved':
