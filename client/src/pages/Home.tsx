@@ -52,7 +52,7 @@ interface User {
 }
 
 export default function Home() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isFetching, dataUpdatedAt } = useAuth();
   const { isAdmin } = useAdmin();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -705,6 +705,8 @@ export default function Home() {
     return Math.round(n).toLocaleString();
   };
 
+  const isFirstLoad = isFetching && dataUpdatedAt === 0;
+
   const usdFormatted = balanceUSD >= 0.01
     ? balanceUSD.toFixed(2)
     : balanceUSD >= 0.0001
@@ -734,20 +736,35 @@ export default function Home() {
           </p>
 
           {/* Main USD balance */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 8 }}>
-            <span style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.55)', lineHeight: 1 }}>$</span>
-            <span style={{
-              fontSize: balanceUSD >= 1000 ? 38 : 44,
-              fontWeight: 800,
-              color: '#fff',
-              fontFamily: "'Space Grotesk', sans-serif",
-              letterSpacing: '-1.5px',
-              fontVariantNumeric: 'tabular-nums',
-              lineHeight: 1,
-            }}>
-              {usdInt}
-            </span>
-            <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.38)', lineHeight: 1 }}>.{usdDec}</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 8, minHeight: 52 }}>
+            {isFirstLoad ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 52 }}>
+                <div style={{
+                  width: 120,
+                  height: 40,
+                  borderRadius: 8,
+                  background: 'rgba(255,255,255,0.08)',
+                  animation: 'pulse 1.5s ease-in-out infinite',
+                }} />
+                <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:.9}}`}</style>
+              </div>
+            ) : (
+              <>
+                <span style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.55)', lineHeight: 1 }}>$</span>
+                <span style={{
+                  fontSize: balanceUSD >= 1000 ? 38 : 44,
+                  fontWeight: 800,
+                  color: '#fff',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: '-1.5px',
+                  fontVariantNumeric: 'tabular-nums',
+                  lineHeight: 1,
+                }}>
+                  {usdInt}
+                </span>
+                <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.38)', lineHeight: 1 }}>.{usdDec}</span>
+              </>
+            )}
           </div>
 
           {/* POW balance row */}
