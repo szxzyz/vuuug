@@ -15,6 +15,7 @@ interface User {
   id: string;
   balance: string;
   usdBalance?: string;
+  starBalance?: string;
   friendsInvited?: number;
   cwalletId?: string;
   adsWatched?: number;
