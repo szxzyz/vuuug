@@ -2459,8 +2459,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const withdrawalAdRequirementEnabled = getSetting('withdrawal_ad_requirement_enabled', 'true') === 'true';
       const MINIMUM_ADS_FOR_WITHDRAWAL = parseInt(getSetting('minimum_ads_for_withdrawal', '100'));
-      // STAR is not a withdrawal requirement — only used for weekly contest
-      
       let adsWatchedSinceLastWithdrawal = 0;
       
       if (lastWithdrawal.length === 0) {
@@ -2483,7 +2481,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adsWatchedSinceLastWithdrawal = adsCountResult[0]?.count || 0;
       }
       
-      // STAR is not a withdrawal gate — only used for weekly contest
       const canWithdraw = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
       
       res.json({ 
@@ -5686,7 +5683,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             balance: users.balance,
             usdBalance: users.usdBalance,
             tonBalance: users.tonBalance,
-            starBalance: users.starBalance
           })
           .from(users)
           .where(eq(users.id, userId))
@@ -7208,7 +7204,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .select({ 
             balance: users.balance,
             usdBalance: users.usdBalance,
-            starBalance: users.starBalance,
             cwalletId: users.cwalletId,
             usdtWalletAddress: users.usdtWalletAddress,
             telegramStarsUsername: users.telegramStarsUsername,
@@ -7353,8 +7348,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(1);
         const withdrawalPackagesConfig = JSON.parse(withdrawalPackagesSetting?.settingValue || '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]');
         
-        // Get BUG requirement settings from admin
-        // STAR is only used for weekly contest — no withdrawal gate
         let packageUsdAmount: number | null = null;
         
         if (customAmount !== null && !isNaN(customAmount) && customAmount > 0) {
@@ -7518,7 +7511,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (packageUsdAmount !== null) {
             withdrawalDetails.withdrawalPackage = packageUsdAmount;
           }
-          // STAR is not deducted on withdrawal — it's only for weekly contest
           withdrawalDetails.starDeducted = 0;
           
           // Store wallet address based on method
@@ -7995,8 +7987,6 @@ ${walletAddress}
                 type: 'balance_update',
                 balance: freshUser.balance,
                 usdBalance: freshUser.usdBalance,
-                starBalance: Number(freshUser.starBalance || 0),
-                weeklyStars: Number((freshUser as any).weeklyStars || 0),
               });
             }
           } catch (_) {}
@@ -8503,7 +8493,6 @@ ${walletAddress}
       // Normalize aliases
       if (rewardType === 'PDZ')  rewardType = 'TON';
       if (rewardType === 'POW')  rewardType = 'PAD';
-      if (rewardType === 'STAR') rewardType = 'BUG';
 
       // STEP 2: Give the reward — if this throws, usage is NOT recorded
       if (rewardType === 'PAD') {
@@ -8550,21 +8539,6 @@ ${walletAddress}
           message: `$${rewardAmount} USD added to your balance!`,
           reward: rewardAmount,
           rewardType: 'USD',
-        });
-
-      } else if (rewardType === 'BUG') {
-        const [currentUser] = await db.select({ starBalance: users.starBalance }).from(users).where(eq(users.id, userId));
-        const newStarBalance = (parseFloat(currentUser?.starBalance || '0') + parseFloat(rewardAmount)).toFixed(2);
-        await db.update(users).set({ starBalance: newStarBalance, updatedAt: new Date() }).where(eq(users.id, userId));
-        await storage.logTransaction({ userId, amount: rewardAmount, type: 'credit', source: 'promo_code', description: `Redeemed promo code: ${cleanCode}`, metadata: { code: cleanCode, rewardType: 'STAR' } });
-
-        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
-
-        return res.json({
-          success: true,
-          message: `${rewardAmount} STAR added to your balance!`,
-          reward: rewardAmount,
-          rewardType: 'STAR',
         });
 
       } else {
@@ -9978,14 +9952,14 @@ ${walletAddress}
       const { action, currency, amount, reason } = req.body;
 
       if (!['add', 'deduct', 'set'].includes(action)) return res.status(400).json({ error: 'Invalid action. Use add|deduct|set' });
-      if (!['pow', 'star', 'usd'].includes(currency)) return res.status(400).json({ error: 'Invalid currency. Use pow|star|usd' });
+      if (!['pow', 'usd'].includes(currency)) return res.status(400).json({ error: 'Invalid currency. Use pow|usd' });
       const amt = parseFloat(amount);
       if (isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Invalid amount' });
 
       const targetUser = await storage.getUser(id);
       if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
-      let fieldKey = currency === 'pow' ? 'balance' : currency === 'star' ? 'starBalance' : 'usdBalance';
+      let fieldKey = currency === 'pow' ? 'balance' : 'usdBalance';
       const current = parseFloat((targetUser as any)[fieldKey]?.toString() || '0');
 
       let newVal: number;

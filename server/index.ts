@@ -33,15 +33,6 @@ try {
   // Run heavy startup tasks in background — don't block server startup
   (async () => {
     try {
-      // Ensure stars_locked is always false — old auto-weekly system removed
-      const { db: dbBg } = await import('./db');
-      const { sql: sqlBg } = await import('drizzle-orm');
-      await dbBg.execute(sqlBg`
-        INSERT INTO admin_settings (setting_key, setting_value, description)
-        VALUES ('stars_locked', 'false', 'Stars are never locked — contest system is now admin-controlled')
-        ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'false', updated_at = NOW()
-      `);
-
       const repairStats = await storage.fullReferralRepair();
       if (repairStats.referralsCreated > 0 || repairStats.referralsActivated > 0) {
         console.log(`✅ Referral repair complete — created:${repairStats.referralsCreated} activated:${repairStats.referralsActivated}`);

@@ -609,35 +609,6 @@ export async function ensureDatabaseSchema(): Promise<void> {
     `);
     console.log('✅ [MIGRATION] admin_roles table ensured');
 
-    // Star & weekly contest columns
-    try {
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS star_balance INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_stars INTEGER DEFAULT 0`);
-      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_star_week TEXT`);
-      console.log('✅ [MIGRATION] Star balance columns added');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Star columns already exist');
-    }
-
-    // Index for leaderboard queries
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_users_weekly_stars ON users(weekly_stars DESC) WHERE weekly_stars > 0`);
-
-    // Rename admin settings keys: bug_* → star_* and pad_* → pow_* (PAD→POW / BUG→STAR system rename)
-    try {
-      await db.execute(sql`
-        UPDATE admin_settings SET setting_key = 'star_reward_per_ad'               WHERE setting_key = 'bug_reward_per_ad';
-        UPDATE admin_settings SET setting_key = 'star_reward_per_task'             WHERE setting_key = 'bug_reward_per_task';
-        UPDATE admin_settings SET setting_key = 'star_reward_per_referral'         WHERE setting_key = 'bug_reward_per_referral';
-        UPDATE admin_settings SET setting_key = 'star_per_usd'                     WHERE setting_key = 'bug_per_usd';
-        UPDATE admin_settings SET setting_key = 'minimum_star_for_withdrawal'      WHERE setting_key = 'minimum_bug_for_withdrawal';
-        UPDATE admin_settings SET setting_key = 'withdrawal_star_requirement_enabled' WHERE setting_key = 'withdrawal_bug_requirement_enabled';
-        UPDATE admin_settings SET setting_key = 'pow_to_star_rate'                 WHERE setting_key = 'pad_to_bug_rate';
-        UPDATE admin_settings SET setting_key = 'minimum_convert_pow_to_star'      WHERE setting_key = 'minimum_convert_pad_to_bug';
-      `);
-      console.log('✅ [MIGRATION] Admin settings keys renamed bug_* → star_* and pad_* → pow_*');
-    } catch (error) {
-      console.log('ℹ️ [MIGRATION] Settings key rename skipped (already done or conflict)');
-    }
 
     // Fix column precisions — ensure all amount columns support large values & full decimal precision
     // These were originally created with numeric(12,2) or numeric(12,8) which caused overflow and rounding bugs
@@ -651,22 +622,6 @@ export async function ensureDatabaseSchema(): Promise<void> {
       console.log('ℹ️ [MIGRATION] Amount column precision fix skipped:', error);
     }
 
-    // Leaderboard snapshots table — stores weekly top-50 before Monday reset
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS leaderboard_snapshots (
-        id SERIAL PRIMARY KEY,
-        week_key VARCHAR(20) NOT NULL,
-        rank INTEGER NOT NULL,
-        user_id VARCHAR NOT NULL,
-        username VARCHAR,
-        first_name TEXT,
-        profile_image_url TEXT,
-        weekly_stars INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_lb_snapshot_week ON leaderboard_snapshots(week_key, rank)`);
-    console.log('✅ [MIGRATION] leaderboard_snapshots table ensured');
 
     // TON Deposits table — prevents duplicate blockchain deposit credits
     await db.execute(sql`

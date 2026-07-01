@@ -1618,7 +1618,7 @@ export class DatabaseStorage implements IStorage {
       // New withdrawals have balance deducted only on approval
       if (userBalance >= totalToDeduct) {
         // User has sufficient balance - this is a NEW withdrawal (or user earned more since request)
-        // Deduct USD balance now on approval — STAR balance is NOT deducted (it is only a gate requirement)
+        // Deduct USD balance now on approval
         console.log(`💰 Deducting USD balance now for approved withdrawal`);
         console.log(`💰 Net amount: $${withdrawalAmount}, Total to deduct (with fee): $${totalToDeduct}`);
         console.log(`💰 Previous USD balance: ${userBalance}, New balance: ${(userBalance - totalToDeduct).toFixed(10)}`);
@@ -1633,7 +1633,6 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(users.id, withdrawal.userId));
         console.log(`✅ USD balance deducted: ${userBalance} → ${newUsdBalance}`);
-        console.log(`✅ STAR balance preserved (not deducted — STAR is gate only, not consumed)`);
       } else {
         // User doesn't have sufficient balance - this is a LEGACY withdrawal
         // Balance was already deducted at request time (old flow), so just approve without deducting again
@@ -1712,7 +1711,6 @@ export class DatabaseStorage implements IStorage {
       // Legacy withdrawals have insufficient balance because it was already taken
       // We detect this by checking if the user's balance is lower than expected
       // For legacy withdrawals, we need to REFUND the USD balance ONLY
-      // CRITICAL: star_balance / weekly_stars are NEVER touched on withdrawal rejection or approval
       if (currentUsdBalance < totalToRefund) {
         // LEGACY withdrawal - refund the USD balance that was already deducted
         console.log(`⚠️ Legacy withdrawal detected - refunding USD balance that was deducted at request time`);
@@ -1726,11 +1724,9 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(users.id, withdrawal.userId));
         console.log(`💰 USD balance refunded: ${currentUsdBalance} → ${newUsdBalance}`);
-        console.log(`✅ star_balance preserved (never deducted or modified by withdrawal logic)`);
       } else {
         // NEW withdrawal - balance was never deducted, nothing to refund
         console.log(`❌ Withdrawal #${withdrawalId} rejected - no refund needed (balance was never deducted)`);
-        console.log(`💡 User USD balance and star_balance remain unchanged`);
       }
 
       // Update withdrawal status to rejected
@@ -3099,18 +3095,6 @@ export class DatabaseStorage implements IStorage {
         } as any)
         .where(sql`${users.lastResetDate} != ${currentDateString} OR ${users.lastResetDate} IS NULL`);
 
-      // Unlock star earning ONLY on Monday IST (= Sunday UTC 18:30) — new weekly contest begins
-      // Stars stay locked all Sunday IST after contest ends — only Monday 12 AM IST (= Sunday 18:30 UTC) unlocks them
-      const resetDayUTC = new Date().getUTCDay(); // 0=Sun, 1=Mon, …, 6=Sat
-      // Sunday UTC at 18:30 = Monday 12 AM IST → unlock stars
-      if (resetDayUTC === 0) {
-        await db.execute(sql`
-          INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES ('stars_locked', 'false', 'Locks star earning between contest end and Monday 12 AM IST reset')
-          ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'false', updated_at = NOW()
-        `);
-        console.log('⭐ Monday 12 AM IST (Sunday 18:30 UTC) — star earning unlocked, new weekly contest started!');
-      }
       
       console.log('✅ Daily reset completed successfully (new task system)');
       
@@ -3188,47 +3172,6 @@ export class DatabaseStorage implements IStorage {
     
     console.log(`📝 Task created: ${task.id} by ${taskData.advertiserId}`);
     return task;
-  }
-
-  // Get monthly leaderboard
-  async getMonthlyLeaderboard(currentUserId?: string): Promise<any> {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const leaderboard = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        firstName: users.firstName,
-        totalEarned: sql<string>`COALESCE(SUM(${earnings.amount}), 0)`,
-      })
-      .from(users)
-      .leftJoin(earnings, and(
-        eq(users.id, earnings.userId),
-        gte(earnings.createdAt, monthStart),
-        sql`${earnings.source} NOT IN ('withdrawal', 'referral_commission')`
-      ))
-      .where(eq(users.banned, false))
-      .groupBy(users.id)
-      .orderBy(desc(sql`COALESCE(SUM(${earnings.amount}), 0)`))
-      .limit(100);
-
-    let userRank = null;
-    if (currentUserId) {
-      const userIndex = leaderboard.findIndex(u => u.id === currentUserId);
-      if (userIndex !== -1) {
-        userRank = userIndex + 1;
-      }
-    }
-
-    return {
-      leaderboard: leaderboard.map((u, i) => ({
-        ...u,
-        rank: i + 1,
-        displayName: u.username || u.firstName || 'Anonymous'
-      })),
-      userRank
-    };
   }
 
   // Get valid (completed) referral count for a user
@@ -3539,54 +3482,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Add BUG balance to user (CRITICAL FIX for referral earnings)
-  async addSTARBalance(userId: string, amount: string, source: string, description: string): Promise<void> {
-    try {
-      const amountNum = parseFloat(amount);
-      if (isNaN(amountNum) || amountNum <= 0) {
-        throw new Error('Invalid BUG amount');
-      }
-
-      // Get current BUG balance
-      const [user] = await db
-        .select({ starBalance: users.starBalance })
-        .from(users)
-        .where(eq(users.id, userId));
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      const currentStarBalance = Math.round(parseFloat(String(user.starBalance || '0')));
-      const newStarBalance = currentStarBalance + Math.round(amountNum);
-
-      // Update user's STAR balance
-      await db
-        .update(users)
-        .set({
-          starBalance: newStarBalance,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, userId));
-
-      // Log the transaction
-      await this.logTransaction({
-        userId,
-        amount: amount,
-        type: 'credit',
-        source: source,
-        description: description,
-        metadata: { rewardType: 'STAR' }
-      });
-
-      console.log(`✅ Added ${amountNum} BUG to user ${userId}. New balance: ${newStarBalance}`);
-    } catch (error) {
-      console.error(`Error adding BUG balance:`, error);
-      throw error;
-    }
-  }
-
-  // Backfill STAR rewards for existing referrals (fix for users who earned before the update)
+  // Backfill rewards for existing referrals (fix for users who earned before the update)
   /**
    * fullReferralRepair — runs on every server startup.
    * Pass 1: users whose `referred_by` is set but have no row in `referrals` → create the row.
@@ -3710,79 +3606,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async backfillExistingReferralSTARRewards(): Promise<void> {
-    // STAR per referral feature removed — backfill disabled
+    // Referral backfill disabled
     return;
-    try {
-      console.log('🔄 Starting backfill of STAR rewards for existing referrals...');
-      
-      // First, ensure columns exist
-      try {
-        await db.execute(sql`
-          ALTER TABLE referrals ADD COLUMN IF NOT EXISTS usd_reward_amount DECIMAL(30, 10) DEFAULT '0';
-          ALTER TABLE referrals ADD COLUMN IF NOT EXISTS bug_reward_amount DECIMAL(30, 10) DEFAULT '0';
-        `);
-      } catch (error) {
-        console.log('ℹ️ Referral columns already exist');
-      }
-      
-      // Get all completed referrals that don't have bugRewardAmount (STAR reward) set
-      const referralsNeedingBugCredit = await db.execute(sql`
-        SELECT id, referrer_id, status, usd_reward_amount, bug_reward_amount 
-        FROM referrals 
-        WHERE status = 'completed' AND (bug_reward_amount = '0' OR bug_reward_amount IS NULL)
-        AND usd_reward_amount > 0
-      `);
-
-      const rows = referralsNeedingBugCredit.rows || [];
-      console.log(`📊 Found ${rows.length} referrals needing BUG credit backfill`);
-
-      for (const ref of rows) {
-        try {
-          // Parse USD amount with strict validation
-          const usdReward = ref.usd_reward_amount;
-          if (!usdReward || usdReward === null) {
-            console.log(`⏭️ Skipping referral ${ref.id} - no USD reward amount stored`);
-            continue;
-          }
-
-          const usdAmount = parseFloat(String(usdReward));
-          if (isNaN(usdAmount) || usdAmount <= 0) {
-            console.log(`⏭️ Skipping referral ${ref.id} - invalid USD amount: ${usdReward}`);
-            continue;
-          }
-
-          // Calculate BUG from USD amount (50 BUG per USD)
-          const starAmount = usdAmount * 50;
-          if (isNaN(starAmount) || starAmount <= 0) {
-            console.log(`⏭️ Skipping referral ${ref.id} - calculated BUG amount is invalid: ${starAmount}`);
-            continue;
-          }
-
-          // Update referral record with BUG amount
-          await db.execute(sql`
-            UPDATE referrals 
-            SET bug_reward_amount = ${starAmount.toFixed(10)}
-            WHERE id = ${ref.id}
-          `);
-
-          // Credit BUG to referrer's balance
-          await this.addSTARBalance(
-            ref.referrer_id,
-            starAmount.toFixed(10),
-            'referral_backfill',
-            `Backfilled BUG from referral reward (+${starAmount.toFixed(2)} BUG)`
-          );
-
-          console.log(`✅ Backfilled ${starAmount.toFixed(2)} BUG for referral ${ref.id} to user ${ref.referrer_id}`);
-        } catch (error) {
-          console.error(`⚠️ Failed to backfill referral ${ref.id}:`, error);
-        }
-      }
-
-      console.log(`✅ Backfill of STAR rewards completed!`);
-    } catch (error) {
-      console.error('❌ Error during BUG rewards backfill:', error);
-    }
   }
 
   // Deduct balance for withdrawal approval (direct deduction method)
