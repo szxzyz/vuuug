@@ -33,15 +33,6 @@ try {
   // Run heavy startup tasks in background — don't block server startup
   (async () => {
     try {
-      // Ensure stars_locked is always false — old auto-weekly system removed
-      const { db: dbBg } = await import('./db');
-      const { sql: sqlBg } = await import('drizzle-orm');
-      await dbBg.execute(sqlBg`
-        INSERT INTO admin_settings (setting_key, setting_value, description)
-        VALUES ('stars_locked', 'false', 'Stars are never locked — contest system is now admin-controlled')
-        ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'false', updated_at = NOW()
-      `);
-
       const repairStats = await storage.fullReferralRepair();
       if (repairStats.referralsCreated > 0 || repairStats.referralsActivated > 0) {
         console.log(`✅ Referral repair complete — created:${repairStats.referralsCreated} activated:${repairStats.referralsActivated}`);
@@ -97,8 +88,10 @@ try {
   const { db } = await import('./db');
   const { sql: sqlRaw } = await import('drizzle-orm');
   await db.execute(sqlRaw`ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS description text`);
+  await db.execute(sqlRaw`ALTER TABLE advertiser_tasks ADD COLUMN IF NOT EXISTS verification_required boolean NOT NULL DEFAULT false`);
+  console.log('✅ advertiser_tasks columns ensured');
 } catch (err) {
-  console.log('⚠️ advertiser_tasks.description migration skipped:', err);
+  console.log('⚠️ advertiser_tasks migration skipped:', err);
 }
 
 // Migration: add per-provider ad tracking columns
@@ -281,190 +274,6 @@ app.use((req, res, next) => {
       }
     }, 5 * 60 * 1000); // Every 5 minutes
 
-    // ── Admin-controlled Monthly Contest monitor ───────────────────────────
-    // Runs every 5 min. Fires when monthly_contest_end_date passes:
-    // saves snapshot, resets weekly_stars, notifies admin, clears dates.
-    setInterval(async () => {
-      try {
-        const { db } = await import('./db');
-        const { adminSettings, users, leaderboardSnapshots } = await import('../shared/schema');
-        const { sql } = await import('drizzle-orm');
-
-        const allSettings = await db.select().from(adminSettings);
-        const getSetting = (key: string, def: string) =>
-          (allSettings as any[]).find((s: any) => s.settingKey === key)?.settingValue || def;
-
-        const endDateStr = getSetting('monthly_contest_end_date', '');
-        const startDateStr = getSetting('monthly_contest_start_date', '');
-        if (!endDateStr || !startDateStr) return;
-
-        const endDate = new Date(endDateStr);
-        if (isNaN(endDate.getTime()) || Date.now() < endDate.getTime()) return;
-
-        const guardKey = `monthly_contest_done_${endDateStr.replace(/[^0-9]/g, '_')}`;
-        if (getSetting(guardKey, 'false') === 'true') return;
-
-        const topN = parseInt(getSetting('monthly_contest_top_users', '20'));
-        log(`🏁 Monthly contest ended (${endDateStr}). Saving snapshot…`);
-
-        const topUsers = await db.execute(sql`
-          SELECT id, username, first_name, weekly_stars
-          FROM users
-          WHERE COALESCE(weekly_stars, 0) > 0
-            AND COALESCE(banned, false) = false
-          ORDER BY weekly_stars DESC
-          LIMIT ${topN}
-        `);
-
-        if (topUsers.rows.length > 0) {
-          const snapshotKey = `monthly_${endDateStr.replace(/[^0-9]/g, '_')}`;
-          for (let i = 0; i < topUsers.rows.length; i++) {
-            const u = topUsers.rows[i] as any;
-            await db.insert(leaderboardSnapshots).values({
-              weekKey: snapshotKey,
-              rank: i + 1,
-              userId: u.id,
-              username: u.username,
-              firstName: u.first_name,
-              weeklyStars: Number(u.weekly_stars || 0),
-            }).onConflictDoNothing();
-          }
-        }
-
-        const adminId = process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_ID;
-        const botToken = process.env.TELEGRAM_BOT_TOKEN;
-        if (adminId && botToken) {
-          const medals = ['🥇', '🥈', '🥉'];
-          let msg = `🏆 <b>Monthly Contest Ended!</b>\n\n`;
-          msg += `📅 Period: <code>${startDateStr}</code> → <code>${endDateStr}</code>\n`;
-          msg += `👥 Participants: ${topUsers.rows.length}\n\n`;
-          if (topUsers.rows.length > 0) {
-            (topUsers.rows as any[]).slice(0, 10).forEach((u: any, i: number) => {
-              const name = u.username ? `@${u.username}` : (u.first_name || `User`);
-              msg += `${medals[i] || `${i + 1}.`} <b>${name}</b> — ${u.weekly_stars} ⭐\n   <code>${u.id}</code>\n`;
-            });
-          } else {
-            msg += `No participants this period.\n`;
-          }
-          msg += `\n💡 Please distribute rewards manually.\n🔄 Stars have been reset to 0.`;
-          fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: adminId, text: msg, parse_mode: 'HTML' }),
-          }).catch(() => {});
-        }
-
-        await db.execute(sql`UPDATE users SET weekly_stars = 0, weekly_star_week = NULL, updated_at = NOW()`);
-
-        await db.execute(sql`
-          INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES (${guardKey}, 'true', 'Monthly contest done guard')
-          ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'true', updated_at = NOW()
-        `);
-        // Clear dates so leaderboard correctly shows "Not Active"
-        await db.execute(sql`
-          INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES ('monthly_contest_start_date', '', 'Monthly contest start date')
-          ON CONFLICT (setting_key) DO UPDATE SET setting_value = '', updated_at = NOW()
-        `);
-        await db.execute(sql`
-          INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES ('monthly_contest_end_date', '', 'Monthly contest end date')
-          ON CONFLICT (setting_key) DO UPDATE SET setting_value = '', updated_at = NOW()
-        `);
-
-        log(`✅ Monthly contest done: ${topUsers.rows.length} entries snapshotted, weekly_stars reset.`);
-      } catch (err) {
-        console.error('❌ Error in monthly contest monitor:', err);
-      }
-    }, 5 * 60 * 1000);
-
-    // ── Admin-controlled Referral Contest monitor ─────────────────────────────
-    // Runs every 5 min. Fires when weekly_referral_end_date passes:
-    // sends referral leaderboard snapshot to admin, clears dates.
-    setInterval(async () => {
-      try {
-        const { db } = await import('./db');
-        const { adminSettings } = await import('../shared/schema');
-        const { sql } = await import('drizzle-orm');
-
-        const allSettings = await db.select().from(adminSettings);
-        const getSetting = (key: string, def: string) =>
-          (allSettings as any[]).find((s: any) => s.settingKey === key)?.settingValue || def;
-
-        const endDateStr = getSetting('weekly_referral_end_date', '');
-        const startDateStr = getSetting('weekly_referral_start_date', '');
-        if (!endDateStr || !startDateStr) return;
-
-        const endDate = new Date(endDateStr);
-        if (isNaN(endDate.getTime()) || Date.now() < endDate.getTime()) return;
-
-        const guardKey = `referral_contest_done_${endDateStr.replace(/[^0-9]/g, '_')}`;
-        if (getSetting(guardKey, 'false') === 'true') return;
-
-        const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
-        log(`🏁 Referral contest ended (${endDateStr}). Saving referral snapshot…`);
-
-        const topReferrers = await db.execute(sql`
-          SELECT
-            r.referrer_id AS id,
-            u.username,
-            u.first_name,
-            COUNT(*)::int AS referral_count
-          FROM referrals r
-          JOIN users u ON u.id = r.referrer_id
-          WHERE r.status = 'active'
-            AND r.created_at >= ${startDateStr}::timestamptz
-            AND COALESCE(u.banned, false) = false
-          GROUP BY r.referrer_id, u.username, u.first_name
-          ORDER BY referral_count DESC
-          LIMIT ${topN}
-        `);
-
-        const adminId = process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_ID;
-        const botToken = process.env.TELEGRAM_BOT_TOKEN;
-        if (adminId && botToken) {
-          const medals = ['🥇', '🥈', '🥉'];
-          let msg = `👥 <b>Referral Contest Ended!</b>\n\n`;
-          msg += `📅 Period: <code>${startDateStr}</code> → <code>${endDateStr}</code>\n`;
-          if (topReferrers.rows.length > 0) {
-            msg += `\n`;
-            (topReferrers.rows as any[]).slice(0, 10).forEach((u: any, i: number) => {
-              const name = u.username ? `@${u.username}` : (u.first_name || `User`);
-              msg += `${medals[i] || `${i + 1}.`} <b>${name}</b> — ${u.referral_count} invites\n   <code>${u.id}</code>\n`;
-            });
-          } else {
-            msg += `No participants this period.\n`;
-          }
-          msg += `\n💡 Please distribute rewards manually.`;
-          fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: adminId, text: msg, parse_mode: 'HTML' }),
-          }).catch(() => {});
-        }
-
-        await db.execute(sql`
-          INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES (${guardKey}, 'true', 'Referral contest done guard')
-          ON CONFLICT (setting_key) DO UPDATE SET setting_value = 'true', updated_at = NOW()
-        `);
-        await db.execute(sql`
-          INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES ('weekly_referral_start_date', '', 'Referral contest start date')
-          ON CONFLICT (setting_key) DO UPDATE SET setting_value = '', updated_at = NOW()
-        `);
-        await db.execute(sql`
-          INSERT INTO admin_settings (setting_key, setting_value, description)
-          VALUES ('weekly_referral_end_date', '', 'Referral contest end date')
-          ON CONFLICT (setting_key) DO UPDATE SET setting_value = '', updated_at = NOW()
-        `);
-
-        log(`✅ Referral contest done: snapshot sent, dates cleared.`);
-      } catch (err) {
-        console.error('❌ Error in referral contest monitor:', err);
-      }
-    }, 5 * 60 * 1000)
     
     // Auto-setup Telegram webhook on server start with retry logic
     if (process.env.TELEGRAM_BOT_TOKEN) {

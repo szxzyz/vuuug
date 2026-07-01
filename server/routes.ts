@@ -20,7 +20,6 @@ import {
   spinHistory,
   dailyMissions,
   adminRoles,
-  leaderboardSnapshots,
 } from "../shared/schema";
 import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
@@ -163,22 +162,6 @@ function broadcastUpdate(update: any) {
   return messagesSent;
 }
 
-// ── Contest active helper ───────────────────────────────────────────────────
-// Returns true when a monthly contest window is currently open.
-// Pass in the already-loaded adminSettings rows (to avoid extra DB round-trips).
-type AdminSettingRow = { settingKey: string; settingValue: string | null };
-function isMonthlyContestActive(settings: AdminSettingRow[], now = Date.now()): boolean {
-  const get = (key: string) => settings.find(s => s.settingKey === key)?.settingValue || '';
-  const startStr = get('monthly_contest_start_date');
-  const endStr   = get('monthly_contest_end_date');
-  if (!startStr) return false;                          // no start date → never active
-  const startMs = new Date(startStr).getTime();
-  if (isNaN(startMs) || now < startMs) return false;   // not yet started
-  if (!endStr) return true;                             // no end date → open-ended
-  const endMs = new Date(endStr).getTime();
-  return isNaN(endMs) || now <= endMs;                  // within window
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Super admin check — TELEGRAM_ADMIN_ID or SUPER_ADMIN_ID env var (the one true master admin)
 const isSuperAdmin = (telegramId: string): boolean => {
@@ -1255,23 +1238,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // BUG currency settings
       const minimumConvertPadToTon = parseInt(getSetting('minimum_convert_pad_to_ton', '10000'));
-      const minimumConvertPowToStar = parseInt(getSetting('minimum_convert_pow_to_star', '1000'));
       const padToTonRate = parseInt(getSetting('pad_to_ton_rate', '10000000')); // 10M POW = 1 TON
-      const powToStarRate = parseInt(getSetting('pow_to_star_rate', '1')); // 1 POW = 1 STAR
-      const starRewardPerAd = parseInt(getSetting('star_reward_per_ad', '1')); // BUG per ad watched
-      const starRewardPerTask = parseInt(getSetting('star_reward_per_task', '10')); // BUG per task completed
       const activePromoCode = getSetting('active_promo_code', ''); // Current active promo code
 
       // Per-provider ad limits and rewards
       const adsgramAdLimit        = parseInt(getSetting('adsgram_ad_limit',        '510'));
       const adsgramRewardPerAd    = parseInt(getSetting('adsgram_reward_per_ad',    '125'));
-      const adsgramStarRewardPerAd = parseInt(getSetting('adsgram_star_reward_per_ad', '1'));
+      const adsgramEnabled        = getSetting('adsgram_enabled', 'true') === 'true';
       const monetagAdLimit        = parseInt(getSetting('monetag_ad_limit',         '50'));
       const monetagRewardPerAd    = parseInt(getSetting('monetag_reward_per_ad',    '125'));
-      const monetagStarRewardPerAd = parseInt(getSetting('monetag_star_reward_per_ad', '1'));
+      const monetagEnabled        = getSetting('monetag_enabled', 'true') === 'true';
       const gigapubAdLimit        = parseInt(getSetting('gigapub_ad_limit',         '50'));
       const gigapubRewardPerAd    = parseInt(getSetting('gigapub_reward_per_ad',    '125'));
-      const gigapubStarRewardPerAd = parseInt(getSetting('gigapub_star_reward_per_ad', '1'));
+      const gigapubEnabled        = getSetting('gigapub_enabled', 'true') === 'true';
       
       // Legacy compatibility - keep old values for backwards compatibility
       const taskCostPerClick = channelTaskCostUSD; // Use channel cost as default
@@ -1329,11 +1308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumInvitesForWithdrawal,
         // BUG currency settings
         minimumConvertPadToTon,
-        minimumConvertPowToStar,
         padToTonRate,
-        powToStarRate,
-        starRewardPerAd,
-        starRewardPerTask,
         activePromoCode,
         // Withdrawal packages (JSON array of {usd, bug} objects)
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
@@ -1348,27 +1323,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
         monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
-        weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
-        starsLocked: getSetting('stars_locked', 'false') === 'true',
         minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
         maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
         maxWithdrawalsPerDay: parseInt(getSetting('maxWithdrawalsPerDay', '1')),
-        monthlyContestStartDate: getSetting('monthly_contest_start_date', ''),
-        monthlyContestEndDate: getSetting('monthly_contest_end_date', ''),
-        monthlyContestTopUsers: parseInt(getSetting('monthly_contest_top_users', '20')),
-        weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
-        weeklyReferralEndDate: getSetting('weekly_referral_end_date', ''),
-        weeklyReferralTopUsers: parseInt(getSetting('weekly_referral_top_users', '10')),
         // Per-provider ad settings
         adsgramAdLimit,
         adsgramRewardPerAd,
-        adsgramStarRewardPerAd,
+        adsgramEnabled,
         monetagAdLimit,
         monetagRewardPerAd,
-        monetagStarRewardPerAd,
+        monetagEnabled,
         gigapubAdLimit,
         gigapubRewardPerAd,
-        gigapubStarRewardPerAd,
+        gigapubEnabled,
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -1589,7 +1556,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const defaultLimit = normalizedAdType === 'adsgram' ? '510' : '50';
       const DAILY_AD_LIMIT = parseInt(getAdSetting(`${normalizedAdType}_ad_limit`, defaultLimit));
       const rewardPerAdPOW = parseInt(getAdSetting(`${normalizedAdType}_reward_per_ad`, '125'));
-      const starRewardPerAd = parseInt(getAdSetting(`${normalizedAdType}_star_reward_per_ad`, '1'));
+      const providerEnabled = getAdSetting(`${normalizedAdType}_enabled`, 'true') === 'true';
+
+      if (!providerEnabled) {
+        return res.status(403).json({
+          message: `${normalizedAdType} ads are currently disabled by admin.`,
+          errorType: 'provider_disabled',
+        });
+      }
 
       // Per-provider daily count
       const now = new Date();
@@ -1641,25 +1615,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `);
         }
         
-        // Add STAR reward to weekly_stars — ONLY during an active monthly contest window
-        const monthlyContestActive = isMonthlyContestActive(allAdminSettings as any);
-        if (starRewardPerAd > 0 && monthlyContestActive) {
-          const currentWeek = getISOWeek();
-          const userWeekStarWeek = (user as any).weeklyStarWeek;
-          const weeklyReset = userWeekStarWeek !== currentWeek;
-          await db.execute(sql`
-            UPDATE users SET
-              weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starRewardPerAd}
-                                      ELSE COALESCE(weekly_stars, 0) + ${starRewardPerAd} END,
-              weekly_star_week = ${currentWeek},
-              updated_at       = NOW()
-            WHERE id = ${userId}
-          `);
-          console.log(`⭐ Ad watch: +${starRewardPerAd} STAR for ${userId} (contest active)`);
-        } else if (starRewardPerAd > 0) {
-          console.log(`⭐ Ad watch: star skipped for ${userId} — no active monthly contest`);
-        }
-        
         // Check and activate referral bonuses
         try {
           const activatedReferrerIds = await storage.checkAndActivateReferralBonus(userId);
@@ -1673,7 +1628,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 withdrawBalance: referrerData?.withdrawBalance,
                 usdBalance: referrerData?.usdBalance,
                 totalEarnings: referrerData?.totalEarnings,
-                starBalance: Number(referrerData?.starBalance || 0),
               });
             } catch (_) {}
           }
@@ -1795,14 +1749,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : ((updatedUser as any)?.gigapubAdsWatchedToday ?? currentTypeWatched + 1);
       const newAdsWatched = updatedTypeWatched;
       
-      // Send real-time update to user (non-blocking) — include starBalance so header refreshes
+      // Send real-time update to user (non-blocking)
       try {
         sendRealtimeUpdate(userId, {
           type: 'balance_update',
           balance: updatedUser?.balance,
           usdBalance: updatedUser?.usdBalance,
-          starBalance: Number(updatedUser?.starBalance || 0),
-          weeklyStars: Number((updatedUser as any)?.weeklyStars || 0),
           amount: adRewardPOW.toString(),
           message: 'Ad reward earned!',
           timestamp: new Date().toISOString()
@@ -1816,10 +1768,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ 
         success: true, 
         rewardPOW: adRewardPOW,
-        rewardSTAR: starRewardPerAd,
         newBalance: updatedUser?.balance || user.balance || "0",
-        newStarBalance: updatedUser?.starBalance || "0",
-        newWeeklyStars: Number((updatedUser as any)?.weeklyStars || 0),
         adsWatchedToday: newAdsWatched
       });
     } catch (error) {
@@ -1842,11 +1791,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Daily Activity Bonus endpoints
   const DAILY_BONUS_MILESTONES = [
-    { ads: 100, starReward: 100,  usdReward: null  },
-    { ads: 200, starReward: 500,  usdReward: null  },
-    { ads: 300, starReward: 1000, usdReward: null  },
-    { ads: 400, starReward: null, usdReward: 0.05  },
-    { ads: 500, starReward: null, usdReward: 0.10  },
+    { ads: 100, usdReward: 0.01  },
+    { ads: 200, usdReward: 0.02  },
+    { ads: 300, usdReward: 0.03  },
+    { ads: 400, usdReward: 0.05  },
+    { ads: 500, usdReward: 0.10  },
   ];
 
   function getISOWeek(): string {
@@ -1985,28 +1934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // STEP 2: Give the reward (safe — slot is already locked above)
-      if (milestone.starReward) {
-        // Only give stars during an active monthly contest window
-        const _msAllSettings = await db.select().from(adminSettings);
-        const _msContestActive = isMonthlyContestActive(_msAllSettings as any);
-        if (_msContestActive) {
-          const starsToAdd = milestone.starReward;
-          const freshUser = await storage.getUser(userId);
-          const userWeek = (freshUser as any)?.weeklyStarWeek;
-          const weeklyReset = userWeek !== currentWeek;
-          await db.execute(sql`
-            UPDATE users SET
-              weekly_stars     = CASE WHEN ${weeklyReset} THEN ${starsToAdd}
-                                     ELSE COALESCE(weekly_stars, 0) + ${starsToAdd} END,
-              weekly_star_week = ${currentWeek},
-              updated_at       = NOW()
-            WHERE id = ${userId}
-          `);
-          console.log(`⭐ Milestone ${milestoneIndex} (${milestone.ads} ads): +${starsToAdd} STAR for ${userId} (contest active)`);
-        } else {
-          console.log(`⭐ Milestone ${milestoneIndex}: star skipped for ${userId} — no active monthly contest`);
-        }
-      } else if (milestone.usdReward) {
+      if (milestone.usdReward) {
         // Credit USD directly to usd_balance — do NOT convert to PAD
         await db
           .update(users)
@@ -2048,7 +1976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           nextMilestone = {
             index: i,
             ads: m.ads,
-            reward: m.starReward ? `${m.starReward} Stars` : `$${m.usdReward} USD`,
+            reward: `${m.usdReward} USD`,
           };
           break;
         }
@@ -2057,21 +1985,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // STEP 5: Fetch updated user and push real-time balance update
       try {
         const updatedUser = await storage.getUser(userId);
-        const newStarBal = Number(updatedUser?.starBalance || 0);
-        const newWeeklyStars = Number((updatedUser as any)?.weeklyStars || 0);
         sendRealtimeUpdate(userId, {
           type: 'balance_update',
           balance: updatedUser?.balance,
           usdBalance: updatedUser?.usdBalance,
-          starBalance: newStarBal,
-          weeklyStars: newWeeklyStars,
         });
         return res.json({
           success: true,
           milestoneIndex,
           milestone,
-          newStarBalance: newStarBal,
-          newWeeklyStars,
           nextMilestone,
         });
       } catch (_) {
@@ -2095,142 +2017,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const week = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
     return `${year}-W${String(week).padStart(2, '0')}`;
   }
-
-  // Leaderboard — ranked by weekly_stars for current week contest (resets when contest ends)
-  app.get('/api/leaderboard/weekly', authenticateTelegram, async (req: any, res) => {
-    try {
-      const userId = req.user.user.id;
-      const currentWeek = getISOWeek();
-      const isLastWeek = req.query.week === 'last';
-
-      // ── LAST WEEK: serve from snapshot table ──────────────────────────────
-      if (isLastWeek) {
-        const lastWeekKey = getISOWeekOffset(1);
-        const rows = await db
-          .select()
-          .from(leaderboardSnapshots)
-          .where(sql`${leaderboardSnapshots.weekKey} = ${lastWeekKey}`)
-          .orderBy(leaderboardSnapshots.rank);
-
-        const leaderboard = rows.map(r => ({
-          userId: r.userId,
-          username: r.username,
-          firstName: r.firstName,
-          weeklyStars: r.weeklyStars,
-          rank: r.rank,
-          profileImageUrl: r.profileImageUrl,
-        }));
-
-        const myEntry = leaderboard.find(e => e.userId === userId);
-        const userRank = myEntry ? { rank: myEntry.rank, weeklyStars: myEntry.weeklyStars } : null;
-
-        return res.json({
-          leaderboard,
-          userRank,
-          userStars: myEntry?.weeklyStars || 0,
-          userStarBalance: myEntry?.weeklyStars || 0,
-          currentWeek,
-          lastWeek: lastWeekKey,
-          isLastWeek: true,
-        });
-      }
-
-      // ── CURRENT WEEK ──────────────────────────────────────────────────────
-
-      // Read monthly contest settings from admin DB
-      const allAdminSettings = await db.select().from(adminSettings);
-      const getAdminSetting = (key: string, def: string) =>
-        allAdminSettings.find(s => s.settingKey === key)?.settingValue || def;
-      const monthlyTopN = parseInt(getAdminSetting('monthly_contest_top_users', '20'));
-      const monthlyEndDate = getAdminSetting('monthly_contest_end_date', '');
-      const monthlyStartDate = getAdminSetting('monthly_contest_start_date', '');
-
-      // ── Contest active gate ───────────────────────────────────────────────
-      // Only show data when admin has set a start date AND we are past it
-      const nowMs = Date.now();
-      const startDateMs = monthlyStartDate ? new Date(monthlyStartDate).getTime() : NaN;
-      const endDateMs   = monthlyEndDate   ? new Date(monthlyEndDate).getTime()   : NaN;
-      const contestStarted = !isNaN(startDateMs) && nowMs >= startDateMs;
-      const contestEnded   = contestStarted && !isNaN(endDateMs) && nowMs > endDateMs;
-
-      if (!contestStarted || contestEnded) {
-        return res.json({
-          leaderboard: [],
-          userRank: null,
-          userStars: 0,
-          userStarBalance: 0,
-          currentWeek,
-          topN: monthlyTopN,
-          endDate: monthlyEndDate,
-          startDate: monthlyStartDate,
-          contestActive: false,
-          contestEnded: !!contestEnded,
-          isLastWeek: false,
-        });
-      }
-
-      // Top N users sorted by weekly_stars
-      const top50 = await db
-        .select({
-          userId: users.id,
-          username: users.username,
-          firstName: users.firstName,
-          weeklyStars: users.weeklyStars,
-          starBalance: users.weeklyStars,
-          profileImageUrl: users.profileImageUrl,
-        })
-        .from(users)
-        .where(
-          sql`COALESCE(${users.weeklyStars}, 0) > 0
-              AND COALESCE(${users.banned}, false) = false`
-        )
-        .orderBy(sql`${users.weeklyStars} DESC NULLS LAST`)
-        .limit(Math.max(monthlyTopN, 50));
-
-      const leaderboard = top50.map((u, i) => ({
-        ...u,
-        weeklyStars: Number(u.weeklyStars || 0),
-        rank: i + 1,
-      }));
-
-      // Current user's stats
-      const currentUser = await storage.getUser(userId);
-      const userWeeklyStars = Number((currentUser as any)?.weeklyStars || 0);
-
-      let userRank: { rank: number; weeklyStars: number } | null = null;
-      const myEntry = leaderboard.find((e) => e.userId === userId);
-      if (myEntry) {
-        userRank = { rank: myEntry.rank, weeklyStars: userWeeklyStars };
-      } else if (userWeeklyStars > 0) {
-        // User has stars but outside top 50 — calculate approximate rank
-        const higherCount = await db
-          .select({ count: sql<number>`COUNT(*)` })
-          .from(users)
-          .where(
-            sql`COALESCE(${users.weeklyStars}, 0) > ${userWeeklyStars}
-                AND COALESCE(${users.banned}, false) = false`
-          );
-        const rank = (Number(higherCount[0]?.count) || 0) + 1;
-        userRank = { rank, weeklyStars: userWeeklyStars };
-      }
-
-      res.json({
-        leaderboard,
-        userRank,
-        userStars: userWeeklyStars,
-        userStarBalance: userWeeklyStars,
-        currentWeek,
-        lastWeek: getISOWeekOffset(1),
-        isLastWeek: false,
-        topN: monthlyTopN,
-        endDate: monthlyEndDate,
-        startDate: monthlyStartDate,
-      });
-    } catch (error) {
-      console.error('Leaderboard error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
 
   // Daily login streak reward tiers (in POW = PAD units, 1 USD = 10,000,000 POW)
   function getDailyStreakReward(streakDay: number): { usd: number; pow: number } {
@@ -2475,122 +2261,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Leaderboard endpoints
-  app.get('/api/leaderboard/top', async (req: any, res) => {
-    try {
-      const topUser = await storage.getTopUserByEarnings();
-      res.json(topUser || { username: 'No data', profileImage: '', totalEarnings: '0' });
-    } catch (error) {
-      console.error("Error fetching top user:", error);
-      res.status(500).json({ message: "Failed to fetch top user" });
-    }
-  });
-  
-  // Referral leaderboard — top N users by verified referral count
-  app.get('/api/leaderboard/referral', authenticateTelegram, async (req: any, res) => {
-    try {
-      const userId = req.user?.user?.id;
-      const allSettings = await db.select().from(adminSettings);
-      const getSetting = (key: string, def: string) => allSettings.find(s => s.settingKey === key)?.settingValue || def;
-      const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
-      const startDateStr = getSetting('weekly_referral_start_date', '');
-      const endDateStr   = getSetting('weekly_referral_end_date', '');
-
-      // ── Contest active gate ───────────────────────────────────────────────
-      // Only show data when admin has set a start date AND we are past it
-      const nowMs = Date.now();
-      const startMs = startDateStr ? new Date(startDateStr).getTime() : NaN;
-      const endMs   = endDateStr   ? new Date(endDateStr).getTime()   : NaN;
-      const contestStarted = !isNaN(startMs) && nowMs >= startMs;
-      const contestEnded   = contestStarted && !isNaN(endMs) && nowMs > endMs;
-
-      if (!contestStarted || contestEnded) {
-        return res.json({
-          leaderboard: [],
-          userRank: null,
-          topN,
-          startDate: startDateStr,
-          endDate: endDateStr,
-          contestActive: false,
-          contestEnded: !!contestEnded,
-        });
-      }
-
-      // Only count referrals made DURING the contest period (after start date)
-      const rows = await db.execute(sql`
-        SELECT
-          r.referrer_id  AS "userId",
-          u.username     AS "username",
-          u.first_name   AS "firstName",
-          COUNT(*)::int  AS "referralCount"
-        FROM referrals r
-        JOIN users u ON u.id = r.referrer_id
-        WHERE r.status = 'active'
-          AND r.created_at >= ${startDateStr}::timestamptz
-          AND COALESCE(u.banned, false) = false
-        GROUP BY r.referrer_id, u.username, u.first_name
-        ORDER BY "referralCount" DESC
-        LIMIT ${topN}
-      `);
-
-      const leaderboard = (rows.rows as any[]).map((row, i) => ({
-        userId: row.userId,
-        username: row.username,
-        firstName: row.firstName,
-        referralCount: Number(row.referralCount),
-        rank: i + 1,
-      }));
-
-      const myEntry = leaderboard.find(e => e.userId === userId);
-      let userRank: { rank: number; referralCount: number } | null = null;
-      if (myEntry) {
-        userRank = { rank: myEntry.rank, referralCount: myEntry.referralCount };
-      } else if (userId) {
-        const myCountRows = await db.execute(sql`
-          SELECT COUNT(*)::int AS cnt FROM referrals
-          WHERE referrer_id = ${userId}
-            AND status = 'active'
-            AND created_at >= ${startDateStr}::timestamptz
-        `);
-        const myCount = Number((myCountRows.rows as any[])[0]?.cnt || 0);
-        if (myCount > 0) {
-          const aboveRows = await db.execute(sql`
-            SELECT COUNT(DISTINCT referrer_id)::int AS cnt FROM referrals
-            WHERE status = 'active'
-              AND created_at >= ${startDateStr}::timestamptz
-            GROUP BY referrer_id
-            HAVING COUNT(*) > ${myCount}
-          `);
-          userRank = { rank: (aboveRows.rows as any[]).length + 1, referralCount: myCount };
-        }
-      }
-
-      res.json({
-        leaderboard,
-        userRank,
-        topN,
-        startDate: startDateStr,
-        endDate: endDateStr,
-        contestActive: true,
-      });
-    } catch (error) {
-      console.error('Referral leaderboard error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  app.get('/api/leaderboard/monthly', async (req: any, res) => {
-    try {
-      // Get userId from session if available (optional - for rank calculation)
-      const userId = req.session?.user?.user?.id || req.user?.user?.id;
-      const leaderboard = await storage.getMonthlyLeaderboard(userId);
-      res.json(leaderboard);
-    } catch (error) {
-      console.error("Error fetching monthly leaderboard:", error);
-      res.status(500).json({ message: "Failed to fetch monthly leaderboard" });
-    }
-  });
-
   // Referral stats endpoint - auth removed to prevent popup spam on affiliates page
   app.get('/api/referrals/stats', async (req: any, res) => {
     try {
@@ -2789,8 +2459,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const withdrawalAdRequirementEnabled = getSetting('withdrawal_ad_requirement_enabled', 'true') === 'true';
       const MINIMUM_ADS_FOR_WITHDRAWAL = parseInt(getSetting('minimum_ads_for_withdrawal', '100'));
-      // STAR is not a withdrawal requirement — only used for weekly contest
-      
       let adsWatchedSinceLastWithdrawal = 0;
       
       if (lastWithdrawal.length === 0) {
@@ -2813,7 +2481,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adsWatchedSinceLastWithdrawal = adsCountResult[0]?.count || 0;
       }
       
-      // STAR is not a withdrawal gate — only used for weekly contest
       const canWithdraw = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
       
       res.json({ 
@@ -3233,8 +2900,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channelTaskReward = await storage.getAppSetting('channelTaskReward', '1000');
       const botTaskReward = await storage.getAppSetting('botTaskReward', '1000');
       const partnerTaskReward = await storage.getAppSetting('partnerTaskReward', '1000');
-      const starRewardPerTask = await storage.getAppSetting('star_reward_per_task', '10');
-
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
       const advertiserTasks = await storage.getActiveTasksForUser(userId);
@@ -4310,11 +3975,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumAdsForWithdrawal: parseInt(getSetting('minimum_ads_for_withdrawal', '100')),
         withdrawalInviteRequirementEnabled: getSetting('withdrawal_invite_requirement_enabled', 'true') === 'true',
         minimumInvitesForWithdrawal: parseInt(getSetting('minimum_invites_for_withdrawal', '3')),
-        // STAR currency settings (weekly contest only)
-        starRewardPerAd: parseInt(getSetting('star_reward_per_ad', '2')),
-        starRewardPerTask: 0,
-        powToStarRate: parseInt(getSetting('pow_to_star_rate', '1')),
-        minimumConvertPowToStar: parseInt(getSetting('minimum_convert_pow_to_star', '1000')),
         // Withdrawal packages
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
         // Legacy fields for backwards compatibility
@@ -4333,17 +3993,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
         monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
         monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
-        weeklyContestEndDate: getSetting('weekly_contest_end_date', ''),
-        // Monthly star leaderboard contest dates — MUST be returned so admin panel
-        // doesn't overwrite them with empty strings on every save
-        monthlyContestStartDate: getSetting('monthly_contest_start_date', ''),
-        monthlyContestEndDate: getSetting('monthly_contest_end_date', ''),
-        monthlyContestTopUsers: parseInt(getSetting('monthly_contest_top_users', '20')),
-        // Weekly referral leaderboard contest dates
-        weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
-        weeklyReferralEndDate: getSetting('weekly_referral_end_date', ''),
-        weeklyReferralTopUsers: parseInt(getSetting('weekly_referral_top_users', '10')),
-        starsLocked: getSetting('stars_locked', 'false') === 'true',
         minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
         maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
         maxWithdrawalsPerDay: parseInt(getSetting('maxWithdrawalsPerDay', '1')),
@@ -4352,16 +4001,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         checkAnnouncementReward: parseInt(getSetting('check_announcement_reward', '1000')),
         adsgramCheckinReward: parseInt(getSetting('adsgram_checkin_reward', '1000')),
         firstActiveReferralReward: parseInt(getSetting('first_active_referral_reward', '2500')),
-        // Per-provider ad card settings
+        // Per-provider ad card settings (with enabled/disabled status)
         adsgramAdLimit: parseInt(getSetting('adsgram_ad_limit', '510')),
         adsgramRewardPerAd: parseInt(getSetting('adsgram_reward_per_ad', '125')),
-        adsgramStarRewardPerAd: parseInt(getSetting('adsgram_star_reward_per_ad', '1')),
+        adsgramEnabled: getSetting('adsgram_enabled', 'true') === 'true',
         monetagAdLimit: parseInt(getSetting('monetag_ad_limit', '50')),
         monetagRewardPerAd: parseInt(getSetting('monetag_reward_per_ad', '125')),
-        monetagStarRewardPerAd: parseInt(getSetting('monetag_star_reward_per_ad', '1')),
+        monetagEnabled: getSetting('monetag_enabled', 'true') === 'true',
         gigapubAdLimit: parseInt(getSetting('gigapub_ad_limit', '50')),
         gigapubRewardPerAd: parseInt(getSetting('gigapub_reward_per_ad', '125')),
-        gigapubStarRewardPerAd: parseInt(getSetting('gigapub_star_reward_per_ad', '1')),
+        gigapubEnabled: getSetting('gigapub_enabled', 'true') === 'true',
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);
@@ -6034,7 +5683,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             balance: users.balance,
             usdBalance: users.usdBalance,
             tonBalance: users.tonBalance,
-            starBalance: users.starBalance
           })
           .from(users)
           .where(eq(users.id, userId))
@@ -6073,13 +5721,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const currentTonBalance = parseFloat(user.tonBalance || '0');
           updateData.tonBalance = (currentTonBalance + convertedAmount).toFixed(10);
           console.log(`✅ POW to TON: ${convertAmount} POW → ${convertedAmount.toFixed(6)} TON`);
-        } else if (convertTo === 'STAR') {
-          const powToStarRateSetting = await storage.getAppSetting('pow_to_star_rate', '1');
-          const POW_TO_STAR_RATE = parseFloat(powToStarRateSetting);
-          convertedAmount = convertAmount * POW_TO_STAR_RATE;
-          const currentStarBalance = parseFloat(user.starBalance || '0');
-          updateData.starBalance = (currentStarBalance + convertedAmount).toFixed(10);
-          console.log(`✅ POW to STAR: ${convertAmount} POW → ${convertedAmount.toFixed(0)} STAR`);
         }
         
         await tx.update(users).set(updateData).where(eq(users.id, userId));
@@ -6100,7 +5741,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           newPowBalance,
           newUsdBalance: updateData.usdBalance ?? user.usdBalance,
           newTonBalance: updateData.tonBalance ?? user.tonBalance,
-          newStarBalance: updateData.starBalance ?? user.starBalance,
         };
       });
       
@@ -6110,7 +5750,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         balance: String(result.newPowBalance),
         usdBalance: result.newUsdBalance,
         tonBalance: result.newTonBalance,
-        starBalance: result.newStarBalance,
       });
       
       res.json({
@@ -6236,113 +5875,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
     } catch (error) {
       console.error('❌ Error converting POW to TON:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to convert';
-      
-      res.status(errorMessage === 'Insufficient POW balance' ? 400 : 500).json({ 
-        success: false, 
-        message: errorMessage
-      });
-    }
-  });
-
-  // PAD to BUG conversion endpoint
-  app.post('/api/convert-to-bug', async (req: any, res) => {
-    try {
-      const userId = req.session?.user?.user?.id || req.user?.user?.id;
-      
-      if (!userId) {
-        console.log("⚠️ STAR conversion requested without session - skipping");
-        return res.json({ success: true, skipAuth: true });
-      }
-
-      const { powAmount } = req.body;
-      
-      console.log('🌟 POW to STAR conversion request:', { userId, powAmount });
-      
-      const convertAmount = parseFloat(powAmount);
-      if (!powAmount || isNaN(convertAmount) || convertAmount <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please enter a valid POW amount'
-        });
-      }
-
-      // Get minimum conversion from admin settings
-      const minConvertSetting = await storage.getAppSetting('minimum_convert_pow_to_star', '1000');
-      const minimumConvertPOW = parseFloat(minConvertSetting);
-
-      if (convertAmount < minimumConvertPOW) {
-        return res.status(400).json({
-          success: false,
-          message: `Minimum POW required for BUG conversion`
-        });
-      }
-      
-      // Get conversion rate from admin settings (default: 1 POW = 1 STAR)
-      const conversionRateSetting = await storage.getAppSetting('pow_to_star_rate', '1');
-      const POW_TO_STAR_RATE = parseFloat(conversionRateSetting);
-      const starAmount = convertAmount / POW_TO_STAR_RATE;
-      
-      console.log(`📊 Using conversion rate: ${POW_TO_STAR_RATE} POW = 1 STAR`);
-      
-      // Use transaction to ensure atomicity
-      const result = await db.transaction(async (tx) => {
-        const [user] = await tx
-          .select({ 
-            balance: users.balance,
-            starBalance: users.starBalance
-          })
-          .from(users)
-          .where(eq(users.id, userId))
-          .for('update');
-        
-        if (!user) {
-          throw new Error('User not found');
-        }
-        
-        const currentPowBalance = parseFloat(user.balance || '0');
-        const currentStarBalance = parseFloat(user.starBalance || '0');
-        
-        if (currentPowBalance < convertAmount) {
-          throw new Error('Insufficient POW balance');
-        }
-        
-        const newPowBalance = currentPowBalance - convertAmount;
-        const newStarBalance = currentStarBalance + starAmount;
-        
-        await tx
-          .update(users)
-          .set({
-            balance: String(Math.round(newPowBalance)),
-            starBalance: newStarBalance.toFixed(10),
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, userId));
-        
-        console.log(`✅ POW to STAR conversion successful: ${convertAmount} POW → ${starAmount.toFixed(0)} STAR`);
-        
-        return {
-          powAmount: convertAmount,
-          starAmount,
-          newPowBalance,
-          newStarBalance
-        };
-      });
-      
-      sendRealtimeUpdate(userId, {
-        type: 'balance_update',
-        balance: String(result.newPowBalance),
-        starBalance: result.newStarBalance.toFixed(10)
-      });
-      
-      res.json({
-        success: true,
-        message: 'Conversion to STAR successful!',
-        ...result
-      });
-      
-    } catch (error) {
-      console.error('❌ Error converting POW to STAR:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to convert';
       
       res.status(errorMessage === 'Insufficient POW balance' ? 400 : 500).json({ 
@@ -7672,7 +7204,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .select({ 
             balance: users.balance,
             usdBalance: users.usdBalance,
-            starBalance: users.starBalance,
             cwalletId: users.cwalletId,
             usdtWalletAddress: users.usdtWalletAddress,
             telegramStarsUsername: users.telegramStarsUsername,
@@ -7817,8 +7348,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(1);
         const withdrawalPackagesConfig = JSON.parse(withdrawalPackagesSetting?.settingValue || '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]');
         
-        // Get BUG requirement settings from admin
-        // STAR is only used for weekly contest — no withdrawal gate
         let packageUsdAmount: number | null = null;
         
         if (customAmount !== null && !isNaN(customAmount) && customAmount > 0) {
@@ -7982,7 +7511,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (packageUsdAmount !== null) {
             withdrawalDetails.withdrawalPackage = packageUsdAmount;
           }
-          // STAR is not deducted on withdrawal — it's only for weekly contest
           withdrawalDetails.starDeducted = 0;
           
           // Store wallet address based on method
@@ -8459,8 +7987,6 @@ ${walletAddress}
                 type: 'balance_update',
                 balance: freshUser.balance,
                 usdBalance: freshUser.usdBalance,
-                starBalance: Number(freshUser.starBalance || 0),
-                weeklyStars: Number((freshUser as any).weeklyStars || 0),
               });
             }
           } catch (_) {}
@@ -8551,28 +8077,6 @@ ${walletAddress}
   });
 
   // Test withdrawal group notification (admin only)
-  // Admin: manually trigger weekly contest reset (send winner notification + reset all stars)
-  app.post('/api/admin/contest/reset', authenticateAdmin, async (req: any, res) => {
-    try {
-      const { weekLabel } = req.body;
-      const { resetWeeklyContest } = await import('./telegram');
-      const result = await resetWeeklyContest(weekLabel || undefined);
-      if (result.success) {
-        res.json({
-          success: true,
-          message: result.message,
-          usersReset: result.usersReset,
-          winnersNotified: result.winnersNotified,
-        });
-      } else {
-        res.status(500).json({ success: false, message: result.message });
-      }
-    } catch (error: any) {
-      console.error('❌ Error triggering contest reset:', error);
-      res.status(500).json({ success: false, message: `Error: ${error.message}` });
-    }
-  });
-
   app.post('/api/admin/withdrawals/test-group-notification', authenticateAdmin, async (req: any, res) => {
     try {
       const { sendWithdrawalApprovedNotification } = await import('./telegram');
@@ -8989,7 +8493,6 @@ ${walletAddress}
       // Normalize aliases
       if (rewardType === 'PDZ')  rewardType = 'TON';
       if (rewardType === 'POW')  rewardType = 'PAD';
-      if (rewardType === 'STAR') rewardType = 'BUG';
 
       // STEP 2: Give the reward — if this throws, usage is NOT recorded
       if (rewardType === 'PAD') {
@@ -9036,21 +8539,6 @@ ${walletAddress}
           message: `$${rewardAmount} USD added to your balance!`,
           reward: rewardAmount,
           rewardType: 'USD',
-        });
-
-      } else if (rewardType === 'BUG') {
-        const [currentUser] = await db.select({ starBalance: users.starBalance }).from(users).where(eq(users.id, userId));
-        const newStarBalance = (parseFloat(currentUser?.starBalance || '0') + parseFloat(rewardAmount)).toFixed(2);
-        await db.update(users).set({ starBalance: newStarBalance, updatedAt: new Date() }).where(eq(users.id, userId));
-        await storage.logTransaction({ userId, amount: rewardAmount, type: 'credit', source: 'promo_code', description: `Redeemed promo code: ${cleanCode}`, metadata: { code: cleanCode, rewardType: 'STAR' } });
-
-        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
-
-        return res.json({
-          success: true,
-          message: `${rewardAmount} STAR added to your balance!`,
-          reward: rewardAmount,
-          rewardType: 'STAR',
         });
 
       } else {
@@ -10464,14 +9952,14 @@ ${walletAddress}
       const { action, currency, amount, reason } = req.body;
 
       if (!['add', 'deduct', 'set'].includes(action)) return res.status(400).json({ error: 'Invalid action. Use add|deduct|set' });
-      if (!['pow', 'star', 'usd'].includes(currency)) return res.status(400).json({ error: 'Invalid currency. Use pow|star|usd' });
+      if (!['pow', 'usd'].includes(currency)) return res.status(400).json({ error: 'Invalid currency. Use pow|usd' });
       const amt = parseFloat(amount);
       if (isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Invalid amount' });
 
       const targetUser = await storage.getUser(id);
       if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
-      let fieldKey = currency === 'pow' ? 'balance' : currency === 'star' ? 'starBalance' : 'usdBalance';
+      let fieldKey = currency === 'pow' ? 'balance' : 'usdBalance';
       const current = parseFloat((targetUser as any)[fieldKey]?.toString() || '0');
 
       let newVal: number;
