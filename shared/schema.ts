@@ -106,9 +106,6 @@ export const users = pgTable("users", {
   lastMembershipCheck: timestamp("last_membership_check"),
   dailyLoginStreak: integer("daily_login_streak").default(0),
   lastDailyLoginDate: text("last_daily_login_date"),
-  starBalance: integer("star_balance").default(0),
-  weeklyStars: integer("weekly_stars").default(0),
-  weeklyStarWeek: text("weekly_star_week"),
   language: varchar("language", { length: 5 }).default("en"),
   // Risk scoring & platform detection
   suspicionScore: integer("suspicion_score").default(0),
@@ -373,19 +370,6 @@ export const insertSpinHistorySchema = createInsertSchema(spinHistory).omit({ id
 export const insertDailyMissionSchema = createInsertSchema(dailyMissions).omit({ id: true, createdAt: true });
 export const insertBlockedCountrySchema = createInsertSchema(blockedCountries).omit({ id: true, createdAt: true });
 export const insertAdminRoleSchema = createInsertSchema(adminRoles).omit({ id: true, createdAt: true, updatedAt: true });
-
-// Leaderboard snapshots — weekly top-50 saved every Monday before reset
-export const leaderboardSnapshots = pgTable("leaderboard_snapshots", {
-  id: serial("id").primaryKey(),
-  weekKey: varchar("week_key", { length: 20 }).notNull(),   // e.g. '2026-W24'
-  rank: integer("rank").notNull(),
-  userId: varchar("user_id").notNull(),
-  username: varchar("username"),
-  firstName: text("first_name"),
-  profileImageUrl: text("profile_image_url"),
-  weeklyStars: integer("weekly_stars").notNull().default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-});
 
 // TON Deposits table - tracks blockchain deposits to prevent duplicates
 export const tonDeposits = pgTable("ton_deposits", {
