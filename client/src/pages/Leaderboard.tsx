@@ -249,11 +249,14 @@ export default function Leaderboard() {
   const { d: md, h: mh, m: mm, s: ms } = useCountdown(monthlyEndDate);
   const { d: rd, h: rh, m: rm, s: rs } = useCountdown(referralEndDate);
 
-  const monthlyEntries = (monthlyData?.leaderboard || []).slice(0, monthlyTopN);
-  const referralEntries = referralData?.leaderboard || [];
+  const monthlyContestActive = (monthlyData as any)?.contestActive !== false;
+  const referralContestActive = (referralData as any)?.contestActive !== false;
 
-  const myMonthlyRank = monthlyData?.userRank;
-  const myReferralRank = referralData?.userRank;
+  const monthlyEntries = monthlyContestActive ? (monthlyData?.leaderboard || []).slice(0, monthlyTopN) : [];
+  const referralEntries = referralContestActive ? (referralData?.leaderboard || []) : [];
+
+  const myMonthlyRank = monthlyContestActive ? monthlyData?.userRank : null;
+  const myReferralRank = referralContestActive ? referralData?.userRank : null;
 
   const isLoading = activeTab === "monthly" ? loadingMonthly : loadingReferral;
   const refetch = activeTab === "monthly" ? refetchMonthly : refetchReferral;
@@ -368,17 +371,39 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {/* Empty */}
-        {!isLoading && entries.length === 0 && (
+        {/* Contest Not Active */}
+        {!isLoading && activeTab === "monthly" && !monthlyContestActive && (
           <div style={{ textAlign: "center", padding: "48px 24px" }}>
-            {activeTab === "referral"
-              ? <FaUsers style={{ color: "rgba(52,211,153,0.18)", fontSize: 60, marginBottom: 16 }} />
-              : <FaStar style={{ color: "rgba(59,130,246,0.18)", fontSize: 60, marginBottom: 16 }} />
-            }
-            <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>No participants yet</p>
+            <div style={{ fontSize: 52, marginBottom: 14 }}>🔒</div>
+            <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>Contest Not Active</p>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,0.25)", margin: 0 }}>
-              {activeTab === "referral" ? "Invite friends who watch 1+ ad to rank up!" : "Watch ads to earn stars and climb!"}
+              Admin will start the next Monthly Contest soon. Stay tuned!
             </p>
+          </div>
+        )}
+        {!isLoading && activeTab === "referral" && !referralContestActive && (
+          <div style={{ textAlign: "center", padding: "48px 24px" }}>
+            <div style={{ fontSize: 52, marginBottom: 14 }}>🔒</div>
+            <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>Contest Not Active</p>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.25)", margin: 0 }}>
+              Admin will start the next Referral Contest soon. Invite friends to be ready!
+            </p>
+          </div>
+        )}
+
+        {/* Empty (contest active but no participants yet) */}
+        {!isLoading && activeTab === "monthly" && monthlyContestActive && entries.length === 0 && (
+          <div style={{ textAlign: "center", padding: "48px 24px" }}>
+            <FaStar style={{ color: "rgba(59,130,246,0.18)", fontSize: 60, marginBottom: 16 }} />
+            <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>No participants yet</p>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.25)", margin: 0 }}>Watch ads to earn stars and climb!</p>
+          </div>
+        )}
+        {!isLoading && activeTab === "referral" && referralContestActive && entries.length === 0 && (
+          <div style={{ textAlign: "center", padding: "48px 24px" }}>
+            <FaUsers style={{ color: "rgba(52,211,153,0.18)", fontSize: 60, marginBottom: 16 }} />
+            <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>No participants yet</p>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.25)", margin: 0 }}>Invite friends who watch 1+ ad to rank up!</p>
           </div>
         )}
 
