@@ -38,13 +38,6 @@ export default function Header() {
   const usdBalance = parseFloat(user?.usdBalance || "0");
   const usdFormatted = usdBalance.toFixed(3);
 
-  const weeklyStars = parseInt(user?.weeklyStars || "0");
-  const starFormatted = weeklyStars >= 1000000
-    ? (weeklyStars / 1000000).toFixed(1) + 'M'
-    : weeklyStars >= 1000
-    ? (weeklyStars / 1000).toFixed(1) + 'k'
-    : weeklyStars.toString();
-
   const powBalance = parseFloat(user?.balance || "0");
   const powAmount = powBalance < 1 ? Math.round(powBalance * 10000000) : Math.round(powBalance);
   const powFormatted = powAmount >= 1000000
@@ -214,14 +207,6 @@ export default function Header() {
       {langPicker}
       <div className={headerBase} style={headerStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, justifyContent: 'space-between' }}>
-          {balanceItem(
-            <img src="/star-bug.png" alt="STAR" style={{ width: ICON, height: ICON, objectFit: 'contain' }} />,
-            starFormatted,
-            'STAR'
-          )}
-
-          {divider}
-
           {balanceItem(
             <div style={{ width: ICON, height: ICON, borderRadius: '50%', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />

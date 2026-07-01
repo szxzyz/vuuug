@@ -5,9 +5,9 @@ import { Clock } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 const MILESTONES = [
-  { ads: 100, bugReward: 100,  usdReward: null,  label: "100 STAR",  isBug: true },
-  { ads: 200, bugReward: 500,  usdReward: null,  label: "500 STAR",  isBug: true },
-  { ads: 300, bugReward: 1000, usdReward: null,  label: "1000 STAR", isBug: true },
+  { ads: 100, bugReward: 100,  usdReward: null,  label: "100 POW",  isBug: false },
+  { ads: 200, bugReward: 500,  usdReward: null,  label: "500 POW",  isBug: false },
+  { ads: 300, bugReward: 1000, usdReward: null,  label: "1000 POW", isBug: false },
   { ads: 400, bugReward: null, usdReward: 0.05,  label: "$0.05",     isBug: false },
   { ads: 500, bugReward: null, usdReward: 0.10,  label: "$0.10",     isBug: false },
 ];
@@ -76,24 +76,12 @@ export default function DailyActivityBonus({ user }: { user: any }) {
       return res.json();
     },
     onSuccess: (data) => {
-      // Immediately patch the user cache with fresh star balance from response
-      if (data.newStarBalance !== undefined) {
-        queryClient.setQueryData(['/api/auth/user'], (oldUser: any) => {
-          if (!oldUser) return oldUser;
-          return {
-            ...oldUser,
-            starBalance: data.newStarBalance,
-            weeklyStars: data.newWeeklyStars ?? oldUser.weeklyStars,
-          };
-        });
-      }
       queryClient.invalidateQueries({ queryKey: ["/api/daily-bonus/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });
       const m = MILESTONES[data.milestoneIndex];
       if (m) {
         showNotification(
-          m.isBug ? `+${m.bugReward} STAR added to your balance!` : `+${m.usdReward} USD earned!`,
+          m.usdReward !== null ? `+${m.usdReward} USD earned!` : `+${m.bugReward} POW added to your balance!`,
           "success"
         );
       }
@@ -180,9 +168,6 @@ export default function DailyActivityBonus({ user }: { user: any }) {
                 alignItems: 'center',
                 gap: 3,
               }}>
-                {m.isBug && (
-                  <img src="/star-bug.png" alt="STAR" style={{ width: 16, height: 16, flexShrink: 0, objectFit: 'contain' }} />
-                )}
                 {m.label}
               </span>
 
@@ -208,8 +193,7 @@ export default function DailyActivityBonus({ user }: { user: any }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>Bonus</span>
             <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 3 }}>
-              {currentMilestone.isBug && <img src="/star-bug.png" alt="STAR" style={{ width: 16, height: 16, objectFit: 'contain' }} />}
-              {currentMilestone.label}
+                {currentMilestone.label}
             </span>
           </div>
         )}
