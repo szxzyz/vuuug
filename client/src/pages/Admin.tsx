@@ -14,7 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Trophy, Settings, Shield, Star, CheckCircle2, XCircle, Megaphone, AlertTriangle, Plus, Minus, Wrench, Target, Hash, ShieldAlert, Eye, Trash2 } from "lucide-react";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -66,127 +66,6 @@ function StatCard({ icon, label, value, iconColor }: {
       </div>
       <p className="text-xs uppercase text-gray-500 tracking-wide mb-1">{label}</p>
       <p className="text-xl font-semibold text-white">{value}</p>
-    </div>
-  );
-}
-
-// ── Weekly Contest Reset Section ──────────────────────────────────────────
-function ContestSection() {
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [weekLabel, setWeekLabel] = useState('');
-  const [resetting, setResetting] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; message: string; usersReset?: number; winnersNotified?: boolean } | null>(null);
-
-  const { data: leaderboard, isLoading: lbLoading, refetch: refetchLb } = useQuery<{ entries: { rank: number; userId: string; username: string; firstName: string; starBalance: number; prize: string }[] }>({
-    queryKey: ['/api/leaderboard/weekly'],
-    queryFn: () => fetch('/api/leaderboard/weekly').then(r => r.json()),
-    refetchInterval: 30000,
-  });
-
-  const entries = leaderboard?.entries ?? (Array.isArray(leaderboard) ? leaderboard as any[] : []);
-
-  const rankEmoji = (r: number) => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : `#${r}`;
-
-  async function handleReset() {
-    setResetting(true);
-    setResult(null);
-    try {
-      const res = await apiRequest('POST', '/api/admin/contest/reset', weekLabel.trim() ? { weekLabel: weekLabel.trim() } : {});
-      const data = await res.json();
-      setResult(data);
-      if (data.success) {
-        refetchLb();
-      }
-    } catch (e: any) {
-      setResult({ success: false, message: e.message || 'Request failed' });
-    } finally {
-      setResetting(false);
-      setConfirmOpen(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Result banner */}
-      {result && (
-        <div className={`rounded-xl p-4 border text-sm ${result.success ? 'bg-emerald-900/30 border-emerald-500/40 text-emerald-300' : 'bg-rose-900/30 border-rose-500/40 text-rose-300'}`}>
-          <p className="font-semibold mb-1 flex items-center gap-1">{result.success ? <CheckCircle2 size={14}/> : <XCircle size={14}/>}{result.success ? 'Reset Complete' : 'Reset Failed'}</p>
-          <p>{result.message}</p>
-          {result.success && (
-            <div className="mt-2 flex gap-4 text-xs text-white/60">
-              <span className="flex items-center gap-1"><Users size={11}/>Users reset: <b className="text-white">{result.usersReset}</b></span>
-              <span className="flex items-center gap-1"><Megaphone size={11}/>Notified: <b className="text-white">{result.winnersNotified ? 'Yes' : 'No'}</b></span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Optional week label + reset button */}
-      <div className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-3">
-        <p className="text-sm font-semibold text-white">End Contest & Reset</p>
-        <p className="text-xs text-gray-500">
-          This will send winner notifications to all admins via Telegram, then reset <b className="text-white">star_balance</b> and <b className="text-white">weekly_stars</b> to 0 for every user. This cannot be undone.
-        </p>
-        <div className="space-y-1.5">
-          <label className="text-xs text-gray-500">Week label override <span className="text-gray-600">(optional — leave blank to use last ISO week)</span></label>
-          <Input
-            value={weekLabel}
-            onChange={e => setWeekLabel(e.target.value)}
-            placeholder="e.g. 2026-W24"
-            className="h-8 text-sm bg-[#1a1a1a] border-white/10"
-          />
-        </div>
-        <Button
-          onClick={() => setConfirmOpen(true)}
-          disabled={resetting}
-          className="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold h-10"
-        >
-          {resetting ? (
-            <><i className="fas fa-spinner fa-spin mr-2"></i>Resetting…</>
-          ) : (
-            <><i className="fas fa-trophy mr-2"></i>End Contest & Reset All Stars</>
-          )}
-        </Button>
-      </div>
-
-      {/* Confirmation dialog */}
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="bg-[#121212] border border-white/10 text-white max-w-sm mx-auto">
-          <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <i className="fas fa-exclamation-triangle text-amber-400"></i> Confirm Reset
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-1">
-            <p className="text-sm text-gray-300">
-              You are about to end the weekly contest. This will:
-            </p>
-            <ul className="text-sm text-gray-400 space-y-1 list-none pl-2">
-              <li className="flex items-center gap-1"><Megaphone size={12}/>Send winner list to all admins on Telegram</li>
-              <li className="flex items-center gap-1"><Star size={12}/>Reset <b className="text-white">star_balance</b> + <b className="text-white">weekly_stars</b> to 0</li>
-              <li className="flex items-center gap-1"><Hash size={12}/>Affect <b className="text-white">{entries.length > 0 ? `${entries.length}+` : 'all'}</b> users</li>
-            </ul>
-            {weekLabel.trim() && (
-              <p className="text-xs bg-amber-900/30 border border-amber-500/30 text-amber-300 rounded-lg px-3 py-2">
-                Week override: <b>{weekLabel.trim()}</b>
-              </p>
-            )}
-            <p className="text-xs text-rose-400 font-medium flex items-center gap-1"><AlertTriangle size={12}/>This action cannot be undone.</p>
-            <div className="flex gap-2 pt-1">
-              <Button variant="outline" onClick={() => setConfirmOpen(false)} className="flex-1 h-9 border-white/10 text-gray-300">
-                Cancel
-              </Button>
-              <Button
-                onClick={handleReset}
-                disabled={resetting}
-                className="flex-1 h-9 bg-rose-600 hover:bg-rose-700 text-white font-semibold"
-              >
-                {resetting ? <i className="fas fa-spinner fa-spin"></i> : 'Yes, Reset Now'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -302,7 +181,6 @@ export default function AdminPage() {
               { value: 'payouts',  icon: <Wallet size={13}/>,        label: 'Payouts' },
               { value: 'bans',     icon: <ShieldOff size={13}/>,     label: 'Bans' },
               { value: 'security', icon: <ShieldAlert size={13}/>,   label: 'Security' },
-              { value: 'contest',  icon: <Trophy size={13}/>,        label: 'Contest' },
               { value: 'settings', icon: <Settings size={13}/>,      label: 'Settings' },
               ...(can('manage_admins') ? [{ value: 'admins', icon: <Shield size={13}/>, label: 'Admins' }] : []),
             ] as { value: string; icon: React.ReactNode; label: string }[]).map(tab => (
@@ -414,11 +292,6 @@ export default function AdminPage() {
           {/* Security Tab */}
           <TabsContent value="security" className="mt-0">
             <SecuritySection />
-          </TabsContent>
-
-          {/* Contest Tab */}
-          <TabsContent value="contest" className="mt-0">
-            <ContestSection />
           </TabsContent>
 
           {/* Settings Tab */}
@@ -915,9 +788,8 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
         <div className="space-y-3">
           <div className="bg-white/5 border border-white/10 p-3 rounded">
             <p className="text-xs text-muted-foreground mb-2 font-semibold">Current Balances</p>
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-2 gap-2 text-center">
               <div><p className="text-xs text-muted-foreground">POW</p><p className="font-bold text-[#4cd3ff]">{Math.round(parseFloat(user.balance || '0')).toLocaleString()}</p></div>
-              <div><p className="text-xs text-muted-foreground">STAR</p><p className="font-bold text-yellow-400">{Math.round(parseFloat(user.starBalance || '0'))}</p></div>
               <div><p className="text-xs text-muted-foreground">USD</p><p className="font-bold text-green-400">${parseFloat(user.usdBalance || '0').toFixed(2)}</p></div>
             </div>
           </div>
@@ -933,8 +805,8 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
                 </Button>
               ))}
             </div>
-            <div className="grid grid-cols-3 gap-1">
-              {(['pow', 'star', 'usd'] as const).map(c => (
+            <div className="grid grid-cols-2 gap-1">
+              {(['pow', 'usd'] as const).map(c => (
                 <Button key={c} size="sm" variant={balanceForm.currency === c ? 'default' : 'outline'}
                   onClick={() => setBalanceForm(f => ({ ...f, currency: c }))}
                   className="h-7 text-xs">
@@ -1128,7 +1000,7 @@ function PromoCreatorSection() {
   const [formData, setFormData] = useState({
     code: '',
     rewardAmount: '',
-    rewardType: 'TON' as 'POW' | 'TON' | 'USD' | 'STAR',
+    rewardType: 'TON' as 'POW' | 'TON' | 'USD',
     usageLimit: '',
     perUserLimit: '1',
     expiresAt: ''
@@ -1216,8 +1088,8 @@ function PromoCreatorSection() {
             <Input placeholder="PROMO CODE" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })} maxLength={20} className="flex-1 h-8 text-sm" />
             <Button type="button" variant="outline" onClick={handleGenerateCode} size="sm" className="h-8"><i className="fas fa-random"></i></Button>
           </div>
-          <div className="grid grid-cols-4 gap-1">
-            {(['POW', 'TON', 'USD', 'STAR'] as const).map(type => (
+          <div className="grid grid-cols-3 gap-1">
+            {(['POW', 'TON', 'USD'] as const).map(type => (
               <Button key={type} type="button" variant={formData.rewardType === type ? 'default' : 'outline'} onClick={() => setFormData({ ...formData, rewardType: type })} className="h-8 text-xs">{type}</Button>
             ))}
           </div>
@@ -1879,7 +1751,7 @@ function BanLogsSection() {
   );
 }
 
-type SettingsCategory = 'ads' | 'affiliates' | 'withdrawals' | 'tasks' | 'bug' | 'missions' | 'other';
+type SettingsCategory = 'ads' | 'affiliates' | 'withdrawals' | 'tasks' | 'missions' | 'other';
 
 function SettingsSection() {
   const queryClient = useQueryClient();
@@ -1951,14 +1823,6 @@ function SettingsSection() {
     streakReward: '100',
     shareTaskReward: '1000',
     communityTaskReward: '1000',
-    // STAR currency settings
-    starRewardPerAd: '1',
-    monthlyContestStartDate: '',
-    monthlyContestEndDate: '',
-    monthlyContestTopUsers: '20',
-    weeklyReferralStartDate: '',
-    weeklyReferralEndDate: '',
-    weeklyReferralTopUsers: '10',
     monetagMissionReward: '50',
     monetagMissionLimit: '10',
     adexiumMissionReward: '50',
@@ -1970,13 +1834,13 @@ function SettingsSection() {
     // Per-provider ad card settings
     adsgramAdLimit: '510',
     adsgramRewardPerAd: '125',
-    adsgramStarRewardPerAd: '1',
+    adsgramEnabled: true,
     monetagAdLimit: '50',
     monetagRewardPerAd: '125',
-    monetagStarRewardPerAd: '1',
+    monetagEnabled: true,
     gigapubAdLimit: '50',
     gigapubRewardPerAd: '125',
-    gigapubStarRewardPerAd: '1',
+    gigapubEnabled: true,
   });
   
   useEffect(() => {
@@ -2017,14 +1881,6 @@ function SettingsSection() {
         streakReward: settingsData.streakReward?.toString() || '100',
         shareTaskReward: settingsData.shareTaskReward?.toString() || '1000',
         communityTaskReward: settingsData.communityTaskReward?.toString() || '1000',
-        // STAR currency settings
-        starRewardPerAd: settingsData.starRewardPerAd?.toString() || '1',
-        monthlyContestStartDate: settingsData.monthlyContestStartDate?.toString() || '',
-        monthlyContestEndDate: settingsData.monthlyContestEndDate?.toString() || '',
-        monthlyContestTopUsers: settingsData.monthlyContestTopUsers?.toString() || '20',
-        weeklyReferralStartDate: settingsData.weeklyReferralStartDate?.toString() || '',
-        weeklyReferralEndDate: settingsData.weeklyReferralEndDate?.toString() || '',
-        weeklyReferralTopUsers: settingsData.weeklyReferralTopUsers?.toString() || '10',
         monetagMissionReward: settingsData.monetagMissionReward?.toString() || '50',
         monetagMissionLimit: settingsData.monetagMissionLimit?.toString() || '10',
         adexiumMissionReward: settingsData.adexiumMissionReward?.toString() || '50',
@@ -2036,13 +1892,13 @@ function SettingsSection() {
         // Per-provider ad card settings
         adsgramAdLimit: settingsData.adsgramAdLimit?.toString() || '510',
         adsgramRewardPerAd: settingsData.adsgramRewardPerAd?.toString() || '125',
-        adsgramStarRewardPerAd: settingsData.adsgramStarRewardPerAd?.toString() || '1',
+        adsgramEnabled: settingsData.adsgramEnabled !== false,
         monetagAdLimit: settingsData.monetagAdLimit?.toString() || '50',
         monetagRewardPerAd: settingsData.monetagRewardPerAd?.toString() || '125',
-        monetagStarRewardPerAd: settingsData.monetagStarRewardPerAd?.toString() || '1',
+        monetagEnabled: settingsData.monetagEnabled !== false,
         gigapubAdLimit: settingsData.gigapubAdLimit?.toString() || '50',
         gigapubRewardPerAd: settingsData.gigapubRewardPerAd?.toString() || '125',
-        gigapubStarRewardPerAd: settingsData.gigapubStarRewardPerAd?.toString() || '1',
+        gigapubEnabled: settingsData.gigapubEnabled !== false,
       });
     }
   }, [settingsData]);
@@ -2052,11 +1908,39 @@ function SettingsSection() {
     { id: 'affiliates' as const, label: 'Affiliates', icon: 'users' },
     { id: 'withdrawals' as const, label: 'Withdrawals', icon: 'wallet' },
     { id: 'tasks' as const, label: 'Tasks', icon: 'tasks' },
-    { id: 'bug' as const, label: 'STAR Currency', icon: 'star' },
     { id: 'missions' as const, label: 'Missions / ADS', icon: 'tv' },
     { id: 'other' as const, label: 'Other', icon: 'cog' },
   ];
   
+  const handleSaveAdSettings = async () => {
+    setIsSaving(true);
+    try {
+      const response = await apiRequest('PUT', '/api/admin/settings', {
+        adsgramAdLimit: parseInt((settings as any).adsgramAdLimit) || 510,
+        adsgramRewardPerAd: parseInt((settings as any).adsgramRewardPerAd) || 125,
+        adsgramEnabled: (settings as any).adsgramEnabled !== false,
+        monetagAdLimit: parseInt((settings as any).monetagAdLimit) || 50,
+        monetagRewardPerAd: parseInt((settings as any).monetagRewardPerAd) || 125,
+        monetagEnabled: (settings as any).monetagEnabled !== false,
+        gigapubAdLimit: parseInt((settings as any).gigapubAdLimit) || 50,
+        gigapubRewardPerAd: parseInt((settings as any).gigapubRewardPerAd) || 125,
+        gigapubEnabled: (settings as any).gigapubEnabled !== false,
+      });
+      const result = await response.json();
+      if (result.success) {
+        showNotification("Ad settings saved!", "success");
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/app-settings"] });
+      } else {
+        throw new Error(result.message || 'Failed to save');
+      }
+    } catch (error: any) {
+      showNotification(error.message || "Failed to save ad settings", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveSettings = async () => {
     const adLimit = parseInt(settings.dailyAdLimit);
     const reward = parseInt(settings.rewardPerAd);
@@ -2122,14 +2006,6 @@ function SettingsSection() {
         streakReward: parseInt(settings.streakReward) || 100,
         shareTaskReward: parseInt(settings.shareTaskReward) || 1000,
         communityTaskReward: parseInt(settings.communityTaskReward) || 1000,
-        // STAR currency settings
-        starRewardPerAd: parseInt(settings.starRewardPerAd) || 1,
-        monthlyContestStartDate: (settings as any).monthlyContestStartDate || '',
-        monthlyContestEndDate: (settings as any).monthlyContestEndDate || '',
-        monthlyContestTopUsers: parseInt((settings as any).monthlyContestTopUsers) || 20,
-        weeklyReferralStartDate: (settings as any).weeklyReferralStartDate || '',
-        weeklyReferralEndDate: (settings as any).weeklyReferralEndDate || '',
-        weeklyReferralTopUsers: parseInt((settings as any).weeklyReferralTopUsers) || 10,
         monetagMissionReward: parseInt(settings.monetagMissionReward) || 50,
         monetagMissionLimit: parseInt(settings.monetagMissionLimit) || 10,
         adexiumMissionReward: parseInt(settings.adexiumMissionReward) || 50,
@@ -2145,13 +2021,13 @@ function SettingsSection() {
         // Per-provider ad card settings
         adsgramAdLimit: parseInt((settings as any).adsgramAdLimit) || 510,
         adsgramRewardPerAd: parseInt((settings as any).adsgramRewardPerAd) || 125,
-        adsgramStarRewardPerAd: parseInt((settings as any).adsgramStarRewardPerAd) || 1,
+        adsgramEnabled: (settings as any).adsgramEnabled !== false,
         monetagAdLimit: parseInt((settings as any).monetagAdLimit) || 50,
         monetagRewardPerAd: parseInt((settings as any).monetagRewardPerAd) || 125,
-        monetagStarRewardPerAd: parseInt((settings as any).monetagStarRewardPerAd) || 1,
+        monetagEnabled: (settings as any).monetagEnabled !== false,
         gigapubAdLimit: parseInt((settings as any).gigapubAdLimit) || 50,
         gigapubRewardPerAd: parseInt((settings as any).gigapubRewardPerAd) || 125,
-        gigapubStarRewardPerAd: parseInt((settings as any).gigapubStarRewardPerAd) || 1,
+        gigapubEnabled: (settings as any).gigapubEnabled !== false,
       });
       
       const result = await response.json();
@@ -2227,12 +2103,17 @@ function SettingsSection() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs font-semibold">
-                    <i className="fas fa-star mr-1 text-yellow-400"></i> Star Reward Per Ad
+                    <i className="fas fa-power-off mr-1 text-emerald-400"></i> Status
                   </Label>
-                  <Input type="number" min="0" placeholder="1"
-                    value={(settings as any).adsgramStarRewardPerAd}
-                    onChange={(e) => setSettings({ ...settings, adsgramStarRewardPerAd: e.target.value } as any)} />
-                  <p className="text-xs text-muted-foreground">Current: {settingsData?.adsgramStarRewardPerAd ?? 1} ⭐</p>
+                  <div className="flex items-center gap-2 h-9">
+                    <button type="button"
+                      onClick={() => setSettings({ ...settings, adsgramEnabled: !(settings as any).adsgramEnabled } as any)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(settings as any).adsgramEnabled !== false ? 'bg-emerald-500' : 'bg-gray-600'}`}>
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${(settings as any).adsgramEnabled !== false ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </button>
+                    <span className="text-xs text-muted-foreground">{(settings as any).adsgramEnabled !== false ? 'Enabled' : 'Disabled'}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.adsgramEnabled !== false ? '✅ Enabled' : '🔴 Disabled'}</p>
                 </div>
               </div>
             </div>
@@ -2263,12 +2144,17 @@ function SettingsSection() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs font-semibold">
-                    <i className="fas fa-star mr-1 text-yellow-400"></i> Star Reward Per Ad
+                    <i className="fas fa-power-off mr-1 text-emerald-400"></i> Status
                   </Label>
-                  <Input type="number" min="0" placeholder="1"
-                    value={(settings as any).monetagStarRewardPerAd}
-                    onChange={(e) => setSettings({ ...settings, monetagStarRewardPerAd: e.target.value } as any)} />
-                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagStarRewardPerAd ?? 1} ⭐</p>
+                  <div className="flex items-center gap-2 h-9">
+                    <button type="button"
+                      onClick={() => setSettings({ ...settings, monetagEnabled: !(settings as any).monetagEnabled } as any)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(settings as any).monetagEnabled !== false ? 'bg-emerald-500' : 'bg-gray-600'}`}>
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${(settings as any).monetagEnabled !== false ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </button>
+                    <span className="text-xs text-muted-foreground">{(settings as any).monetagEnabled !== false ? 'Enabled' : 'Disabled'}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagEnabled !== false ? '✅ Enabled' : '🔴 Disabled'}</p>
                 </div>
               </div>
             </div>
@@ -2299,14 +2185,34 @@ function SettingsSection() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs font-semibold">
-                    <i className="fas fa-star mr-1 text-yellow-400"></i> Star Reward Per Ad
+                    <i className="fas fa-power-off mr-1 text-emerald-400"></i> Status
                   </Label>
-                  <Input type="number" min="0" placeholder="1"
-                    value={(settings as any).gigapubStarRewardPerAd}
-                    onChange={(e) => setSettings({ ...settings, gigapubStarRewardPerAd: e.target.value } as any)} />
-                  <p className="text-xs text-muted-foreground">Current: {settingsData?.gigapubStarRewardPerAd ?? 1} ⭐</p>
+                  <div className="flex items-center gap-2 h-9">
+                    <button type="button"
+                      onClick={() => setSettings({ ...settings, gigapubEnabled: !(settings as any).gigapubEnabled } as any)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(settings as any).gigapubEnabled !== false ? 'bg-emerald-500' : 'bg-gray-600'}`}>
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${(settings as any).gigapubEnabled !== false ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </button>
+                    <span className="text-xs text-muted-foreground">{(settings as any).gigapubEnabled !== false ? 'Enabled' : 'Disabled'}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.gigapubEnabled !== false ? '✅ Enabled' : '🔴 Disabled'}</p>
                 </div>
               </div>
+            </div>
+
+            <div className="pt-2 border-t border-white/10 flex justify-end">
+              <Button
+                size="sm"
+                onClick={handleSaveAdSettings}
+                disabled={isSaving}
+                className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-5 py-2 rounded-lg"
+              >
+                {isSaving ? (
+                  <><i className="fas fa-spinner fa-spin mr-1"></i> Saving...</>
+                ) : (
+                  <><i className="fas fa-save mr-1"></i> Save Ad Settings</>
+                )}
+              </Button>
             </div>
           </div>
         )}
@@ -2755,15 +2661,6 @@ function SettingsSection() {
           </div>
         )}
 
-        {activeCategory === 'bug' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="md:col-span-2 p-3 border rounded-lg bg-yellow-500/5 border-yellow-500/20">
-              <p className="text-xs text-yellow-400 font-semibold mb-1">⭐ Per-Ad Star Rewards</p>
-              <p className="text-xs text-muted-foreground">Star rewards per ad are configured individually for each provider in the <strong>Ad Watch</strong> section above.</p>
-            </div>
-          </div>
-        )}
-
         {activeCategory === 'missions' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2 p-3 border rounded-lg bg-[#4cd3ff]/5 border-[#4cd3ff]/20">
@@ -2909,80 +2806,6 @@ function SettingsSection() {
 
         {activeCategory === 'other' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* Monthly Contest Settings */}
-            <div className="space-y-3 md:col-span-2 p-3 border rounded-lg border-blue-500/20 bg-blue-500/5">
-              <Label className="text-sm font-semibold text-blue-400">
-                <i className="fas fa-trophy mr-2"></i>Monthly Contest Settings
-              </Label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Start Date</Label>
-                  <Input
-                    type="datetime-local"
-                    value={(settings as any).monthlyContestStartDate || ''}
-                    onChange={(e) => setSettings({ ...settings, monthlyContestStartDate: e.target.value } as any)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">End Date</Label>
-                  <Input
-                    type="datetime-local"
-                    value={(settings as any).monthlyContestEndDate || ''}
-                    onChange={(e) => setSettings({ ...settings, monthlyContestEndDate: e.target.value } as any)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Top N Users</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={(settings as any).monthlyContestTopUsers || '20'}
-                    onChange={(e) => setSettings({ ...settings, monthlyContestTopUsers: e.target.value } as any)}
-                    placeholder="20"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Monthly Leaderboard — sorted by stars earned. Current top: {settingsData?.monthlyContestTopUsers || 20} users</p>
-            </div>
-
-            {/* Weekly Referral Contest Settings */}
-            <div className="space-y-3 md:col-span-2 p-3 border rounded-lg border-green-500/20 bg-green-500/5">
-              <Label className="text-sm font-semibold text-green-400">
-                <i className="fas fa-users mr-2"></i>Weekly Referral Contest Settings
-              </Label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Start Date</Label>
-                  <Input
-                    type="datetime-local"
-                    value={(settings as any).weeklyReferralStartDate || ''}
-                    onChange={(e) => setSettings({ ...settings, weeklyReferralStartDate: e.target.value } as any)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">End Date</Label>
-                  <Input
-                    type="datetime-local"
-                    value={(settings as any).weeklyReferralEndDate || ''}
-                    onChange={(e) => setSettings({ ...settings, weeklyReferralEndDate: e.target.value } as any)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Top N Users</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={(settings as any).weeklyReferralTopUsers || '10'}
-                    onChange={(e) => setSettings({ ...settings, weeklyReferralTopUsers: e.target.value } as any)}
-                    placeholder="10"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Weekly Referral Leaderboard — sorted by verified invites (users who watched 1+ ad). Current top: {settingsData?.weeklyReferralTopUsers || 10} users</p>
-            </div>
-
             <div className="space-y-2 p-3 border rounded-lg">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold">
