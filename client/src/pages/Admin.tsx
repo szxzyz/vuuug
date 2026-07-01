@@ -14,7 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Megaphone, AlertTriangle, Plus, Minus, Wrench, Target, Hash, ShieldAlert, Eye, Trash2 } from "lucide-react";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -66,119 +66,6 @@ function StatCard({ icon, label, value, iconColor }: {
       </div>
       <p className="text-xs uppercase text-gray-500 tracking-wide mb-1">{label}</p>
       <p className="text-xl font-semibold text-white">{value}</p>
-    </div>
-  );
-}
-
-// ── Weekly Contest Reset Section (removed) ──────────────────────────────────
-function _ContestSection_REMOVED() {
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [weekLabel, setWeekLabel] = useState('');
-  const [resetting, setResetting] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; message: string; usersReset?: number; winnersNotified?: boolean } | null>(null);
-
-  const rankEmoji = (r: number) => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : `#${r}`;
-
-  async function handleReset() {
-    setResetting(true);
-    setResult(null);
-    try {
-      const res = await apiRequest('POST', '/api/admin/contest/reset', weekLabel.trim() ? { weekLabel: weekLabel.trim() } : {});
-      const data = await res.json();
-      setResult(data);
-      if (data.success) {
-        // leaderboard removed
-      }
-    } catch (e: any) {
-      setResult({ success: false, message: e.message || 'Request failed' });
-    } finally {
-      setResetting(false);
-      setConfirmOpen(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Result banner */}
-      {result && (
-        <div className={`rounded-xl p-4 border text-sm ${result.success ? 'bg-emerald-900/30 border-emerald-500/40 text-emerald-300' : 'bg-rose-900/30 border-rose-500/40 text-rose-300'}`}>
-          <p className="font-semibold mb-1 flex items-center gap-1">{result.success ? <CheckCircle2 size={14}/> : <XCircle size={14}/>}{result.success ? 'Reset Complete' : 'Reset Failed'}</p>
-          <p>{result.message}</p>
-          {result.success && (
-            <div className="mt-2 flex gap-4 text-xs text-white/60">
-              <span className="flex items-center gap-1"><Users size={11}/>Users reset: <b className="text-white">{result.usersReset}</b></span>
-              <span className="flex items-center gap-1"><Megaphone size={11}/>Notified: <b className="text-white">{result.winnersNotified ? 'Yes' : 'No'}</b></span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Optional week label + reset button */}
-      <div className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-3">
-        <p className="text-sm font-semibold text-white">End Contest & Reset</p>
-        <p className="text-xs text-gray-500">
-          This will send winner notifications to all admins via Telegram, then reset <b className="text-white">star_balance</b> and <b className="text-white">weekly_stars</b> to 0 for every user. This cannot be undone.
-        </p>
-        <div className="space-y-1.5">
-          <label className="text-xs text-gray-500">Week label override <span className="text-gray-600">(optional — leave blank to use last ISO week)</span></label>
-          <Input
-            value={weekLabel}
-            onChange={e => setWeekLabel(e.target.value)}
-            placeholder="e.g. 2026-W24"
-            className="h-8 text-sm bg-[#1a1a1a] border-white/10"
-          />
-        </div>
-        <Button
-          onClick={() => setConfirmOpen(true)}
-          disabled={resetting}
-          className="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold h-10"
-        >
-          {resetting ? (
-            <><i className="fas fa-spinner fa-spin mr-2"></i>Resetting…</>
-          ) : (
-            <><i className="fas fa-trophy mr-2"></i>End Contest & Reset All Stars</>
-          )}
-        </Button>
-      </div>
-
-      {/* Confirmation dialog */}
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="bg-[#121212] border border-white/10 text-white max-w-sm mx-auto">
-          <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <i className="fas fa-exclamation-triangle text-amber-400"></i> Confirm Reset
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-1">
-            <p className="text-sm text-gray-300">
-              You are about to end the weekly contest. This will:
-            </p>
-            <ul className="text-sm text-gray-400 space-y-1 list-none pl-2">
-              <li className="flex items-center gap-1"><Megaphone size={12}/>Send winner list to all admins on Telegram</li>
-              <li className="flex items-center gap-1"><Star size={12}/>Reset <b className="text-white">star_balance</b> + <b className="text-white">weekly_stars</b> to 0</li>
-              <li className="flex items-center gap-1"><Hash size={12}/>Affect <b className="text-white">all</b> users</li>
-            </ul>
-            {weekLabel.trim() && (
-              <p className="text-xs bg-amber-900/30 border border-amber-500/30 text-amber-300 rounded-lg px-3 py-2">
-                Week override: <b>{weekLabel.trim()}</b>
-              </p>
-            )}
-            <p className="text-xs text-rose-400 font-medium flex items-center gap-1"><AlertTriangle size={12}/>This action cannot be undone.</p>
-            <div className="flex gap-2 pt-1">
-              <Button variant="outline" onClick={() => setConfirmOpen(false)} className="flex-1 h-9 border-white/10 text-gray-300">
-                Cancel
-              </Button>
-              <Button
-                onClick={handleReset}
-                disabled={resetting}
-                className="flex-1 h-9 bg-rose-600 hover:bg-rose-700 text-white font-semibold"
-              >
-                {resetting ? <i className="fas fa-spinner fa-spin"></i> : 'Yes, Reset Now'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -901,9 +788,8 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
         <div className="space-y-3">
           <div className="bg-white/5 border border-white/10 p-3 rounded">
             <p className="text-xs text-muted-foreground mb-2 font-semibold">Current Balances</p>
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-2 gap-2 text-center">
               <div><p className="text-xs text-muted-foreground">POW</p><p className="font-bold text-[#4cd3ff]">{Math.round(parseFloat(user.balance || '0')).toLocaleString()}</p></div>
-              <div><p className="text-xs text-muted-foreground">STAR</p><p className="font-bold text-yellow-400">{Math.round(parseFloat(user.starBalance || '0'))}</p></div>
               <div><p className="text-xs text-muted-foreground">USD</p><p className="font-bold text-green-400">${parseFloat(user.usdBalance || '0').toFixed(2)}</p></div>
             </div>
           </div>
@@ -919,8 +805,8 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
                 </Button>
               ))}
             </div>
-            <div className="grid grid-cols-3 gap-1">
-              {(['pow', 'star', 'usd'] as const).map(c => (
+            <div className="grid grid-cols-2 gap-1">
+              {(['pow', 'usd'] as const).map(c => (
                 <Button key={c} size="sm" variant={balanceForm.currency === c ? 'default' : 'outline'}
                   onClick={() => setBalanceForm(f => ({ ...f, currency: c }))}
                   className="h-7 text-xs">
@@ -1114,7 +1000,7 @@ function PromoCreatorSection() {
   const [formData, setFormData] = useState({
     code: '',
     rewardAmount: '',
-    rewardType: 'TON' as 'POW' | 'TON' | 'USD' | 'STAR',
+    rewardType: 'TON' as 'POW' | 'TON' | 'USD',
     usageLimit: '',
     perUserLimit: '1',
     expiresAt: ''
@@ -1202,8 +1088,8 @@ function PromoCreatorSection() {
             <Input placeholder="PROMO CODE" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })} maxLength={20} className="flex-1 h-8 text-sm" />
             <Button type="button" variant="outline" onClick={handleGenerateCode} size="sm" className="h-8"><i className="fas fa-random"></i></Button>
           </div>
-          <div className="grid grid-cols-4 gap-1">
-            {(['POW', 'TON', 'USD', 'STAR'] as const).map(type => (
+          <div className="grid grid-cols-3 gap-1">
+            {(['POW', 'TON', 'USD'] as const).map(type => (
               <Button key={type} type="button" variant={formData.rewardType === type ? 'default' : 'outline'} onClick={() => setFormData({ ...formData, rewardType: type })} className="h-8 text-xs">{type}</Button>
             ))}
           </div>
