@@ -3,6 +3,7 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAdmin } from "@/hooks/useAdmin";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  Trophy,
   HeartHandshake,
   ListTodo,
   Plus,
@@ -71,6 +72,7 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const navItems = [
+    { href: "/leaderboard", icon: Trophy, label: "Contest" },
     { href: "/affiliates", icon: HeartHandshake, label: "Friends" },
     { href: "/missions", icon: ListTodo, label: "Mission" },
   ];
