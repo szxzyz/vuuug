@@ -111,7 +111,6 @@ export default function Home() {
   const { data: userData } = useQuery<{ referralCode?: string }>({
     queryKey: ['/api/auth/user'],
     retry: false,
-    staleTime: 30000,
   });
 
   useEffect(() => {

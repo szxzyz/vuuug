@@ -64,24 +64,18 @@ export default function Withdraw() {
     queryKey: ['/api/auth/user'],
     retry: false,
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
-    staleTime: 0,
-    placeholderData: (prev) => prev,
   });
 
   const { data: appSettings } = useQuery<any>({
     queryKey: ['/api/app-settings'],
     retry: false,
-    staleTime: 0,
     refetchOnMount: true,
   });
 
   const { data: validReferralData, isLoading: isLoadingReferrals, isFetched: isReferralsFetched } = useQuery<{ validReferralCount: number }>({
     queryKey: ['/api/referrals/valid-count'],
     retry: false,
-    staleTime: 0,
     gcTime: 300000,
-    refetchOnWindowFocus: true,
     refetchOnMount: true,
   });
 
@@ -89,8 +83,6 @@ export default function Withdraw() {
     queryKey: ['/api/withdrawals'],
     retry: false,
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
-    staleTime: 0,
   });
 
   const usdBalance = parseFloat(user?.usdBalance || '0');

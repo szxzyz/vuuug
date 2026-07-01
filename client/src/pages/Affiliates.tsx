@@ -6,25 +6,37 @@ import { Copy, Share2 } from 'lucide-react';
 import { formatLargePAD } from '@/lib/utils';
 import { useLanguage } from '@/hooks/useLanguage';
 
+function StatSkeleton() {
+  return (
+    <div
+      style={{
+        height: 24,
+        width: 56,
+        background: 'rgba(255,255,255,0.08)',
+        borderRadius: 6,
+        display: 'inline-block',
+        animation: 'pulse 1.5s ease-in-out infinite',
+      }}
+    />
+  );
+}
+
 export default function Affiliates() {
   const { t } = useLanguage();
 
   const { data: user } = useQuery<any>({
     queryKey: ['/api/auth/user'],
     retry: false,
-    staleTime: 60000,
   });
 
-  const { data: stats } = useQuery<any>({
+  const { data: stats, isLoading: isLoadingStats } = useQuery<any>({
     queryKey: ['/api/referrals/stats'],
     retry: false,
-    staleTime: 60000,
   });
 
   const { data: appSettings } = useQuery<any>({
     queryKey: ['/api/app-settings'],
     retry: false,
-    staleTime: 60000,
   });
 
   const [isSharing, setIsSharing] = useState(false);
@@ -131,7 +143,7 @@ export default function Affiliates() {
               <p className="text-white text-sm font-semibold">{t('level1_referrals')}</p>
               <p className="text-[#888] text-xs mt-0.5">{t('get_label')} {l1Percent}% {t('of_friends_pow')}</p>
             </div>
-            <span className="text-white text-xl font-black">{l1Count}</span>
+            {isLoadingStats ? <StatSkeleton /> : <span className="text-white text-xl font-black">{l1Count}</span>}
           </div>
 
           <div className="flex items-center justify-between py-3 border-b border-white/5">
@@ -139,7 +151,7 @@ export default function Affiliates() {
               <p className="text-white text-sm font-semibold">{t('level2_referrals')}</p>
               <p className="text-[#888] text-xs mt-0.5">{t('get_label')} {l2Percent}% {t('from_their_friends')}</p>
             </div>
-            <span className="text-white text-xl font-black">{l2Count}</span>
+            {isLoadingStats ? <StatSkeleton /> : <span className="text-white text-xl font-black">{l2Count}</span>}
           </div>
 
           <div className="flex items-center justify-between pt-3">
@@ -163,18 +175,26 @@ export default function Affiliates() {
               <p className="text-white text-sm font-semibold">{t('usd_earned')}</p>
               <p className="text-[#888] text-xs mt-0.5">{t('total_from_referrals')}</p>
             </div>
-            <span className="text-green-400 text-lg font-black">
-              ${totalUsdEarned > 0 ? totalUsdEarned.toFixed(3) : '0.000'}
-            </span>
+            {isLoadingStats ? (
+              <StatSkeleton />
+            ) : (
+              <span className="text-green-400 text-lg font-black">
+                ${totalUsdEarned > 0 ? totalUsdEarned.toFixed(3) : '0.000'}
+              </span>
+            )}
           </div>
           <div className="flex items-center justify-between pt-2">
             <div>
               <p className="text-white text-sm font-semibold">{t('pow_earned')}</p>
               <p className="text-[#888] text-xs mt-0.5">{t('total_pow_l1')}</p>
             </div>
-            <span className="text-white text-lg font-black">
-              {formatLargePAD(totalPowEarned, false)} <span className="text-xs text-[#888] font-normal">POW</span>
-            </span>
+            {isLoadingStats ? (
+              <StatSkeleton />
+            ) : (
+              <span className="text-white text-lg font-black">
+                {formatLargePAD(totalPowEarned, false)} <span className="text-xs text-[#888] font-normal">POW</span>
+              </span>
+            )}
           </div>
         </div>
 
