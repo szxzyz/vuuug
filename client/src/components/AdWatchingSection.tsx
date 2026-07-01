@@ -79,17 +79,15 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         const adType = currentAdTypeRef.current;
         const updates: any = {
           balance:     data?.newBalance     !== undefined ? String(data.newBalance) : old.balance,
-          weeklyStars: data?.newWeeklyStars !== undefined ? data.newWeeklyStars     : old.weeklyStars,
         };
         if      (adType === "adsgram") updates.adsWatchedToday          = (old.adsWatchedToday          || 0) + 1;
         else if (adType === "monetag") updates.monetagAdsWatchedToday   = (old.monetagAdsWatchedToday   || 0) + 1;
         else if (adType === "gigapub") updates.gigapubAdsWatchedToday   = (old.gigapubAdsWatchedToday   || 0) + 1;
         return { ...old, ...updates };
       });
-      showNotification(`+${data?.rewardPOW ?? 0} POW · +${data?.rewardSTAR ?? 0} ⭐ earned!`, "success");
+      showNotification(`+${data?.rewardPOW ?? 0} POW earned!`, "success");
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/weekly"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/withdrawal-eligibility"] });
     },
