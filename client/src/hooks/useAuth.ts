@@ -362,10 +362,12 @@ export function useAuth() {
     // so it ALWAYS refetches from server on mount — fixing the Home/Withdraw balance mismatch
     initialData: cachedData,
     initialDataUpdatedAt: 0,
-    // CRITICAL FIX: Always refetch from database on mount to ensure fresh data
+    // Always refetch from database on mount to ensure fresh data
     refetchOnMount: true,
-    // Refetch on window focus to keep data in sync
-    refetchOnWindowFocus: true,
+    // Periodic interval keeps data fresh without depending on focus events.
+    // Focus-based refetch is disabled globally to prevent flash-of-zeros
+    // every time a Telegram user switches back to the mini-app.
+    refetchOnWindowFocus: false,
     // Refetch every 30 seconds to prevent stale data
     refetchInterval: 30000,
     // Keep data fresh
