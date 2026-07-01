@@ -1967,6 +1967,16 @@ function SettingsSection() {
     gigaPubMissionLimit: '10',
     monetixMissionReward: '1500',
     monetixMissionLimit: '25',
+    // Per-provider ad card settings
+    adsgramAdLimit: '510',
+    adsgramRewardPerAd: '125',
+    adsgramStarRewardPerAd: '1',
+    monetagAdLimit: '50',
+    monetagRewardPerAd: '125',
+    monetagStarRewardPerAd: '1',
+    gigapubAdLimit: '50',
+    gigapubRewardPerAd: '125',
+    gigapubStarRewardPerAd: '1',
   });
   
   useEffect(() => {
@@ -2023,6 +2033,16 @@ function SettingsSection() {
         gigaPubMissionLimit: settingsData.gigaPubMissionLimit?.toString() || '10',
         monetixMissionReward: settingsData.monetixMissionReward?.toString() || '1500',
         monetixMissionLimit: settingsData.monetixMissionLimit?.toString() || '25',
+        // Per-provider ad card settings
+        adsgramAdLimit: settingsData.adsgramAdLimit?.toString() || '510',
+        adsgramRewardPerAd: settingsData.adsgramRewardPerAd?.toString() || '125',
+        adsgramStarRewardPerAd: settingsData.adsgramStarRewardPerAd?.toString() || '1',
+        monetagAdLimit: settingsData.monetagAdLimit?.toString() || '50',
+        monetagRewardPerAd: settingsData.monetagRewardPerAd?.toString() || '125',
+        monetagStarRewardPerAd: settingsData.monetagStarRewardPerAd?.toString() || '1',
+        gigapubAdLimit: settingsData.gigapubAdLimit?.toString() || '50',
+        gigapubRewardPerAd: settingsData.gigapubRewardPerAd?.toString() || '125',
+        gigapubStarRewardPerAd: settingsData.gigapubStarRewardPerAd?.toString() || '1',
       });
     }
   }, [settingsData]);
@@ -2122,6 +2142,16 @@ function SettingsSection() {
         checkAnnouncementReward: parseInt((settings as any).checkAnnouncementReward) || 1000,
         adsgramCheckinReward: parseInt((settings as any).adsgramCheckinReward) || 1000,
         firstActiveReferralReward: parseInt((settings as any).firstActiveReferralReward) || 2500,
+        // Per-provider ad card settings
+        adsgramAdLimit: parseInt((settings as any).adsgramAdLimit) || 510,
+        adsgramRewardPerAd: parseInt((settings as any).adsgramRewardPerAd) || 125,
+        adsgramStarRewardPerAd: parseInt((settings as any).adsgramStarRewardPerAd) || 1,
+        monetagAdLimit: parseInt((settings as any).monetagAdLimit) || 50,
+        monetagRewardPerAd: parseInt((settings as any).monetagRewardPerAd) || 125,
+        monetagStarRewardPerAd: parseInt((settings as any).monetagStarRewardPerAd) || 1,
+        gigapubAdLimit: parseInt((settings as any).gigapubAdLimit) || 50,
+        gigapubRewardPerAd: parseInt((settings as any).gigapubRewardPerAd) || 125,
+        gigapubStarRewardPerAd: parseInt((settings as any).gigapubStarRewardPerAd) || 1,
       });
       
       const result = await response.json();
@@ -2170,59 +2200,113 @@ function SettingsSection() {
 
       <div className="space-y-3">
         {activeCategory === 'ads' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="daily-ad-limit" className="text-sm font-semibold">
-                <i className="fas fa-calendar-day mr-2 text-orange-600"></i>
-                Daily Ad Limit
-              </Label>
-              <Input
-                id="daily-ad-limit"
-                type="number"
-                value={settings.dailyAdLimit}
-                onChange={(e) => setSettings({ ...settings, dailyAdLimit: e.target.value })}
-                placeholder="510"
-                min="1"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.dailyAdLimit || 510} ads/day
+          <div className="space-y-4">
+            {/* ── AdsGram ── */}
+            <div className="rounded-xl border border-white/10 p-3 space-y-3">
+              <p className="text-sm font-bold text-blue-400 flex items-center gap-2">
+                <i className="fas fa-bullhorn"></i> AdsGram (Card 1)
               </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-calendar-day mr-1 text-orange-500"></i> Daily Ad Limit
+                  </Label>
+                  <Input type="number" min="1" placeholder="510"
+                    value={(settings as any).adsgramAdLimit}
+                    onChange={(e) => setSettings({ ...settings, adsgramAdLimit: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.adsgramAdLimit ?? 510}</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-gem mr-1 text-purple-500"></i> Reward Per Ad (POW)
+                  </Label>
+                  <Input type="number" min="1" placeholder="125"
+                    value={(settings as any).adsgramRewardPerAd}
+                    onChange={(e) => setSettings({ ...settings, adsgramRewardPerAd: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.adsgramRewardPerAd ?? 125} POW</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-star mr-1 text-yellow-400"></i> Star Reward Per Ad
+                  </Label>
+                  <Input type="number" min="0" placeholder="1"
+                    value={(settings as any).adsgramStarRewardPerAd}
+                    onChange={(e) => setSettings({ ...settings, adsgramStarRewardPerAd: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.adsgramStarRewardPerAd ?? 1} ⭐</p>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="hourly-ad-limit" className="text-sm font-semibold">
-                <i className="fas fa-clock mr-2 text-orange-400"></i>
-                Hourly Ad Limit
-              </Label>
-              <Input
-                id="hourly-ad-limit"
-                type="number"
-                value={settings.hourlyAdLimit}
-                onChange={(e) => setSettings({ ...settings, hourlyAdLimit: e.target.value })}
-                placeholder="63"
-                min="1"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.hourlyAdLimit || 63} ads/hour — shown on Watch page
+            {/* ── MonetaG ── */}
+            <div className="rounded-xl border border-white/10 p-3 space-y-3">
+              <p className="text-sm font-bold text-green-400 flex items-center gap-2">
+                <i className="fas fa-tv"></i> MonetaG (Card 2)
               </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-calendar-day mr-1 text-orange-500"></i> Daily Ad Limit
+                  </Label>
+                  <Input type="number" min="1" placeholder="50"
+                    value={(settings as any).monetagAdLimit}
+                    onChange={(e) => setSettings({ ...settings, monetagAdLimit: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagAdLimit ?? 50}</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-gem mr-1 text-purple-500"></i> Reward Per Ad (POW)
+                  </Label>
+                  <Input type="number" min="1" placeholder="125"
+                    value={(settings as any).monetagRewardPerAd}
+                    onChange={(e) => setSettings({ ...settings, monetagRewardPerAd: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagRewardPerAd ?? 125} POW</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-star mr-1 text-yellow-400"></i> Star Reward Per Ad
+                  </Label>
+                  <Input type="number" min="0" placeholder="1"
+                    value={(settings as any).monetagStarRewardPerAd}
+                    onChange={(e) => setSettings({ ...settings, monetagStarRewardPerAd: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetagStarRewardPerAd ?? 1} ⭐</p>
+                </div>
+              </div>
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="reward-per-ad" className="text-sm font-semibold">
-                <i className="fas fa-gem mr-2 text-purple-600"></i>
-                Reward Per Ad (POW)
-              </Label>
-              <Input
-                id="reward-per-ad"
-                type="number"
-                value={settings.rewardPerAd}
-                onChange={(e) => setSettings({ ...settings, rewardPerAd: e.target.value })}
-                placeholder="1000"
-                min="1"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.rewardPerAd || 1000} POW per ad
+
+            {/* ── Gigapub ── */}
+            <div className="rounded-xl border border-white/10 p-3 space-y-3">
+              <p className="text-sm font-bold text-pink-400 flex items-center gap-2">
+                <i className="fas fa-ad"></i> Gigapub (Card 3)
               </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-calendar-day mr-1 text-orange-500"></i> Daily Ad Limit
+                  </Label>
+                  <Input type="number" min="1" placeholder="50"
+                    value={(settings as any).gigapubAdLimit}
+                    onChange={(e) => setSettings({ ...settings, gigapubAdLimit: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.gigapubAdLimit ?? 50}</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-gem mr-1 text-purple-500"></i> Reward Per Ad (POW)
+                  </Label>
+                  <Input type="number" min="1" placeholder="125"
+                    value={(settings as any).gigapubRewardPerAd}
+                    onChange={(e) => setSettings({ ...settings, gigapubRewardPerAd: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.gigapubRewardPerAd ?? 125} POW</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    <i className="fas fa-star mr-1 text-yellow-400"></i> Star Reward Per Ad
+                  </Label>
+                  <Input type="number" min="0" placeholder="1"
+                    value={(settings as any).gigapubStarRewardPerAd}
+                    onChange={(e) => setSettings({ ...settings, gigapubStarRewardPerAd: e.target.value } as any)} />
+                  <p className="text-xs text-muted-foreground">Current: {settingsData?.gigapubStarRewardPerAd ?? 1} ⭐</p>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2673,24 +2757,10 @@ function SettingsSection() {
 
         {activeCategory === 'bug' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="bug-reward-per-ad" className="text-sm font-semibold">
-                <i className="fas fa-star mr-2 text-lime-600"></i>
-                STAR Per Ad Watch
-              </Label>
-              <Input
-                id="bug-reward-per-ad"
-                type="number"
-                value={settings.starRewardPerAd}
-                onChange={(e) => setSettings({ ...settings, starRewardPerAd: e.target.value })}
-                placeholder="1"
-                min="0"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.starRewardPerAd || 1} STAR
-              </p>
+            <div className="md:col-span-2 p-3 border rounded-lg bg-yellow-500/5 border-yellow-500/20">
+              <p className="text-xs text-yellow-400 font-semibold mb-1">⭐ Per-Ad Star Rewards</p>
+              <p className="text-xs text-muted-foreground">Star rewards per ad are configured individually for each provider in the <strong>Ad Watch</strong> section above.</p>
             </div>
-
           </div>
         )}
 
