@@ -36,9 +36,12 @@ import { config, getChannelConfig } from "./config";
 const connectedUsers = new Map<string, { socket: WebSocket; userId: string }>();
 
 // ── Anti-Fake Ad Session Store ────────────────────────────────────────────────
-const adUsedSessions  = new Map<string, number>();  // sessionId  → usedAt timestamp
-const adUserCooldowns = new Map<string, number>();  // userId     → lastRewardAt (ms)
-const adAbuseStore    = new Map<string, { score: number; lockedUntil: number; failCount: number }>();
+const adUsedSessions    = new Map<string, number>();  // sessionId  → usedAt timestamp
+const adUserCooldowns   = new Map<string, number>();  // userId     → lastRewardAt (ms)
+const adAbuseStore      = new Map<string, { score: number; lockedUntil: number; failCount: number }>();
+// Server-authoritative pre-registration: adType is recorded here BEFORE the ad plays,
+// so the claim endpoint never trusts the client-supplied adType field.
+const adPendingSessions = new Map<string, { adType: string; userId: string; registeredAt: number }>();
 
 const AD_REWARD_COOLDOWN_MS = 5000;   // 5 s between rewards
 const AD_ABUSE_LOCK_SCORE   = 5;      // lock after 5 consecutive failures
@@ -50,6 +53,8 @@ setInterval(() => {
   const cutoff1h  = Date.now() - 60 * 60 * 1000;
   // Remove sessions older than 15 min
   for (const [sid, ts] of adUsedSessions) if (ts < cutoff15m) adUsedSessions.delete(sid);
+  // Remove pending registrations older than 10 min (ad was never watched)
+  for (const [sid, d] of adPendingSessions) if (d.registeredAt < cutoff15m) adPendingSessions.delete(sid);
   // Remove cooldown entries older than 1 hour (user hasn't watched an ad in a while)
   for (const [uid, ts] of adUserCooldowns) if (ts < cutoff1h) adUserCooldowns.delete(uid);
   // Remove abuse entries where lock has expired and score is 0
@@ -1239,6 +1244,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const starRewardPerAd = parseInt(getSetting('star_reward_per_ad', '1')); // BUG per ad watched
       const starRewardPerTask = parseInt(getSetting('star_reward_per_task', '10')); // BUG per task completed
       const activePromoCode = getSetting('active_promo_code', ''); // Current active promo code
+
+      // Per-provider ad limits and rewards
+      const adsgramAdLimit        = parseInt(getSetting('adsgram_ad_limit',        '510'));
+      const adsgramRewardPerAd    = parseInt(getSetting('adsgram_reward_per_ad',    '125'));
+      const adsgramStarRewardPerAd = parseInt(getSetting('adsgram_star_reward_per_ad', '1'));
+      const monetagAdLimit        = parseInt(getSetting('monetag_ad_limit',         '50'));
+      const monetagRewardPerAd    = parseInt(getSetting('monetag_reward_per_ad',    '125'));
+      const monetagStarRewardPerAd = parseInt(getSetting('monetag_star_reward_per_ad', '1'));
+      const gigapubAdLimit        = parseInt(getSetting('gigapub_ad_limit',         '50'));
+      const gigapubRewardPerAd    = parseInt(getSetting('gigapub_reward_per_ad',    '125'));
+      const gigapubStarRewardPerAd = parseInt(getSetting('gigapub_star_reward_per_ad', '1'));
       
       // Legacy compatibility - keep old values for backwards compatibility
       const taskCostPerClick = channelTaskCostUSD; // Use channel cost as default
@@ -1326,10 +1342,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
         weeklyReferralEndDate: getSetting('weekly_referral_end_date', ''),
         weeklyReferralTopUsers: parseInt(getSetting('weekly_referral_top_users', '10')),
+        // Per-provider ad settings
+        adsgramAdLimit,
+        adsgramRewardPerAd,
+        adsgramStarRewardPerAd,
+        monetagAdLimit,
+        monetagRewardPerAd,
+        monetagStarRewardPerAd,
+        gigapubAdLimit,
+        gigapubRewardPerAd,
+        gigapubStarRewardPerAd,
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
       res.status(500).json({ message: "Failed to fetch app settings" });
+    }
+  });
+
+   // ── Pre-register ad session with server-authoritative adType ─────────────────
+  // Client calls this BEFORE showing any ad SDK. The server stores the adType so
+  // the /api/ads/watch claim endpoint never trusts the client-supplied field.
+  app.post('/api/ads/register-session', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const { sessionId, adType } = req.body as { sessionId?: string; adType?: string };
+
+      if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
+        return res.status(400).json({ message: "Invalid session ID", errorType: 'invalid_session' });
+      }
+
+      const normalizedAdType = ['adsgram', 'monetag', 'gigapub'].includes(adType ?? '')
+        ? (adType as string) : null;
+      if (!normalizedAdType) {
+        return res.status(400).json({ message: "Invalid ad type", errorType: 'invalid_ad_type' });
+      }
+
+      if (adUsedSessions.has(sessionId) || adPendingSessions.has(sessionId)) {
+        return res.status(400).json({ message: "Session already in use", errorType: 'duplicate_session' });
+      }
+
+      adPendingSessions.set(sessionId, { adType: normalizedAdType, userId, registeredAt: Date.now() });
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('❌ register-session error:', err);
+      return res.status(500).json({ message: 'Internal error' });
     }
   });
 
@@ -1411,6 +1467,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // 2b. Verify session was pre-registered server-side with its adType.
+      //     This prevents clients from choosing a different provider at claim time.
+      const pendingReg = adPendingSessions.get(sessionId);
+      if (!pendingReg) {
+        return res.status(400).json({
+          message: "Session was not pre-registered. Please start the ad flow again.",
+          errorType: 'invalid_session',
+        });
+      }
+      if (pendingReg.userId !== String(userId)) {
+        adPendingSessions.delete(sessionId);
+        return res.status(403).json({
+          message: "Session belongs to a different user.",
+          errorType: 'invalid_session',
+        });
+      }
+      // adType is authoritative from the server — ignore client-supplied value
+      const serverAdType = pendingReg.adType;
+
       // 3. Abuse lock — too many failures
       if (abuse.lockedUntil > Date.now()) {
         const secsLeft = Math.ceil((abuse.lockedUntil - Date.now()) / 1000);
@@ -1478,55 +1553,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // ✅ All checks passed — mark session used, update cooldown, decay abuse score
       adUsedSessions.set(sessionId, Date.now());
+      adPendingSessions.delete(sessionId); // claim: remove pending registration
       adUserCooldowns.set(userKey, Date.now());
       if (abuse.score > 0) {
         adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
       }
-      console.log(`✅ Ad session valid for user ${userId}: bgDuration=${bgDuration}ms`);
+      console.log(`✅ Ad session valid for user ${userId}: adType=${serverAdType} bgDuration=${bgDuration}ms`);
       // ─────────────────────────────────────────────────────────────────────
 
-      // Fetch admin settings for limits and reward amounts
-      const dailyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'daily_ad_limit')).limit(1);
-      const hourlyAdLimitSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'hourly_ad_limit')).limit(1);
-      const rewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'reward_per_ad')).limit(1);
-      const starRewardPerAdSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'star_reward_per_ad')).limit(1);
-      
-      const DAILY_AD_LIMIT = dailyAdLimitSetting[0]?.settingValue ? parseInt(dailyAdLimitSetting[0].settingValue) : 510;
-      const HOURLY_AD_LIMIT = hourlyAdLimitSetting[0]?.settingValue ? parseInt(hourlyAdLimitSetting[0].settingValue) : 63;
-      const rewardPerAdPOW = rewardPerAdSetting[0]?.settingValue ? parseInt(rewardPerAdSetting[0].settingValue) : 1000;
-      const starRewardPerAd = starRewardPerAdSetting[0]?.settingValue ? parseInt(starRewardPerAdSetting[0].settingValue) : 1;
+      // Use the server-authoritative adType from pre-registration (never trust client field)
+      const normalizedAdType = serverAdType;
 
-      // Hourly refill logic: 63 ads/hour, 510 ads/day
+      // Fetch all admin settings once and pick per-provider values
+      const allAdminSettings = await db.select().from(adminSettings);
+      const getAdSetting = (key: string, def: string) =>
+        allAdminSettings.find((s: any) => s.settingKey === key)?.settingValue || def;
+
+      const defaultLimit = normalizedAdType === 'adsgram' ? '510' : '50';
+      const DAILY_AD_LIMIT = parseInt(getAdSetting(`${normalizedAdType}_ad_limit`, defaultLimit));
+      const rewardPerAdPOW = parseInt(getAdSetting(`${normalizedAdType}_reward_per_ad`, '125'));
+      const starRewardPerAd = parseInt(getAdSetting(`${normalizedAdType}_star_reward_per_ad`, '1'));
+
+      // Per-provider daily count
       const now = new Date();
-      const adsWatchedToday = user.adsWatchedToday || 0;
-      const hourlyAdsWatched = (user as any).hourlyAdsWatched || 0;
-      const lastHourlyReset = (user as any).lastHourlyReset ? new Date((user as any).lastHourlyReset) : new Date(0);
-
-      const hoursSinceReset = (now.getTime() - lastHourlyReset.getTime()) / (1000 * 60 * 60);
-      const needsHourlyReset = hoursSinceReset >= 1;
-      const currentHourlyWatched = needsHourlyReset ? 0 : hourlyAdsWatched;
-
-      // Check daily limit first
-      if (adsWatchedToday >= DAILY_AD_LIMIT) {
-        return res.status(429).json({ 
-          message: `Daily limit reached (${DAILY_AD_LIMIT} ads/day). Come back tomorrow.`,
-          limit: DAILY_AD_LIMIT,
-          watched: adsWatchedToday,
-          limitType: 'daily'
-        });
+      let currentTypeWatched: number;
+      if (normalizedAdType === 'adsgram') {
+        currentTypeWatched = user.adsWatchedToday || 0;
+      } else if (normalizedAdType === 'monetag') {
+        currentTypeWatched = (user as any).monetagAdsWatchedToday || 0;
+      } else {
+        currentTypeWatched = (user as any).gigapubAdsWatchedToday || 0;
       }
 
-      // Check hourly limit
-      if (currentHourlyWatched >= HOURLY_AD_LIMIT) {
-        const nextRefillAt = new Date(lastHourlyReset.getTime() + 60 * 60 * 1000);
-        const minsUntilRefill = Math.ceil((nextRefillAt.getTime() - now.getTime()) / 60000);
-        return res.status(429).json({
-          message: `Hourly limit reached (${HOURLY_AD_LIMIT} ads/hour). Refills in ${minsUntilRefill} min.`,
-          hourlyLimit: HOURLY_AD_LIMIT,
-          hourlyWatched: currentHourlyWatched,
-          limitType: 'hourly',
-          nextRefillAt: nextRefillAt.toISOString(),
-          minsUntilRefill,
+      // Check per-provider daily limit
+      if (currentTypeWatched >= DAILY_AD_LIMIT) {
+        return res.status(429).json({ 
+          message: `Daily limit reached (${DAILY_AD_LIMIT} ads/day for ${normalizedAdType}). Come back tomorrow.`,
+          limit: DAILY_AD_LIMIT,
+          watched: currentTypeWatched,
+          limitType: 'daily',
+          adType: normalizedAdType,
         });
       }
       
@@ -1543,17 +1609,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: 'Watched advertisement',
         });
         
-        // Increment ads watched count (daily)
-        await storage.incrementAdsWatched(userId);
-
-        // Update hourly counter
-        await db
-          .update(users)
-          .set({
-            hourlyAdsWatched: currentHourlyWatched + 1,
-            lastHourlyReset: needsHourlyReset ? now : lastHourlyReset,
-          } as any)
-          .where(eq(users.id, userId));
+        // Increment per-provider daily ads watched count
+        if (normalizedAdType === 'adsgram') {
+          await storage.incrementAdsWatched(userId);
+        } else {
+          const col = normalizedAdType === 'monetag' ? 'monetag_ads_watched_today' : 'gigapub_ads_watched_today';
+          await db.execute(sql`
+            UPDATE users SET
+              ${sql.raw(col)} = COALESCE(${sql.raw(col)}, 0) + 1,
+              ads_watched     = COALESCE(ads_watched, 0) + 1,
+              last_ad_date    = NOW(),
+              updated_at      = NOW()
+            WHERE id = ${userId}
+          `);
+        }
         
         // Add STAR reward to weekly_stars (accumulates during the contest period)
         // Stars always accumulate; leaderboard visibility is controlled by admin contest dates
@@ -1698,7 +1767,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updatedUser) {
         updatedUser = user; // Fallback to original user data
       }
-      const newAdsWatched = updatedUser?.adsWatchedToday || (adsWatchedToday + 1);
+      // Use the per-provider column for the response counter
+      const updatedTypeWatched: number =
+        normalizedAdType === 'adsgram'
+          ? (updatedUser?.adsWatchedToday ?? currentTypeWatched + 1)
+          : normalizedAdType === 'monetag'
+            ? ((updatedUser as any)?.monetagAdsWatchedToday ?? currentTypeWatched + 1)
+            : ((updatedUser as any)?.gigapubAdsWatchedToday ?? currentTypeWatched + 1);
+      const newAdsWatched = updatedTypeWatched;
       
       // Send real-time update to user (non-blocking) — include starBalance so header refreshes
       try {
@@ -4244,6 +4320,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         checkAnnouncementReward: parseInt(getSetting('check_announcement_reward', '1000')),
         adsgramCheckinReward: parseInt(getSetting('adsgram_checkin_reward', '1000')),
         firstActiveReferralReward: parseInt(getSetting('first_active_referral_reward', '2500')),
+        // Per-provider ad card settings
+        adsgramAdLimit: parseInt(getSetting('adsgram_ad_limit', '510')),
+        adsgramRewardPerAd: parseInt(getSetting('adsgram_reward_per_ad', '125')),
+        adsgramStarRewardPerAd: parseInt(getSetting('adsgram_star_reward_per_ad', '1')),
+        monetagAdLimit: parseInt(getSetting('monetag_ad_limit', '50')),
+        monetagRewardPerAd: parseInt(getSetting('monetag_reward_per_ad', '125')),
+        monetagStarRewardPerAd: parseInt(getSetting('monetag_star_reward_per_ad', '1')),
+        gigapubAdLimit: parseInt(getSetting('gigapub_ad_limit', '50')),
+        gigapubRewardPerAd: parseInt(getSetting('gigapub_reward_per_ad', '125')),
+        gigapubStarRewardPerAd: parseInt(getSetting('gigapub_star_reward_per_ad', '1')),
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);

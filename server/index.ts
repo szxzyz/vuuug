@@ -101,6 +101,17 @@ try {
   console.log('⚠️ advertiser_tasks.description migration skipped:', err);
 }
 
+// Migration: add per-provider ad tracking columns
+try {
+  const { db: db2 } = await import('./db');
+  const { sql: sql2 } = await import('drizzle-orm');
+  await db2.execute(sql2`ALTER TABLE users ADD COLUMN IF NOT EXISTS monetag_ads_watched_today integer DEFAULT 0`);
+  await db2.execute(sql2`ALTER TABLE users ADD COLUMN IF NOT EXISTS gigapub_ads_watched_today integer DEFAULT 0`);
+  console.log('✅ Per-provider ad tracking columns ready');
+} catch (err) {
+  console.log('⚠️ Per-provider ad tracking columns migration skipped:', err);
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

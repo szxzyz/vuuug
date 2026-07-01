@@ -3092,9 +3092,11 @@ export class DatabaseStorage implements IStorage {
       await db.update(users)
         .set({ 
           adsWatchedToday: 0,
+          monetagAdsWatchedToday: 0,
+          gigapubAdsWatchedToday: 0,
           lastResetDate: currentDate,
           updatedAt: new Date(),
-        })
+        } as any)
         .where(sql`${users.lastResetDate} != ${currentDateString} OR ${users.lastResetDate} IS NULL`);
 
       // Unlock star earning ONLY on Monday IST (= Sunday UTC 18:30) — new weekly contest begins
