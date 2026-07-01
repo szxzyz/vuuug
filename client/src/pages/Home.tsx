@@ -735,12 +735,12 @@ export default function Home() {
             {t('balance')}
           </p>
 
-          {/* Main USD balance */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 8, minHeight: 52 }}>
+          {/* Main POW balance */}
+          <div style={{ marginBottom: 6, minHeight: 52 }}>
             {isFirstLoad ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 52 }}>
                 <div style={{
-                  width: 120,
+                  width: 140,
                   height: 40,
                   borderRadius: 8,
                   background: 'rgba(255,255,255,0.08)',
@@ -749,10 +749,9 @@ export default function Home() {
                 <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:.9}}`}</style>
               </div>
             ) : (
-              <>
-                <span style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.55)', lineHeight: 1 }}>$</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                 <span style={{
-                  fontSize: balanceUSD >= 1000 ? 38 : 44,
+                  fontSize: balancePAD >= 1000000 ? 36 : balancePAD >= 10000 ? 44 : 48,
                   fontWeight: 800,
                   color: '#fff',
                   fontFamily: "'Space Grotesk', sans-serif",
@@ -760,20 +759,18 @@ export default function Home() {
                   fontVariantNumeric: 'tabular-nums',
                   lineHeight: 1,
                 }}>
-                  {usdInt}
+                  {formatBalance(balancePAD)}
                 </span>
-                <span style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.38)', lineHeight: 1 }}>.{usdDec}</span>
-              </>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.45)', lineHeight: 1, letterSpacing: '0.04em' }}>POW</span>
+              </div>
             )}
           </div>
 
-          {/* POW balance row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14 }}>
-            <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              <img src="/pow-icon.png?v=2" alt="POW" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
-            </div>
-            <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
-              {formatBalance(balancePAD)} <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>POW</span>
+          {/* USD equivalent row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 14 }}>
+            <img src="/usdt.png" alt="USD" style={{ width: 16, height: 16, objectFit: 'contain', opacity: 0.6 }} />
+            <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
+              ${usdFormatted}
             </span>
           </div>
 
