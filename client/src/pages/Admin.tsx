@@ -77,14 +77,6 @@ function _ContestSection_REMOVED() {
   const [resetting, setResetting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; usersReset?: number; winnersNotified?: boolean } | null>(null);
 
-  const { data: leaderboard, isLoading: lbLoading, refetch: refetchLb } = useQuery<{ entries: { rank: number; userId: string; username: string; firstName: string; starBalance: number; prize: string }[] }>({
-    queryKey: ['/api/leaderboard/weekly'],
-    queryFn: () => fetch('/api/leaderboard/weekly').then(r => r.json()),
-    refetchInterval: 30000,
-  });
-
-  const entries = leaderboard?.entries ?? (Array.isArray(leaderboard) ? leaderboard as any[] : []);
-
   const rankEmoji = (r: number) => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : `#${r}`;
 
   async function handleReset() {
@@ -95,7 +87,7 @@ function _ContestSection_REMOVED() {
       const data = await res.json();
       setResult(data);
       if (data.success) {
-        refetchLb();
+        // leaderboard removed
       }
     } catch (e: any) {
       setResult({ success: false, message: e.message || 'Request failed' });
@@ -164,7 +156,7 @@ function _ContestSection_REMOVED() {
             <ul className="text-sm text-gray-400 space-y-1 list-none pl-2">
               <li className="flex items-center gap-1"><Megaphone size={12}/>Send winner list to all admins on Telegram</li>
               <li className="flex items-center gap-1"><Star size={12}/>Reset <b className="text-white">star_balance</b> + <b className="text-white">weekly_stars</b> to 0</li>
-              <li className="flex items-center gap-1"><Hash size={12}/>Affect <b className="text-white">{entries.length > 0 ? `${entries.length}+` : 'all'}</b> users</li>
+              <li className="flex items-center gap-1"><Hash size={12}/>Affect <b className="text-white">all</b> users</li>
             </ul>
             {weekLabel.trim() && (
               <p className="text-xs bg-amber-900/30 border border-amber-500/30 text-amber-300 rounded-lg px-3 py-2">
@@ -2034,6 +2026,35 @@ function SettingsSection() {
     { id: 'other' as const, label: 'Other', icon: 'cog' },
   ];
   
+  const handleSaveAdSettings = async () => {
+    setIsSaving(true);
+    try {
+      const response = await apiRequest('PUT', '/api/admin/settings', {
+        adsgramAdLimit: parseInt((settings as any).adsgramAdLimit) || 510,
+        adsgramRewardPerAd: parseInt((settings as any).adsgramRewardPerAd) || 125,
+        adsgramEnabled: (settings as any).adsgramEnabled !== false,
+        monetagAdLimit: parseInt((settings as any).monetagAdLimit) || 50,
+        monetagRewardPerAd: parseInt((settings as any).monetagRewardPerAd) || 125,
+        monetagEnabled: (settings as any).monetagEnabled !== false,
+        gigapubAdLimit: parseInt((settings as any).gigapubAdLimit) || 50,
+        gigapubRewardPerAd: parseInt((settings as any).gigapubRewardPerAd) || 125,
+        gigapubEnabled: (settings as any).gigapubEnabled !== false,
+      });
+      const result = await response.json();
+      if (result.success) {
+        showNotification("Ad settings saved!", "success");
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/app-settings"] });
+      } else {
+        throw new Error(result.message || 'Failed to save');
+      }
+    } catch (error: any) {
+      showNotification(error.message || "Failed to save ad settings", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveSettings = async () => {
     const adLimit = parseInt(settings.dailyAdLimit);
     const reward = parseInt(settings.rewardPerAd);
@@ -2291,6 +2312,21 @@ function SettingsSection() {
                   <p className="text-xs text-muted-foreground">Current: {settingsData?.gigapubEnabled !== false ? '✅ Enabled' : '🔴 Disabled'}</p>
                 </div>
               </div>
+            </div>
+
+            <div className="pt-2 border-t border-white/10 flex justify-end">
+              <Button
+                size="sm"
+                onClick={handleSaveAdSettings}
+                disabled={isSaving}
+                className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-5 py-2 rounded-lg"
+              >
+                {isSaving ? (
+                  <><i className="fas fa-spinner fa-spin mr-1"></i> Saving...</>
+                ) : (
+                  <><i className="fas fa-save mr-1"></i> Save Ad Settings</>
+                )}
+              </Button>
             </div>
           </div>
         )}
