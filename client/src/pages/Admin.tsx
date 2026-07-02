@@ -182,6 +182,7 @@ export default function AdminPage() {
               { value: 'bans',     icon: <ShieldOff size={13}/>,     label: 'Bans' },
               { value: 'security', icon: <ShieldAlert size={13}/>,   label: 'Security' },
               { value: 'settings', icon: <Settings size={13}/>,      label: 'Settings' },
+              { value: 'contests', icon: <Crown size={13}/>,         label: 'Contests' },
               ...(can('manage_admins') ? [{ value: 'admins', icon: <Shield size={13}/>, label: 'Admins' }] : []),
             ] as { value: string; icon: React.ReactNode; label: string }[]).map(tab => (
               <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap flex items-center gap-1">
@@ -297,6 +298,11 @@ export default function AdminPage() {
           {/* Settings Tab */}
           <TabsContent value="settings" className="mt-0">
             <SettingsSection />
+          </TabsContent>
+
+          {/* Contests Tab */}
+          <TabsContent value="contests" className="mt-0">
+            <ContestSection />
           </TabsContent>
 
           {can('manage_admins') && (
@@ -3881,6 +3887,203 @@ function SecuritySection() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Contest Section ────────────────────────────────────────────────────────────
+function ContestSection() {
+  const queryClient = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [form, setForm] = useState({
+    weeklyReferralContestEnabled: false,
+    weeklyReferralStartDate: '',
+    weeklyReferralEndDate: '',
+    weeklyReferralPrizes: '',
+    weeklyReferralTopUsers: 10,
+    monthlyContestEnabled: false,
+    monthlyContestStartDate: '',
+    monthlyContestEndDate: '',
+    monthlyContestPrizes: '',
+    monthlyContestTopUsers: 10,
+    starsPerAd: 1,
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['/api/admin/contest-settings'],
+    queryFn: () => apiRequest('GET', '/api/admin/contest-settings').then(r => r.json()),
+    staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (data) {
+      setForm({
+        weeklyReferralContestEnabled: data.weeklyReferralContestEnabled ?? false,
+        weeklyReferralStartDate: data.weeklyReferralStartDate ?? '',
+        weeklyReferralEndDate: data.weeklyReferralEndDate ?? '',
+        weeklyReferralPrizes: data.weeklyReferralPrizes ?? '',
+        weeklyReferralTopUsers: data.weeklyReferralTopUsers ?? 10,
+        monthlyContestEnabled: data.monthlyContestEnabled ?? false,
+        monthlyContestStartDate: data.monthlyContestStartDate ?? '',
+        monthlyContestEndDate: data.monthlyContestEndDate ?? '',
+        monthlyContestPrizes: data.monthlyContestPrizes ?? '',
+        monthlyContestTopUsers: data.monthlyContestTopUsers ?? 10,
+        starsPerAd: data.starsPerAd ?? 1,
+      });
+    }
+  }, [data]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await apiRequest('POST', '/api/admin/contest-settings', form);
+      if (!res.ok) throw new Error('Failed');
+      showNotification('Contest settings saved!');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/contest-settings'] });
+    } catch {
+      showNotification('Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetStars = async () => {
+    if (!confirm('Reset ALL users\' weekly stars to 0? This cannot be undone.')) return;
+    setResetting(true);
+    try {
+      const res = await apiRequest('POST', '/api/admin/reset-stars', {});
+      if (!res.ok) throw new Error('Failed');
+      showNotification('All weekly stars reset to 0!');
+    } catch {
+      showNotification('Failed to reset stars');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  if (isLoading) {
+    return <div className="text-center py-8 text-muted-foreground text-sm">Loading contest settings...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stars System */}
+      <Card className="bg-[#121212] border-white/10">
+        <CardHeader className="pb-2 pt-3 px-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Star size={14} className="text-yellow-400" /> Stars System
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          <div>
+            <Label className="text-xs text-muted-foreground">Stars earned per ad watched</Label>
+            <Input
+              type="number"
+              min={0}
+              value={form.starsPerAd}
+              onChange={e => setForm(f => ({ ...f, starsPerAd: parseInt(e.target.value) || 0 }))}
+              className="h-8 text-sm mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">Stars are only awarded when the Monthly Contest is active.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Monthly Stars Contest */}
+      <Card className="bg-[#121212] border-white/10">
+        <CardHeader className="pb-2 pt-3 px-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Crown size={14} className="text-yellow-400" /> Monthly Stars Contest
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Contest Active</Label>
+            <button
+              onClick={() => setForm(f => ({ ...f, monthlyContestEnabled: !f.monthlyContestEnabled }))}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.monthlyContestEnabled ? 'bg-green-500' : 'bg-white/20'}`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${form.monthlyContestEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs text-muted-foreground">Start Date</Label>
+              <Input type="date" value={form.monthlyContestStartDate} onChange={e => setForm(f => ({ ...f, monthlyContestStartDate: e.target.value }))} className="h-8 text-xs mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">End Date</Label>
+              <Input type="date" value={form.monthlyContestEndDate} onChange={e => setForm(f => ({ ...f, monthlyContestEndDate: e.target.value }))} className="h-8 text-xs mt-1" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Top N Users</Label>
+            <Input type="number" min={1} max={50} value={form.monthlyContestTopUsers} onChange={e => setForm(f => ({ ...f, monthlyContestTopUsers: parseInt(e.target.value) || 10 }))} className="h-8 text-sm mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Prizes (one per line, in rank order)</Label>
+            <textarea
+              rows={5}
+              value={form.monthlyContestPrizes}
+              onChange={e => setForm(f => ({ ...f, monthlyContestPrizes: e.target.value }))}
+              placeholder={"$50 USDT\n$30 USDT\n$20 USDT"}
+              className="w-full mt-1 px-3 py-2 text-xs bg-background border border-white/10 rounded-md resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <Button size="sm" variant="destructive" className="h-7 text-xs w-full" onClick={resetStars} disabled={resetting}>
+            {resetting ? 'Resetting...' : '⭐ Reset All Weekly Stars'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Weekly Referral Contest */}
+      <Card className="bg-[#121212] border-white/10">
+        <CardHeader className="pb-2 pt-3 px-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Users size={14} className="text-blue-400" /> Weekly Referral Contest
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Contest Active</Label>
+            <button
+              onClick={() => setForm(f => ({ ...f, weeklyReferralContestEnabled: !f.weeklyReferralContestEnabled }))}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.weeklyReferralContestEnabled ? 'bg-green-500' : 'bg-white/20'}`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${form.weeklyReferralContestEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs text-muted-foreground">Start Date</Label>
+              <Input type="date" value={form.weeklyReferralStartDate} onChange={e => setForm(f => ({ ...f, weeklyReferralStartDate: e.target.value }))} className="h-8 text-xs mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">End Date</Label>
+              <Input type="date" value={form.weeklyReferralEndDate} onChange={e => setForm(f => ({ ...f, weeklyReferralEndDate: e.target.value }))} className="h-8 text-xs mt-1" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Top N Users</Label>
+            <Input type="number" min={1} max={50} value={form.weeklyReferralTopUsers} onChange={e => setForm(f => ({ ...f, weeklyReferralTopUsers: parseInt(e.target.value) || 10 }))} className="h-8 text-sm mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Prizes (one per line, in rank order)</Label>
+            <textarea
+              rows={5}
+              value={form.weeklyReferralPrizes}
+              onChange={e => setForm(f => ({ ...f, weeklyReferralPrizes: e.target.value }))}
+              placeholder={"$30 USDT\n$20 USDT\n$10 USDT"}
+              className="w-full mt-1 px-3 py-2 text-xs bg-background border border-white/10 rounded-md resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button onClick={save} disabled={saving} className="w-full h-9 text-sm font-semibold">
+        {saving ? 'Saving...' : '💾 Save Contest Settings'}
+      </Button>
     </div>
   );
 }
