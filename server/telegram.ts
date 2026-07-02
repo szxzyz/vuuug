@@ -941,7 +941,7 @@ async function sendReturningUserMessage(chatId: string, referralCode?: string): 
     const withdrawUrl = `${baseAppUrl}?startapp=page_withdraw`;
     const referralUrl = `${baseAppUrl}?startapp=page_referral`;
 
-    const message = `👋 <b>Welcome to Paid Adz</b>\n\nEarn PAD Tokens by watching ads or completing tasks.\n\n💲 Your Balance: <b>$${usdBal}</b>`;
+    const message = `👋 <b>Welcome to Paid Adz</b>\n\nEarn POW Tokens by watching ads or completing tasks.\n\n💲 Your Balance: <b>$${usdBal}</b>`;
 
     const inlineKeyboard = {
       inline_keyboard: [
