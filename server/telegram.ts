@@ -175,26 +175,40 @@ export async function verifyChannelMembership(userId: number, channelIdOrUsernam
       return true;
     }
 
-    // Single direct getChatMember call — no library overhead, no unnecessary delays
+    // Single direct getChatMember call — Telegram ALWAYS returns HTTP 200; check data.ok for errors
     const res = await fetch(
       `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${userId}`
     );
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const errorCode = body?.error_code;
-      const description: string = body?.description || '';
-      if (errorCode === 400 && (description.includes('PARTICIPANT_ID_INVALID') || description.includes('user not found'))) {
-        console.log(`⚠️ User ${userId} not found in ${channelIdentifier} — has not joined yet.`);
-        return false;
-      }
-      // Any other non-200 → fail open so legitimate users aren't blocked
-      console.warn(`⚠️ getChatMember returned ${res.status} for ${channelIdentifier}: ${description} — failing OPEN`);
+    const data = await res.json().catch(() => null);
+
+    if (!data) {
+      console.warn(`⚠️ getChatMember returned non-JSON for ${channelIdentifier} — failing OPEN`);
       return true;
     }
-    const data = await res.json();
-    const validStatuses = ['creator', 'administrator', 'member', 'subscriber'];
-    const isValid = data.ok && validStatuses.includes(data.result?.status);
-    console.log(`🔍 User ${userId} status in ${channelIdentifier}: ${data.result?.status} (valid: ${isValid})`);
+
+    if (!data.ok) {
+      const errorCode = data?.error_code;
+      const description: string = data?.description || '';
+      // Only fail closed on definitive "user is not a member" errors
+      if (
+        errorCode === 400 &&
+        (description.includes('PARTICIPANT_ID_INVALID') ||
+          description.includes('user not found') ||
+          description.includes('USER_NOT_PARTICIPANT'))
+      ) {
+        console.log(`⚠️ User ${userId} not in ${channelIdentifier}: ${description}`);
+        return false;
+      }
+      // Any other API error (chat not found, bot kicked, etc.) → fail open
+      console.warn(`⚠️ getChatMember error for ${channelIdentifier}: ${description} (code ${errorCode}) — failing OPEN`);
+      return true;
+    }
+
+    const status: string = data.result?.status ?? '';
+    // 'restricted' means the user IS a member but with limited permissions — still valid
+    const validStatuses = ['creator', 'administrator', 'member', 'restricted', 'subscriber'];
+    const isValid = validStatuses.includes(status);
+    console.log(`🔍 User ${userId} status in ${channelIdentifier}: "${status}" → ${isValid ? '✅ valid' : '❌ not a member'}`);
     return isValid;
   } catch (error: any) {
     console.error(`❌ Telegram verification error for user ${userId} in ${channelIdOrUsername}:`, error?.message || error);
