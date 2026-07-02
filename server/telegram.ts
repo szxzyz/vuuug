@@ -373,8 +373,8 @@ export async function sendWithdrawalRequestToGroup(withdrawalData: {
   }
 
   try {
-    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1002480439556');
-    const groupChatId = groupSetting || '-1002480439556';
+    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1003881171760');
+    const groupChatId = groupSetting || '-1003881171760';
 
     const botUsername = await getBotUsername();
     const currentDate = new Date().toUTCString();
@@ -430,8 +430,8 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
   }
 
   try {
-    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1002480439556');
-    const WITHDRAWAL_CHANNEL_ID = groupSetting || '-1002480439556';
+    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1003881171760');
+    const WITHDRAWAL_CHANNEL_ID = groupSetting || '-1003881171760';
     console.log(`📤 Sending withdrawal approval notification to group: ${WITHDRAWAL_CHANNEL_ID}`);
 
     const user = await storage.getUser(withdrawal.userId);
