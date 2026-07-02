@@ -114,104 +114,91 @@ interface TelegramMessage {
 
 // All claim state functions removed
 
-export async function verifyChannelMembership(userId: number, channelIdOrUsername: string, botToken: string): Promise<boolean> {
+// Cache bot ID to avoid repeated getMe() calls per membership check
+let cachedBotId: number | null = null;
+// Cache bot admin status per channel: channelId -> { isAdmin: boolean, expiresAt: number }
+const botAdminCache = new Map<string, { isAdmin: boolean; expiresAt: number }>();
+
+async function getCachedBotId(botToken: string): Promise<number | null> {
+  if (cachedBotId !== null) return cachedBotId;
   try {
-    const bot = new TelegramBot(botToken);
-    
-    // Support both numeric channel IDs (e.g., -1001234567890) and @username formats
-    let channelIdentifier = channelIdOrUsername;
-    
-    // Normalize channel identifier
-    if (channelIdentifier.startsWith('@')) {
-      // Already in @username format, use as-is
-    } else if (channelIdentifier.startsWith('-100')) {
-      // Numeric channel ID format, use as-is
-    } else if (!channelIdentifier.startsWith('@') && !channelIdentifier.startsWith('-')) {
-      // Plain username without @, add it
-      channelIdentifier = `@${channelIdentifier}`;
-    }
-    
-    console.log(`🔍 Checking membership for user ${userId} in channel ${channelIdentifier}...`);
-    
-    // Verify bot has admin access to the channel — fail OPEN if bot can't check,
-    // so legitimate members are never blocked due to a bot permission issue.
-    try {
-      const botInfo = await bot.getMe();
-      const botMember = await bot.getChatMember(channelIdentifier, botInfo.id);
-      
-      if (!['creator', 'administrator'].includes(botMember.status)) {
-        console.warn(`⚠️ Bot @${botInfo.username} is NOT an admin in ${channelIdentifier} (status: ${botMember.status}).`);
-        console.warn(`   Failing OPEN — make the bot an ADMINISTRATOR to enable real membership checks.`);
-        return true; // fail open: can't verify → let user through
-      }
-      
-      console.log(`✅ Bot @${botInfo.username} has admin access to ${channelIdentifier}`);
-    } catch (botCheckError: any) {
-      console.warn(`⚠️ Could not check bot permissions in ${channelIdentifier}:`, botCheckError?.message);
-      console.warn(`   Failing OPEN — make the bot an ADMINISTRATOR to enable real membership checks.`);
-      return true; // fail open: can't verify → let user through
-    }
-    
-    // Now check user membership with retry logic
-    let lastError: any = null;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const member = await bot.getChatMember(channelIdentifier, userId);
-        
-        // Valid membership statuses: 'creator', 'administrator', 'member'
-        // Invalid statuses: 'left', 'kicked', 'restricted'
-        const validStatuses = ['creator', 'administrator', 'member', 'subscriber'];
-        const isValid = validStatuses.includes(member.status);
-        
-        console.log(`🔍 User ${userId} status in ${channelIdentifier}: ${member.status} (valid: ${isValid})`);
-        return isValid;
-      } catch (retryError: any) {
-        lastError = retryError;
-        if (attempt < 2) {
-          console.log(`⚠️ Attempt ${attempt} failed, retrying...`);
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
-        }
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.result?.id) {
+        cachedBotId = data.result.id;
+        return cachedBotId;
       }
     }
-    
-    throw lastError;
-    
+  } catch { /* ignore */ }
+  return null;
+}
+
+async function isBotAdminInChannel(botToken: string, channelIdentifier: string): Promise<boolean> {
+  const cached = botAdminCache.get(channelIdentifier);
+  if (cached && Date.now() < cached.expiresAt) return cached.isAdmin;
+
+  try {
+    const botId = await getCachedBotId(botToken);
+    if (!botId) {
+      botAdminCache.set(channelIdentifier, { isAdmin: true, expiresAt: Date.now() + 5 * 60_000 });
+      return true; // fail open
+    }
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${botId}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const isAdmin = data.ok && ['creator', 'administrator'].includes(data.result?.status);
+      botAdminCache.set(channelIdentifier, { isAdmin, expiresAt: Date.now() + 5 * 60_000 });
+      return isAdmin;
+    }
+  } catch { /* ignore */ }
+  botAdminCache.set(channelIdentifier, { isAdmin: true, expiresAt: Date.now() + 5 * 60_000 });
+  return true; // fail open
+}
+
+export async function verifyChannelMembership(userId: number, channelIdOrUsername: string, botToken: string): Promise<boolean> {
+  // Normalize channel identifier
+  let channelIdentifier = channelIdOrUsername;
+  if (!channelIdentifier.startsWith('@') && !channelIdentifier.startsWith('-')) {
+    channelIdentifier = `@${channelIdentifier}`;
+  }
+
+  console.log(`🔍 Checking membership for user ${userId} in channel ${channelIdentifier}...`);
+
+  try {
+    // Check bot admin status (cached for 5 min — zero extra latency on hot path)
+    const botIsAdmin = await isBotAdminInChannel(botToken, channelIdentifier);
+    if (!botIsAdmin) {
+      console.warn(`⚠️ Bot is NOT an admin in ${channelIdentifier} — failing OPEN so users aren't blocked.`);
+      return true;
+    }
+
+    // Single direct getChatMember call — no library overhead, no unnecessary delays
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${userId}`
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const errorCode = body?.error_code;
+      const description: string = body?.description || '';
+      if (errorCode === 400 && (description.includes('PARTICIPANT_ID_INVALID') || description.includes('user not found'))) {
+        console.log(`⚠️ User ${userId} not found in ${channelIdentifier} — has not joined yet.`);
+        return false;
+      }
+      // Any other non-200 → fail open so legitimate users aren't blocked
+      console.warn(`⚠️ getChatMember returned ${res.status} for ${channelIdentifier}: ${description} — failing OPEN`);
+      return true;
+    }
+    const data = await res.json();
+    const validStatuses = ['creator', 'administrator', 'member', 'subscriber'];
+    const isValid = data.ok && validStatuses.includes(data.result?.status);
+    console.log(`🔍 User ${userId} status in ${channelIdentifier}: ${data.result?.status} (valid: ${isValid})`);
+    return isValid;
   } catch (error: any) {
     console.error(`❌ Telegram verification error for user ${userId} in ${channelIdOrUsername}:`, error?.message || error);
-    
-    // Handle common Telegram API errors gracefully with specific guidance
-    if (error?.code === 'ETELEGRAM') {
-      const errorCode = error.response?.body?.error_code;
-      const errorDescription = error.response?.body?.description;
-      
-      if (errorCode === 400) {
-        if (errorDescription?.includes('PARTICIPANT_ID_INVALID')) {
-          console.log(`⚠️ User ${userId} has never interacted with the channel ${channelIdOrUsername}`);
-          console.log(`   This is normal for new users - they need to join the channel first.`);
-        } else if (errorDescription?.includes('CHAT_ADMIN_REQUIRED')) {
-          console.error(`❌ Bot needs ADMIN privileges in ${channelIdOrUsername} to check membership!`);
-        } else {
-          console.log(`⚠️ Channel not found or user not accessible: ${channelIdOrUsername}`);
-          console.log(`   Error: ${errorDescription}`);
-        }
-        return false;
-      }
-      
-      if (errorCode === 403) {
-        console.error(`❌ Bot doesn't have access to channel: ${channelIdOrUsername}`);
-        console.error(`   Please add the bot as an ADMINISTRATOR to the channel.`);
-        return false;
-      }
-      
-      if (errorCode === 401) {
-        console.error(`❌ Invalid bot token or bot was blocked`);
-        return false;
-      }
-    }
-    
-    // Default to false for any verification errors
-    console.error(`   Use numeric channel ID (e.g., -1001234567890) for more reliable verification.`);
-    return false;
+    return true; // fail open on unexpected errors
   }
 }
 
@@ -932,8 +919,20 @@ export async function handleInlineQuery(inlineQuery: any): Promise<boolean> {
 async function sendReturningUserMessage(chatId: string, referralCode?: string): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN) return;
   try {
+    // Always fetch a fresh record directly from the DB to avoid stale cached values
+    const { db: dbConn } = await import('./db');
+    const { users: usersTable } = await import('../shared/schema');
+    const { eq: eqOp } = await import('drizzle-orm');
+    const [freshUser] = await dbConn
+      .select({ usdBalance: usersTable.usdBalance })
+      .from(usersTable)
+      .where(eqOp(usersTable.telegramId, chatId))
+      .limit(1);
+    const rawUsd = freshUser?.usdBalance;
+    const usdBal = (rawUsd !== null && rawUsd !== undefined && rawUsd !== '')
+      ? parseFloat(String(rawUsd)).toFixed(2)
+      : '0.00';
     const user = await storage.getUserByTelegramId(chatId);
-    const usdBal = user ? parseFloat(user.usdBalance?.toString() || '0').toFixed(2) : '0.00';
 
     const botUsername = await getBotUsername();
     const baseAppUrl = `https://t.me/${botUsername}/MyWAdz`;
@@ -964,6 +963,54 @@ async function sendReturningUserMessage(chatId: string, referralCode?: string): 
     });
   } catch (err) {
     console.error('❌ Error sending returning user message:', err);
+  }
+}
+
+// ── Edit an existing message back to the main dashboard (used by Back button) ──
+async function editMessageToDashboard(chatId: string, messageId: number): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    const { db: dbConn } = await import('./db');
+    const { users: usersTable } = await import('../shared/schema');
+    const { eq: eqOp } = await import('drizzle-orm');
+    const [freshUser] = await dbConn
+      .select({ usdBalance: usersTable.usdBalance })
+      .from(usersTable)
+      .where(eqOp(usersTable.telegramId, chatId))
+      .limit(1);
+    const rawUsd = freshUser?.usdBalance;
+    const usdBal = (rawUsd !== null && rawUsd !== undefined && rawUsd !== '')
+      ? parseFloat(String(rawUsd)).toFixed(2)
+      : '0.00';
+
+    const botUsername = await getBotUsername();
+    const baseAppUrl = `https://t.me/${botUsername}/MyWAdz`;
+    const openAppUrl = baseAppUrl;
+    const withdrawUrl = `${baseAppUrl}?startapp=page_withdraw`;
+    const referralUrl = `${baseAppUrl}?startapp=page_referral`;
+
+    const text = `👋 <b>Welcome to Paid Adz</b>\n\nEarn POW Tokens by watching ads or completing tasks.\n\n💲 Your Balance: <b>$${usdBal}</b>`;
+    const reply_markup = {
+      inline_keyboard: [
+        [{ text: '🚀 Open App', url: openAppUrl }],
+        [
+          { text: '💸 Withdraw', url: withdrawUrl },
+          { text: '👥 Referral', url: referralUrl },
+        ],
+        [
+          { text: '🏆 Contest', callback_data: 'show_ref_contest' },
+          { text: '📊 Leaderboard', callback_data: 'show_monthly_leader' },
+        ],
+      ],
+    };
+
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: 'HTML', reply_markup }),
+    });
+  } catch (err) {
+    console.error('❌ Error editing message to dashboard:', err);
   }
 }
 
@@ -1067,7 +1114,12 @@ export async function sendWeeklyReferralContest(chatId: string, messageId?: numb
     }
 
     const text = lines.join('\n');
-    const replyMarkup = { inline_keyboard: [[{ text: '🔄 Refresh', callback_data: 'ref_contest_refresh' }]] };
+    const replyMarkup = {
+      inline_keyboard: [[
+        { text: '🔄 Refresh', callback_data: 'ref_contest_refresh' },
+        { text: '↩️ Back', callback_data: 'ref_contest_back' },
+      ]],
+    };
 
     if (messageId) {
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
@@ -1155,7 +1207,12 @@ export async function sendMonthlyLeaderboard(chatId: string, messageId?: number)
     }
 
     const text = lines.join('\n');
-    const replyMarkup = { inline_keyboard: [[{ text: '🔄 Refresh', callback_data: 'monthly_leader_refresh' }]] };
+    const replyMarkup = {
+      inline_keyboard: [[
+        { text: '🔄 Refresh', callback_data: 'monthly_leader_refresh' },
+        { text: '↩️ Back', callback_data: 'monthly_leader_back' },
+      ]],
+    };
 
     if (messageId) {
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
@@ -1172,6 +1229,161 @@ export async function sendMonthlyLeaderboard(chatId: string, messageId?: number)
     }
   } catch (err) {
     console.error('❌ Error sending monthly leaderboard:', err);
+  }
+}
+
+// ── Auto-snapshot: send contest final results to all admins when period ends ───
+let lastSnapshotCheckTs = 0;
+export async function checkAndSendContestSnapshots(): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  const now = Date.now();
+  // Throttle: run at most once per 5 minutes
+  if (now - lastSnapshotCheckTs < 5 * 60_000) return;
+  lastSnapshotCheckTs = now;
+
+  try {
+    const { db: dbConn } = await import('./db');
+    const { adminSettings: adminSettingsTable } = await import('../shared/schema');
+    const { sql: sqlFn } = await import('drizzle-orm');
+
+    const allSettings = await dbConn.select().from(adminSettingsTable);
+    const getSetting = (key: string, def: string) =>
+      allSettings.find((s: any) => s.settingKey === key)?.settingValue || def;
+    const setSetting = async (key: string, value: string) => {
+      try {
+        await dbConn.execute(sqlFn`
+          INSERT INTO admin_settings (setting_key, setting_value, updated_at)
+          VALUES (${key}, ${value}, NOW())
+          ON CONFLICT (setting_key) DO UPDATE SET setting_value = ${value}, updated_at = NOW()
+        `);
+      } catch { /* ignore */ }
+    };
+
+    const adminIds = [
+      (process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_ID || '').trim(),
+      ...(process.env.TELEGRAM_ADMIN_IDS || '').split(',').map((id: string) => id.trim()),
+    ].filter(Boolean);
+
+    const nowDate = new Date();
+
+    // ── Weekly Referral Contest snapshot ─────────────────────────────────────
+    const weeklyEnabled = getSetting('weekly_referral_contest_enabled', 'false') === 'true';
+    const weeklyEndDate = getSetting('weekly_referral_end_date', '');
+    const weekLabel = getCurrentISOWeekLabel();
+    const weeklySnapshotKey = `weekly_contest_snapshot_sent_${weekLabel}`;
+    const weeklySnapshotSent = getSetting(weeklySnapshotKey, 'false') === 'true';
+
+    if (weeklyEnabled && weeklyEndDate && !weeklySnapshotSent) {
+      const endDate = new Date(weeklyEndDate);
+      if (nowDate > endDate) {
+        const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
+        const startDate = getSetting('weekly_referral_start_date', '');
+        const prizesRaw = getSetting('weekly_referral_prizes', '');
+        const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+
+        const topQuery = await dbConn.execute(sqlFn`
+          SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
+          FROM users u
+          INNER JOIN referrals r ON r.referrer_id = u.id
+          WHERE r.status = 'active'
+            AND u.banned = false
+            ${startDate ? sqlFn`AND r.created_at >= ${new Date(startDate)}` : sqlFn``}
+            AND r.created_at <= ${endDate}
+          GROUP BY u.id, u.username, u.first_name
+          HAVING COUNT(r.id) > 0
+          ORDER BY referral_count DESC
+          LIMIT ${topN}
+        `);
+        const rows = topQuery.rows as any[];
+
+        let lines = [
+          `🏆 <b>Referral Contest — Final Results</b>`,
+          ``,
+          `📅 Period: ${startDate ? new Date(startDate).toDateString() : '—'} → ${endDate.toDateString()}`,
+          `🏷 Contest: ${escapeHtml(weekLabel)}`,
+          ``,
+          `<code>Pos │ Name │ Active Referrals │ Prize</code>`,
+        ];
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const pos = positionEmoji(i + 1);
+          const name = escapeHtml(row.username ? `@${row.username}` : (row.first_name || `User ${i + 1}`));
+          const count = parseInt(row.referral_count);
+          const prize = prizes[i] ? ` │ ${escapeHtml(prizes[i])}` : '';
+          lines.push(`${pos} ${name} │ ${count}${prize}`);
+        }
+        if (rows.length === 0) lines.push('No participants this week.');
+        lines.push(``, `🕐 Snapshot taken: ${nowDate.toUTCString()}`);
+
+        const snapshotText = lines.join('\n');
+        for (const adminId of adminIds) {
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: adminId, text: snapshotText, parse_mode: 'HTML' }),
+          }).catch(() => {});
+        }
+        await setSetting(weeklySnapshotKey, 'true');
+        console.log(`✅ Weekly contest snapshot sent for ${weekLabel}`);
+      }
+    }
+
+    // ── Monthly Leaderboard snapshot ──────────────────────────────────────────
+    const monthlyEnabled = getSetting('monthly_contest_enabled', 'false') === 'true';
+    const monthlyEndDate = getSetting('monthly_contest_end_date', '');
+    const monthLabel = getMonthLabel();
+    const monthlySnapshotKey = `monthly_contest_snapshot_sent_${monthLabel.replace(/\s+/g, '_')}`;
+    const monthlySnapshotSent = getSetting(monthlySnapshotKey, 'false') === 'true';
+
+    if (monthlyEnabled && monthlyEndDate && !monthlySnapshotSent) {
+      const endDate = new Date(monthlyEndDate);
+      if (nowDate > endDate) {
+        const topN = parseInt(getSetting('monthly_contest_top_users', '10'));
+        const prizesRaw = getSetting('monthly_contest_prizes', '');
+        const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+
+        const topQuery = await dbConn.execute(sqlFn`
+          SELECT id, username, first_name, weekly_stars
+          FROM users
+          WHERE weekly_stars > 0 AND banned = false
+          ORDER BY weekly_stars DESC
+          LIMIT ${topN}
+        `);
+        const rows = topQuery.rows as any[];
+
+        let lines = [
+          `🏆 <b>Monthly Leaderboard — Final Results</b>`,
+          ``,
+          `📅 Period ends: ${endDate.toDateString()}`,
+          `🏷 Month: ${escapeHtml(monthLabel)}`,
+          ``,
+          `<code>Pos │ Name │ Stars │ Prize</code>`,
+        ];
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const pos = positionEmoji(i + 1);
+          const name = escapeHtml(row.username ? `@${row.username}` : (row.first_name || `User ${i + 1}`));
+          const stars = parseInt(row.weekly_stars);
+          const prize = prizes[i] ? ` │ ${escapeHtml(prizes[i])}` : '';
+          lines.push(`${pos} ${name} │ ⭐${stars}${prize}`);
+        }
+        if (rows.length === 0) lines.push('No participants this month.');
+        lines.push(``, `🕐 Snapshot taken: ${nowDate.toUTCString()}`);
+
+        const snapshotText = lines.join('\n');
+        for (const adminId of adminIds) {
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: adminId, text: snapshotText, parse_mode: 'HTML' }),
+          }).catch(() => {});
+        }
+        await setSetting(monthlySnapshotKey, 'true');
+        console.log(`✅ Monthly leaderboard snapshot sent for ${monthLabel}`);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error in checkAndSendContestSnapshots:', err);
   }
 }
 
@@ -1907,23 +2119,35 @@ ${walletAddress}
         return true;
       }
       
-      // Handle contest/leaderboard refresh callbacks
-      if (data === 'ref_contest_refresh' || data === 'show_ref_contest') {
-        await sendWeeklyReferralContest(chatId, data === 'ref_contest_refresh' ? callbackQuery.message?.message_id : undefined);
+      // Handle contest/leaderboard callbacks — always edit the existing message
+      if (data === 'show_ref_contest' || data === 'ref_contest_refresh') {
+        await sendWeeklyReferralContest(chatId, callbackQuery.message?.message_id);
         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: '🔄 Refreshed' }),
+          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: data === 'ref_contest_refresh' ? '🔄 Refreshed' : '' }),
         });
         return true;
       }
 
-      if (data === 'monthly_leader_refresh' || data === 'show_monthly_leader') {
-        await sendMonthlyLeaderboard(chatId, data === 'monthly_leader_refresh' ? callbackQuery.message?.message_id : undefined);
+      if (data === 'show_monthly_leader' || data === 'monthly_leader_refresh') {
+        await sendMonthlyLeaderboard(chatId, callbackQuery.message?.message_id);
         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: '🔄 Refreshed' }),
+          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: data === 'monthly_leader_refresh' ? '🔄 Refreshed' : '' }),
+        });
+        return true;
+      }
+
+      // Back buttons — edit the message back to the main dashboard
+      if (data === 'ref_contest_back' || data === 'monthly_leader_back') {
+        const msgId = callbackQuery.message?.message_id;
+        if (msgId) await editMessageToDashboard(chatId, msgId);
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id }),
         });
         return true;
       }

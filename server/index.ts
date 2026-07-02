@@ -177,6 +177,16 @@ app.use((req, res, next) => {
       }
     }, 5 * 60 * 1000);
 
+    // Contest snapshot check — runs every 5 minutes, auto-sends results when period ends
+    setInterval(async () => {
+      try {
+        const { checkAndSendContestSnapshots } = await import('./telegram');
+        await checkAndSendContestSnapshots();
+      } catch (error) {
+        console.error('❌ Error in contest snapshot check:', error);
+      }
+    }, 5 * 60 * 1000);
+
     // Auto-setup Telegram webhook
     if (process.env.TELEGRAM_BOT_TOKEN) {
       try {
