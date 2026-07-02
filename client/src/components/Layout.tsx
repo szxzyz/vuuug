@@ -91,6 +91,8 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
+      {/* Floating header — visible only on Home page (language button) */}
+      <Header />
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden"
         style={{ paddingBottom: "100px", paddingTop: "0px" }}

@@ -145,24 +145,55 @@ export default function Header() {
     return (
       <>
         {langPicker}
-        <div className={headerBase} style={headerStyle}>
+        {/* Floating language button — top-right, no layout impact */}
+        <div style={{ position: 'fixed', top: 14, right: 14, zIndex: 40 }}>
           <button
             onClick={() => setLangPickerOpen(true)}
-            className="flex items-center gap-2 active:scale-95 transition-transform"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '6px 12px', cursor: 'pointer' }}
+            className="active:scale-90 transition-transform"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 10px 6px 7px',
+              borderRadius: 50,
+              cursor: 'pointer',
+              border: '1px solid rgba(255,255,255,0.15)',
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 100%)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
+            }}
           >
-            <Globe style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.6)' }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.06em' }}>
+            {/* Flag circle */}
+            <div style={{
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 13,
+              lineHeight: 1,
+              flexShrink: 0,
+            }}>
+              {currentLangMeta.flag}
+            </div>
+            {/* Label */}
+            <span style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: 'rgba(255,255,255,0.85)',
+              letterSpacing: '0.08em',
+              lineHeight: 1,
+            }}>
               {currentLangMeta.label}
             </span>
+            {/* Tiny chevron */}
+            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ opacity: 0.4, marginLeft: -2 }}>
+              <path d="M1.5 3L4 5.5L6.5 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </button>
-
-          <div style={{ flex: 1 }} />
-
-          {balanceItem(
-            <img src="/images/ton.png" alt="TON" style={{ width: ICON, height: ICON, objectFit: 'cover', borderRadius: '50%' }} />,
-            `${tonFormatted} TON`
-          )}
         </div>
       </>
     );

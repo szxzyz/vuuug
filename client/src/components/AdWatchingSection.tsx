@@ -181,6 +181,11 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     const cardIndex = AD_CARDS.indexOf(card);
     if (isShowingAds || isCardLimitReached(card.adType)) return;
     if (cardIndex !== activeIndex) { setActiveIndex(cardIndex); return; }
+    // Monetag and Gigapub go straight to the ad — no pre-ad instruction popup
+    if (card.adType === 'monetag' || card.adType === 'gigapub') {
+      runAdFlowForCard(cardId);
+      return;
+    }
     setPendingCardId(cardId);
     setPendingAdStart(true);
     setShowFailurePopup(true);
