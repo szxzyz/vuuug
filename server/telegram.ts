@@ -1080,12 +1080,23 @@ export async function sendWeeklyReferralContest(chatId: string, messageId?: numb
       return;
     }
 
+    // Debug: log contest parameters before querying
+    console.log(`\n🔍 [Contest Debug] sendWeeklyReferralContest called`);
+    console.log(`   Contest Enabled : ${contestEnabled}`);
+    console.log(`   Start Date      : ${startDate || '(none — no start filter)'}`);
+    console.log(`   End Date        : ${endDate || '(none — no end filter)'}`);
+    console.log(`   Top N           : ${topN}`);
+    console.log(`   Week Label      : ${weekLabel}`);
+
     // Get top referrers within contest period
+    // NOTE: Referrals in this system go from 'pending' → 'completed'.
+    //       'active' is never set, so querying only 'active' always returns 0 rows.
+    //       We count both 'pending' (friend joined) and 'completed' (friend watched ads).
     const topQuery = await dbConn.execute(sqlFn`
       SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
       FROM users u
       INNER JOIN referrals r ON r.referrer_id = u.id
-      WHERE r.status = 'active'
+      WHERE r.status IN ('pending', 'completed')
         AND u.banned = false
         ${startDate ? sqlFn`AND r.created_at >= ${new Date(startDate)}` : sqlFn``}
         ${endDate ? sqlFn`AND r.created_at <= ${new Date(endDate)}` : sqlFn``}
@@ -1094,6 +1105,8 @@ export async function sendWeeklyReferralContest(chatId: string, messageId?: numb
       ORDER BY referral_count DESC
       LIMIT ${topN}
     `);
+
+    console.log(`   Query returned  : ${(topQuery.rows as any[]).length} participant(s)`);
 
     const rows = (topQuery.rows as any[]);
 
@@ -1299,7 +1312,7 @@ export async function checkAndSendContestSnapshots(): Promise<void> {
           SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
           FROM users u
           INNER JOIN referrals r ON r.referrer_id = u.id
-          WHERE r.status = 'active'
+          WHERE r.status IN ('pending', 'completed')
             AND u.banned = false
             ${startDate ? sqlFn`AND r.created_at >= ${new Date(startDate)}` : sqlFn``}
             AND r.created_at <= ${endDate}
@@ -2670,7 +2683,65 @@ ${walletAddress}
             const existingReferral = await storage.getReferralByUsers(referrer.id, dbUser.id);
             if (!existingReferral) {
               console.log(`💾 Creating referral relationship: ${referrer.id} -> ${dbUser.id}`);
-              await storage.createReferral(referrer.id, dbUser.id);
+              const newReferral = await storage.createReferral(referrer.id, dbUser.id);
+
+              // ── Contest eligibility debug log ────────────────────────────────
+              try {
+                const { db: dbConn } = await import('./db');
+                const { adminSettings: adminSettingsTable } = await import('../shared/schema');
+                const allSettings = await dbConn.select().from(adminSettingsTable);
+                const getSetting = (key: string, def: string) =>
+                  allSettings.find((s: any) => s.settingKey === key)?.settingValue || def;
+
+                const contestEnabled = getSetting('weekly_referral_contest_enabled', 'false') === 'true';
+                const contestStart  = getSetting('weekly_referral_start_date', '');
+                const contestEnd    = getSetting('weekly_referral_end_date', '');
+                const referralTs    = newReferral.createdAt ?? new Date();
+                const withinStart   = !contestStart || referralTs >= new Date(contestStart);
+                const withinEnd     = !contestEnd   || referralTs <= new Date(contestEnd);
+                const qualifies     = contestEnabled && withinStart && withinEnd;
+
+                // Count current referrals for this referrer in the contest period
+                const { sql: sqlFn } = await import('drizzle-orm');
+                const countResult = await dbConn.execute(sqlFn`
+                  SELECT COUNT(r.id) AS referral_count
+                  FROM referrals r
+                  WHERE r.referrer_id = ${referrer.id}
+                    AND r.status IN ('pending', 'completed')
+                    ${contestStart ? sqlFn`AND r.created_at >= ${new Date(contestStart)}` : sqlFn``}
+                    ${contestEnd   ? sqlFn`AND r.created_at <= ${new Date(contestEnd)}`   : sqlFn``}
+                `);
+                const currentCount = parseInt((countResult.rows[0] as any)?.referral_count || '0');
+
+                console.log(`\n📊 [Contest Referral Debug]`);
+                console.log(`   Contest ID (key)     : weekly_referral_contest_enabled`);
+                console.log(`   Contest Enabled      : ${contestEnabled}`);
+                console.log(`   Contest Start        : ${contestStart || '(not set)'}`);
+                console.log(`   Contest End          : ${contestEnd || '(not set)'}`);
+                console.log(`   Referrer User ID     : ${referrer.id}`);
+                console.log(`   Referred User ID     : ${dbUser.id}`);
+                console.log(`   Referral Timestamp   : ${referralTs.toISOString()}`);
+                console.log(`   Referral Status      : ${newReferral.status}`);
+                console.log(`   Within Start         : ${withinStart}`);
+                console.log(`   Within End           : ${withinEnd}`);
+                console.log(`   Qualifies for Contest: ${qualifies}`);
+                console.log(`   Current Contest Count: ${currentCount}`);
+
+                if (!contestEnabled) {
+                  console.log(`   ⚠️  Contest is DISABLED — referral will not appear on leaderboard until enabled.`);
+                } else if (!withinStart) {
+                  console.log(`   ⚠️  Referral timestamp ${referralTs.toISOString()} is BEFORE contest start ${contestStart}`);
+                } else if (!withinEnd) {
+                  console.log(`   ⚠️  Referral timestamp ${referralTs.toISOString()} is AFTER contest end ${contestEnd}`);
+                } else {
+                  console.log(`   ✅ Referral QUALIFIES — leaderboard count for referrer is now ${currentCount}`);
+                }
+              } catch (debugErr) {
+                console.warn('⚠️ Contest debug log failed (non-critical):', debugErr);
+              }
+              // ── End contest eligibility debug log ────────────────────────────
+            } else {
+              console.log(`ℹ️ Referral already exists between ${referrer.id} and ${dbUser.id} — skipped.`);
             }
           }
         } catch (error) {

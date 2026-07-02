@@ -1,3 +1,24 @@
+// Load .env file manually as fallback (tsx uses --env-file flag, but this
+// ensures .env is loaded in all execution contexts including compiled builds).
+import { readFileSync, existsSync } from 'fs';
+if (existsSync('.env')) {
+  try {
+    const envContents = readFileSync('.env', 'utf8');
+    for (const line of envContents.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+      if (key && !(key in process.env)) process.env[key] = val;
+    }
+    console.log('✅ Loaded environment variables from .env');
+  } catch (e) {
+    console.warn('⚠️ Could not parse .env file:', e);
+  }
+}
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
