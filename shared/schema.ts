@@ -110,6 +110,10 @@ export const users = pgTable("users", {
   // Risk scoring & platform detection
   suspicionScore: integer("suspicion_score").default(0),
   platform: varchar("platform", { length: 20 }),        // android/ios/tdesktop/web/unknown/script
+  // Welcome message tracking — only send first-time welcome once
+  welcomeMessageSent: boolean("welcome_message_sent").default(false),
+  // Monthly contest stars — earned by watching ads when contest is active
+  weeklyStars: integer("weekly_stars").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
