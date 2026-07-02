@@ -224,17 +224,17 @@ export default function Affiliates() {
         <button
           onClick={() => setReferralsOpen(true)}
           className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-6"
-          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.08)' }}
+          style={{ background: 'rgba(255,255,255,0.07)' }}
         >
           <Users className="w-5 h-5 text-white/70" />
-          <span className="text-white font-semibold text-sm">👥 My Referrals</span>
+          <span className="text-white font-semibold text-sm">My Referrals</span>
         </button>
 
       </main>
 
       {/* My Referrals Bottom Drawer */}
       <Drawer open={referralsOpen} onOpenChange={setReferralsOpen}>
-        <DrawerContent className="bg-[#111] border-t border-white/10 max-h-[80vh]">
+        <DrawerContent className="bg-[#111] border-none max-h-[80vh]">
           <DrawerHeader className="flex items-center justify-between pb-2">
             <DrawerTitle className="text-white font-bold text-lg">My Referrals</DrawerTitle>
             <DrawerClose asChild>
