@@ -12,6 +12,7 @@ import {
   userBalances,
   dailyTasks,
   promoCodes,
+  promoCodeUsage,
   transactions,
   adminSettings,
   advertiserTasks,
@@ -3933,17 +3934,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tonWithdrawnSum = await db.select({ total: sql<string>`COALESCE(SUM(${withdrawals.amount}), '0')` }).from(withdrawals).where(sql`${withdrawals.status} IN ('completed', 'success', 'paid', 'Approved')`);
 
       const stats = {
-        totalUsers: totalUsersCount[0]?.count || 0,
+        totalUsers: Number(totalUsersCount[0]?.count || 0),
         totalEarnings: totalEarningsSum[0]?.total || '0',
         totalWithdrawals: totalWithdrawalsSum[0]?.total || '0',
         tonWithdrawn: tonWithdrawnSum[0]?.total || '0',
-        pendingWithdrawals: pendingWithdrawalsCount[0]?.count || 0,
-        successfulWithdrawals: successfulWithdrawalsCount[0]?.count || 0,
-        rejectedWithdrawals: rejectedWithdrawalsCount[0]?.count || 0,
-        activePromos: activePromosCount[0]?.count || 0,
-        dailyActiveUsers: dailyActiveCount[0]?.count || 0,
-        totalAdsWatched: totalAdsSum[0]?.total || 0,
-        todayAdsWatched: todayAdsSum[0]?.total || 0,
+        pendingWithdrawals: Number(pendingWithdrawalsCount[0]?.count || 0),
+        successfulWithdrawals: Number(successfulWithdrawalsCount[0]?.count || 0),
+        rejectedWithdrawals: Number(rejectedWithdrawalsCount[0]?.count || 0),
+        activePromos: Number(activePromosCount[0]?.count || 0),
+        dailyActiveUsers: Number(dailyActiveCount[0]?.count || 0),
+        totalAdsWatched: Number(totalAdsSum[0]?.total || 0),
+        todayAdsWatched: Number(todayAdsSum[0]?.total || 0),
       };
       
       console.log('✅ Admin stats calculated:', stats);
@@ -4443,16 +4444,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      res.json(allUsers.map(u => ({
+      const mappedUsers = allUsers.map(u => ({
         ...u,
         id: u.id,
         telegramId: u.telegram_id,
-        firstName: u.first_name,
-        lastName: u.last_name,
+        // Drizzle returns camelCase keys; avoid overriding with undefined snake_case lookups
+        firstName: (u as any).firstName ?? (u as any).first_name ?? null,
+        lastName: (u as any).lastName ?? (u as any).last_name ?? null,
         username: u.username,
         balance: u.balance?.toString() || '0',
-        totalEarned: u.totalEarned?.toString() || '0'
-      })));
+        totalEarned: u.totalEarned?.toString() || '0',
+      }));
+      res.json({ users: mappedUsers, total: mappedUsers.length });
     } catch (error) {
       console.error("Error fetching admin users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
@@ -10035,6 +10038,22 @@ ${walletAddress}
   });
 
   // ─── FEATURE 2: Promo Code Toggle / Edit ─────────────────────────────────────
+  // ── Delete promo code ────────────────────────────────────────────────────────
+  app.delete('/api/admin/promo-codes/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      // Wrap in transaction so partial failure leaves no orphaned rows
+      await db.transaction(async (tx) => {
+        await tx.delete(promoCodeUsage).where(eq(promoCodeUsage.promoCodeId, id));
+        await tx.delete(promoCodes).where(eq(promoCodes.id, id));
+      });
+      res.json({ success: true, message: 'Promo code deleted' });
+    } catch (error) {
+      console.error('❌ Error deleting promo code:', error);
+      res.status(500).json({ error: 'Failed to delete promo code' });
+    }
+  });
+
   app.put('/api/admin/promo-codes/:id', authenticateAdmin, async (req: any, res) => {
     try {
       const { id } = req.params;
@@ -10095,7 +10114,7 @@ ${walletAddress}
       const userId = req.user?.user?.id;
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       const activeReferrals = await db.query.referrals.findMany({
-        where: and(eq(referrals.referrerId, userId), eq(referrals.status, 'active')),
+        where: and(eq(referrals.referrerId, userId), sql`${referrals.status} IN ('active','completed')`),
         limit: 1,
       });
       res.json({ success: true, hasActiveReferral: activeReferrals.length > 0, count: activeReferrals.length });
@@ -10165,9 +10184,9 @@ ${walletAddress}
       });
       if (existing?.claimedAt) return res.status(400).json({ error: 'Already claimed' });
 
-      // Check user has at least 1 active referral
+      // Check user has at least 1 active/completed referral
       const activeReferrals = await db.query.referrals.findMany({
-        where: and(eq(referrals.referrerId, userId), eq(referrals.status, 'active')),
+        where: and(eq(referrals.referrerId, userId), sql`${referrals.status} IN ('active','completed')`),
         limit: 1,
       });
       if (activeReferrals.length === 0) return res.status(400).json({ error: 'No active referrals yet' });
@@ -10354,7 +10373,7 @@ ${walletAddress}
         SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
         FROM users u
         INNER JOIN referrals r ON r.referrer_id = u.id
-        WHERE r.status = 'active'
+        WHERE r.status IN ('active', 'completed')
           AND u.banned = false
           ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
           ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
@@ -10381,7 +10400,7 @@ ${walletAddress}
             SELECT COUNT(r.id) AS referral_count
             FROM referrals r
             WHERE r.referrer_id = ${userId}
-              AND r.status = 'active'
+              AND r.status IN ('active', 'completed')
               ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
               ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
           `);
@@ -10394,7 +10413,7 @@ ${walletAddress}
                 SELECT r.referrer_id, COUNT(r.id) AS rc
                 FROM referrals r
                 INNER JOIN users u ON u.id = r.referrer_id
-                WHERE r.status = 'active' AND u.banned = false
+                WHERE r.status IN ('active', 'completed') AND u.banned = false
                   ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
                   ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
                 GROUP BY r.referrer_id
@@ -10467,6 +10486,43 @@ ${walletAddress}
     } catch (error) {
       console.error('Error updating contest settings:', error);
       res.status(500).json({ message: 'Failed to update contest settings' });
+    }
+  });
+
+  // ── My Referrals: list all referrals with their status ───────────────────────
+  app.get('/api/referrals/my-referrals', async (req: any, res) => {
+    try {
+      const userId = req.session?.user?.user?.id || req.user?.user?.id;
+      if (!userId) return res.json({ referrals: [] });
+
+      const myReferrals = await db
+        .select({
+          id: referrals.id,
+          status: referrals.status,
+          createdAt: referrals.createdAt,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        })
+        .from(referrals)
+        .innerJoin(users, eq(referrals.refereeId, users.id))
+        .where(eq(referrals.referrerId, userId))
+        .orderBy(desc(referrals.createdAt));
+
+      const result = myReferrals.map(r => ({
+        id: r.id,
+        username: r.username || null,
+        displayName: r.firstName
+          ? `${r.firstName}${r.lastName ? ' ' + r.lastName : ''}`.trim()
+          : (r.username || 'Unknown'),
+        status: r.status === 'completed' || r.status === 'active' ? 'success' : 'pending',
+        createdAt: r.createdAt,
+      }));
+
+      res.json({ referrals: result });
+    } catch (error) {
+      console.error('❌ Error fetching my referrals:', error);
+      res.status(500).json({ referrals: [] });
     }
   });
 
