@@ -1,4 +1,4 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, keepPreviousData } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -17,25 +17,19 @@ async function throwIfResNotOk(res: Response) {
 // Helper function to get Telegram data with proper WebApp detection
 const getTelegramInitData = (): string | null => {
   if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    const isDev = hostname === 'localhost' || 
-                  hostname.includes('replit.app') || 
-                  hostname.includes('replit.dev') ||
-                  hostname.includes('127.0.0.1');
-    
-    if (isDev) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const tgData = urlParams.get('tgData');
-      if (tgData) return tgData;
-      return null;
+    // ALWAYS check Telegram SDK first — works in both dev and production.
+    // Previously this was skipped for replit.app domains (treated as "dev"),
+    // which caused GET /api/auth/user to have no x-telegram-data header.
+    // Without telegram data, the server fell back to the test user (REPL_ID check),
+    // returning usdBalance="0" instead of the real user's balance.
+    if (window.Telegram?.WebApp?.initData && window.Telegram.WebApp.initData.trim() !== '') {
+      return window.Telegram.WebApp.initData;
     }
-    
-    if (window.Telegram?.WebApp?.initData) {
-      const initData = window.Telegram.WebApp.initData;
-      if (initData && initData.trim() !== '') return initData;
-    }
-    
-    return null;
+
+    // Dev-only fallback: URL param ?tgData=... (for browser testing without Telegram SDK)
+    const urlParams = new URLSearchParams(window.location.search);
+    const tgData = urlParams.get('tgData');
+    if (tgData) return tgData;
   }
   return null;
 };
@@ -180,10 +174,20 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: true, // Refetch on focus for instant updates
-      staleTime: 0, // No stale time - always fetch fresh data
-      gcTime: 1000 * 60 * 5, // 5 minutes garbage collection
+      // Telegram users switch apps constantly; refetching on every focus with
+      // staleTime:0 caused a visible flash-of-zeros in production (API latency
+      // 50–500 ms vs ~1 ms in dev). Disable focus-refetch so data only
+      // refreshes on explicit invalidation or mount.
+      refetchOnWindowFocus: false,
+      // 30 s staleTime: data is considered fresh for 30 seconds after it
+      // arrives. This prevents the refetch storm that caused every balance/
+      // counter to blank out simultaneously in production.
+      staleTime: 1000 * 30,
+      gcTime: 1000 * 60 * 5,
       retry: false,
+      // Keep the last successful data visible while a background refetch is
+      // in flight — eliminates the "flash of 0" during any background update.
+      placeholderData: keepPreviousData,
     },
   },
 });
