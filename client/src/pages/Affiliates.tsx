@@ -2,9 +2,17 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { showNotification } from '@/components/AppNotification';
 import Layout from '@/components/Layout';
-import { Copy, Share2 } from 'lucide-react';
+import { Copy, Users, Send } from 'lucide-react';
 import { formatLargePAD } from '@/lib/utils';
 import { useLanguage } from '@/hooks/useLanguage';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerClose,
+} from '@/components/ui/drawer';
+import { Badge } from '@/components/ui/badge';
 
 function StatSkeleton() {
   return (
@@ -23,6 +31,7 @@ function StatSkeleton() {
 
 export default function Affiliates() {
   const { t } = useLanguage();
+  const [referralsOpen, setReferralsOpen] = useState(false);
 
   const { data: user } = useQuery<any>({
     queryKey: ['/api/auth/user'],
@@ -37,6 +46,12 @@ export default function Affiliates() {
   const { data: appSettings } = useQuery<any>({
     queryKey: ['/api/app-settings'],
     retry: false,
+  });
+
+  const { data: myReferralsData, isLoading: isLoadingReferrals } = useQuery<any>({
+    queryKey: ['/api/referrals/my-referrals'],
+    retry: false,
+    enabled: referralsOpen,
   });
 
   const [isSharing, setIsSharing] = useState(false);
@@ -60,13 +75,15 @@ export default function Affiliates() {
   const totalUsdEarned: number = stats?.totalUsdEarned ?? 0;
   const totalPowEarned: number = stats?.totalPowEarned ?? stats?.totalStarEarned ?? 0;
 
+  // Copy referral link (was the main button, now the small circular button)
   const copyLink = () => {
     if (!referralLink) return;
     navigator.clipboard.writeText(referralLink);
     showNotification(t('link_copied'), 'success');
   };
 
-  const shareLink = async () => {
+  // Invite Friends — opens Telegram's native share dialog (was the circular share button, now the main button)
+  const inviteFriends = async () => {
     if (isSharing || !referralLink) return;
     setIsSharing(true);
     try {
@@ -96,6 +113,8 @@ export default function Affiliates() {
         .filter(Boolean).join(' + ') || null
     : null;
 
+  const myReferrals: any[] = myReferralsData?.referrals ?? [];
+
   return (
     <Layout>
       <main className="max-w-md mx-auto px-4 pt-4 bg-black">
@@ -114,25 +133,28 @@ export default function Affiliates() {
           </p>
         </div>
 
-        {/* Copy + Share buttons */}
+        {/* Main: Invite Friends button + Copy circular button */}
         <div className="mb-4 flex items-center gap-3">
+          {/* PRIMARY: Invite Friends — opens Telegram share sheet */}
           <button
-            onClick={copyLink}
-            disabled={!user?.referralCode}
+            onClick={inviteFriends}
+            disabled={isSharing || !user?.referralCode}
             className="flex-1 h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform disabled:opacity-50"
             style={{ background: 'rgba(255,255,255,0.12)' }}
           >
-            <Copy className="w-5 h-5 text-white/70" />
-            <span className="text-white font-bold tracking-widest text-sm">{t('copy')}</span>
+            <Send className="w-5 h-5 text-white/70" />
+            <span className="text-white font-bold tracking-widest text-sm">Invite Friends</span>
           </button>
 
+          {/* SECONDARY: Copy referral link — circular icon */}
           <button
-            onClick={shareLink}
-            disabled={isSharing || !user?.referralCode}
+            onClick={copyLink}
+            disabled={!user?.referralCode}
             className="w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 flex-shrink-0"
             style={{ background: 'rgba(255,255,255,0.12)' }}
+            title="Copy referral link"
           >
-            <Share2 className="w-5 h-5 text-white/70" />
+            <Copy className="w-5 h-5 text-white/70" />
           </button>
         </div>
 
@@ -198,7 +220,82 @@ export default function Affiliates() {
           </div>
         </div>
 
+        {/* My Referrals button */}
+        <button
+          onClick={() => setReferralsOpen(true)}
+          className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-6"
+          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <Users className="w-5 h-5 text-white/70" />
+          <span className="text-white font-semibold text-sm">👥 My Referrals</span>
+        </button>
+
       </main>
+
+      {/* My Referrals Bottom Drawer */}
+      <Drawer open={referralsOpen} onOpenChange={setReferralsOpen}>
+        <DrawerContent className="bg-[#111] border-t border-white/10 max-h-[80vh]">
+          <DrawerHeader className="flex items-center justify-between pb-2">
+            <DrawerTitle className="text-white font-bold text-lg">My Referrals</DrawerTitle>
+            <DrawerClose asChild>
+              <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
+                Close
+              </button>
+            </DrawerClose>
+          </DrawerHeader>
+
+          <div className="px-4 pb-6 overflow-y-auto">
+            {isLoadingReferrals ? (
+              <div className="flex items-center justify-center py-10">
+                <div className="text-white/40 text-sm">Loading…</div>
+              </div>
+            ) : myReferrals.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <Users className="w-10 h-10 text-white/20" />
+                <p className="text-white/40 text-sm">No referrals yet</p>
+                <p className="text-white/25 text-xs">Invite friends to get started</p>
+              </div>
+            ) : (
+              <>
+                {/* Header row */}
+                <div className="grid grid-cols-2 gap-2 pb-2 border-b border-white/10 mb-2">
+                  <span className="text-[#888] text-xs font-semibold uppercase tracking-wider">Friend</span>
+                  <span className="text-[#888] text-xs font-semibold uppercase tracking-wider text-right">Status</span>
+                </div>
+                {/* Referral rows */}
+                <div className="space-y-2">
+                  {myReferrals.map((ref: any) => (
+                    <div key={ref.id} className="grid grid-cols-2 gap-2 items-center py-2 border-b border-white/5">
+                      <div className="min-w-0">
+                        <p className="text-white text-sm font-medium truncate">
+                          {ref.username ? `@${ref.username}` : ref.displayName}
+                        </p>
+                        {ref.username && ref.displayName && ref.displayName !== ref.username && (
+                          <p className="text-[#888] text-xs truncate">{ref.displayName}</p>
+                        )}
+                      </div>
+                      <div className="flex justify-end">
+                        {ref.status === 'success' ? (
+                          <Badge className="bg-green-600/20 text-green-400 border-green-600/30 text-[11px] px-2">
+                            Success
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-600/20 text-amber-400 border-amber-600/30 text-[11px] px-2">
+                            Pending
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[#666] text-xs mt-4 text-center">
+                  {myReferrals.length} referral{myReferrals.length !== 1 ? 's' : ''}
+                </p>
+              </>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
     </Layout>
   );
 }

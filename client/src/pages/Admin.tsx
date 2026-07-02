@@ -998,6 +998,61 @@ function UserManagementSection({ usersData }: { usersData: any }) {
   );
 }
 
+function DeletePromoButton({ promoId, promoCode, onDeleted }: { promoId: string; promoCode: string; onDeleted: () => void }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await apiRequest('DELETE', `/api/admin/promo-codes/${promoId}`);
+      const d = await res.json();
+      if (d.success) {
+        showNotification('Promo code deleted', 'success');
+        onDeleted();
+      } else {
+        showNotification(d.error || 'Failed to delete', 'error');
+      }
+    } catch (e) {
+      showNotification('Failed to delete', 'error');
+    } finally {
+      setIsDeleting(false);
+      setShowConfirm(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setShowConfirm(true)}
+        className="h-6 w-6 p-0 text-red-400/60 hover:text-red-400 hover:bg-red-500/10"
+      >
+        <Trash2 size={11} />
+      </Button>
+      <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 size={16} /> Delete Promo Code
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Permanently delete <span className="font-bold text-white">{promoCode}</span>? This cannot be undone.
+          </p>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button size="sm" variant="outline" onClick={() => setShowConfirm(false)} disabled={isDeleting}>Cancel</Button>
+            <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting ? <><i className="fas fa-spinner fa-spin mr-1" />Deleting…</> : 'Delete'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 type PromoTab = 'create' | 'manage';
 
 function PromoCreatorSection() {
@@ -1141,9 +1196,10 @@ function PromoCreatorSection() {
                       >
                         {promo.isActive ? 'Disable' : 'Enable'}
                       </Button>
+                      <DeletePromoButton promoId={promo.id} promoCode={promo.code} onDeleted={() => queryClient.invalidateQueries({ queryKey: ["/api/admin/promo-codes"] })} />
                     </div>
                   </div>
-                  <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>{promo.rewardType === 'USD' ? `$${parseFloat(promo.rewardAmount).toFixed(2)}` : `${Math.round(parseFloat(promo.rewardAmount))} ${promo.rewardType || 'POW'}`}</span><span>{promo.usageCount || 0}/{promo.usageLimit || '∞'}</span></div>
+                  <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>{promo.rewardType === 'USD' ? `${parseFloat(promo.rewardAmount).toFixed(2)}` : `${Math.round(parseFloat(promo.rewardAmount))} ${promo.rewardType || 'POW'}`}</span><span>{promo.usageCount || 0}/{promo.usageLimit || '∞'}</span></div>
                 </div>
               );
             })
