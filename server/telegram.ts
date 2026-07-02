@@ -2409,9 +2409,20 @@ ${walletAddress}
     // Handle /start command with referral processing and first-time vs returning user logic
     if (text.startsWith('/start')) {
       console.log('🚀 Processing /start command...');
-      const parameter = text.split(' ')[1];
-      const referralCode = parameter;
-      
+      const parameter = text.split(' ')[1]?.trim().toLowerCase();
+
+      // Deep-link shortcuts: /start monthlyleader  /start refcontest
+      if (parameter === 'monthlyleader') {
+        await sendMonthlyLeaderboard(chatId);
+        return true;
+      }
+      if (parameter === 'refcontest') {
+        await sendWeeklyReferralContest(chatId);
+        return true;
+      }
+
+      const referralCode = text.split(' ')[1]?.trim();
+
       // Process referral for BOTH new users AND existing users without a referrer
       if (referralCode && referralCode !== chatId) {
         console.log(`🔄 Processing referral: referralCode=${referralCode}, user=${chatId}`);
@@ -2430,18 +2441,20 @@ ${walletAddress}
       }
 
       // First-time vs returning user logic
-      const welcomeAlreadySent = (dbUser as any).welcomeMessageSent === true;
+      // upsertTelegramUser returns raw SQL rows (snake_case), so check both variants
+      const welcomeAlreadySent =
+        (dbUser as any).welcomeMessageSent === true ||
+        (dbUser as any).welcome_message_sent === true;
 
       if (!welcomeAlreadySent) {
         // First-time user: send the full welcome message and mark as sent
         await sendWelcomeMessage(chatId, referralCode || undefined);
         try {
-          const { db: dbConn } = await import('./db');
-          const { users: usersTable } = await import('../shared/schema');
-          const { eq: eqFn } = await import('drizzle-orm');
-          await dbConn.update(usersTable)
-            .set({ welcomeMessageSent: true, updatedAt: new Date() } as any)
-            .where(eqFn(usersTable.id, dbUser.id));
+          await db.execute(sql`
+            UPDATE users SET welcome_message_sent = true, updated_at = NOW()
+            WHERE id = ${dbUser.id}
+          `);
+          console.log(`✅ Marked welcome_message_sent=true for user ${dbUser.id}`);
         } catch (markErr) {
           console.warn('⚠️ Could not mark welcome sent (non-critical):', markErr);
         }
