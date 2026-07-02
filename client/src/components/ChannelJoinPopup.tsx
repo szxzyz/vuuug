@@ -25,8 +25,8 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
   const autoCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef(0);
-  const MAX_AUTO_RETRIES = 3;
-  const RETRY_DELAYS = [8000, 13000, 20000]; // ms: progressively longer to allow Telegram API to propagate
+  const MAX_AUTO_RETRIES = 5;
+  const RETRY_DELAYS = [1500, 2500, 4000, 6000, 9000]; // ms: fast initial retries
 
   const checkMembership = async (isInitialCheck = false, isAutoRetry = false) => {
     if (isChecking) return;
@@ -124,6 +124,27 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
     };
   }, []);
 
+  // Trigger instant re-check when user returns to the mini app
+  useEffect(() => {
+    if (!hasInitialized) return;
+    const handleReactivated = () => {
+      if (autoCheckTimerRef.current) clearTimeout(autoCheckTimerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      setAutoCheckCountdown(null);
+      retryCountRef.current = 0;
+      checkMembership(false, false);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') handleReactivated();
+    };
+    window.Telegram?.WebApp?.onEvent?.('activated', handleReactivated);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.Telegram?.WebApp?.offEvent?.('activated', handleReactivated);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [hasInitialized]);
+
   // Start auto-check countdown after user clicks join.
   // Resets the retry counter so each new join attempt gets a fresh set of retries.
   const startAutoCheck = () => {
@@ -133,18 +154,15 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
     retryCountRef.current = 0; // reset retries on each new join click
     setError(null);
 
-    const initialDelay = RETRY_DELAYS[0]; // 8 seconds for first check
+    const initialDelay = RETRY_DELAYS[0]; // 1.5 seconds for first check
     const delaySec = Math.ceil(initialDelay / 1000);
     setAutoCheckCountdown(delaySec);
 
     let remaining = delaySec;
     countdownRef.current = setInterval(() => {
       remaining -= 1;
-      setAutoCheckCountdown(remaining);
-      if (remaining <= 0) {
-        clearInterval(countdownRef.current!);
-        setAutoCheckCountdown(null);
-      }
+      setAutoCheckCountdown(remaining > 0 ? remaining : null);
+      if (remaining <= 0) clearInterval(countdownRef.current!);
     }, 1000);
 
     // First auto-check fires after initialDelay; if not verified, retries automatically
@@ -351,8 +369,14 @@ export default function ChannelJoinPopup({ telegramId, onVerified }: ChannelJoin
 
             {/* Verify button */}
             <button
-              onClick={() => checkMembership(false)}
-              disabled={isChecking || autoCheckCountdown !== null}
+              onClick={() => {
+                if (autoCheckTimerRef.current) clearTimeout(autoCheckTimerRef.current);
+                if (countdownRef.current) clearInterval(countdownRef.current);
+                setAutoCheckCountdown(null);
+                retryCountRef.current = 0;
+                checkMembership(false);
+              }}
+              disabled={isChecking}
               className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
               style={{
                 background: 'linear-gradient(135deg, #007BFF 0%, #60a5fa 100%)',
