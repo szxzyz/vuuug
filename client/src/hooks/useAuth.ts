@@ -421,10 +421,19 @@ export function useAuth() {
     mutationFn: authenticateWithTelegram,
     onSuccess: (userData) => {
       console.log('✅ User authenticated successfully:', userData.username || userData.id);
-      // Update the user query cache with the authenticated user
-      queryClient.setQueryData(["/api/auth/user"], userData);
-      // Cache user data for offline/quick loading
-      cacheUserData(userData);
+      // NOTE: Do NOT call setQueryData or cacheUserData here.
+      //
+      // Root cause of the USD=0 bug:
+      // POST /api/auth/telegram uses raw SQL RETURNING * → returns snake_case keys
+      // (usd_balance, ton_balance, referral_code, etc.), NOT camelCase.
+      // Saving this to localStorage via cacheUserData contaminates the persisted cache.
+      // On the NEXT session, getCachedUserData() returns the snake_case object as
+      // initialData, making user.usdBalance = undefined → balanceUSD = 0.
+      //
+      // The GET /api/auth/user (via Drizzle ORM) always returns correct camelCase.
+      // useEffect([user]) in this hook saves the correct camelCase data to localStorage
+      // when the GET response arrives. That is the only source of truth for localStorage.
+      //
       // If referral was processed, remove the stored startParam so it isn't re-sent
       if (userData.referralProcessed) {
         localStorage.removeItem('tg_start_param');
