@@ -236,35 +236,68 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
       }
     }
 
-    // Bypass for debugging or if TELEGRAM_ADMIN_ID is set but verification failed (security risk but helps debugging production)
+    // Bypass: parse user from raw initData without signature verification
     if (telegramData) {
       try {
         const urlParams = new URLSearchParams(telegramData);
         const userString = urlParams.get('user');
         if (userString) {
           const telegramUser = JSON.parse(userString);
-          if (isAdmin(telegramUser.id.toString())) {
-            console.log(`✅ Admin authenticated (BYPASS/PARSED): ${telegramUser.id}`);
-            req.user = { telegramUser };
-            return next();
-          }
-          // Also allow DB-added admins in bypass mode
-          try {
-            const [dbAdmin] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, telegramUser.id.toString())).limit(1);
-            if (dbAdmin) {
-              console.log(`✅ Admin authenticated via DB role (BYPASS): ${telegramUser.id}`);
+          const tid = telegramUser.id?.toString();
+          if (tid) {
+            if (isAdmin(tid)) {
+              console.log(`✅ Admin authenticated (BYPASS/ENV): ${tid}`);
               req.user = { telegramUser };
               return next();
             }
-          } catch { /* ignore */ }
+            // Also check DB-added admins in bypass mode
+            try {
+              const [dbAdmin] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, tid)).limit(1);
+              if (dbAdmin) {
+                console.log(`✅ Admin authenticated via DB role (BYPASS): ${tid}`);
+                req.user = { telegramUser };
+                return next();
+              }
+            } catch { /* ignore */ }
+          }
         }
       } catch (e) {
         console.error('Error parsing telegram data in bypass:', e);
       }
     }
+
+    // Session-based fallback: user already authenticated via Telegram session
+    // This covers cases where x-telegram-data header can't be verified (no bot token)
+    // but the user has a valid server session established via /api/auth/user
+    try {
+      const sessionUserId = req.session?.user?.user?.id || req.user?.user?.id;
+      if (sessionUserId) {
+        const sessionUser = await storage.getUser(sessionUserId);
+        if (sessionUser?.telegram_id) {
+          const tid = sessionUser.telegram_id;
+          const adminOk = isAdmin(tid) || await isAdminAsync(tid);
+          if (adminOk) {
+            console.log(`✅ Admin authenticated via session (telegram_id: ${tid})`);
+            req.user = {
+              telegramUser: {
+                id: parseInt(tid) || tid,
+                username: sessionUser.username || '',
+                first_name: (sessionUser as any).firstName || (sessionUser as any).first_name || '',
+              }
+            };
+            return next();
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    // No auth path succeeded
+    console.log('❌ Admin auth failed: no valid credentials');
+    return res.status(403).json({ message: 'Admin access required' });
+
   } catch (error) {
     console.error("Admin auth error:", error);
-    res.status(401).json({ message: "Authentication failed" });
+    return res.status(401).json({ message: "Authentication failed" });
   }
 };
 
