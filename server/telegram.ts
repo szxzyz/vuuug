@@ -928,6 +928,253 @@ export async function handleInlineQuery(inlineQuery: any): Promise<boolean> {
   }
 }
 
+// ── Returning user dashboard message ──────────────────────────────────────────
+async function sendReturningUserMessage(chatId: string, referralCode?: string): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    const user = await storage.getUserByTelegramId(chatId);
+    const usdBal = user ? parseFloat(user.usdBalance?.toString() || '0').toFixed(2) : '0.00';
+
+    const botUsername = await getBotUsername();
+    const baseAppUrl = `https://t.me/${botUsername}/MyWAdz`;
+    const openAppUrl = referralCode ? `${baseAppUrl}?startapp=${referralCode}` : baseAppUrl;
+    const withdrawUrl = `${baseAppUrl}?startapp=page_withdraw`;
+    const referralUrl = `${baseAppUrl}?startapp=page_referral`;
+
+    const message = `👋 <b>Welcome to Paid Adz</b>\n\nEarn PAD Tokens by watching ads or completing tasks.\n\n💲 Your Balance: <b>$${usdBal}</b>`;
+
+    const inlineKeyboard = {
+      inline_keyboard: [
+        [{ text: '🚀 Open App', url: openAppUrl }],
+        [
+          { text: '💸 Withdraw', url: withdrawUrl },
+          { text: '👥 Referral', url: referralUrl },
+        ],
+        [
+          { text: '🏆 Contest', callback_data: 'show_ref_contest' },
+          { text: '📊 Leaderboard', callback_data: 'show_monthly_leader' },
+        ],
+      ],
+    };
+
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML', reply_markup: inlineKeyboard }),
+    });
+  } catch (err) {
+    console.error('❌ Error sending returning user message:', err);
+  }
+}
+
+// ── Helper: get ISO week label ─────────────────────────────────────────────────
+function getCurrentISOWeekLabel(): string {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const startOfYear = new Date(Date.UTC(year, 0, 1));
+  const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+  const week = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+function getMonthLabel(): string {
+  const now = new Date();
+  return now.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+const MEDALS = ['🥇', '🥈', '🥉'];
+function positionEmoji(rank: number): string {
+  if (rank <= 3) return MEDALS[rank - 1];
+  return `${rank}.`;
+}
+
+// ── Weekly Referral Contest message ───────────────────────────────────────────
+export async function sendWeeklyReferralContest(chatId: string, messageId?: number): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    const { db: dbConn } = await import('./db');
+    const { adminSettings: adminSettingsTable } = await import('../shared/schema');
+    const { sql: sqlFn } = await import('drizzle-orm');
+
+    const allSettings = await dbConn.select().from(adminSettingsTable);
+    const getSetting = (key: string, def: string) =>
+      allSettings.find((s: any) => s.settingKey === key)?.settingValue || def;
+
+    const contestEnabled = getSetting('weekly_referral_contest_enabled', 'false') === 'true';
+    const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
+    const startDate = getSetting('weekly_referral_start_date', '');
+    const endDate = getSetting('weekly_referral_end_date', '');
+    const prizesRaw = getSetting('weekly_referral_prizes', '');
+
+    const weekLabel = getCurrentISOWeekLabel();
+    const nowStr = new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }) + ' UTC';
+
+    if (!contestEnabled) {
+      const msg = `🏆 <b>Referral Contest (Weekly)</b>\n\n⛔ Contest is not active at this time.`;
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'HTML' }),
+      });
+      return;
+    }
+
+    // Get top referrers within contest period
+    const topQuery = await dbConn.execute(sqlFn`
+      SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
+      FROM users u
+      INNER JOIN referrals r ON r.referrer_id = u.id
+      WHERE r.status = 'active'
+        AND u.banned = false
+        ${startDate ? sqlFn`AND r.created_at >= ${new Date(startDate)}` : sqlFn``}
+        ${endDate ? sqlFn`AND r.created_at <= ${new Date(endDate)}` : sqlFn``}
+      GROUP BY u.id, u.username, u.first_name
+      HAVING COUNT(r.id) > 0
+      ORDER BY referral_count DESC
+      LIMIT ${topN}
+    `);
+
+    const rows = (topQuery.rows as any[]);
+
+    // Get calling user's rank (chatId is telegram_id)
+    const callingUser = await storage.getUserByTelegramId(chatId);
+    let callerRank: number | null = null;
+    if (callingUser) {
+      const callerIdx = rows.findIndex((r: any) => r.id === callingUser.id);
+      if (callerIdx !== -1) callerRank = callerIdx + 1;
+    }
+
+    // Build message
+    let lines = [`🏆 <b>Referral Contest (Weekly)</b>\n`];
+    lines.push(`${escapeHtml(weekLabel)}\n`);
+    lines.push(`<code>Position │ Friends │ Prize</code>\n`);
+
+    const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+
+    for (let i = 0; i < topN; i++) {
+      const row = rows[i];
+      const pos = positionEmoji(i + 1);
+      const name = row ? escapeHtml(row.first_name || row.username || `User ${i + 1}`) : '—';
+      const friends = row ? parseInt(row.referral_count) : 0;
+      const prize = prizes[i] ? ` │ ${escapeHtml(prizes[i])}` : '';
+      lines.push(`${pos} ${name}${row ? ` │ ${friends}${prize}` : ''}`);
+    }
+
+    lines.push(`\n🕐 ${nowStr}`);
+
+    if (callerRank === null) {
+      lines.push(`\n📌 You're not ranked this week yet.`);
+    }
+
+    const text = lines.join('\n');
+    const replyMarkup = { inline_keyboard: [[{ text: '🔄 Refresh', callback_data: 'ref_contest_refresh' }]] };
+
+    if (messageId) {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: 'HTML', reply_markup: replyMarkup }),
+      });
+    } else {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', reply_markup: replyMarkup }),
+      });
+    }
+  } catch (err) {
+    console.error('❌ Error sending weekly referral contest:', err);
+  }
+}
+
+// ── Monthly Leaderboard message ────────────────────────────────────────────────
+export async function sendMonthlyLeaderboard(chatId: string, messageId?: number): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    const { db: dbConn } = await import('./db');
+    const { adminSettings: adminSettingsTable } = await import('../shared/schema');
+    const { sql: sqlFn } = await import('drizzle-orm');
+
+    const allSettings = await dbConn.select().from(adminSettingsTable);
+    const getSetting = (key: string, def: string) =>
+      allSettings.find((s: any) => s.settingKey === key)?.settingValue || def;
+
+    const contestEnabled = getSetting('monthly_contest_enabled', 'false') === 'true';
+    const topN = parseInt(getSetting('monthly_contest_top_users', '10'));
+    const prizesRaw = getSetting('monthly_contest_prizes', '');
+
+    const monthLabel = getMonthLabel();
+    const nowStr = new Date().toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }) + ' UTC';
+
+    if (!contestEnabled) {
+      const msg = `🏆 <b>Monthly Leaderboard</b>\n\n⛔ Contest is not active at this time.`;
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'HTML' }),
+      });
+      return;
+    }
+
+    const topQuery = await dbConn.execute(sqlFn`
+      SELECT id, username, first_name, weekly_stars
+      FROM users
+      WHERE weekly_stars > 0 AND banned = false
+      ORDER BY weekly_stars DESC
+      LIMIT ${topN}
+    `);
+
+    const rows = (topQuery.rows as any[]);
+
+    const callingUser = await storage.getUserByTelegramId(chatId);
+    let callerRank: number | null = null;
+    if (callingUser) {
+      const callerIdx = rows.findIndex((r: any) => r.id === callingUser.id);
+      if (callerIdx !== -1) callerRank = callerIdx + 1;
+    }
+
+    const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+
+    let lines = [`🏆 <b>Monthly Leaderboard</b>\n`];
+    lines.push(`${escapeHtml(monthLabel)}\n`);
+    lines.push(`<code>Position │ Stars │ Prize</code>\n`);
+
+    for (let i = 0; i < topN; i++) {
+      const row = rows[i];
+      const pos = positionEmoji(i + 1);
+      const name = row ? escapeHtml(row.first_name || row.username || `User ${i + 1}`) : '—';
+      const stars = row ? parseInt(row.weekly_stars) : 0;
+      const prize = prizes[i] ? ` │ ${escapeHtml(prizes[i])}` : '';
+      lines.push(`${pos} ${name}${row ? ` │ ⭐${stars}${prize}` : ''}`);
+    }
+
+    lines.push(`\n🕐 ${nowStr}`);
+
+    if (callerRank === null) {
+      lines.push(`\n📌 You're not ranked this month yet.`);
+    }
+
+    const text = lines.join('\n');
+    const replyMarkup = { inline_keyboard: [[{ text: '🔄 Refresh', callback_data: 'monthly_leader_refresh' }]] };
+
+    if (messageId) {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: 'HTML', reply_markup: replyMarkup }),
+      });
+    } else {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', reply_markup: replyMarkup }),
+      });
+    }
+  } catch (err) {
+    console.error('❌ Error sending monthly leaderboard:', err);
+  }
+}
+
 // Handle incoming Telegram messages - simplified to only show welcome messages
 export async function handleTelegramMessage(update: any): Promise<boolean> {
   try {
@@ -946,12 +1193,8 @@ export async function handleTelegramMessage(update: any): Promise<boolean> {
           return true;
         }
 
-        // Handle /start command — extract referral code so the Open App button carries it
-        if (text.startsWith('/start')) {
-          const startCode = text.split(' ')[1]?.trim() || undefined;
-          await sendWelcomeMessage(telegramId, startCode);
-          return true;
-        }
+        // Handle /start command — handled in main message section below (after upsertTelegramUser)
+        // Do NOT short-circuit here so we can check first-time vs returning user status
 
         // Handle /promo command (admin only)
         // Usage: /promo AMOUNT  →  auto-generate code
@@ -1664,6 +1907,27 @@ ${walletAddress}
         return true;
       }
       
+      // Handle contest/leaderboard refresh callbacks
+      if (data === 'ref_contest_refresh' || data === 'show_ref_contest') {
+        await sendWeeklyReferralContest(chatId, data === 'ref_contest_refresh' ? callbackQuery.message?.message_id : undefined);
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: '🔄 Refreshed' }),
+        });
+        return true;
+      }
+
+      if (data === 'monthly_leader_refresh' || data === 'show_monthly_leader') {
+        await sendMonthlyLeaderboard(chatId, data === 'monthly_leader_refresh' ? callbackQuery.message?.message_id : undefined);
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: '🔄 Refreshed' }),
+        });
+        return true;
+      }
+
       // Handle transaction view callback - opens tonscan URL for the user's withdrawal address
       if (data && data.startsWith('tx_view_')) {
         const withdrawalId = data.replace('tx_view_', '');
@@ -2142,22 +2406,19 @@ ${walletAddress}
       }
     }
     
-    // Handle /start command with referral processing and promotion claims
+    // Handle /start command with referral processing and first-time vs returning user logic
     if (text.startsWith('/start')) {
       console.log('🚀 Processing /start command...');
-      // Extract parameter if present (e.g., /start REF123)
       const parameter = text.split(' ')[1];
       const referralCode = parameter;
       
-      // CRITICAL FIX: Process referral for BOTH new users AND existing users without a referrer
+      // Process referral for BOTH new users AND existing users without a referrer
       if (referralCode && referralCode !== chatId) {
         console.log(`🔄 Processing referral: referralCode=${referralCode}, user=${chatId}`);
         try {
           const referrer = await storage.getUserByReferralCode(referralCode);
-          
           if (referrer && referrer.id !== dbUser.id) {
             const existingReferral = await storage.getReferralByUsers(referrer.id, dbUser.id);
-            
             if (!existingReferral) {
               console.log(`💾 Creating referral relationship: ${referrer.id} -> ${dbUser.id}`);
               await storage.createReferral(referrer.id, dbUser.id);
@@ -2168,7 +2429,39 @@ ${walletAddress}
         }
       }
 
-      await sendWelcomeMessage(chatId, referralCode || undefined);
+      // First-time vs returning user logic
+      const welcomeAlreadySent = (dbUser as any).welcomeMessageSent === true;
+
+      if (!welcomeAlreadySent) {
+        // First-time user: send the full welcome message and mark as sent
+        await sendWelcomeMessage(chatId, referralCode || undefined);
+        try {
+          const { db: dbConn } = await import('./db');
+          const { users: usersTable } = await import('../shared/schema');
+          const { eq: eqFn } = await import('drizzle-orm');
+          await dbConn.update(usersTable)
+            .set({ welcomeMessageSent: true, updatedAt: new Date() } as any)
+            .where(eqFn(usersTable.id, dbUser.id));
+        } catch (markErr) {
+          console.warn('⚠️ Could not mark welcome sent (non-critical):', markErr);
+        }
+      } else {
+        // Returning user: send compact dashboard message with live balance
+        await sendReturningUserMessage(chatId, referralCode || undefined);
+      }
+
+      return true;
+    }
+
+    // Handle /RefContest command — Weekly Referral Contest leaderboard
+    if (text.toLowerCase() === '/refcontest') {
+      await sendWeeklyReferralContest(chatId);
+      return true;
+    }
+
+    // Handle /MonthlyLeader command — Monthly Leaderboard
+    if (text.toLowerCase() === '/monthlyleader') {
+      await sendMonthlyLeaderboard(chatId);
       return true;
     }
 

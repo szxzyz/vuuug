@@ -1336,6 +1336,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gigapubAdLimit,
         gigapubRewardPerAd,
         gigapubEnabled,
+        // Contest settings (public — needed by leaderboard/frontend)
+        weeklyReferralContestEnabled: getSetting('weekly_referral_contest_enabled', 'false') === 'true',
+        weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
+        weeklyReferralEndDate: getSetting('weekly_referral_end_date', ''),
+        weeklyReferralTopUsers: parseInt(getSetting('weekly_referral_top_users', '10')),
+        weeklyReferralPrizes: getSetting('weekly_referral_prizes', ''),
+        monthlyContestEnabled: getSetting('monthly_contest_enabled', 'false') === 'true',
+        monthlyContestStartDate: getSetting('monthly_contest_start_date', ''),
+        monthlyContestEndDate: getSetting('monthly_contest_end_date', ''),
+        monthlyContestTopUsers: parseInt(getSetting('monthly_contest_top_users', '10')),
+        monthlyContestPrizes: getSetting('monthly_contest_prizes', ''),
+        starsPerAd: parseInt(getSetting('stars_per_ad', '1')),
       });
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -1613,6 +1625,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
               updated_at      = NOW()
             WHERE id = ${userId}
           `);
+        }
+
+        // Stars system — increment weeklyStars when monthly contest is active
+        try {
+          const contestEnabledSetting = allAdminSettings.find((s: any) => s.settingKey === 'monthly_contest_enabled');
+          const isContestEnabled = contestEnabledSetting?.settingValue === 'true';
+          if (isContestEnabled) {
+            const starsPerAdSetting = allAdminSettings.find((s: any) => s.settingKey === 'stars_per_ad');
+            const starsPerAd = parseInt(starsPerAdSetting?.settingValue || '1');
+            if (starsPerAd > 0) {
+              await db.execute(sql`
+                UPDATE users SET
+                  weekly_stars = COALESCE(weekly_stars, 0) + ${starsPerAd},
+                  updated_at   = NOW()
+                WHERE id = ${userId}
+              `);
+            }
+          }
+        } catch (starsErr) {
+          console.warn('⚠️ Stars increment failed (non-critical):', starsErr);
         }
         
         // Check and activate referral bonuses
@@ -10230,6 +10262,222 @@ ${walletAddress}
     } catch (error) {
       console.error('❌ Error fetching user analytics:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+  });
+
+  // ── Leaderboard: Monthly Stars Contest ───────────────────────────────────────
+  app.get('/api/leaderboard/weekly', optionalAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id || null;
+
+      const allSettings = await db.select().from(adminSettings);
+      const getSetting = (key: string, def: string) =>
+        allSettings.find(s => s.settingKey === key)?.settingValue || def;
+
+      const contestEnabled = getSetting('monthly_contest_enabled', 'false') === 'true';
+      const topN = parseInt(getSetting('monthly_contest_top_users', '10'));
+      const endDate = getSetting('monthly_contest_end_date', '');
+      const startDate = getSetting('monthly_contest_start_date', '');
+      const prizes = getSetting('monthly_contest_prizes', '[]');
+
+      if (!contestEnabled) {
+        return res.json({ leaderboard: [], userRank: null, userStars: 0, contestActive: false, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+      }
+
+      // Get top N users by weeklyStars
+      const topUsers = await db.execute(sql`
+        SELECT id, username, first_name, weekly_stars
+        FROM users
+        WHERE weekly_stars > 0 AND banned = false
+        ORDER BY weekly_stars DESC
+        LIMIT ${topN}
+      `);
+
+      const leaderboard = (topUsers.rows as any[]).map((row, i) => ({
+        userId: row.id,
+        username: row.username,
+        firstName: row.first_name,
+        weeklyStars: row.weekly_stars || 0,
+        rank: i + 1,
+      }));
+
+      let userRank = null;
+      let userStars = 0;
+
+      if (userId) {
+        const user = await storage.getUser(userId);
+        userStars = (user as any)?.weeklyStars || 0;
+        const rankResult = await db.execute(sql`
+          SELECT COUNT(*) + 1 AS rank
+          FROM users
+          WHERE weekly_stars > ${userStars} AND banned = false
+        `);
+        const rank = parseInt((rankResult.rows[0] as any)?.rank || '0');
+        if (userStars > 0) {
+          userRank = { rank, weeklyStars: userStars };
+        }
+      }
+
+      res.json({ leaderboard, userRank, userStars, contestActive: true, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+    } catch (error) {
+      console.error('Error fetching monthly leaderboard:', error);
+      res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+  });
+
+  // ── Leaderboard: Weekly Referral Contest ──────────────────────────────────────
+  app.get('/api/leaderboard/referral', optionalAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id || null;
+
+      const allSettings = await db.select().from(adminSettings);
+      const getSetting = (key: string, def: string) =>
+        allSettings.find(s => s.settingKey === key)?.settingValue || def;
+
+      const contestEnabled = getSetting('weekly_referral_contest_enabled', 'false') === 'true';
+      const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
+      const endDate = getSetting('weekly_referral_end_date', '');
+      const startDate = getSetting('weekly_referral_start_date', '');
+      const prizes = getSetting('weekly_referral_prizes', '[]');
+
+      if (!contestEnabled) {
+        return res.json({ leaderboard: [], userRank: null, contestActive: false, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+      }
+
+      // Count active referrals per user within contest period
+      let dateFilter = sql`1=1`;
+      if (startDate) {
+        dateFilter = sql`r.created_at >= ${new Date(startDate)}`;
+      }
+
+      const topReferrers = await db.execute(sql`
+        SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
+        FROM users u
+        INNER JOIN referrals r ON r.referrer_id = u.id
+        WHERE r.status = 'active'
+          AND u.banned = false
+          ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
+          ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
+        GROUP BY u.id, u.username, u.first_name
+        HAVING COUNT(r.id) > 0
+        ORDER BY referral_count DESC
+        LIMIT ${topN}
+      `);
+
+      const leaderboard = (topReferrers.rows as any[]).map((row, i) => ({
+        userId: row.id,
+        username: row.username,
+        firstName: row.first_name,
+        referralCount: parseInt(row.referral_count) || 0,
+        rank: i + 1,
+      }));
+
+      let userRank = null;
+
+      if (userId) {
+        const user = await storage.getUser(userId);
+        if (user) {
+          const userCountResult = await db.execute(sql`
+            SELECT COUNT(r.id) AS referral_count
+            FROM referrals r
+            WHERE r.referrer_id = ${userId}
+              AND r.status = 'active'
+              ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
+              ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
+          `);
+          const userCount = parseInt((userCountResult.rows[0] as any)?.referral_count || '0');
+
+          if (userCount > 0) {
+            const rankResult = await db.execute(sql`
+              SELECT COUNT(DISTINCT sub.referrer_id) + 1 AS rank
+              FROM (
+                SELECT r.referrer_id, COUNT(r.id) AS rc
+                FROM referrals r
+                INNER JOIN users u ON u.id = r.referrer_id
+                WHERE r.status = 'active' AND u.banned = false
+                  ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
+                  ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
+                GROUP BY r.referrer_id
+              ) sub
+              WHERE sub.rc > ${userCount}
+            `);
+            const rank = parseInt((rankResult.rows[0] as any)?.rank || '1');
+            userRank = { rank, referralCount: userCount };
+          }
+        }
+      }
+
+      res.json({ leaderboard, userRank, contestActive: true, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+    } catch (error) {
+      console.error('Error fetching referral leaderboard:', error);
+      res.status(500).json({ error: 'Failed to fetch referral leaderboard' });
+    }
+  });
+
+  // ── Admin: Get contest settings ───────────────────────────────────────────────
+  app.get('/api/admin/contest-settings', authenticateAdmin, async (req: any, res) => {
+    try {
+      const allSettings = await db.select().from(adminSettings);
+      const getSetting = (key: string, def: string) =>
+        allSettings.find(s => s.settingKey === key)?.settingValue || def;
+
+      res.json({
+        weeklyReferralContestEnabled: getSetting('weekly_referral_contest_enabled', 'false') === 'true',
+        weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
+        weeklyReferralEndDate: getSetting('weekly_referral_end_date', ''),
+        weeklyReferralPrizes: getSetting('weekly_referral_prizes', ''),
+        weeklyReferralTopUsers: parseInt(getSetting('weekly_referral_top_users', '10')),
+        monthlyContestEnabled: getSetting('monthly_contest_enabled', 'false') === 'true',
+        monthlyContestStartDate: getSetting('monthly_contest_start_date', ''),
+        monthlyContestEndDate: getSetting('monthly_contest_end_date', ''),
+        monthlyContestPrizes: getSetting('monthly_contest_prizes', ''),
+        monthlyContestTopUsers: parseInt(getSetting('monthly_contest_top_users', '10')),
+        starsPerAd: parseInt(getSetting('stars_per_ad', '1')),
+      });
+    } catch (error) {
+      console.error('Error fetching contest settings:', error);
+      res.status(500).json({ message: 'Failed to fetch contest settings' });
+    }
+  });
+
+  // ── Admin: Update contest settings ───────────────────────────────────────────
+  app.post('/api/admin/contest-settings', authenticateAdmin, async (req: any, res) => {
+    try {
+      const settings: Record<string, string> = {
+        weekly_referral_contest_enabled: req.body.weeklyReferralContestEnabled ? 'true' : 'false',
+        weekly_referral_start_date: req.body.weeklyReferralStartDate || '',
+        weekly_referral_end_date: req.body.weeklyReferralEndDate || '',
+        weekly_referral_prizes: req.body.weeklyReferralPrizes || '',
+        weekly_referral_top_users: String(req.body.weeklyReferralTopUsers || 10),
+        monthly_contest_enabled: req.body.monthlyContestEnabled ? 'true' : 'false',
+        monthly_contest_start_date: req.body.monthlyContestStartDate || '',
+        monthly_contest_end_date: req.body.monthlyContestEndDate || '',
+        monthly_contest_prizes: req.body.monthlyContestPrizes || '',
+        monthly_contest_top_users: String(req.body.monthlyContestTopUsers || 10),
+        stars_per_ad: String(req.body.starsPerAd || 1),
+      };
+
+      for (const [key, value] of Object.entries(settings)) {
+        await db.insert(adminSettings)
+          .values({ settingKey: key, settingValue: value, description: 'Contest setting' })
+          .onConflictDoUpdate({ target: adminSettings.settingKey, set: { settingValue: value, updatedAt: new Date() } });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating contest settings:', error);
+      res.status(500).json({ message: 'Failed to update contest settings' });
+    }
+  });
+
+  // ── Admin: Reset weekly stars ─────────────────────────────────────────────────
+  app.post('/api/admin/reset-stars', authenticateAdmin, async (req: any, res) => {
+    try {
+      await db.execute(sql`UPDATE users SET weekly_stars = 0, updated_at = NOW()`);
+      res.json({ success: true, message: 'All weekly stars have been reset to 0' });
+    } catch (error) {
+      console.error('Error resetting stars:', error);
+      res.status(500).json({ message: 'Failed to reset stars' });
     }
   });
 
