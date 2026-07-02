@@ -735,8 +735,8 @@ export default function Home() {
             {t('balance')}
           </p>
 
-          {/* Main POW balance + USD beside */}
-          <div style={{ marginBottom: 4, minHeight: 52 }}>
+          {/* Main POW balance */}
+          <div style={{ marginBottom: 6, minHeight: 52 }}>
             {isFirstLoad ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 52 }}>
                 <div style={{
@@ -762,28 +762,17 @@ export default function Home() {
                   {formatBalance(balancePAD)}
                 </span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.45)', lineHeight: 1, letterSpacing: '0.04em' }}>POW</span>
-                <span style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.30)', lineHeight: 1, marginLeft: 2 }}>
-                  ${balanceUSD.toFixed(3)}
-                </span>
               </div>
             )}
           </div>
 
-          {/* = USD row with image — shows POW balance value */}
-          {!isFirstLoad && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10, marginTop: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.28)' }}>=</span>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 16, height: 16, borderRadius: '50%',
-                background: 'rgba(34,197,94,0.18)',
-                fontSize: 10, lineHeight: 1,
-              }}>💵</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.35)', fontVariantNumeric: 'tabular-nums' }}>
-                {balancePAD.toFixed(3)}
-              </span>
-            </div>
-          )}
+          {/* USD equivalent row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 14 }}>
+            <img src="/usdt.png" alt="USD" style={{ width: 16, height: 16, objectFit: 'contain', opacity: 0.6 }} />
+            <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
+              ${usdFormatted}
+            </span>
+          </div>
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10 }}>
