@@ -926,7 +926,7 @@ async function sendReturningUserMessage(chatId: string, referralCode?: string): 
     const [freshUser] = await dbConn
       .select({ usdBalance: usersTable.usdBalance })
       .from(usersTable)
-      .where(eqOp(usersTable.telegramId, chatId))
+      .where(eqOp(usersTable.telegram_id, chatId))
       .limit(1);
     const rawUsd = freshUser?.usdBalance;
     const usdBal = (rawUsd !== null && rawUsd !== undefined && rawUsd !== '')
@@ -976,7 +976,7 @@ async function editMessageToDashboard(chatId: string, messageId: number): Promis
     const [freshUser] = await dbConn
       .select({ usdBalance: usersTable.usdBalance })
       .from(usersTable)
-      .where(eqOp(usersTable.telegramId, chatId))
+      .where(eqOp(usersTable.telegram_id, chatId))
       .limit(1);
     const rawUsd = freshUser?.usdBalance;
     const usdBal = (rawUsd !== null && rawUsd !== undefined && rawUsd !== '')
