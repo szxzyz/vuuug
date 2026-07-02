@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -146,6 +146,22 @@ function Router() {
   );
 }
 
+function DeepLinkRedirector() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    const param = localStorage.getItem("tg_start_param") || "";
+    if (!param) return;
+    if (param === "page_withdraw") {
+      localStorage.removeItem("tg_start_param");
+      setLocation("/withdraw");
+    } else if (param === "page_referral") {
+      localStorage.removeItem("tg_start_param");
+      setLocation("/affiliates");
+    }
+  }, [setLocation]);
+  return null;
+}
+
 function AppContent() {
   const [showSeasonEnd, setShowSeasonEnd] = useState(false);
   const [seasonLockActive, setSeasonLockActive] = useState(false);
@@ -202,6 +218,7 @@ function AppContent() {
   return (
     <SeasonEndContext.Provider value={{ showSeasonEnd: shouldShowSeasonEnd }}>
       <AppNotification />
+      <DeepLinkRedirector />
       {shouldShowSeasonEnd && <SeasonEndOverlay onClose={handleCloseSeasonEnd} isLocked={seasonLockActive} />}
       <Router />
     </SeasonEndContext.Provider>
