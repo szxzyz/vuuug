@@ -4441,33 +4441,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin users list
   app.get('/api/admin/users', authenticateAdmin, async (req: any, res) => {
     try {
-      const q = (req.query.q as string || '').trim().toLowerCase();
-      let allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+      const q = (req.query.q as string || '').trim();
+      const page = Math.max(1, parseInt(req.query.page as string || '1'));
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string || '50')));
+      const offset = (page - 1) * limit;
 
-      if (q) {
-        allUsers = allUsers.filter(u => {
-          const tid = (u.telegram_id || '').toLowerCase();
-          const fn = (u.first_name || '').toLowerCase();
-          const ln = (u.last_name || '').toLowerCase();
-          const un = (u.username || '').toLowerCase();
-          const rc = (u.referralCode || '').toLowerCase();
-          const pc = (u.personalCode || '').toLowerCase();
-          return tid.includes(q) || fn.includes(q) || ln.includes(q) || un.includes(q) || rc.includes(q) || pc.includes(q) || `${fn} ${ln}`.includes(q);
-        });
-      }
+      // Build WHERE clause for search — done in SQL for performance
+      const whereClause = q
+        ? sql`WHERE (
+            u.telegram_id ILIKE ${'%' + q + '%'} OR
+            u.first_name  ILIKE ${'%' + q + '%'} OR
+            u.last_name   ILIKE ${'%' + q + '%'} OR
+            u.username    ILIKE ${'%' + q + '%'} OR
+            u.referral_code ILIKE ${'%' + q + '%'} OR
+            u.personal_code ILIKE ${'%' + q + '%'}
+          )`
+        : sql``;
 
-      const mappedUsers = allUsers.map(u => ({
-        ...u,
+      // Count total matching users (fast — no data transfer)
+      const countResult = await db.execute(sql`
+        SELECT COUNT(*) AS total FROM users u ${whereClause}
+      `);
+      const total = parseInt((countResult.rows[0] as any)?.total || '0');
+
+      // Fetch only the current page
+      const pageResult = await db.execute(sql`
+        SELECT
+          u.id, u.telegram_id, u.username, u.first_name, u.last_name,
+          u.balance, u.usd_balance, u.total_earned, u.friends_invited,
+          u.referral_code, u.personal_code, u.cwallet_id,
+          u.banned, u.ads_watched, u.created_at
+        FROM users u
+        ${whereClause}
+        ORDER BY u.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const mappedUsers = (pageResult.rows as any[]).map(u => ({
         id: u.id,
         telegramId: u.telegram_id,
-        // Drizzle returns camelCase keys; avoid overriding with undefined snake_case lookups
-        firstName: (u as any).firstName ?? (u as any).first_name ?? null,
-        lastName: (u as any).lastName ?? (u as any).last_name ?? null,
+        telegram_id: u.telegram_id,
         username: u.username,
+        firstName: u.first_name,
+        lastName: u.last_name,
         balance: u.balance?.toString() || '0',
-        totalEarned: u.totalEarned?.toString() || '0',
+        usdBalance: u.usd_balance?.toString() || '0',
+        totalEarned: u.total_earned?.toString() || '0',
+        friendsInvited: u.friends_invited || 0,
+        referralCode: u.referral_code,
+        personalCode: u.personal_code,
+        cwalletId: u.cwallet_id,
+        banned: u.banned || false,
+        adsWatched: u.ads_watched || 0,
+        createdAt: u.created_at,
       }));
-      res.json({ users: mappedUsers, total: mappedUsers.length });
+
+      res.json({
+        users: mappedUsers,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+        limit,
+      });
     } catch (error) {
       console.error("Error fetching admin users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
