@@ -190,88 +190,15 @@ const isAdmin = (telegramId: string): boolean => {
 // Admin authentication middleware with optional signature verification
 const authenticateAdmin = async (req: any, res: any, next: any) => {
   try {
-    const telegramData = req.headers['x-telegram-data'] || req.query.tgData;
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    
-    // Development mode: Allow admin access for configured admin user
-    if (process.env.NODE_ENV === 'development' && !telegramData) {
-      const devAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_IDS || '123456789').split(',')[0].trim();
-      console.log('🔧 Development mode: Granting admin access to dev admin');
-      req.user = { 
-        telegramUser: { 
-          id: devAdminId,
-          username: 'testuser',
-          first_name: 'Test',
-          last_name: 'Admin'
-        } 
-      };
-      return next();
-    }
-    
-    if (!telegramData) {
-      console.log('❌ Admin auth failed: No Telegram data in request');
-      return res.status(401).json({ message: "Admin access denied - no authentication data" });
-    }
+    // ── 1. Session-first: if the request carries a valid server session,
+    //       use it to identify the user and verify admin status via DB.
+    //       This is the primary path in production (no bot token needed).
+    const sessionUserId =
+      req.session?.user?.user?.id ||
+      req.user?.user?.id;
 
-    // If bot token is available, verify the signature for security
-    if (botToken) {
-      const { verifyTelegramWebAppData } = await import('./auth');
-      const { isValid, user: verifiedUser } = verifyTelegramWebAppData(telegramData, botToken);
-      
-      if (isValid && verifiedUser) {
-        if (!isAdmin(verifiedUser.id.toString())) {
-          // Also check DB-added admins (added via super admin panel)
-          const [dbAdmin] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, verifiedUser.id.toString())).limit(1);
-          if (!dbAdmin) {
-            console.log(`❌ Admin auth denied: User ${verifiedUser.id} is not admin`);
-            return res.status(403).json({ message: "Admin access required" });
-          }
-          console.log(`✅ Admin authenticated via DB role: ${verifiedUser.id}`);
-        }
-        console.log(`✅ Admin authenticated via signature: ${verifiedUser.id}`);
-        req.user = { telegramUser: verifiedUser };
-        return next();
-      } else {
-        console.log('⚠️ Admin auth: Telegram signature verification failed, checking for manual bypass/development');
-      }
-    }
-
-    // Bypass: parse user from raw initData without signature verification
-    if (telegramData) {
+    if (sessionUserId) {
       try {
-        const urlParams = new URLSearchParams(telegramData);
-        const userString = urlParams.get('user');
-        if (userString) {
-          const telegramUser = JSON.parse(userString);
-          const tid = telegramUser.id?.toString();
-          if (tid) {
-            if (isAdmin(tid)) {
-              console.log(`✅ Admin authenticated (BYPASS/ENV): ${tid}`);
-              req.user = { telegramUser };
-              return next();
-            }
-            // Also check DB-added admins in bypass mode
-            try {
-              const [dbAdmin] = await db.select().from(adminRoles).where(eq(adminRoles.telegramId, tid)).limit(1);
-              if (dbAdmin) {
-                console.log(`✅ Admin authenticated via DB role (BYPASS): ${tid}`);
-                req.user = { telegramUser };
-                return next();
-              }
-            } catch { /* ignore */ }
-          }
-        }
-      } catch (e) {
-        console.error('Error parsing telegram data in bypass:', e);
-      }
-    }
-
-    // Session-based fallback: user already authenticated via Telegram session
-    // This covers cases where x-telegram-data header can't be verified (no bot token)
-    // but the user has a valid server session established via /api/auth/user
-    try {
-      const sessionUserId = req.session?.user?.user?.id || req.user?.user?.id;
-      if (sessionUserId) {
         const sessionUser = await storage.getUser(sessionUserId);
         if (sessionUser?.telegram_id) {
           const tid = sessionUser.telegram_id;
@@ -288,16 +215,68 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
             return next();
           }
         }
-      }
-    } catch { /* ignore */ }
+      } catch { /* fall through to other methods */ }
+    }
 
-    // No auth path succeeded
+    const telegramData = req.headers['x-telegram-data'] || req.query.tgData;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+    // ── 2. Development mode shortcut (no Telegram data in browser testing)
+    if (process.env.NODE_ENV === 'development' && !telegramData) {
+      const devAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_IDS || '123456789').split(',')[0].trim();
+      console.log('🔧 Dev mode: granting admin access');
+      req.user = { telegramUser: { id: devAdminId, username: 'testuser', first_name: 'Test', last_name: 'Admin' } };
+      return next();
+    }
+
+    if (!telegramData) {
+      return res.status(401).json({ message: 'Admin access denied — no authentication data' });
+    }
+
+    // ── 3. Verified signature (when bot token is available)
+    if (botToken) {
+      const { verifyTelegramWebAppData } = await import('./auth');
+      const { isValid, user: verifiedUser } = verifyTelegramWebAppData(telegramData, botToken);
+      if (isValid && verifiedUser) {
+        const tid = verifiedUser.id.toString();
+        const adminOk = isAdmin(tid) || !!(await db.select().from(adminRoles).where(eq(adminRoles.telegramId, tid)).limit(1))[0];
+        if (!adminOk) {
+          console.log(`❌ Verified user ${tid} is not admin`);
+          return res.status(403).json({ message: 'Admin access required' });
+        }
+        console.log(`✅ Admin authenticated via verified signature: ${tid}`);
+        req.user = { telegramUser: verifiedUser };
+        return next();
+      }
+      console.log('⚠️ Signature verification failed, falling through to bypass');
+    }
+
+    // ── 4. Unverified bypass: parse telegram_id from raw initData, check DB
+    try {
+      const urlParams = new URLSearchParams(telegramData);
+      const userString = urlParams.get('user');
+      if (userString) {
+        const telegramUser = JSON.parse(userString);
+        const tid = telegramUser.id?.toString();
+        if (tid) {
+          const adminOk = isAdmin(tid) || !!(await db.select().from(adminRoles).where(eq(adminRoles.telegramId, tid)).limit(1))[0];
+          if (adminOk) {
+            console.log(`✅ Admin authenticated via bypass (telegram_id: ${tid})`);
+            req.user = { telegramUser };
+            return next();
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error in admin bypass parse:', e);
+    }
+
     console.log('❌ Admin auth failed: no valid credentials');
     return res.status(403).json({ message: 'Admin access required' });
 
   } catch (error) {
-    console.error("Admin auth error:", error);
-    return res.status(401).json({ message: "Authentication failed" });
+    console.error('Admin auth error:', error);
+    return res.status(401).json({ message: 'Authentication failed' });
   }
 };
 
