@@ -81,13 +81,8 @@ export default function AdminPage() {
     enabled: isAdmin,
   });
 
-  // Fetch all users for management table
-  const { data: usersData } = useQuery({
-    queryKey: ["/api/admin/users"],
-    queryFn: () => apiRequest("GET", "/api/admin/users").then(res => res.json()),
-    refetchInterval: 30000,
-    enabled: isAdmin,
-  });
+  // usersData is now fetched inside UserManagementSection with server-side pagination
+  const usersData = null;
 
   // Fetch pending withdrawals
   const { data: pendingWithdrawalsData, refetch: refetchPending } = useQuery({
@@ -858,60 +853,57 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
 
 type UserViewTab = 'list' | 'stats';
 
-function UserManagementSection({ usersData }: { usersData: any }) {
+function UserManagementSection({ usersData: _unused }: { usersData: any }) {
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [activeView, setActiveView] = useState<UserViewTab>('list');
-  const itemsPerPage = 8;
-  const users = usersData?.users || usersData || [];
+  const queryClient = useQueryClient();
 
-  const filteredUsers = users.filter((user: any) => {
-    if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim().toLowerCase();
-    return (
-      user.personalCode?.toLowerCase().includes(search) ||
-      user.referralCode?.toLowerCase().includes(search) ||
-      user.firstName?.toLowerCase().includes(search) ||
-      user.lastName?.toLowerCase().includes(search) ||
-      user.username?.toLowerCase().includes(search) ||
-      user.telegramId?.toString().includes(search) ||
-      user.telegram_id?.toString().includes(search) ||
-      fullName.includes(search)
-    );
+  // Debounce search so we don't fire a request on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchTerm(searchInput);
+      setCurrentPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Server-side paginated query — only fetches 50 users at a time
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['/api/admin/users', searchTerm, currentPage],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(currentPage), limit: '50' });
+      if (searchTerm) params.set('q', searchTerm);
+      return apiRequest('GET', `/api/admin/users?${params}`).then(r => r.json());
+    },
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   });
 
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const paginatedUsers = filteredUsers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  const bannedUsers = users.filter((u: any) => u.banned);
-  const activeUsers = users.filter((u: any) => !u.banned);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm]);
+  const users: any[] = data?.users || [];
+  const total: number = data?.total || 0;
+  const totalPages: number = data?.totalPages || 1;
 
   return (
     <>
       <div className="space-y-3">
         <div className="flex gap-2 flex-wrap items-center">
           <Button size="sm" variant="outline" onClick={() => setActiveView('list')} className={`text-xs h-7 ${activeView === 'list' ? 'bg-gradient-to-r from-[#4cd3ff]/20 to-[#4cd3ff]/10 border-[#4cd3ff] text-[#4cd3ff]' : 'border-white/20 text-muted-foreground hover:border-[#4cd3ff]/50'}`}>
-            <i className="fas fa-list mr-1"></i>List ({users.length})
+            <i className="fas fa-list mr-1"></i>List ({total.toLocaleString()})
           </Button>
           <Button size="sm" variant="outline" onClick={() => setActiveView('stats')} className={`text-xs h-7 ${activeView === 'stats' ? 'bg-gradient-to-r from-[#4cd3ff]/20 to-[#4cd3ff]/10 border-[#4cd3ff] text-[#4cd3ff]' : 'border-white/20 text-muted-foreground hover:border-[#4cd3ff]/50'}`}>
             <i className="fas fa-chart-pie mr-1"></i>Stats
           </Button>
+          {isFetching && <i className="fas fa-circle-notch fa-spin text-[#4cd3ff] text-xs" />}
         </div>
-        
+
         {activeView === 'list' && (
           <Input
             placeholder="Search by name, @username, UID, Telegram ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="h-8 text-sm"
           />
         )}
@@ -919,21 +911,26 @@ function UserManagementSection({ usersData }: { usersData: any }) {
         {activeView === 'stats' ? (
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-gradient-to-br from-[#4cd3ff]/20 to-[#4cd3ff]/5 p-3 rounded text-center border border-[#4cd3ff]/30">
-              <p className="text-2xl font-bold text-[#4cd3ff]">{users.length}</p>
+              <p className="text-2xl font-bold text-[#4cd3ff]">{total.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground">Total</p>
             </div>
             <div className="bg-gradient-to-br from-green-500/20 to-green-500/5 p-3 rounded text-center border border-green-500/30">
-              <p className="text-2xl font-bold text-green-400">{activeUsers.length}</p>
-              <p className="text-xs text-muted-foreground">Active</p>
+              <p className="text-2xl font-bold text-green-400">{users.filter((u: any) => !u.banned).length}</p>
+              <p className="text-xs text-muted-foreground">Active (this page)</p>
             </div>
             <div className="bg-gradient-to-br from-red-500/20 to-red-500/5 p-3 rounded text-center border border-red-500/30">
-              <p className="text-2xl font-bold text-red-400">{bannedUsers.length}</p>
-              <p className="text-xs text-muted-foreground">Banned</p>
+              <p className="text-2xl font-bold text-red-400">{users.filter((u: any) => u.banned).length}</p>
+              <p className="text-xs text-muted-foreground">Banned (this page)</p>
             </div>
             <div className="bg-gradient-to-br from-purple-500/20 to-purple-500/5 p-3 rounded text-center border border-purple-500/30">
               <p className="text-2xl font-bold text-purple-400">{users.filter((u: any) => u.cwalletId).length}</p>
-              <p className="text-xs text-muted-foreground">Wallet</p>
+              <p className="text-xs text-muted-foreground">Wallet (this page)</p>
             </div>
+          </div>
+        ) : isLoading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
+            <i className="fas fa-circle-notch fa-spin text-[#4cd3ff]" />
+            Loading users…
           </div>
         ) : (
           <div className="overflow-x-auto max-h-[320px] overflow-y-auto border border-white/10 rounded-lg">
@@ -948,14 +945,14 @@ function UserManagementSection({ usersData }: { usersData: any }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedUsers.length === 0 ? (
+                {users.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-muted-foreground py-4 text-sm">
-                      No users
+                      {searchTerm ? `No users matching "${searchTerm}"` : 'No users'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedUsers.map((user: any) => (
+                  users.map((user: any) => (
                     <TableRow key={user.id} className="hover:bg-muted/50">
                       <TableCell className="font-mono text-xs text-[#4cd3ff] py-2">{user.referralCode || user.personalCode || 'N/A'}{user.banned && <Badge className="ml-1 bg-red-600 text-[10px] px-1">Ban</Badge>}</TableCell>
                       <TableCell className="text-xs py-2">{user.firstName || 'User'}</TableCell>
@@ -969,14 +966,13 @@ function UserManagementSection({ usersData }: { usersData: any }) {
             </Table>
           </div>
         )}
-        
-        {activeView === 'list' && totalPages > 1 && (
+
+        {activeView === 'list' && (
           <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">{filteredUsers.length} users</span>
+            <span className="text-muted-foreground">{total.toLocaleString()} total · page {currentPage}/{totalPages}</span>
             <div className="flex items-center gap-1">
               <Button size="sm" variant="ghost" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-6 w-6 p-0"><i className="fas fa-chevron-left text-xs"></i></Button>
-              <span className="px-2">{currentPage}/{totalPages}</span>
-              <Button size="sm" variant="ghost" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="h-6 w-6 p-0"><i className="fas fa-chevron-right text-xs"></i></Button>
+              <Button size="sm" variant="ghost" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} className="h-6 w-6 p-0"><i className="fas fa-chevron-right text-xs"></i></Button>
             </div>
           </div>
         )}
