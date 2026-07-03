@@ -4,10 +4,71 @@ import { MdCheckBox, MdCheckBoxOutlineBlank } from "react-icons/md";
 
 interface AdFailurePopupProps {
   onClose: () => void;
+  reason?: "instructions" | "not_backgrounded";
 }
 
-export default function AdFailurePopup({ onClose }: AdFailurePopupProps) {
+export default function AdFailurePopup({ onClose, reason = "instructions" }: AdFailurePopupProps) {
   const [checked, setChecked] = useState(false);
+
+  if (reason === "not_backgrounded") {
+    return (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        display: "flex", alignItems: "flex-end", justifyContent: "center",
+      }}>
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "rgba(0,0,0,0.82)",
+          backdropFilter: "blur(10px)",
+        }} />
+
+        <div style={{
+          position: "relative", width: "100%", maxWidth: 480,
+          background: "linear-gradient(160deg, #0d0d10, #111118)",
+          borderRadius: "24px 24px 0 0",
+          padding: "28px 20px",
+          paddingBottom: "max(28px, calc(env(safe-area-inset-bottom, 0px) + 24px))",
+          maxHeight: "90vh", overflowY: "auto",
+        }}>
+          <div style={{ width: 38, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.1)", margin: "0 auto 20px" }} />
+
+          <h2 style={{ color: "#fff", fontSize: 18, fontWeight: 900, textAlign: "center", margin: "0 0 16px" }}>
+            Ad view not confirmed
+          </h2>
+
+          <div style={{
+            background: "rgba(239,68,68,0.06)",
+            borderRadius: 12, padding: "14px 14px",
+            display: "flex", gap: 10, alignItems: "flex-start",
+            marginBottom: 18,
+          }}>
+            <FaHandPointer size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 2 }} />
+            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, lineHeight: 1.6 }}>
+              You need to <strong style={{ color: "#f87171" }}>minimize the app</strong> (or switch to another window/app) while
+              the ad is showing and stay away for at least <strong style={{ color: "#f87171" }}>2–3 seconds</strong> before
+              coming back. This is how we confirm the ad was actually watched.
+            </span>
+          </div>
+
+          <button
+            onClick={onClose}
+            style={{
+              width: "100%", padding: "14px 0",
+              background: "linear-gradient(135deg, #2563eb, #3b82f6)",
+              border: "none", borderRadius: 14,
+              color: "#fff",
+              fontSize: 15, fontWeight: 800,
+              cursor: "pointer",
+              boxShadow: "0 4px 18px rgba(37,99,235,0.35)",
+              letterSpacing: "0.02em",
+            }}
+          >
+            Got it, try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{

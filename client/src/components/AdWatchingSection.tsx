@@ -37,7 +37,7 @@ const TABS = [
 
 export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
-  const { startSession, endSession, cancelSession } = useAdSession();
+  const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
   const { t } = useLanguage();
   const { showMonetagAd, showGigaPubAd } = useAdFlow();
 
@@ -46,6 +46,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const [isShowingAds,   setIsShowingAds]   = useState(false);
   const [currentAdStep,  setCurrentAdStep]  = useState<"idle" | "loading" | "verifying">("idle");
   const [showFailurePopup, setShowFailurePopup] = useState(false);
+  const [failureReason, setFailureReason] = useState<"instructions">("instructions");
   const [pendingAdStart,   setPendingAdStart]   = useState(false);
   const [pendingCardId,    setPendingCardId]    = useState<number>(1);
 
@@ -67,10 +68,11 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const watchAdMutation = useMutation({
     mutationFn: async (payload: {
       adType: string; sessionId: string;
-      backgroundDuration: number; sessionStart: number;
+      backgroundDuration: number; backgroundEntered: boolean; sessionStart: number;
     }) => {
+      // apiRequest throws (with errorType/secsLeft/etc. preserved on the Error)
+      // if the response isn't OK, so by this point r.ok is always true.
       const r = await apiRequest("POST", "/api/ads/watch", payload);
-      if (!r.ok) { const err = await r.json(); throw { status: r.status, ...err }; }
       return r.json();
     },
     onSuccess: (data: any) => {
@@ -94,7 +96,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     onError: (error: any) => {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      if      (error.errorType === "insufficient_background") setShowFailurePopup(true);
+      if      (error.errorType === "insufficient_background") { setFailureReason("instructions"); setShowFailurePopup(true); }
       else if (error.errorType === "duplicate_session")       showNotification(t("error") + ": Session already used.", "error");
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
       else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
@@ -153,17 +155,23 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         result = await showGigaPubAd();
       }
 
-      const session = endSession();
-      if (result.unavailable) { cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
-      if (!result.success)    { setShowFailurePopup(true); return; }
+      if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
+      if (!result.success)    { endSession(); setFailureReason("instructions"); setShowFailurePopup(true); return; }
 
+      // Only claim the reward once the user has genuinely come back to the
+      // app in the foreground — firing the request while still minimized/
+      // backgrounded undercounts backgroundDuration and confusingly claims
+      // the reward before the user has actually "returned".
       setCurrentAdStep("verifying");
+      await waitForForeground();
+      const session = endSession();
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
         watchAdMutation.mutate({
           adType:             card.adType,
           sessionId:          session.sessionId,
           backgroundDuration: session.backgroundDuration,
+          backgroundEntered:  session.backgroundEntered,
           sessionStart:       session.sessionStart,
         });
       }
@@ -188,6 +196,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     }
     setPendingCardId(cardId);
     setPendingAdStart(true);
+    setFailureReason("instructions");
     setShowFailurePopup(true);
   };
 
@@ -373,7 +382,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         </div>
       </div>
 
-      {showFailurePopup && <AdFailurePopup onClose={handlePopupClose} />}
+      {showFailurePopup && <AdFailurePopup onClose={handlePopupClose} reason={failureReason} />}
     </>
   );
 }
