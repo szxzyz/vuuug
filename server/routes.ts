@@ -44,6 +44,7 @@ const adAbuseStore      = new Map<string, { score: number; lockedUntil: number; 
 const adPendingSessions = new Map<string, { adType: string; userId: string; registeredAt: number }>();
 
 const AD_REWARD_COOLDOWN_MS = 5000;   // 5 s between rewards
+const MIN_BACKGROUND_MS     = 2000;   // Anti-fake: user must leave the app (background/minimize) for at least this long
 const AD_ABUSE_LOCK_SCORE   = 5;      // lock after 5 consecutive failures
 const AD_ABUSE_BASE_LOCK_MS = 60_000; // 1 min base lock, doubles per extra level
 
@@ -1452,9 +1453,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // ── Anti-Fake Session Validation ──────────────────────────────────────
-      const { sessionId, backgroundDuration, sessionStart } = req.body as {
+      const { sessionId, backgroundDuration, backgroundEntered, sessionStart } = req.body as {
         sessionId?: string;
         backgroundDuration?: number;
+        backgroundEntered?: boolean;
         sessionStart?: number;
       };
       const userKey = String(userId);
@@ -1516,10 +1518,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 5. Log background duration (Adsgram SDK validates ad completion on its side)
+      // 5. Anti-fake background/minimize check — the user must have actually left the app
+      //    (backgrounded/minimized it, e.g. to view the ad in another window/overlay) for at
+      //    least MIN_BACKGROUND_MS before returning. This is our proxy for "the ad was really shown"
+      //    since we cannot directly verify third-party ad SDK click/view events.
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
+      const bgEntered = backgroundEntered === true;
       const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
-      console.log(`ℹ️ Ad session bg time for user ${userId}: ${bgDuration}ms (total: ${sessionAgeMs}ms)`);
+      console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms (total: ${sessionAgeMs}ms)`);
+
+      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
+        // Mark session as used so it can't be retried/replayed, and bump the abuse score
+        adUsedSessions.set(sessionId, Date.now());
+        adPendingSessions.delete(sessionId);
+        const newFailCount = (abuse.failCount || 0) + 1;
+        const newScore      = (abuse.score || 0) + 1;
+        let lockedUntil = abuse.lockedUntil || 0;
+        if (newScore >= AD_ABUSE_LOCK_SCORE) {
+          const lockLevel = Math.floor(newScore / AD_ABUSE_LOCK_SCORE);
+          lockedUntil = Date.now() + AD_ABUSE_BASE_LOCK_MS * Math.pow(2, lockLevel - 1);
+        }
+        adAbuseStore.set(userKey, { score: newScore, lockedUntil, failCount: newFailCount });
+        console.log(`⚠️ Ad reward rejected for user ${userId}: not backgrounded long enough (entered=${bgEntered}, duration=${bgDuration}ms)`);
+        return res.status(400).json({
+          message: "You need to minimize the app and stay away for a couple of seconds before returning to confirm you watched the ad.",
+          errorType: 'insufficient_background',
+        });
+      }
 
       // 6. Per-user rate limit: max 10 ad reward requests per minute (prevents replay spam)
       if (checkRateLimit(`ad:${userId}`, 10)) {
