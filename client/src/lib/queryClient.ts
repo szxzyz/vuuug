@@ -4,13 +4,24 @@ async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
     let message = text;
+    let json: any = null;
     try {
-      const json = JSON.parse(text);
+      json = JSON.parse(text);
       message = json.message || text;
     } catch {
       // not JSON — use raw text as-is
     }
-    throw new Error(message);
+    const err: any = new Error(message);
+    err.status = res.status;
+    // Preserve structured error fields (errorType, secsLeft, limitType, etc.)
+    // from the server's JSON body so callers can branch on them (e.g. to show
+    // a specific popup instead of a generic toast). Without this, every
+    // error becomes a plain Error with only `.message`, silently discarding
+    // errorType and causing callers to always fall back to generic handling.
+    if (json && typeof json === "object") {
+      Object.assign(err, json);
+    }
+    throw err;
   }
 }
 
