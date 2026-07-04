@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { FaStar, FaSync, FaUsers, FaCrown } from "react-icons/fa";
+import { FaStar, FaSync, FaUsers, FaTrophy } from "react-icons/fa";
 import Layout from "@/components/Layout";
 
 interface MonthlyEntry {
@@ -47,100 +47,78 @@ function getInitials(entry: { firstName?: string | null; username?: string | nul
 }
 
 function avatarBg(rank: number): string {
-  if (rank === 1) return "#d97706";
-  if (rank === 2) return "#6b7280";
-  if (rank === 3) return "#92400e";
+  if (rank === 1) return "#f59e0b";
+  if (rank === 2) return "#9ca3af";
+  if (rank === 3) return "#b45309";
   return "#1d4ed8";
 }
 
-/* ─── Podium for top 3 ───────────────────────────────────────────────── */
-interface PodiumEntry {
-  userId: string;
-  firstName?: string | null;
-  username?: string | null;
-  value: number;
+function formatDate(d: string | null | undefined): string | null {
+  if (!d) return null;
+  const dd = new Date(d);
+  if (isNaN(dd.getTime())) return null;
+  return dd.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 }
 
-function PodiumSlot({
-  entry, rank, height, medalColor, ringColor, showCrown, valueIcon, isMonthly,
+/* ─── Top-3 gradient row (Telegram-style) ───────────────────────────── */
+const RANK_GRADIENTS: Record<number, string> = {
+  1: "linear-gradient(90deg, #06b6d4 0%, #7c3aed 100%)",
+  2: "linear-gradient(90deg, #8b5cf6 0%, #6d28d9 100%)",
+  3: "linear-gradient(90deg, #7c3aed 0%, #581c87 100%)",
+};
+
+function TopRow({
+  rank, entry, valueIcon, value, isMe,
 }: {
-  entry?: PodiumEntry;
   rank: number;
-  height: number;
-  medalColor: string;
-  ringColor: string;
-  showCrown?: boolean;
+  entry: { firstName?: string | null; username?: string | null; userId: string };
   valueIcon: React.ReactNode;
-  isMonthly: boolean;
+  value: number;
+  isMe: boolean;
 }) {
-  const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉";
-  const name = entry ? (entry.firstName || entry.username || `#${rank}`) : "—";
-  const initials = entry ? getInitials(entry) : "?";
-  const bg = entry ? avatarBg(rank) : "#111";
-
+  const name = entry.firstName || entry.username || `User ${rank}`;
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-      {showCrown && (
-        <FaCrown style={{ color: "#fbbf24", fontSize: 14, marginBottom: 3 }} />
-      )}
-      {/* Avatar */}
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12,
+      padding: "12px 14px",
+      borderRadius: 16,
+      background: RANK_GRADIENTS[rank] || RANK_GRADIENTS[3],
+      marginBottom: 8,
+      boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+      border: isMe ? "1.5px solid rgba(255,255,255,0.6)" : "none",
+    }}>
       <div style={{
-        width: rank === 1 ? 58 : 48,
-        height: rank === 1 ? 58 : 48,
-        borderRadius: "50%",
-        background: bg,
-        border: `2px solid ${ringColor}`,
+        width: 40, height: 40, borderRadius: "50%",
+        background: "rgba(255,255,255,0.18)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontWeight: 900, color: "#fff",
-        fontSize: rank === 1 ? 18 : 14,
-        marginBottom: 4, flexShrink: 0,
+        fontWeight: 900, color: "#fff", fontSize: 14, flexShrink: 0,
+        border: "1.5px solid rgba(255,255,255,0.35)",
       }}>
-        {entry ? initials : "?"}
+        {getInitials(entry)}
       </div>
-      {/* Platform */}
-      <div style={{
-        width: "100%", height, borderRadius: "12px 12px 0 0",
-        background: "#111827",
-        display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "flex-end",
-        paddingBottom: 10, gap: 2,
-      }}>
-        <span style={{ fontSize: rank === 1 ? 22 : 18 }}>{medal}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{
-          margin: 0, fontSize: 11, fontWeight: 700,
-          color: medalColor, maxWidth: 68,
-          textAlign: "center", overflow: "hidden",
-          textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }}>{name}</p>
-        {entry && (
-          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-            {valueIcon}
-            <span style={{ fontSize: 11, fontWeight: 800, color: "#fbbf24" }}>
-              {entry.value.toLocaleString()}
-            </span>
-          </div>
-        )}
+          margin: 0, fontSize: 14, fontWeight: 800, color: "#fff",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {rank}. {name.length > 16 ? name.slice(0, 15) + "…" : name}
+          {isMe && (
+            <span style={{
+              fontSize: 9, background: "rgba(255,255,255,0.25)", color: "#fff",
+              borderRadius: 4, padding: "1px 5px", marginLeft: 6, fontWeight: 700,
+            }}>You</span>
+          )}
+        </p>
+        <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 600 }}>
+          {rank === 1 ? "Top rank" : rank === 2 ? "2nd place" : "3rd place"}
+        </p>
       </div>
-    </div>
-  );
-}
-
-function Podium({
-  entries, valueIcon, isMonthly,
-}: {
-  entries: PodiumEntry[];
-  valueIcon: React.ReactNode;
-  isMonthly: boolean;
-}) {
-  const first = entries[0];
-  const second = entries[1];
-  const third = entries[2];
-
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", padding: "16px 12px 0", gap: 3 }}>
-      <PodiumSlot entry={second} rank={2} height={76} medalColor="#d1d5db" ringColor="#9ca3af" valueIcon={valueIcon} isMonthly={isMonthly} />
-      <PodiumSlot entry={first}  rank={1} height={100} medalColor="#fbbf24" ringColor="#f59e0b" showCrown valueIcon={valueIcon} isMonthly={isMonthly} />
-      <PodiumSlot entry={third}  rank={3} height={58}  medalColor="#d97706" ringColor="#92400e" valueIcon={valueIcon} isMonthly={isMonthly} />
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+          {valueIcon}
+          <span style={{ fontSize: 15, fontWeight: 900, color: "#fff" }}>{value.toLocaleString()}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -234,17 +212,20 @@ export default function Leaderboard() {
   const monthlyTopN: number = (monthlyData as any)?.topN ?? appSettings?.monthlyContestTopUsers ?? 20;
   const weeklyReferralTopN: number = referralData?.topN ?? appSettings?.weeklyReferralTopUsers ?? 10;
 
+  const monthlyStartDate = (monthlyData as any)?.startDate || appSettings?.monthlyContestStartDate || null;
+  const monthlyEndDateStr = (monthlyData as any)?.endDate || appSettings?.monthlyContestEndDate || null;
+  const referralStartDate = referralData?.startDate || appSettings?.weeklyReferralStartDate || null;
+  const referralEndDateStr = referralData?.endDate || appSettings?.weeklyReferralEndDate || null;
+
   const monthlyEndDate = useMemo(() => {
-    const d = (monthlyData as any)?.endDate || appSettings?.monthlyContestEndDate;
-    if (d) { const dd = new Date(d); if (!isNaN(dd.getTime())) return dd; }
+    if (monthlyEndDateStr) { const dd = new Date(monthlyEndDateStr); if (!isNaN(dd.getTime())) return dd; }
     return null;
-  }, [(monthlyData as any)?.endDate, appSettings?.monthlyContestEndDate]);
+  }, [monthlyEndDateStr]);
 
   const referralEndDate = useMemo(() => {
-    const d = referralData?.endDate || appSettings?.weeklyReferralEndDate;
-    if (d) { const dd = new Date(d); if (!isNaN(dd.getTime())) return dd; }
+    if (referralEndDateStr) { const dd = new Date(referralEndDateStr); if (!isNaN(dd.getTime())) return dd; }
     return null;
-  }, [referralData?.endDate, appSettings?.weeklyReferralEndDate]);
+  }, [referralEndDateStr]);
 
   const { d: md, h: mh, m: mm, s: ms } = useCountdown(monthlyEndDate);
   const { d: rd, h: rh, m: rm, s: rs } = useCountdown(referralEndDate);
@@ -261,103 +242,106 @@ export default function Leaderboard() {
   const isLoading = activeTab === "monthly" ? loadingMonthly : loadingReferral;
   const refetch = activeTab === "monthly" ? refetchMonthly : refetchReferral;
 
-  const starIcon = <FaStar style={{ color: "#fbbf24", fontSize: 9 }} />;
-  const usersIcon = <FaUsers style={{ color: "#34d399", fontSize: 9 }} />;
+  const starIcon = <FaStar style={{ color: "#fde047", fontSize: 13 }} />;
+  const usersIcon = <FaUsers style={{ color: "#fde047", fontSize: 13 }} />;
 
   const isMonthly = activeTab === "monthly";
   const entries = isMonthly ? monthlyEntries : referralEntries;
-  const topEntries: PodiumEntry[] = entries.slice(0, 3).map((e: any) => ({
-    userId: e.userId,
-    firstName: e.firstName,
-    username: e.username,
-    value: isMonthly ? (e.weeklyStars ?? 0) : (e.referralCount ?? 0),
-  }));
+  const topEntries = entries.slice(0, 3);
   const restEntries = entries.slice(3);
+
+  const startDateLabel = formatDate(isMonthly ? monthlyStartDate : referralStartDate);
+  const endDateLabel = formatDate(isMonthly ? monthlyEndDateStr : referralEndDateStr);
+  const { d, h, m, s } = isMonthly ? { d: md, h: mh, m: mm, s: ms } : { d: rd, h: rh, m: rm, s: rs };
 
   return (
     <Layout>
       <div style={{ background: "#0a0a0a", minHeight: "100%" }}>
 
-        {/* Tabs */}
+        {/* Trophy Hero */}
         <div style={{
-          display: "flex", padding: "10px 16px 0",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          padding: "28px 16px 18px",
+          background: "radial-gradient(ellipse at center top, rgba(124,58,237,0.18) 0%, transparent 70%)",
         }}>
-          {([
-            { id: "monthly", label: "Monthly Contest" },
-            { id: "referral", label: "Weekly Referral" },
-          ] as const).map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                flex: 1, padding: "9px 0", fontSize: 13, fontWeight: 700,
-                background: "transparent", border: "none", cursor: "pointer",
-                color: activeTab === tab.id ? "#3b82f6" : "rgba(255,255,255,0.35)",
-                borderBottom: activeTab === tab.id ? "2px solid #3b82f6" : "2px solid transparent",
-                transition: "all 0.2s",
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          <div style={{
+            width: 84, height: 84, borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(6,182,212,0.25) 0%, rgba(6,182,212,0.02) 70%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            marginBottom: 10,
+          }}>
+            <FaTrophy style={{ fontSize: 40, color: "#22d3ee", filter: "drop-shadow(0 0 10px rgba(34,211,238,0.6))" }} />
+          </div>
+          <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: "#fff" }}>
+            {isMonthly ? "Monthly Contest" : "Referral Contest"}
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>
+            List updates once a minute
+          </p>
         </div>
 
-        {/* ── Monthly Contest ────────────────────────────────── */}
-        {activeTab === "monthly" && (
-          <>
-            {/* Info Banner */}
-            <div style={{ margin: "12px 16px 0", background: "#111827", borderRadius: 14, padding: "12px 14px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <p style={{ margin: 0, fontSize: 10, color: "rgba(59,130,246,0.7)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                    Monthly Contest
-                  </p>
-                  <p style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 900, color: "#fff", lineHeight: 1 }}>
-                    ⭐ Stars Race
-                  </p>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600 }}>Top {monthlyTopN} winners</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(59,130,246,0.5)", fontWeight: 700 }}>Earn stars by watching ads</p>
-                </div>
-              </div>
-              {monthlyEndDate && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Ends in:</span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: "#3b82f6" }}>{md}d {mh}h {mm}m {ms}s</span>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+        {/* Pill Tabs */}
+        <div style={{ padding: "0 16px" }}>
+          <div style={{
+            display: "flex", background: "rgba(255,255,255,0.06)",
+            borderRadius: 999, padding: 4, gap: 4,
+          }}>
+            {([
+              { id: "monthly", label: "Monthly" },
+              { id: "referral", label: "Referral" },
+            ] as const).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 800,
+                  border: "none", cursor: "pointer", borderRadius: 999,
+                  background: activeTab === tab.id ? "#fff" : "transparent",
+                  color: activeTab === tab.id ? "#0a0a0a" : "rgba(255,255,255,0.45)",
+                  transition: "all 0.2s",
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        {/* ── Weekly Referral ────────────────────────────────── */}
-        {activeTab === "referral" && (
-          <>
-            <div style={{ margin: "12px 16px 0", background: "#111827", borderRadius: 14, padding: "12px 14px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <p style={{ margin: 0, fontSize: 10, color: "rgba(52,211,153,0.8)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                    Weekly Referral Contest
-                  </p>
-                  <p style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 900, color: "#fff", lineHeight: 1 }}>
-                    👥 Invite &amp; Win
-                  </p>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600 }}>Top {weeklyReferralTopN} inviters</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(52,211,153,0.5)", fontWeight: 700 }}>Verified invites only</p>
-                </div>
+        {/* Info banner: dates + countdown */}
+        {(startDateLabel || endDateLabel) && (
+          <div style={{
+            margin: "14px 16px 0", background: "#111827", borderRadius: 14, padding: "12px 14px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Started
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>
+                  {startDateLabel || "—"}
+                </p>
               </div>
-              {referralEndDate && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Ends in:</span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: "#34d399" }}>{rd}d {rh}h {rm}m {rs}s</span>
-                </div>
-              )}
+              <div style={{ textAlign: "right" }}>
+                <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Ends
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>
+                  {endDateLabel || "—"}
+                </p>
+              </div>
             </div>
-          </>
+            {(monthlyEndDate || referralEndDate) && (
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)",
+              }}>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Time left:</span>
+                <span style={{ fontSize: 13, fontWeight: 900, color: "#22d3ee" }}>
+                  {d}d {h}h {m}m {s}s
+                </span>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Loading */}
@@ -365,14 +349,14 @@ export default function Leaderboard() {
           <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
             <div style={{ display: "flex", gap: 6 }}>
               {[0, 150, 300].map(delay => (
-                <div key={delay} style={{ width: 8, height: 8, borderRadius: "50%", background: "#3b82f6", animation: `pulse 1s ${delay}ms infinite` }} />
+                <div key={delay} style={{ width: 8, height: 8, borderRadius: "50%", background: "#22d3ee", animation: `pulse 1s ${delay}ms infinite` }} />
               ))}
             </div>
           </div>
         )}
 
         {/* Contest Not Active */}
-        {!isLoading && activeTab === "monthly" && !monthlyContestActive && (
+        {!isLoading && isMonthly && !monthlyContestActive && (
           <div style={{ textAlign: "center", padding: "48px 24px" }}>
             <div style={{ fontSize: 52, marginBottom: 14 }}>🔒</div>
             <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>Contest Not Active</p>
@@ -381,7 +365,7 @@ export default function Leaderboard() {
             </p>
           </div>
         )}
-        {!isLoading && activeTab === "referral" && !referralContestActive && (
+        {!isLoading && !isMonthly && !referralContestActive && (
           <div style={{ textAlign: "center", padding: "48px 24px" }}>
             <div style={{ fontSize: 52, marginBottom: 14 }}>🔒</div>
             <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>Contest Not Active</p>
@@ -392,37 +376,42 @@ export default function Leaderboard() {
         )}
 
         {/* Empty (contest active but no participants yet) */}
-        {!isLoading && activeTab === "monthly" && monthlyContestActive && entries.length === 0 && (
+        {!isLoading && isMonthly && monthlyContestActive && entries.length === 0 && (
           <div style={{ textAlign: "center", padding: "48px 24px" }}>
-            <FaStar style={{ color: "rgba(59,130,246,0.18)", fontSize: 60, marginBottom: 16 }} />
+            <FaStar style={{ color: "rgba(34,211,238,0.18)", fontSize: 60, marginBottom: 16 }} />
             <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>No participants yet</p>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,0.25)", margin: 0 }}>Watch ads to earn stars and climb!</p>
           </div>
         )}
-        {!isLoading && activeTab === "referral" && referralContestActive && entries.length === 0 && (
+        {!isLoading && !isMonthly && referralContestActive && entries.length === 0 && (
           <div style={{ textAlign: "center", padding: "48px 24px" }}>
-            <FaUsers style={{ color: "rgba(52,211,153,0.18)", fontSize: 60, marginBottom: 16 }} />
+            <FaUsers style={{ color: "rgba(34,211,238,0.18)", fontSize: 60, marginBottom: 16 }} />
             <p style={{ fontSize: 17, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: "0 0 8px" }}>No participants yet</p>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,0.25)", margin: 0 }}>Invite friends who watch 1+ ad to rank up!</p>
           </div>
         )}
 
-        {/* Podium + List */}
+        {/* Top 3 gradient rows + rest list */}
         {!isLoading && entries.length > 0 && (
           <>
-            {/* Podium for top 3 */}
-            <Podium
-              entries={topEntries}
-              valueIcon={isMonthly ? starIcon : usersIcon}
-              isMonthly={isMonthly}
-            />
+            <div style={{ padding: "16px 16px 0" }}>
+              {topEntries.map((e: any, i: number) => (
+                <TopRow
+                  key={e.userId}
+                  rank={i + 1}
+                  entry={e}
+                  value={isMonthly ? (e.weeklyStars ?? 0) : (e.referralCount ?? 0)}
+                  valueIcon={isMonthly ? starIcon : usersIcon}
+                  isMe={e.userId === user?.id}
+                />
+              ))}
+            </div>
 
-            {/* List from 4th onwards */}
             {restEntries.length > 0 && (
-              <div style={{ margin: "12px 16px 0", background: "#111", borderRadius: 16, overflow: "hidden", paddingBottom: 8 }}>
+              <div style={{ margin: "8px 16px 0", background: "#111", borderRadius: 16, overflow: "hidden", paddingBottom: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px 6px" }}>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#fff" }}>
-                    {isMonthly ? `Rankings` : `Rankings`}
+                    Rankings
                   </p>
                   <button onClick={() => refetch()} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 4 }}>
                     <FaSync style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }} />
@@ -473,16 +462,16 @@ export default function Leaderboard() {
           </>
         )}
 
-        {/* My rank card — Monthly */}
-        {activeTab === "monthly" && myMonthlyRank && (
-          <div style={{ margin: "10px 16px 0", background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {/* My rank card */}
+        {isMonthly && myMonthlyRank && (
+          <div style={{ margin: "10px 16px 0", background: "rgba(34,211,238,0.06)", border: "1px solid rgba(34,211,238,0.2)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#1d4ed8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#fff" }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#0e7490", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#fff" }}>
                 Me
               </div>
               <div>
                 <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Your Rank</p>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#3b82f6" }}>#{myMonthlyRank.rank}</p>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#22d3ee" }}>#{myMonthlyRank.rank}</p>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -492,16 +481,15 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {/* My rank card — Referral */}
-        {activeTab === "referral" && myReferralRank && (
-          <div style={{ margin: "10px 16px 0", background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {!isMonthly && myReferralRank && (
+          <div style={{ margin: "10px 16px 0", background: "rgba(34,211,238,0.06)", border: "1px solid rgba(34,211,238,0.2)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#065f46", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#fff" }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#0e7490", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#fff" }}>
                 Me
               </div>
               <div>
                 <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Your Rank</p>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#34d399" }}>#{myReferralRank.rank}</p>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#22d3ee" }}>#{myReferralRank.rank}</p>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
