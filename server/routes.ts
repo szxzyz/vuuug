@@ -10356,6 +10356,19 @@ ${walletAddress}
     }
   });
 
+  // Prizes settings may be stored either as JSON (e.g. '["$20","$10"]') or as
+  // plain newline-separated text (e.g. "🤴🏻 $20\n💎 $10\n..."). Parse safely.
+  const parsePrizesSetting = (raw: string): string[] => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      return [String(parsed)];
+    } catch {
+      return raw.split('\n').map(p => p.trim()).filter(Boolean);
+    }
+  };
+
   // ── Leaderboard: Monthly Stars Contest ───────────────────────────────────────
   app.get('/api/leaderboard/weekly', async (req: any, res) => {
     try {
@@ -10369,10 +10382,11 @@ ${walletAddress}
       const topN = parseInt(getSetting('monthly_contest_top_users', '10'));
       const endDate = getSetting('monthly_contest_end_date', '');
       const startDate = getSetting('monthly_contest_start_date', '');
-      const prizes = getSetting('monthly_contest_prizes', '[]');
+      const prizesRaw = getSetting('monthly_contest_prizes', '[]');
+      const prizes = parsePrizesSetting(prizesRaw);
 
       if (!contestEnabled) {
-        return res.json({ leaderboard: [], userRank: null, userStars: 0, contestActive: false, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+        return res.json({ leaderboard: [], userRank: null, userStars: 0, contestActive: false, topN, endDate: endDate || null, startDate: startDate || null, prizes });
       }
 
       // Get top N users by weeklyStars
@@ -10409,7 +10423,7 @@ ${walletAddress}
         }
       }
 
-      res.json({ leaderboard, userRank, userStars, contestActive: true, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+      res.json({ leaderboard, userRank, userStars, contestActive: true, topN, endDate: endDate || null, startDate: startDate || null, prizes });
     } catch (error) {
       console.error('Error fetching monthly leaderboard:', error);
       res.status(500).json({ error: 'Failed to fetch leaderboard' });
@@ -10429,10 +10443,11 @@ ${walletAddress}
       const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
       const endDate = getSetting('weekly_referral_end_date', '');
       const startDate = getSetting('weekly_referral_start_date', '');
-      const prizes = getSetting('weekly_referral_prizes', '[]');
+      const prizesRaw = getSetting('weekly_referral_prizes', '[]');
+      const prizes = parsePrizesSetting(prizesRaw);
 
       if (!contestEnabled) {
-        return res.json({ leaderboard: [], userRank: null, contestActive: false, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+        return res.json({ leaderboard: [], userRank: null, contestActive: false, topN, endDate: endDate || null, startDate: startDate || null, prizes });
       }
 
       // Count referrals per user within contest period.
@@ -10495,7 +10510,7 @@ ${walletAddress}
         }
       }
 
-      res.json({ leaderboard, userRank, contestActive: true, topN, endDate: endDate || null, startDate: startDate || null, prizes: JSON.parse(prizes) });
+      res.json({ leaderboard, userRank, contestActive: true, topN, endDate: endDate || null, startDate: startDate || null, prizes });
     } catch (error) {
       console.error('Error fetching referral leaderboard:', error);
       res.status(500).json({ error: 'Failed to fetch referral leaderboard' });
