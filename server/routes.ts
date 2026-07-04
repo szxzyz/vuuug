@@ -26,7 +26,7 @@ import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
 import crypto from "crypto";
 import { sendTelegramMessage, sendUserTelegramNotification, sendWelcomeMessage, handleTelegramMessage, setupTelegramWebhook, verifyChannelMembership, sendSharePhotoToChat, withdrawalAdminMessages } from "./telegram";
-import { authenticateTelegram, requireAuth, optionalAuth } from "./auth";
+import { authenticateTelegram, requireAuth } from "./auth";
 import { isAuthenticated } from "./replitAuth";
 import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
@@ -44,7 +44,7 @@ const adAbuseStore      = new Map<string, { score: number; lockedUntil: number; 
 const adPendingSessions = new Map<string, { adType: string; userId: string; registeredAt: number }>();
 
 const AD_REWARD_COOLDOWN_MS = 5000;   // 5 s between rewards
-const MIN_BACKGROUND_MS     = 2000;   // Anti-fake: user must leave the app (background/minimize) for at least this long
+const MIN_BACKGROUND_MS     = 1000;   // Anti-fake: user must leave the app (background/minimize) for at least this long
 const AD_ABUSE_LOCK_SCORE   = 5;      // lock after 5 consecutive failures
 const AD_ABUSE_BASE_LOCK_MS = 60_000; // 1 min base lock, doubles per extra level
 
@@ -1541,7 +1541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adAbuseStore.set(userKey, { score: newScore, lockedUntil, failCount: newFailCount });
         console.log(`⚠️ Ad reward rejected for user ${userId}: not backgrounded long enough (entered=${bgEntered}, duration=${bgDuration}ms)`);
         return res.status(400).json({
-          message: "You need to minimize the app and stay away for a couple of seconds before returning to confirm you watched the ad.",
+          message: "We couldn't confirm the ad was watched. Please try again.",
           errorType: 'insufficient_background',
         });
       }
@@ -10357,9 +10357,9 @@ ${walletAddress}
   });
 
   // ── Leaderboard: Monthly Stars Contest ───────────────────────────────────────
-  app.get('/api/leaderboard/weekly', optionalAuth, async (req: any, res) => {
+  app.get('/api/leaderboard/weekly', async (req: any, res) => {
     try {
-      const userId = req.user?.user?.id || null;
+      const userId = req.session?.user?.user?.id || req.user?.user?.id || null;
 
       const allSettings = await db.select().from(adminSettings);
       const getSetting = (key: string, def: string) =>
@@ -10417,9 +10417,9 @@ ${walletAddress}
   });
 
   // ── Leaderboard: Weekly Referral Contest ──────────────────────────────────────
-  app.get('/api/leaderboard/referral', optionalAuth, async (req: any, res) => {
+  app.get('/api/leaderboard/referral', async (req: any, res) => {
     try {
-      const userId = req.user?.user?.id || null;
+      const userId = req.session?.user?.user?.id || req.user?.user?.id || null;
 
       const allSettings = await db.select().from(adminSettings);
       const getSetting = (key: string, def: string) =>
