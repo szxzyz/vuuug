@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { FaStar, FaSync, FaUsers, FaTrophy } from "react-icons/fa";
+import { FaStar, FaSync, FaUsers } from "react-icons/fa";
 import Layout from "@/components/Layout";
 
 interface MonthlyEntry {
@@ -258,20 +258,11 @@ export default function Leaderboard() {
     <Layout>
       <div style={{ background: "#0a0a0a", minHeight: "100%" }}>
 
-        {/* Trophy Hero */}
+        {/* Header */}
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center",
-          padding: "28px 16px 18px",
-          background: "radial-gradient(ellipse at center top, rgba(124,58,237,0.18) 0%, transparent 70%)",
+          padding: "20px 16px 4px",
         }}>
-          <div style={{
-            width: 84, height: 84, borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(6,182,212,0.25) 0%, rgba(6,182,212,0.02) 70%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            marginBottom: 10,
-          }}>
-            <FaTrophy style={{ fontSize: 40, color: "#22d3ee", filter: "drop-shadow(0 0 10px rgba(34,211,238,0.6))" }} />
-          </div>
           <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: "#fff" }}>
             {isMonthly ? "Monthly Contest" : "Referral Contest"}
           </p>
@@ -280,52 +271,55 @@ export default function Leaderboard() {
           </p>
         </div>
 
-        {/* Pill Tabs */}
-        <div style={{ padding: "0 16px" }}>
-          <div style={{
-            display: "flex", background: "rgba(255,255,255,0.06)",
-            borderRadius: 999, padding: 4, gap: 4,
-          }}>
+        {/* Tabs — matches Daily Adz / Premium Adz style */}
+        <div style={{ padding: "14px 16px 0" }}>
+          <div className="flex items-center"
+            style={{ background: "#1a1a1a", borderRadius: 14, padding: "4px", gap: 2 }}>
             {([
               { id: "monthly", label: "Monthly" },
               { id: "referral", label: "Referral" },
-            ] as const).map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 800,
-                  border: "none", cursor: "pointer", borderRadius: 999,
-                  background: activeTab === tab.id ? "#fff" : "transparent",
-                  color: activeTab === tab.id ? "#0a0a0a" : "rgba(255,255,255,0.45)",
-                  transition: "all 0.2s",
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
+            ] as const).map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    flex: 1, padding: "8px 10px", borderRadius: 11,
+                    fontSize: 13, fontWeight: isActive ? 700 : 500,
+                    color: isActive ? "#fff" : "rgba(255,255,255,0.4)",
+                    background: isActive ? "#2e2e2e" : "transparent",
+                    border: "none", cursor: "pointer", whiteSpace: "nowrap",
+                    boxShadow: isActive ? "0 1px 4px rgba(0,0,0,0.4)" : "none",
+                    transition: "background 0.2s ease, color 0.2s ease",
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Info banner: dates + countdown */}
         {(startDateLabel || endDateLabel) && (
           <div style={{
-            margin: "14px 16px 0", background: "#111827", borderRadius: 14, padding: "12px 14px",
+            margin: "14px 16px 0", background: "#1a1a1a", borderRadius: 18, padding: "12px 14px",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
-                <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                <p style={{ margin: 0, fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                   Started
                 </p>
-                <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>
+                <p style={{ margin: "3px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>
                   {startDateLabel || "—"}
                 </p>
               </div>
               <div style={{ textAlign: "right" }}>
-                <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                <p style={{ margin: 0, fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                   Ends
                 </p>
-                <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>
+                <p style={{ margin: "3px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>
                   {endDateLabel || "—"}
                 </p>
               </div>
@@ -335,8 +329,8 @@ export default function Leaderboard() {
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                 marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)",
               }}>
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Time left:</span>
-                <span style={{ fontSize: 13, fontWeight: 900, color: "#22d3ee" }}>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>Time left:</span>
+                <span style={{ fontSize: 13, fontWeight: 900, color: "#fff" }}>
                   {d}d {h}h {m}m {s}s
                 </span>
               </div>
