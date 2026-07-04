@@ -8,6 +8,7 @@ import {
   Plus,
   User,
   ShieldCheck,
+  Trophy,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
@@ -73,6 +74,7 @@ export default function Layout({ children }: LayoutProps) {
   const navItems = [
     { href: "/affiliates", icon: HeartHandshake, label: "Friends" },
     { href: "/missions", icon: ListTodo, label: "Mission" },
+    { href: "/leaderboard", icon: Trophy, label: "Rank" },
   ];
 
   const telegramPhotoUrl =
