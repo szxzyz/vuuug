@@ -20,6 +20,7 @@ import Missions from "@/pages/Missions";
 import Affiliates from "@/pages/Affiliates";
 import Withdraw from "@/pages/Withdraw";
 import Landing from "@/pages/Landing";
+import Leaderboard from "@/pages/Leaderboard";
 
 // Lazy-load heavy/rare pages only
 const Admin = lazy(() => import("@/pages/Admin"));
@@ -140,6 +141,7 @@ function Router() {
         <Route path="/admin" component={Admin} />
         <Route path="/admin/country-controls" component={CountryControls} />
         <Route path="/missions" component={Missions} />
+        <Route path="/leaderboard" component={Leaderboard} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
