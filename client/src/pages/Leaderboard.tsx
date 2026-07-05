@@ -233,7 +233,7 @@ export default function Leaderboard() {
   const monthlyContestActive = (monthlyData as any)?.contestActive !== false;
   const referralContestActive = (referralData as any)?.contestActive !== false;
 
-  const monthlyEntries = monthlyContestActive ? (monthlyData?.leaderboard || []).slice(0, monthlyTopN) : [];
+  const monthlyEntries = monthlyContestActive ? (monthlyData?.leaderboard || []) : [];
   const referralEntries = referralContestActive ? (referralData?.leaderboard || []) : [];
 
   const myMonthlyRank = monthlyContestActive ? monthlyData?.userRank : null;

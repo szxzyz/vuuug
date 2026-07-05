@@ -4071,7 +4071,7 @@ function ContestSection() {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Top N Users</Label>
-            <Input type="number" min={1} max={50} value={form.monthlyContestTopUsers} onChange={e => setForm(f => ({ ...f, monthlyContestTopUsers: parseInt(e.target.value) || 10 }))} className="h-8 text-sm mt-1" />
+            <Input type="number" min={1} max={1000} value={form.monthlyContestTopUsers} onChange={e => setForm(f => ({ ...f, monthlyContestTopUsers: Math.max(1, parseInt(e.target.value) || 1) }))} className="h-8 text-sm mt-1" />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Prizes (one per line, in rank order)</Label>
@@ -4118,7 +4118,7 @@ function ContestSection() {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Top N Users</Label>
-            <Input type="number" min={1} max={50} value={form.weeklyReferralTopUsers} onChange={e => setForm(f => ({ ...f, weeklyReferralTopUsers: parseInt(e.target.value) || 10 }))} className="h-8 text-sm mt-1" />
+            <Input type="number" min={1} max={1000} value={form.weeklyReferralTopUsers} onChange={e => setForm(f => ({ ...f, weeklyReferralTopUsers: Math.max(1, parseInt(e.target.value) || 1) }))} className="h-8 text-sm mt-1" />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Prizes (one per line, in rank order)</Label>
