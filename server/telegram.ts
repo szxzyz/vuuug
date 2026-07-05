@@ -1062,7 +1062,7 @@ export async function sendWeeklyReferralContest(chatId: string, messageId?: numb
       allSettings.find((s: any) => s.settingKey === key)?.settingValue || def;
 
     const contestEnabled = getSetting('weekly_referral_contest_enabled', 'false') === 'true';
-    const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
+    const topN = Math.max(1, Math.min(1000, parseInt(getSetting('weekly_referral_top_users', '10')) || 10));
     const startDate = getSetting('weekly_referral_start_date', '');
     const endDate = getSetting('weekly_referral_end_date', '');
     const prizesRaw = getSetting('weekly_referral_prizes', '');
@@ -1179,7 +1179,7 @@ export async function sendMonthlyLeaderboard(chatId: string, messageId?: number)
       allSettings.find((s: any) => s.settingKey === key)?.settingValue || def;
 
     const contestEnabled = getSetting('monthly_contest_enabled', 'false') === 'true';
-    const topN = parseInt(getSetting('monthly_contest_top_users', '10'));
+    const topN = Math.max(1, Math.min(1000, parseInt(getSetting('monthly_contest_top_users', '10')) || 10));
     const prizesRaw = getSetting('monthly_contest_prizes', '');
 
     const monthLabel = getMonthLabel();

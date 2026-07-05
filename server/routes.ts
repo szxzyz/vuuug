@@ -10379,7 +10379,7 @@ ${walletAddress}
         allSettings.find(s => s.settingKey === key)?.settingValue || def;
 
       const contestEnabled = getSetting('monthly_contest_enabled', 'false') === 'true';
-      const topN = parseInt(getSetting('monthly_contest_top_users', '10'));
+      const topN = Math.max(1, Math.min(1000, parseInt(getSetting('monthly_contest_top_users', '10')) || 10));
       const endDate = getSetting('monthly_contest_end_date', '');
       const startDate = getSetting('monthly_contest_start_date', '');
       const prizesRaw = getSetting('monthly_contest_prizes', '[]');
@@ -10440,7 +10440,7 @@ ${walletAddress}
         allSettings.find(s => s.settingKey === key)?.settingValue || def;
 
       const contestEnabled = getSetting('weekly_referral_contest_enabled', 'false') === 'true';
-      const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
+      const topN = Math.max(1, Math.min(1000, parseInt(getSetting('weekly_referral_top_users', '10')) || 10));
       const endDate = getSetting('weekly_referral_end_date', '');
       const startDate = getSetting('weekly_referral_start_date', '');
       const prizesRaw = getSetting('weekly_referral_prizes', '[]');
@@ -10551,12 +10551,12 @@ ${walletAddress}
         weekly_referral_start_date: req.body.weeklyReferralStartDate || '',
         weekly_referral_end_date: req.body.weeklyReferralEndDate || '',
         weekly_referral_prizes: req.body.weeklyReferralPrizes || '',
-        weekly_referral_top_users: String(req.body.weeklyReferralTopUsers || 10),
+        weekly_referral_top_users: String(Math.max(1, Math.min(1000, parseInt(req.body.weeklyReferralTopUsers) || 10))),
         monthly_contest_enabled: req.body.monthlyContestEnabled ? 'true' : 'false',
         monthly_contest_start_date: req.body.monthlyContestStartDate || '',
         monthly_contest_end_date: req.body.monthlyContestEndDate || '',
         monthly_contest_prizes: req.body.monthlyContestPrizes || '',
-        monthly_contest_top_users: String(req.body.monthlyContestTopUsers || 10),
+        monthly_contest_top_users: String(Math.max(1, Math.min(1000, parseInt(req.body.monthlyContestTopUsers) || 10))),
         stars_per_ad: String(req.body.starsPerAd || 1),
       };
 
