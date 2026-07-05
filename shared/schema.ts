@@ -386,6 +386,70 @@ export const tonDeposits = pgTable("ton_deposits", {
   confirmedAt: timestamp("confirmed_at"),
 });
 
+// Ambassador Applications table
+export const ambassadorApplications = pgTable("ambassador_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  channelLink: text("channel_link").notNull(),
+  channelTitle: text("channel_title"),
+  channelUsername: text("channel_username"),
+  subscriberCount: integer("subscriber_count"),
+  status: varchar("status").default("pending").notNull(), // pending | approved | rejected
+  rejectionReason: text("rejection_reason"),
+  reviewedBy: varchar("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+  termsAccepted: boolean("terms_accepted").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Ambassadors table — approved ambassadors
+export const ambassadors = pgTable("ambassadors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  applicationId: varchar("application_id").references(() => ambassadorApplications.id),
+  promoCodeName: varchar("promo_code_name").notNull().unique(), // e.g. "TheCoreApp1"
+  customPromoRequest: varchar("custom_promo_request"), // pending custom name
+  customPromoRequestStatus: varchar("custom_promo_request_status").default("none"), // none | pending | approved | rejected
+  dailyPromoCount: integer("daily_promo_count").default(1), // 1 | 2 | 3
+  totalClaims: integer("total_claims").default(0),
+  todayClaims: integer("today_claims").default(0),
+  weekClaims: integer("week_claims").default(0),
+  monthClaims: integer("month_claims").default(0),
+  totalEarningsUsd: decimal("total_earnings_usd", { precision: 30, scale: 10 }).default("0"),
+  pendingEarningsUsd: decimal("pending_earnings_usd", { precision: 30, scale: 10 }).default("0"),
+  status: varchar("status").default("active").notNull(), // active | suspended
+  lastPromoSentAt: timestamp("last_promo_sent_at"),
+  lastClaimResetDate: varchar("last_claim_reset_date"), // YYYY-MM-DD
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Ambassador Promo Earnings — per-claim commission records
+export const ambassadorEarnings = pgTable("ambassador_earnings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ambassadorId: varchar("ambassador_id").references(() => ambassadors.id).notNull(),
+  promoCodeId: varchar("promo_code_id").references(() => promoCodes.id).notNull(),
+  claimUserId: varchar("claim_user_id").references(() => users.id).notNull(),
+  promoCode: varchar("promo_code").notNull(),
+  commissionUsd: decimal("commission_usd", { precision: 30, scale: 10 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  unique("ambassador_earnings_unique").on(table.ambassadorId, table.claimUserId, table.promoCodeId),
+]);
+
+// Insert schemas
+export const insertAmbassadorApplicationSchema = createInsertSchema(ambassadorApplications).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAmbassadorSchema = createInsertSchema(ambassadors).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAmbassadorEarningSchema = createInsertSchema(ambassadorEarnings).omit({ id: true, createdAt: true });
+
+// Types
+export type AmbassadorApplication = typeof ambassadorApplications.$inferSelect;
+export type InsertAmbassadorApplication = z.infer<typeof insertAmbassadorApplicationSchema>;
+export type Ambassador = typeof ambassadors.$inferSelect;
+export type InsertAmbassador = z.infer<typeof insertAmbassadorSchema>;
+export type AmbassadorEarning = typeof ambassadorEarnings.$inferSelect;
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
