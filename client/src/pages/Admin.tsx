@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAdmin } from "@/hooks/useAdmin";
 import Layout from "@/components/Layout";
@@ -14,7 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2 } from "lucide-react";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2, Award } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -179,6 +179,7 @@ export default function AdminPage() {
               { value: 'settings', icon: <Settings size={13}/>,      label: 'Settings' },
               { value: 'contests', icon: <Crown size={13}/>,         label: 'Contests' },
               ...(can('manage_admins') ? [{ value: 'admins', icon: <Shield size={13}/>, label: 'Admins' }] : []),
+              { value: 'ambassadors', icon: <Award size={13}/>, label: 'Ambassadors' },
             ] as { value: string; icon: React.ReactNode; label: string }[]).map(tab => (
               <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap flex items-center gap-1">
                 {tab.icon}{tab.label}
@@ -305,6 +306,10 @@ export default function AdminPage() {
               <AdminManagementSection />
             </TabsContent>
           )}
+
+          <TabsContent value="ambassadors" className="mt-0">
+            <AmbassadorAdminSection />
+          </TabsContent>
         </Tabs>
       </main>
     </Layout>
@@ -4172,6 +4177,323 @@ function ContestSection() {
       <Button onClick={save} disabled={saving} className="w-full h-9 text-sm font-semibold">
         {saving ? 'Saving...' : '💾 Save Contest Settings'}
       </Button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// Ambassador Admin Section
+// ═══════════════════════════════════════════════════════
+function AmbassadorAdminSection() {
+  const queryClient = useQueryClient();
+  const [activeSubTab, setActiveSubTab] = useState<'applications' | 'ambassadors' | 'settings'>('applications');
+  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
+  const [commission, setCommission] = useState('0.0001');
+  const [programEnabled, setProgramEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const { data: applicationsData } = useQuery<{ applications: any[] }>({
+    queryKey: ['/api/admin/ambassadors/applications'],
+    queryFn: () => apiRequest('GET', '/api/admin/ambassadors/applications').then(r => r.json()),
+    refetchInterval: 30000,
+  });
+
+  const { data: ambassadorsData } = useQuery<{ ambassadors: any[] }>({
+    queryKey: ['/api/admin/ambassadors'],
+    queryFn: () => apiRequest('GET', '/api/admin/ambassadors').then(r => r.json()),
+    refetchInterval: 30000,
+  });
+
+  const { data: settingsData } = useQuery<Record<string, string>>({
+    queryKey: ['/api/admin/ambassadors/settings'],
+    queryFn: () => apiRequest('GET', '/api/admin/ambassadors/settings').then(r => r.json()),
+    onSuccess: (data: Record<string, string>) => {
+      setCommission(data.ambassador_commission_usd || '0.0001');
+      setProgramEnabled(data.ambassador_program_enabled !== 'false');
+    },
+  } as any);
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => apiRequest('POST', `/api/admin/ambassadors/applications/${id}/approve`).then(r => r.json()),
+    onSuccess: () => {
+      showNotification('Ambassador approved!', 'success');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors/applications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors'] });
+    },
+    onError: () => showNotification('Failed to approve', 'error'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiRequest('POST', `/api/admin/ambassadors/applications/${id}/reject`, { reason }).then(r => r.json()),
+    onSuccess: () => {
+      showNotification('Application rejected');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors/applications'] });
+    },
+  });
+
+  const approvePromoMutation = useMutation({
+    mutationFn: (id: string) => apiRequest('POST', `/api/admin/ambassadors/${id}/approve-promo-name`).then(r => r.json()),
+    onSuccess: () => {
+      showNotification('Promo name approved!', 'success');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors'] });
+    },
+  });
+
+  const rejectPromoMutation = useMutation({
+    mutationFn: (id: string) => apiRequest('POST', `/api/admin/ambassadors/${id}/reject-promo-name`).then(r => r.json()),
+    onSuccess: () => {
+      showNotification('Promo name request rejected');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors'] });
+    },
+  });
+
+  const suspendMutation = useMutation({
+    mutationFn: ({ id, suspend }: { id: string; suspend: boolean }) =>
+      apiRequest('POST', `/api/admin/ambassadors/${id}/suspend`, { suspend }).then(r => r.json()),
+    onSuccess: () => {
+      showNotification('Ambassador status updated');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors'] });
+    },
+  });
+
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      await apiRequest('POST', '/api/admin/ambassadors/settings', {
+        ambassadorProgramEnabled: programEnabled,
+        ambassadorCommissionUsd: commission,
+      });
+      showNotification('Settings saved!', 'success');
+    } catch {
+      showNotification('Failed to save settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const applications = applicationsData?.applications || [];
+  const pendingApps = applications.filter(a => a.status === 'pending');
+  const allAmbassadors = ambassadorsData?.ambassadors || [];
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-tabs */}
+      <div className="flex gap-2 bg-[#121212] rounded-xl p-1 border border-white/10">
+        {[
+          { key: 'applications', label: `Applications ${pendingApps.length > 0 ? `(${pendingApps.length})` : ''}` },
+          { key: 'ambassadors', label: `Ambassadors (${allAmbassadors.length})` },
+          { key: 'settings', label: 'Settings' },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveSubTab(tab.key as any)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeSubTab === tab.key ? 'bg-[#4cd3ff]/20 text-[#4cd3ff]' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Applications */}
+      {activeSubTab === 'applications' && (
+        <div className="space-y-3">
+          {applications.length === 0 && (
+            <p className="text-gray-500 text-sm text-center py-8">No applications yet</p>
+          )}
+          {applications.map(app => (
+            <div key={app.id} className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {app.firstName || ''} {app.lastName || ''}{app.username ? ` (@${app.username})` : ''}
+                  </p>
+                  <p className="text-xs text-gray-400">TG: {app.telegramId} · ID: {app.userId?.slice(0, 8)}</p>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  app.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                  app.status === 'approved' ? 'bg-green-500/20 text-green-400' :
+                  'bg-red-500/20 text-red-400'
+                }`}>{app.status}</span>
+              </div>
+
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Channel:</span>
+                  <a href={app.channelLink} target="_blank" rel="noopener noreferrer" className="text-[#4cd3ff] hover:underline truncate max-w-[180px]">
+                    {app.channelLink}
+                  </a>
+                </div>
+                {app.channelTitle && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Title:</span>
+                    <span className="text-white">{app.channelTitle}</span>
+                  </div>
+                )}
+                {app.channelUsername && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Username:</span>
+                    <span className="text-white">@{app.channelUsername}</span>
+                  </div>
+                )}
+                {app.subscriberCount != null && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Subscribers:</span>
+                    <span className="text-white">{app.subscriberCount.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Applied:</span>
+                  <span className="text-white">{new Date(app.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+
+              {app.status === 'pending' && (
+                <div className="space-y-2">
+                  <input
+                    value={rejectReason[app.id] || ''}
+                    onChange={e => setRejectReason(r => ({ ...r, [app.id]: e.target.value }))}
+                    placeholder="Rejection reason (optional)"
+                    className="w-full px-3 py-1.5 text-xs bg-[#1a1a1a] border border-white/10 rounded-lg text-white placeholder:text-gray-600"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1 h-7 text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30"
+                      onClick={() => approveMutation.mutate(app.id)}
+                      disabled={approveMutation.isPending}
+                    >
+                      <CheckCircle2 className="w-3 h-3 mr-1" /> Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 h-7 text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                      onClick={() => rejectMutation.mutate({ id: app.id, reason: rejectReason[app.id] || '' })}
+                      disabled={rejectMutation.isPending}
+                    >
+                      <XCircle className="w-3 h-3 mr-1" /> Reject
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Ambassadors List */}
+      {activeSubTab === 'ambassadors' && (
+        <div className="space-y-3">
+          {allAmbassadors.length === 0 && (
+            <p className="text-gray-500 text-sm text-center py-8">No ambassadors yet</p>
+          )}
+          {allAmbassadors.map(amb => (
+            <div key={amb.id} className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {amb.firstName || ''} {amb.lastName || ''}{amb.username ? ` (@${amb.username})` : ''}
+                  </p>
+                  <p className="text-xs text-gray-400">TG: {amb.telegramId}</p>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  amb.status === 'active' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
+                }`}>{amb.status}</span>
+              </div>
+
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Promo Code:</span>
+                  <span className="text-[#4cd3ff] font-mono font-bold">{amb.promoCodeName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Total Claims:</span>
+                  <span className="text-white">{amb.totalClaims || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Total Earnings:</span>
+                  <span className="text-green-400">${parseFloat(amb.totalEarningsUsd || '0').toFixed(4)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Daily Promos:</span>
+                  <span className="text-white">{amb.dailyPromoCount || 1}×/day</span>
+                </div>
+                {amb.lastPromoSentAt && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Last Promo:</span>
+                    <span className="text-white">{new Date(amb.lastPromoSentAt).toLocaleDateString()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Custom promo name request */}
+              {amb.customPromoRequest && amb.customPromoRequestStatus === 'pending' && (
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 space-y-2">
+                  <p className="text-xs text-yellow-400 font-medium">Custom Name Request: <span className="font-mono">{amb.customPromoRequest}</span></p>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 h-6 text-xs bg-green-500/20 text-green-400 border border-green-500/30"
+                      onClick={() => approvePromoMutation.mutate(amb.id)}>Approve</Button>
+                    <Button size="sm" className="flex-1 h-6 text-xs bg-red-500/20 text-red-400 border border-red-500/30"
+                      onClick={() => rejectPromoMutation.mutate(amb.id)}>Reject</Button>
+                  </div>
+                </div>
+              )}
+
+              <Button
+                size="sm"
+                className={`w-full h-7 text-xs ${
+                  amb.status === 'active'
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
+                    : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                }`}
+                onClick={() => suspendMutation.mutate({ id: amb.id, suspend: amb.status === 'active' })}
+                disabled={suspendMutation.isPending}
+              >
+                {amb.status === 'active' ? '⏸ Suspend' : '▶ Reinstate'} Ambassador
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Settings */}
+      {activeSubTab === 'settings' && (
+        <div className="space-y-4">
+          <div className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-white">Ambassador Program Settings</h3>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-white">Program Enabled</p>
+                <p className="text-xs text-gray-400">Allow users to apply and earn commissions</p>
+              </div>
+              <button
+                onClick={() => setProgramEnabled(!programEnabled)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${programEnabled ? 'bg-green-500' : 'bg-white/20'}`}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${programEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-gray-400">Commission per Claim (USD)</label>
+              <Input
+                value={commission}
+                onChange={e => setCommission(e.target.value)}
+                placeholder="0.0001"
+                className="bg-[#1a1a1a] border-white/20 text-white h-8 text-sm"
+              />
+              <p className="text-xs text-gray-500">Amount credited to ambassador for each successful promo code claim</p>
+            </div>
+
+            <Button onClick={saveSettings} disabled={saving} className="w-full h-9 text-sm font-semibold">
+              {saving ? 'Saving...' : '💾 Save Settings'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
