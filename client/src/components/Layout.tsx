@@ -97,7 +97,7 @@ export default function Layout({ children }: LayoutProps) {
       <Header />
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden"
-        style={{ paddingBottom: "100px", paddingTop: "0px" }}
+        style={{ paddingBottom: "100px", paddingTop: isHomeActive ? "0px" : "64px" }}
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
