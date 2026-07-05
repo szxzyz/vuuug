@@ -1,8 +1,9 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Radio, PartyPopper, ChevronLeft, Loader2, CheckCircle2, AlertCircle, Bot, Megaphone, Gift } from "lucide-react";
+import { Cpu, Radio, PartyPopper, ChevronLeft, Loader2, CheckCircle2, AlertCircle, Bot, Megaphone, Gift, Award } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
+import { useLocation } from "wouter";
 
 const VERIFIED_RATE = 0.0025;
 const PLAIN_RATE    = 0.0020;
@@ -99,6 +100,7 @@ function RadioCard({
 // ─── Main ─────────────────────────────────────────────────────
 export default function CreatePanel({ open, onClose }: Props) {
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
 
   // Pill menu
   const [flow, setFlow] = useState<Flow>(null);
@@ -189,10 +191,11 @@ export default function CreatePanel({ open, onClose }: Props) {
   })();
 
   // ── FAB PILLS ──────────────────────────────────────────────
-  const pills: { id: Flow; label: string; Icon: React.ElementType }[] = [
-    { id: "bot",      label: "Bot",      Icon: Cpu         },
-    { id: "channel",  label: "Channel",  Icon: Radio        },
-    { id: "giveaway", label: "Giveaway", Icon: PartyPopper  },
+  const pills: { id: Flow; label: string; Icon: React.ElementType; navigate?: string }[] = [
+    { id: "bot",      label: "Bot",        Icon: Cpu         },
+    { id: "channel",  label: "Channel",    Icon: Radio       },
+    { id: "giveaway", label: "Giveaway",   Icon: PartyPopper },
+    { id: null,       label: "Ambassador", Icon: Award, navigate: "/ambassador" },
   ];
 
   return (
@@ -217,15 +220,18 @@ export default function CreatePanel({ open, onClose }: Props) {
             className="fixed z-[65]"
             style={{ bottom: "92px", right: "16px", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}
           >
-            {pills.map(({ id, label, Icon }, i) => (
+            {pills.map(({ id, label, Icon, navigate: navTo }, i) => (
               <motion.button
-                key={id}
+                key={label}
                 initial={{ opacity: 0, x: 20, scale: 0.88 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 16, scale: 0.88 }}
                 transition={{ delay: i * 0.05, type: "spring", stiffness: 360, damping: 28 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={() => setFlow(id)}
+                onClick={() => {
+                  if (navTo) { onClose(); navigate(navTo); }
+                  else setFlow(id);
+                }}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 10,
                   height: 64,

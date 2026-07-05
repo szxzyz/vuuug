@@ -9,6 +9,7 @@ import {
   User,
   ShieldCheck,
   Trophy,
+  Star,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
