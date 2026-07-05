@@ -62,9 +62,9 @@ function formatDate(d: string | null | undefined): string | null {
 
 /* ─── Top-3 gradient row (Telegram-style) ───────────────────────────── */
 const RANK_GRADIENTS: Record<number, string> = {
-  1: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-  2: "linear-gradient(135deg, #94a3b8 0%, #64748b 100%)",
-  3: "linear-gradient(135deg, #c2855a 0%, #9a6040 100%)",
+  1: "linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)",
+  2: "linear-gradient(135deg, #0e7490 0%, #0c6080 100%)",
+  3: "linear-gradient(135deg, #1e3a4a 0%, #162d3a 100%)",
 };
 
 function TopRow({
@@ -273,15 +273,10 @@ export default function Leaderboard() {
 
         {/* My rank card — shown at top, before tabs */}
         {isMonthly && myMonthlyRank && (
-          <div style={{ margin: "14px 16px 0", background: "rgba(34,211,238,0.06)", border: "1px solid rgba(34,211,238,0.2)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#0e7490", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#fff" }}>
-                Me
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Your Rank</p>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#22d3ee" }}>#{myMonthlyRank.rank}</p>
-              </div>
+          <div style={{ margin: "14px 16px 0", background: "#1a1a1a", borderRadius: 18, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Your Rank</p>
+              <p style={{ margin: "3px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>#{myMonthlyRank.rank}</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <FaStar style={{ color: "#fbbf24", fontSize: 11 }} />
@@ -291,15 +286,10 @@ export default function Leaderboard() {
         )}
 
         {!isMonthly && myReferralRank && (
-          <div style={{ margin: "14px 16px 0", background: "rgba(34,211,238,0.06)", border: "1px solid rgba(34,211,238,0.2)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#0e7490", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#fff" }}>
-                Me
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Your Rank</p>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#22d3ee" }}>#{myReferralRank.rank}</p>
-              </div>
+          <div style={{ margin: "14px 16px 0", background: "#1a1a1a", borderRadius: 18, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Your Rank</p>
+              <p style={{ margin: "3px 0 0", fontSize: 13, fontWeight: 800, color: "#fff" }}>#{myReferralRank.rank}</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <FaUsers style={{ color: "#34d399", fontSize: 11 }} />
@@ -493,7 +483,7 @@ export default function Leaderboard() {
           </>
         )}
 
-        <div style={{ height: 24 }} />
+        <div style={{ height: 8 }} />
       </div>
     </Layout>
   );
