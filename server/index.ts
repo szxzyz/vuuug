@@ -208,6 +208,14 @@ app.use((req, res, next) => {
       }
     }, 5 * 60 * 1000);
 
+    // Ambassador daily promo scheduler
+    try {
+      const { startAmbassadorScheduler } = await import('./telegram');
+      startAmbassadorScheduler();
+    } catch (error) {
+      console.error('❌ Error starting ambassador scheduler:', error);
+    }
+
     // Auto-setup Telegram webhook
     if (process.env.TELEGRAM_BOT_TOKEN) {
       try {

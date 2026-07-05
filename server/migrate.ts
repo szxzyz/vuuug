@@ -675,6 +675,63 @@ export async function ensureDatabaseSchema(): Promise<void> {
       }
     } catch { /* non-critical */ }
 
+    // ─── Ambassador Program Tables ─────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ambassador_applications (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        channel_link TEXT NOT NULL,
+        channel_title TEXT,
+        channel_username TEXT,
+        subscriber_count INTEGER,
+        status VARCHAR NOT NULL DEFAULT 'pending',
+        rejection_reason TEXT,
+        reviewed_by VARCHAR,
+        reviewed_at TIMESTAMP,
+        terms_accepted BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ambassadors (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL UNIQUE REFERENCES users(id),
+        application_id VARCHAR REFERENCES ambassador_applications(id),
+        promo_code_name VARCHAR NOT NULL UNIQUE,
+        custom_promo_request VARCHAR,
+        custom_promo_request_status VARCHAR DEFAULT 'none',
+        daily_promo_count INTEGER DEFAULT 1,
+        total_claims INTEGER DEFAULT 0,
+        today_claims INTEGER DEFAULT 0,
+        week_claims INTEGER DEFAULT 0,
+        month_claims INTEGER DEFAULT 0,
+        total_earnings_usd DECIMAL(30,10) DEFAULT '0',
+        pending_earnings_usd DECIMAL(30,10) DEFAULT '0',
+        status VARCHAR NOT NULL DEFAULT 'active',
+        last_promo_sent_at TIMESTAMP,
+        last_claim_reset_date VARCHAR,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ambassador_earnings (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        ambassador_id VARCHAR NOT NULL REFERENCES ambassadors(id),
+        promo_code_id VARCHAR NOT NULL REFERENCES promo_codes(id),
+        claim_user_id VARCHAR NOT NULL REFERENCES users(id),
+        promo_code VARCHAR NOT NULL,
+        commission_usd DECIMAL(30,10) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(ambassador_id, claim_user_id, promo_code_id)
+      )
+    `);
+
+    console.log('✅ [MIGRATION] Ambassador tables created successfully');
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {
