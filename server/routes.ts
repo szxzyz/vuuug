@@ -21,6 +21,9 @@ import {
   spinHistory,
   dailyMissions,
   adminRoles,
+  ambassadorApplications,
+  ambassadors,
+  ambassadorEarnings,
 } from "../shared/schema";
 import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
@@ -8614,6 +8617,9 @@ ${walletAddress}
         // STEP 3: Only record usage after reward is successfully given
         await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
+        // STEP 4: Ambassador commission
+        await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
+
         return res.json({
           success: true,
           message: `${rewardPow.toLocaleString()} POW added to your balance!`,
@@ -8629,6 +8635,8 @@ ${walletAddress}
 
         await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
+        await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
+
         return res.json({
           success: true,
           message: `${rewardAmount} TON added to your balance!`,
@@ -8640,6 +8648,8 @@ ${walletAddress}
         await storage.addUSDBalance(userId, rewardAmount, 'promo_code', `Redeemed promo code: ${cleanCode}`);
 
         await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
+
+        await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
         return res.json({
           success: true,
@@ -8660,6 +8670,8 @@ ${walletAddress}
 
         await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
+        await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
+
         return res.json({
           success: true,
           message: `${rewardPow.toLocaleString()} POW added to your balance!`,
@@ -8673,6 +8685,72 @@ ${walletAddress}
       res.status(500).json({ success: false, message: "Failed to redeem promo code. Please try again." });
     }
   });
+
+  // Helper: credit ambassador commission when their promo code is claimed
+  async function creditAmbassadorCommission(code: string, promoCodeId: string, claimUserId: string) {
+    try {
+      // Check if ambassador program is enabled
+      const [programSetting] = await db.select({ settingValue: adminSettings.settingValue })
+        .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_program_enabled')).limit(1);
+      if (programSetting?.settingValue === 'false') return;
+
+      // Find ambassador by promo code name (case-insensitive)
+      const [ambassador] = await db.select().from(ambassadors)
+        .where(sql`UPPER(${ambassadors.promoCodeName}) = ${code.toUpperCase()}`)
+        .limit(1);
+      if (!ambassador || ambassador.status !== 'active') return;
+
+      // Get commission rate from admin settings
+      const [commSetting] = await db.select({ settingValue: adminSettings.settingValue })
+        .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_commission_usd')).limit(1);
+      const commissionUsd = commSetting?.settingValue || '0.0001';
+
+      // Insert ambassador earning (unique constraint prevents duplicates)
+      await db.insert(ambassadorEarnings).values({
+        ambassadorId: ambassador.id,
+        promoCodeId,
+        claimUserId,
+        promoCode: code,
+        commissionUsd,
+      }).onConflictDoNothing();
+
+      // Update ambassador stats
+      const today = new Date().toISOString().split('T')[0];
+      const lastReset = ambassador.lastClaimResetDate;
+      const isNewDay = lastReset !== today;
+
+      await db.update(ambassadors).set({
+        totalClaims: sql`${ambassadors.totalClaims} + 1`,
+        todayClaims: isNewDay ? 1 : sql`${ambassadors.todayClaims} + 1`,
+        weekClaims: sql`${ambassadors.weekClaims} + 1`,
+        monthClaims: sql`${ambassadors.monthClaims} + 1`,
+        totalEarningsUsd: sql`${ambassadors.totalEarningsUsd} + ${commissionUsd}`,
+        lastClaimResetDate: today,
+        updatedAt: new Date(),
+      }).where(eq(ambassadors.id, ambassador.id));
+
+      // Credit USD to ambassador's account
+      await storage.addUSDBalance(ambassador.userId, commissionUsd, 'ambassador_commission',
+        `Ambassador commission: ${code} claimed`);
+
+      // Notify ambassador via Telegram
+      try {
+        const ambUser = await storage.getUser(ambassador.userId);
+        if (ambUser?.telegram_id) {
+          const { sendTelegramMessage } = await import('./telegram');
+          await sendTelegramMessage(ambUser.telegram_id, 
+            `🎉 Your promo code <b>${code}</b> was just claimed!\n` +
+            `💰 You earned <b>$${parseFloat(commissionUsd).toFixed(4)}</b>\n` +
+            `📊 Total claims: <b>${(ambassador.totalClaims || 0) + 1}</b>`,
+            { parse_mode: 'HTML' }
+          );
+        }
+      } catch (_) {}
+
+    } catch (err) {
+      console.error('Ambassador commission error:', err);
+    }
+  }
 
   // Create promo code (admin only)
   app.post('/api/promo-codes/create', authenticateTelegram, async (req: any, res) => {
@@ -10609,6 +10687,623 @@ ${walletAddress}
       res.status(500).json({ referrals: [] });
     }
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AMBASSADOR PROGRAM ROUTES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Get current user's ambassador status
+  app.get('/api/ambassador/status', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
+      const [application] = await db.select().from(ambassadorApplications)
+        .where(eq(ambassadorApplications.userId, userId))
+        .orderBy(desc(ambassadorApplications.createdAt)).limit(1);
+
+      res.json({
+        isAmbassador: !!ambassador && ambassador.status === 'active',
+        ambassador: ambassador || null,
+        application: application || null,
+      });
+    } catch (error) {
+      console.error('Error fetching ambassador status:', error);
+      res.status(500).json({ message: 'Failed to fetch ambassador status' });
+    }
+  });
+
+  // Submit ambassador application
+  app.post('/api/ambassador/apply', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const { channelLink, termsAccepted } = req.body;
+
+      if (!channelLink?.trim()) {
+        return res.status(400).json({ success: false, message: 'Channel link is required' });
+      }
+      if (!termsAccepted) {
+        return res.status(400).json({ success: false, message: 'You must accept the Terms & Conditions' });
+      }
+
+      // Check for existing active ambassador
+      const [existingAmb] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
+      if (existingAmb) {
+        return res.status(400).json({ success: false, message: 'You are already an ambassador' });
+      }
+
+      // Check for existing pending application
+      const [existingApp] = await db.select().from(ambassadorApplications)
+        .where(and(eq(ambassadorApplications.userId, userId), eq(ambassadorApplications.status, 'pending'))).limit(1);
+      if (existingApp) {
+        return res.status(400).json({ success: false, message: 'You already have a pending application' });
+      }
+
+      // Fetch channel info from Telegram
+      let channelTitle: string | null = null;
+      let channelUsername: string | null = null;
+      let subscriberCount: number | null = null;
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const cleanLink = channelLink.trim().replace('https://t.me/', '').replace('@', '');
+      if (botToken && cleanLink) {
+        try {
+          const chatResp = await fetch(`https://api.telegram.org/bot${botToken}/getChat?chat_id=@${cleanLink}`);
+          if (chatResp.ok) {
+            const chatData = await chatResp.json();
+            if (chatData.ok && chatData.result) {
+              channelTitle = chatData.result.title || null;
+              channelUsername = chatData.result.username || null;
+            }
+          }
+          const countResp = await fetch(`https://api.telegram.org/bot${botToken}/getChatMemberCount?chat_id=@${cleanLink}`);
+          if (countResp.ok) {
+            const countData = await countResp.json();
+            if (countData.ok) subscriberCount = countData.result;
+          }
+        } catch (_) {}
+      }
+
+      const [application] = await db.insert(ambassadorApplications).values({
+        userId,
+        channelLink: channelLink.trim(),
+        channelTitle,
+        channelUsername,
+        subscriberCount,
+        status: 'pending',
+        termsAccepted: true,
+      }).returning();
+
+      // Notify admins
+      try {
+        const user = await storage.getUser(userId);
+        const adminIds = await getAllAdminTelegramIds();
+        const { sendTelegramMessage } = await import('./telegram');
+        for (const adminId of adminIds) {
+          await sendTelegramMessage(adminId,
+            `📢 <b>New Ambassador Application</b>\n\n` +
+            `👤 User: ${user?.firstName || ''} ${user?.lastName || ''} (@${user?.username || 'N/A'})\n` +
+            `🆔 Telegram ID: ${user?.telegram_id || 'N/A'}\n` +
+            `📣 Channel: ${channelLink.trim()}\n` +
+            `📋 Title: ${channelTitle || 'N/A'}\n` +
+            `👥 Subscribers: ${subscriberCount ?? 'N/A'}\n\n` +
+            `Review in Admin Panel → Ambassador Applications`,
+            { parse_mode: 'HTML' }
+          ).catch(() => {});
+        }
+      } catch (_) {}
+
+      res.json({ success: true, application });
+    } catch (error) {
+      console.error('Error submitting ambassador application:', error);
+      res.status(500).json({ success: false, message: 'Failed to submit application' });
+    }
+  });
+
+  // Get ambassador dashboard data
+  app.get('/api/ambassador/dashboard', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
+      if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
+
+      // Get recent promo history (earnings)
+      const history = await db.select({
+        id: ambassadorEarnings.id,
+        promoCode: ambassadorEarnings.promoCode,
+        commissionUsd: ambassadorEarnings.commissionUsd,
+        createdAt: ambassadorEarnings.createdAt,
+      }).from(ambassadorEarnings)
+        .where(eq(ambassadorEarnings.ambassadorId, ambassador.id))
+        .orderBy(desc(ambassadorEarnings.createdAt))
+        .limit(50);
+
+      // Get today/week/month claims from earnings table
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [todayStats] = await db.select({ count: sql<number>`count(*)`, sum: sql<string>`COALESCE(SUM(commission_usd), 0)` })
+        .from(ambassadorEarnings).where(and(eq(ambassadorEarnings.ambassadorId, ambassador.id), gte(ambassadorEarnings.createdAt, todayStart)));
+      const [weekStats] = await db.select({ count: sql<number>`count(*)`, sum: sql<string>`COALESCE(SUM(commission_usd), 0)` })
+        .from(ambassadorEarnings).where(and(eq(ambassadorEarnings.ambassadorId, ambassador.id), gte(ambassadorEarnings.createdAt, weekStart)));
+      const [monthStats] = await db.select({ count: sql<number>`count(*)`, sum: sql<string>`COALESCE(SUM(commission_usd), 0)` })
+        .from(ambassadorEarnings).where(and(eq(ambassadorEarnings.ambassadorId, ambassador.id), gte(ambassadorEarnings.createdAt, monthStart)));
+
+      // Get active promo codes for this ambassador
+      const activePromos = await db.select().from(promoCodes)
+        .where(and(
+          sql`UPPER(${promoCodes.code}) = ${ambassador.promoCodeName.toUpperCase()}`,
+          eq(promoCodes.isActive, true)
+        )).limit(10);
+
+      res.json({
+        ambassador,
+        stats: {
+          todayClaims: Number(todayStats?.count || 0),
+          weekClaims: Number(weekStats?.count || 0),
+          monthClaims: Number(monthStats?.count || 0),
+          lifetimeClaims: ambassador.totalClaims || 0,
+          todayEarnings: todayStats?.sum || '0',
+          weekEarnings: weekStats?.sum || '0',
+          monthEarnings: monthStats?.sum || '0',
+          totalEarnings: ambassador.totalEarningsUsd || '0',
+        },
+        promoHistory: history,
+        activePromos,
+      });
+    } catch (error) {
+      console.error('Error fetching ambassador dashboard:', error);
+      res.status(500).json({ message: 'Failed to fetch dashboard' });
+    }
+  });
+
+  // Update daily promo schedule
+  app.post('/api/ambassador/schedule', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const { dailyPromoCount } = req.body;
+      const count = Math.max(1, Math.min(3, parseInt(dailyPromoCount) || 1));
+
+      const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
+      if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
+
+      await db.update(ambassadors).set({ dailyPromoCount: count, updatedAt: new Date() })
+        .where(eq(ambassadors.id, ambassador.id));
+
+      res.json({ success: true, dailyPromoCount: count });
+    } catch (error) {
+      console.error('Error updating ambassador schedule:', error);
+      res.status(500).json({ message: 'Failed to update schedule' });
+    }
+  });
+
+  // Request custom promo code name
+  app.post('/api/ambassador/request-promo-name', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const { promoCodeName } = req.body;
+
+      if (!promoCodeName?.trim()) {
+        return res.status(400).json({ success: false, message: 'Promo code name is required' });
+      }
+      const cleanName = promoCodeName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (cleanName.length < 3 || cleanName.length > 20) {
+        return res.status(400).json({ success: false, message: 'Promo code name must be 3-20 alphanumeric characters' });
+      }
+
+      const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
+      if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
+
+      // Check if name is taken
+      const [existing] = await db.select().from(ambassadors)
+        .where(sql`UPPER(${ambassadors.promoCodeName}) = ${cleanName}`).limit(1);
+      if (existing && existing.id !== ambassador.id) {
+        return res.status(400).json({ success: false, message: 'This promo code name is already taken' });
+      }
+
+      await db.update(ambassadors).set({
+        customPromoRequest: cleanName,
+        customPromoRequestStatus: 'pending',
+        updatedAt: new Date(),
+      }).where(eq(ambassadors.id, ambassador.id));
+
+      // Notify admins
+      try {
+        const user = await storage.getUser(userId);
+        const adminIds = await getAllAdminTelegramIds();
+        const { sendTelegramMessage } = await import('./telegram');
+        for (const adminId of adminIds) {
+          await sendTelegramMessage(adminId,
+            `🎯 <b>Custom Promo Name Request</b>\n\n` +
+            `👤 Ambassador: @${user?.username || user?.firstName || 'N/A'}\n` +
+            `📛 Requested Name: <b>${cleanName}</b>\n\n` +
+            `Review in Admin Panel → Ambassadors`,
+            { parse_mode: 'HTML' }
+          ).catch(() => {});
+        }
+      } catch (_) {}
+
+      res.json({ success: true, message: 'Request submitted for admin review' });
+    } catch (error) {
+      console.error('Error requesting promo name:', error);
+      res.status(500).json({ message: 'Failed to submit request' });
+    }
+  });
+
+  // ── Admin: Ambassador Applications ─────────────────────────────────────────
+  app.get('/api/admin/ambassadors/applications', authenticateAdmin, async (req: any, res) => {
+    try {
+      const applications = await db
+        .select({
+          id: ambassadorApplications.id,
+          userId: ambassadorApplications.userId,
+          channelLink: ambassadorApplications.channelLink,
+          channelTitle: ambassadorApplications.channelTitle,
+          channelUsername: ambassadorApplications.channelUsername,
+          subscriberCount: ambassadorApplications.subscriberCount,
+          status: ambassadorApplications.status,
+          rejectionReason: ambassadorApplications.rejectionReason,
+          reviewedAt: ambassadorApplications.reviewedAt,
+          createdAt: ambassadorApplications.createdAt,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          telegramId: users.telegram_id,
+        })
+        .from(ambassadorApplications)
+        .innerJoin(users, eq(ambassadorApplications.userId, users.id))
+        .orderBy(desc(ambassadorApplications.createdAt));
+
+      res.json({ applications });
+    } catch (error) {
+      console.error('Error fetching ambassador applications:', error);
+      res.status(500).json({ message: 'Failed to fetch applications' });
+    }
+  });
+
+  // Admin: Approve ambassador application
+  app.post('/api/admin/ambassadors/applications/:id/approve', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [application] = await db.select().from(ambassadorApplications)
+        .where(eq(ambassadorApplications.id, id)).limit(1);
+      if (!application) return res.status(404).json({ message: 'Application not found' });
+      if (application.status !== 'pending') {
+        return res.status(400).json({ message: 'Application is not pending' });
+      }
+
+      // Check if user is already ambassador
+      const [existingAmb] = await db.select().from(ambassadors)
+        .where(eq(ambassadors.userId, application.userId)).limit(1);
+      if (existingAmb) {
+        // Just update application status
+        await db.update(ambassadorApplications).set({ status: 'approved', reviewedAt: new Date() })
+          .where(eq(ambassadorApplications.id, id));
+        return res.json({ success: true, message: 'Application approved (already ambassador)' });
+      }
+
+      // Generate unique promo code name
+      const user = await storage.getUser(application.userId);
+      const baseName = (user?.username || user?.firstName || 'PADZ').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+      let promoCodeName = baseName;
+      let suffix = 1;
+      while (true) {
+        const [taken] = await db.select({ id: ambassadors.id }).from(ambassadors)
+          .where(sql`UPPER(${ambassadors.promoCodeName}) = ${promoCodeName}`).limit(1);
+        if (!taken) break;
+        promoCodeName = `${baseName}${suffix++}`;
+      }
+
+      // Create ambassador record
+      const [ambassador] = await db.insert(ambassadors).values({
+        userId: application.userId,
+        applicationId: id,
+        promoCodeName,
+        status: 'active',
+        dailyPromoCount: 1,
+      }).returning();
+
+      // Update application status
+      await db.update(ambassadorApplications).set({ status: 'approved', reviewedAt: new Date() })
+        .where(eq(ambassadorApplications.id, id));
+
+      // Notify user
+      try {
+        if (user?.telegram_id) {
+          const { sendTelegramMessage } = await import('./telegram');
+          await sendTelegramMessage(user.telegram_id,
+            `🎉 <b>Congratulations! You're now a Paid Adz Ambassador!</b>\n\n` +
+            `📛 Your promo code: <b>${promoCodeName}</b>\n\n` +
+            `Your promo code will be automatically sent to you daily.\n` +
+            `Every time someone claims it, you earn <b>$0.0001</b>!\n\n` +
+            `Open the app to view your Ambassador Dashboard.`,
+            { parse_mode: 'HTML' }
+          );
+        }
+      } catch (_) {}
+
+      // Generate first daily promo immediately
+      await generateAmbassadorPromoCode(ambassador.id, promoCodeName);
+
+      res.json({ success: true, ambassador });
+    } catch (error) {
+      console.error('Error approving ambassador application:', error);
+      res.status(500).json({ message: 'Failed to approve application' });
+    }
+  });
+
+  // Admin: Reject ambassador application
+  app.post('/api/admin/ambassadors/applications/:id/reject', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const [application] = await db.select().from(ambassadorApplications)
+        .where(eq(ambassadorApplications.id, id)).limit(1);
+      if (!application) return res.status(404).json({ message: 'Application not found' });
+
+      await db.update(ambassadorApplications).set({
+        status: 'rejected',
+        rejectionReason: reason || null,
+        reviewedAt: new Date(),
+      }).where(eq(ambassadorApplications.id, id));
+
+      // Notify user
+      try {
+        const user = await storage.getUser(application.userId);
+        if (user?.telegram_id) {
+          const { sendTelegramMessage } = await import('./telegram');
+          await sendTelegramMessage(user.telegram_id,
+            `📋 <b>Ambassador Application Update</b>\n\n` +
+            `Unfortunately, your application was not approved at this time.\n` +
+            `${reason ? `Reason: ${reason}\n` : ''}` +
+            `\nYou can reapply in the future.`,
+            { parse_mode: 'HTML' }
+          );
+        }
+      } catch (_) {}
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error rejecting ambassador application:', error);
+      res.status(500).json({ message: 'Failed to reject application' });
+    }
+  });
+
+  // Admin: Get all ambassadors
+  app.get('/api/admin/ambassadors', authenticateAdmin, async (req: any, res) => {
+    try {
+      const allAmbassadors = await db
+        .select({
+          id: ambassadors.id,
+          userId: ambassadors.userId,
+          promoCodeName: ambassadors.promoCodeName,
+          customPromoRequest: ambassadors.customPromoRequest,
+          customPromoRequestStatus: ambassadors.customPromoRequestStatus,
+          dailyPromoCount: ambassadors.dailyPromoCount,
+          totalClaims: ambassadors.totalClaims,
+          totalEarningsUsd: ambassadors.totalEarningsUsd,
+          status: ambassadors.status,
+          lastPromoSentAt: ambassadors.lastPromoSentAt,
+          createdAt: ambassadors.createdAt,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          telegramId: users.telegram_id,
+        })
+        .from(ambassadors)
+        .innerJoin(users, eq(ambassadors.userId, users.id))
+        .orderBy(desc(ambassadors.createdAt));
+
+      res.json({ ambassadors: allAmbassadors });
+    } catch (error) {
+      console.error('Error fetching ambassadors:', error);
+      res.status(500).json({ message: 'Failed to fetch ambassadors' });
+    }
+  });
+
+  // Admin: Approve custom promo name request
+  app.post('/api/admin/ambassadors/:id/approve-promo-name', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.id, id)).limit(1);
+      if (!ambassador) return res.status(404).json({ message: 'Ambassador not found' });
+      if (!ambassador.customPromoRequest) return res.status(400).json({ message: 'No pending request' });
+
+      const newName = ambassador.customPromoRequest;
+      // Check uniqueness
+      const [taken] = await db.select({ id: ambassadors.id }).from(ambassadors)
+        .where(and(sql`UPPER(${ambassadors.promoCodeName}) = ${newName}`, sql`${ambassadors.id} != ${id}`)).limit(1);
+      if (taken) return res.status(400).json({ message: 'Name already taken' });
+
+      await db.update(ambassadors).set({
+        promoCodeName: newName,
+        customPromoRequest: null,
+        customPromoRequestStatus: 'approved',
+        updatedAt: new Date(),
+      }).where(eq(ambassadors.id, id));
+
+      // Notify user
+      try {
+        const user = await storage.getUser(ambassador.userId);
+        if (user?.telegram_id) {
+          const { sendTelegramMessage } = await import('./telegram');
+          await sendTelegramMessage(user.telegram_id,
+            `✅ <b>Custom Promo Name Approved!</b>\n\nYour new promo code name is: <b>${newName}</b>`,
+            { parse_mode: 'HTML' }
+          );
+        }
+      } catch (_) {}
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error approving promo name:', error);
+      res.status(500).json({ message: 'Failed to approve' });
+    }
+  });
+
+  // Admin: Reject custom promo name request
+  app.post('/api/admin/ambassadors/:id/reject-promo-name', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.id, id)).limit(1);
+      if (!ambassador) return res.status(404).json({ message: 'Ambassador not found' });
+
+      await db.update(ambassadors).set({
+        customPromoRequest: null,
+        customPromoRequestStatus: 'rejected',
+        updatedAt: new Date(),
+      }).where(eq(ambassadors.id, id));
+
+      // Notify user
+      try {
+        const user = await storage.getUser(ambassador.userId);
+        if (user?.telegram_id) {
+          const { sendTelegramMessage } = await import('./telegram');
+          await sendTelegramMessage(user.telegram_id,
+            `❌ <b>Custom Promo Name Rejected</b>\n\nYour request was not approved. Your current promo code name remains: <b>${ambassador.promoCodeName}</b>`,
+            { parse_mode: 'HTML' }
+          );
+        }
+      } catch (_) {}
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error rejecting promo name:', error);
+      res.status(500).json({ message: 'Failed to reject' });
+    }
+  });
+
+  // Admin: Suspend/Unsuspend ambassador
+  app.post('/api/admin/ambassadors/:id/suspend', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { suspend } = req.body;
+      const newStatus = suspend ? 'suspended' : 'active';
+      await db.update(ambassadors).set({ status: newStatus, updatedAt: new Date() })
+        .where(eq(ambassadors.id, id));
+      res.json({ success: true, status: newStatus });
+    } catch (error) {
+      console.error('Error suspending ambassador:', error);
+      res.status(500).json({ message: 'Failed to update ambassador status' });
+    }
+  });
+
+  // Admin: Get ambassador program settings
+  app.get('/api/admin/ambassadors/settings', authenticateAdmin, async (req: any, res) => {
+    try {
+      const keys = ['ambassador_program_enabled', 'ambassador_commission_usd'];
+      const settings: Record<string, string> = {};
+      for (const key of keys) {
+        const [row] = await db.select({ v: adminSettings.settingValue }).from(adminSettings)
+          .where(eq(adminSettings.settingKey, key)).limit(1);
+        settings[key] = row?.v ?? (key === 'ambassador_commission_usd' ? '0.0001' : 'true');
+      }
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to fetch settings' });
+    }
+  });
+
+  // Admin: Update ambassador program settings
+  app.post('/api/admin/ambassadors/settings', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { ambassadorProgramEnabled, ambassadorCommissionUsd } = req.body;
+      const updates: Record<string, string> = {};
+      if (ambassadorProgramEnabled !== undefined) updates['ambassador_program_enabled'] = ambassadorProgramEnabled ? 'true' : 'false';
+      if (ambassadorCommissionUsd !== undefined) updates['ambassador_commission_usd'] = String(parseFloat(ambassadorCommissionUsd) || 0.0001);
+
+      for (const [key, value] of Object.entries(updates)) {
+        await db.insert(adminSettings).values({ settingKey: key, settingValue: value, description: 'Ambassador setting' })
+          .onConflictDoUpdate({ target: adminSettings.settingKey, set: { settingValue: value, updatedAt: new Date() } });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to update settings' });
+    }
+  });
+
+  // Admin: View ambassador earning stats
+  app.get('/api/admin/ambassadors/:id/stats', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const history = await db.select().from(ambassadorEarnings)
+        .where(eq(ambassadorEarnings.ambassadorId, id))
+        .orderBy(desc(ambassadorEarnings.createdAt)).limit(100);
+      const [totals] = await db.select({
+        totalClaims: sql<number>`count(*)`,
+        totalEarnings: sql<string>`COALESCE(SUM(commission_usd), 0)`,
+      }).from(ambassadorEarnings).where(eq(ambassadorEarnings.ambassadorId, id));
+      res.json({ history, totals });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to fetch stats' });
+    }
+  });
+
+  // Helper: generate + send daily promo code for an ambassador
+  async function generateAmbassadorPromoCode(ambassadorId: string, promoCodeName: string): Promise<void> {
+    try {
+      // Get default reward amount from settings or use a default PAD amount
+      const [rewardSetting] = await db.select({ v: adminSettings.settingValue })
+        .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
+      const rewardAmount = rewardSetting?.v || '10000'; // Default: 10,000 PAD
+
+      const codeUpper = promoCodeName.toUpperCase();
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      // Upsert the promo code for today
+      const existing = await db.select().from(promoCodes)
+        .where(eq(promoCodes.code, codeUpper)).limit(1);
+
+      if (existing.length > 0) {
+        // Update usage count and expiry
+        await db.update(promoCodes).set({
+          usageCount: 0,
+          usageLimit: null, // unlimited daily claims
+          perUserLimit: 1,
+          isActive: true,
+          expiresAt: tomorrow,
+          rewardAmount,
+          rewardType: 'PAD',
+          updatedAt: new Date(),
+        }).where(eq(promoCodes.code, codeUpper));
+      } else {
+        await db.insert(promoCodes).values({
+          code: codeUpper,
+          rewardAmount,
+          rewardType: 'PAD',
+          usageLimit: null,
+          perUserLimit: 1,
+          isActive: true,
+          expiresAt: tomorrow,
+        });
+      }
+
+      // Update last promo sent time
+      await db.update(ambassadors).set({ lastPromoSentAt: new Date(), updatedAt: new Date() })
+        .where(eq(ambassadors.id, ambassadorId));
+
+      // Send promo to ambassador via Telegram
+      const [ambassador] = await db.select({ userId: ambassadors.userId })
+        .from(ambassadors).where(eq(ambassadors.id, ambassadorId)).limit(1);
+      if (ambassador) {
+        const user = await storage.getUser(ambassador.userId);
+        if (user?.telegram_id) {
+          const { sendTelegramMessage } = await import('./telegram');
+          await sendTelegramMessage(user.telegram_id,
+            `🎯 <b>Your Daily Promo Code is Ready!</b>\n\n` +
+            `📛 Code: <code>${codeUpper}</code>\n` +
+            `⏰ Valid for 24 hours\n\n` +
+            `Share this code with your followers!\n` +
+            `You earn <b>$0.0001</b> for every successful claim.\n\n` +
+            `Post it in your channel now! 🚀`,
+            { parse_mode: 'HTML' }
+          ).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to generate promo for ambassador ${ambassadorId}:`, err);
+    }
+  }
 
   // ── Admin: Reset weekly stars ─────────────────────────────────────────────────
   app.post('/api/admin/reset-stars', authenticateAdmin, async (req: any, res) => {

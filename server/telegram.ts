@@ -2903,6 +2903,106 @@ export async function checkBotStatus(): Promise<{ ok: boolean; username?: string
   }
 }
 
+// ── Ambassador Daily Promo Scheduler ─────────────────────────────────────────
+// Runs once at server start then every hour to check if it's time to send promos
+
+export async function runAmbassadorDailyPromos(): Promise<void> {
+  try {
+    const { db: dbConn } = await import('./db');
+    const { ambassadors, promoCodes, adminSettings } = await import('../shared/schema');
+    const { eq, sql, and } = await import('drizzle-orm');
+
+    // Check if program is enabled
+    const [programSetting] = await dbConn.select({ v: adminSettings.settingValue })
+      .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_program_enabled')).limit(1);
+    if (programSetting?.v === 'false') return;
+
+    const [rewardSetting] = await dbConn.select({ v: adminSettings.settingValue })
+      .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
+    const rewardAmount = rewardSetting?.v || '10000';
+
+    const today = new Date().toISOString().split('T')[0];
+    const allAmbassadors = await dbConn.select().from(ambassadors)
+      .where(eq(ambassadors.status, 'active'));
+
+    for (const amb of allAmbassadors) {
+      try {
+        // Check if already sent today
+        const lastSent = amb.lastPromoSentAt;
+        if (lastSent) {
+          const lastSentDate = new Date(lastSent).toISOString().split('T')[0];
+          if (lastSentDate === today) continue; // already sent today
+        }
+
+        const codeUpper = amb.promoCodeName.toUpperCase();
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        // Upsert promo code
+        const existingCode = await dbConn.select().from(promoCodes)
+          .where(eq(promoCodes.code, codeUpper)).limit(1);
+
+        if (existingCode.length > 0) {
+          await dbConn.update(promoCodes).set({
+            usageCount: 0,
+            usageLimit: null,
+            perUserLimit: 1,
+            isActive: true,
+            expiresAt: tomorrow,
+            rewardAmount,
+            rewardType: 'PAD',
+            updatedAt: new Date(),
+          }).where(eq(promoCodes.code, codeUpper));
+        } else {
+          await dbConn.insert(promoCodes).values({
+            code: codeUpper,
+            rewardAmount,
+            rewardType: 'PAD',
+            usageLimit: null,
+            perUserLimit: 1,
+            isActive: true,
+            expiresAt: tomorrow,
+          });
+        }
+
+        // Update last promo sent
+        await dbConn.update(ambassadors).set({ lastPromoSentAt: new Date(), updatedAt: new Date() })
+          .where(eq(ambassadors.id, amb.id));
+
+        // Get ambassador user and send notification
+        const { storage: stor } = await import('./storage');
+        const user = await stor.getUser(amb.userId);
+        if (user?.telegram_id) {
+          const count = amb.dailyPromoCount || 1;
+          await sendTelegramMessage(user.telegram_id,
+            `🎯 <b>Your Daily Promo Code${count > 1 ? 's Are' : ' Is'} Ready!</b>\n\n` +
+            `📛 Code: <code>${codeUpper}</code>\n` +
+            `⏰ Valid for 24 hours\n\n` +
+            `Share this code with your followers!\n` +
+            `You earn <b>$0.0001</b> for every successful claim. 🚀`,
+            { parse_mode: 'HTML' }
+          ).catch(() => {});
+        }
+
+        console.log(`✅ Ambassador daily promo sent: ${codeUpper} for user ${amb.userId}`);
+      } catch (err) {
+        console.error(`Failed to process ambassador ${amb.id}:`, err);
+      }
+    }
+  } catch (err) {
+    console.error('Ambassador daily promo scheduler error:', err);
+  }
+}
+
+// Start ambassador promo scheduler — runs every hour, sends once per day per ambassador
+export function startAmbassadorScheduler(): void {
+  // Run immediately on start (catches any missed sends from server restarts)
+  setTimeout(() => runAmbassadorDailyPromos().catch(console.error), 5000);
+  
+  // Then run every hour
+  setInterval(() => runAmbassadorDailyPromos().catch(console.error), 60 * 60 * 1000);
+  console.log('🎖️ Ambassador daily promo scheduler started');
+}
+
 export async function getWebhookInfo(): Promise<any> {
   if (!TELEGRAM_BOT_TOKEN) {
     return { ok: false, error: 'Bot token not configured' };
