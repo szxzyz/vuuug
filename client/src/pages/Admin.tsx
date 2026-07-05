@@ -3948,6 +3948,8 @@ function ContestSection() {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [monthlyTopNRaw, setMonthlyTopNRaw] = useState('10');
+  const [weeklyTopNRaw, setWeeklyTopNRaw] = useState('10');
   const [form, setForm] = useState({
     weeklyReferralContestEnabled: false,
     weeklyReferralStartDate: '',
@@ -3970,17 +3972,21 @@ function ContestSection() {
 
   useEffect(() => {
     if (data) {
+      const monthly = data.monthlyContestTopUsers ?? 10;
+      const weekly = data.weeklyReferralTopUsers ?? 10;
+      setMonthlyTopNRaw(String(monthly));
+      setWeeklyTopNRaw(String(weekly));
       setForm({
         weeklyReferralContestEnabled: data.weeklyReferralContestEnabled ?? false,
         weeklyReferralStartDate: data.weeklyReferralStartDate ?? '',
         weeklyReferralEndDate: data.weeklyReferralEndDate ?? '',
         weeklyReferralPrizes: data.weeklyReferralPrizes ?? '',
-        weeklyReferralTopUsers: data.weeklyReferralTopUsers ?? 10,
+        weeklyReferralTopUsers: weekly,
         monthlyContestEnabled: data.monthlyContestEnabled ?? false,
         monthlyContestStartDate: data.monthlyContestStartDate ?? '',
         monthlyContestEndDate: data.monthlyContestEndDate ?? '',
         monthlyContestPrizes: data.monthlyContestPrizes ?? '',
-        monthlyContestTopUsers: data.monthlyContestTopUsers ?? 10,
+        monthlyContestTopUsers: monthly,
         starsPerAd: data.starsPerAd ?? 1,
       });
     }
@@ -3988,8 +3994,14 @@ function ContestSection() {
 
   const save = async () => {
     setSaving(true);
+    // Normalise the raw string inputs at save time so blur is never required
+    const monthly = Math.max(1, Math.min(1000, parseInt(monthlyTopNRaw) || 1));
+    const weekly  = Math.max(1, Math.min(1000, parseInt(weeklyTopNRaw)  || 1));
+    setMonthlyTopNRaw(String(monthly));
+    setWeeklyTopNRaw(String(weekly));
+    const payload = { ...form, monthlyContestTopUsers: monthly, weeklyReferralTopUsers: weekly };
     try {
-      const res = await apiRequest('POST', '/api/admin/contest-settings', form);
+      const res = await apiRequest('POST', '/api/admin/contest-settings', payload);
       if (!res.ok) throw new Error('Failed');
       showNotification('Contest settings saved!');
       queryClient.invalidateQueries({ queryKey: ['/api/admin/contest-settings'] });
@@ -4071,7 +4083,19 @@ function ContestSection() {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Top N Users</Label>
-            <Input type="number" min={1} max={1000} value={form.monthlyContestTopUsers} onChange={e => setForm(f => ({ ...f, monthlyContestTopUsers: Math.max(1, parseInt(e.target.value) || 1) }))} className="h-8 text-sm mt-1" />
+            <Input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={monthlyTopNRaw}
+              onChange={e => setMonthlyTopNRaw(e.target.value.replace(/[^0-9]/g, ''))}
+              onBlur={() => {
+                const n = Math.max(1, Math.min(1000, parseInt(monthlyTopNRaw) || 1));
+                setMonthlyTopNRaw(String(n));
+                setForm(f => ({ ...f, monthlyContestTopUsers: n }));
+              }}
+              className="h-8 text-sm mt-1"
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Prizes (one per line, in rank order)</Label>
@@ -4118,7 +4142,19 @@ function ContestSection() {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Top N Users</Label>
-            <Input type="number" min={1} max={1000} value={form.weeklyReferralTopUsers} onChange={e => setForm(f => ({ ...f, weeklyReferralTopUsers: Math.max(1, parseInt(e.target.value) || 1) }))} className="h-8 text-sm mt-1" />
+            <Input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={weeklyTopNRaw}
+              onChange={e => setWeeklyTopNRaw(e.target.value.replace(/[^0-9]/g, ''))}
+              onBlur={() => {
+                const n = Math.max(1, Math.min(1000, parseInt(weeklyTopNRaw) || 1));
+                setWeeklyTopNRaw(String(n));
+                setForm(f => ({ ...f, weeklyReferralTopUsers: n }));
+              }}
+              className="h-8 text-sm mt-1"
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Prizes (one per line, in rank order)</Label>
