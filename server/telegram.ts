@@ -1049,6 +1049,18 @@ function positionEmoji(rank: number): string {
   return `${rank}.`;
 }
 
+/** Mirrors parsePrizesSetting in routes.ts — handles both JSON array and newline-separated text */
+function parsePrizes(raw: string): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as string[];
+    return [String(parsed)];
+  } catch {
+    return raw.split('\n').map((p: string) => p.trim()).filter(Boolean);
+  }
+}
+
 // ── Weekly Referral Contest message ───────────────────────────────────────────
 export async function sendWeeklyReferralContest(chatId: string, messageId?: number): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN) return;
@@ -1102,7 +1114,7 @@ export async function sendWeeklyReferralContest(chatId: string, messageId?: numb
         ${endDate ? sqlFn`AND r.created_at <= ${new Date(endDate)}` : sqlFn``}
       GROUP BY u.id, u.username, u.first_name
       HAVING COUNT(r.id) > 0
-      ORDER BY referral_count DESC
+      ORDER BY referral_count DESC, u.id ASC
       LIMIT ${topN}
     `);
 
@@ -1123,7 +1135,7 @@ export async function sendWeeklyReferralContest(chatId: string, messageId?: numb
     lines.push(`${escapeHtml(weekLabel)}\n`);
     lines.push(`<code>Position │ Friends │ Prize</code>\n`);
 
-    const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+    const prizes = parsePrizes(prizesRaw);
 
     for (let i = 0; i < topN; i++) {
       const row = rows[i];
@@ -1199,7 +1211,7 @@ export async function sendMonthlyLeaderboard(chatId: string, messageId?: number)
       SELECT id, username, first_name, weekly_stars
       FROM users
       WHERE weekly_stars > 0 AND banned = false
-      ORDER BY weekly_stars DESC
+      ORDER BY weekly_stars DESC, id ASC
       LIMIT ${topN}
     `);
 
@@ -1212,7 +1224,7 @@ export async function sendMonthlyLeaderboard(chatId: string, messageId?: number)
       if (callerIdx !== -1) callerRank = callerIdx + 1;
     }
 
-    const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+    const prizes = parsePrizes(prizesRaw);
 
     let lines = [`🏆 <b>Monthly Leaderboard</b>\n`];
     lines.push(`${escapeHtml(monthLabel)}\n`);
@@ -1306,7 +1318,7 @@ export async function checkAndSendContestSnapshots(): Promise<void> {
         const topN = parseInt(getSetting('weekly_referral_top_users', '10'));
         const startDate = getSetting('weekly_referral_start_date', '');
         const prizesRaw = getSetting('weekly_referral_prizes', '');
-        const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+        const prizes = parsePrizes(prizesRaw);
 
         const topQuery = await dbConn.execute(sqlFn`
           SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
@@ -1318,7 +1330,7 @@ export async function checkAndSendContestSnapshots(): Promise<void> {
             AND r.created_at <= ${endDate}
           GROUP BY u.id, u.username, u.first_name
           HAVING COUNT(r.id) > 0
-          ORDER BY referral_count DESC
+          ORDER BY referral_count DESC, u.id ASC
           LIMIT ${topN}
         `);
         const rows = topQuery.rows as any[];
@@ -1367,13 +1379,13 @@ export async function checkAndSendContestSnapshots(): Promise<void> {
       if (nowDate > endDate) {
         const topN = parseInt(getSetting('monthly_contest_top_users', '10'));
         const prizesRaw = getSetting('monthly_contest_prizes', '');
-        const prizes = prizesRaw ? prizesRaw.split('\n').map((p: string) => p.trim()).filter(Boolean) : [];
+        const prizes = parsePrizes(prizesRaw);
 
         const topQuery = await dbConn.execute(sqlFn`
           SELECT id, username, first_name, weekly_stars
           FROM users
           WHERE weekly_stars > 0 AND banned = false
-          ORDER BY weekly_stars DESC
+          ORDER BY weekly_stars DESC, id ASC
           LIMIT ${topN}
         `);
         const rows = topQuery.rows as any[];

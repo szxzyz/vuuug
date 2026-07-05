@@ -10394,7 +10394,7 @@ ${walletAddress}
         SELECT id, username, first_name, weekly_stars
         FROM users
         WHERE weekly_stars > 0 AND banned = false
-        ORDER BY weekly_stars DESC
+        ORDER BY weekly_stars DESC, id ASC
         LIMIT ${topN}
       `);
 
@@ -10463,7 +10463,7 @@ ${walletAddress}
           ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
         GROUP BY u.id, u.username, u.first_name
         HAVING COUNT(r.id) > 0
-        ORDER BY referral_count DESC
+        ORDER BY referral_count DESC, u.id ASC
         LIMIT ${topN}
       `);
 
