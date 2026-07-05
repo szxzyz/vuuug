@@ -159,7 +159,7 @@ export default function Affiliates() {
         </div>
 
         {/* Referral counts */}
-        <div className="bg-[#1C1C1E] rounded-2xl p-4 mb-3 border border-white/5">
+        <div className="rounded-2xl p-4 mb-3">
           <div className="flex items-center justify-between py-3 border-b border-white/5">
             <div>
               <p className="text-white text-sm font-semibold">{t('level1_referrals')}</p>
@@ -190,7 +190,7 @@ export default function Affiliates() {
         </div>
 
         {/* Total Affiliate Earnings */}
-        <div className="bg-[#1C1C1E] rounded-2xl p-4 mb-3 border border-white/5">
+        <div className="rounded-2xl p-4 mb-3">
           <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t('total_affiliate_earnings')}</p>
           <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div>
@@ -224,7 +224,7 @@ export default function Affiliates() {
         <button
           onClick={() => setReferralsOpen(true)}
           className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-6"
-          style={{ background: 'rgba(255,255,255,0.07)' }}
+          style={{ background: 'rgba(255,255,255,0.12)' }}
         >
           <Users className="w-5 h-5 text-white/70" />
           <span className="text-white font-semibold text-sm">My Referrals</span>
