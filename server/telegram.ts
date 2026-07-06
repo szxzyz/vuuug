@@ -2975,9 +2975,8 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     expiresAt,
   });
 
-  // Compute next promo interval
-  const count = amb.dailyPromoCount || 1;
-  const intervalMs = (24 / count) * 60 * 60 * 1000; // 24h, 12h, or 8h
+  // Fixed 4-hour interval between posts
+  const intervalMs = 4 * 60 * 60 * 1000;
   const nextPromoAt = new Date(Date.now() + intervalMs);
 
   // Update ambassador record
