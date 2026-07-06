@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
 import {
   CheckCircle2, XCircle, Loader2,
-  Scroll, Shield, AlertTriangle, Send, Info, UserCheck,
+  Scroll, AlertTriangle, Send, Info, UserCheck,
 } from "lucide-react";
 import {
   Drawer,
@@ -99,20 +99,6 @@ export default function Ambassador() {
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
     },
     onError: (e: any) => showNotification(e?.message || "Failed to submit request", "error"),
-  });
-
-  const verifyChannelMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/ambassador/verify-channel", {}),
-    onSuccess: (data: any) => {
-      if (data.verified) {
-        showNotification(data.message || "Channel verified!", "success");
-      } else {
-        showNotification(data.message || "Verification failed", "error");
-      }
-      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
-    },
-    onError: (e: any) => showNotification(e?.message || "Verification failed", "error"),
   });
 
   // ── How It Works Drawer ───────────────────────────────────────────────────
@@ -251,7 +237,6 @@ export default function Ambassador() {
   if (status?.isAmbassador && amb) {
     const promoPrefix = (amb.promoPrefix || amb.promoCodeName || "").toUpperCase();
     const totalEarnings = parseFloat(stats?.totalEarnings || "0");
-    const isVerified = amb.channelVerified;
 
     return (
       <Layout>
@@ -326,54 +311,6 @@ export default function Ambassador() {
                 <span className="text-white text-xl font-black">{stats?.todayClaims ?? 0}</span>
               )}
             </div>
-          </div>
-
-          {/* Channel Verification */}
-          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Setup</p>
-
-            {isVerified ? (
-              <div className="flex items-center gap-3 py-2">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ background: "rgba(34,197,94,0.15)" }}>
-                  <CheckCircle2 className="w-5 h-5 text-green-400" />
-                </div>
-                <div>
-                  <p className="text-white text-sm font-semibold">Channel Verified</p>
-                  <p className="text-[#888] text-xs mt-0.5">Auto-posting is enabled to your channel</p>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="rounded-xl p-3 mb-3" style={{ background: "rgba(234,179,8,0.08)" }}>
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-yellow-400 text-sm font-semibold">Bot Admin Required</p>
-                      <p className="text-[#888] text-xs mt-1 leading-relaxed">
-                        Add <span className="text-white font-semibold">@Paid_Adzbot</span> as an administrator in your channel with permission to <span className="text-white font-semibold">Post Messages</span>.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => verifyChannelMutation.mutate()}
-                  disabled={verifyChannelMutation.isPending}
-                  className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
-                  style={{ background: "rgba(59,130,246,0.18)", border: "1px solid rgba(59,130,246,0.3)" }}
-                >
-                  {verifyChannelMutation.isPending
-                    ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-                    : <Shield className="w-4 h-4 text-blue-400" />}
-                  <span className="text-blue-400 font-semibold text-sm">Verify Bot Permission</span>
-                </button>
-                {verifyChannelMutation.data && !(verifyChannelMutation.data as any).verified && (
-                  <p className="text-red-400 text-xs mt-2 text-center">
-                    {(verifyChannelMutation.data as any).message}
-                  </p>
-                )}
-              </>
-            )}
           </div>
 
           {/* Custom Promo Code */}
