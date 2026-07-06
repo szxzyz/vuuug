@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
 import {
-  Copy, Send, CheckCircle2, XCircle, Loader2,
-  Scroll, Shield, Zap, AlertTriangle, ExternalLink,
+  CheckCircle2, XCircle, Loader2,
+  Scroll, Shield, AlertTriangle, ExternalLink,
 } from "lucide-react";
 import {
   Drawer,
@@ -55,23 +54,11 @@ interface DashboardData {
 }
 
 export default function Ambassador() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [channelLink, setChannelLink] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [customPromoInput, setCustomPromoInput] = useState("");
-  const [promoSchedule, setPromoSchedule] = useState(1);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
-  const [verifyingChannel, setVerifyingChannel] = useState(false);
-  const [postingNow, setPostingNow] = useState(false);
-
-  const { data: botInfo } = useQuery<{ username: string }>({
-    queryKey: ["/api/bot-info"],
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-  });
-  const botUsername = botInfo?.username || import.meta.env.VITE_BOT_USERNAME || "PaidAdzbot";
 
   const { data: status, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
     queryKey: ["/api/ambassador/status"],
@@ -86,9 +73,6 @@ export default function Ambassador() {
 
   const amb = dashboard?.ambassador ?? status?.ambassador;
   const stats = dashboard?.stats;
-  const referralLink = user?.referralCode
-    ? `https://t.me/${botUsername}?start=${user.referralCode}`
-    : "";
 
   // Get latest active promo code
   const latestActiveCode = dashboard?.activePromos?.[0]?.code ?? "";
@@ -140,42 +124,10 @@ export default function Ambassador() {
     onError: (e: any) => showNotification(e?.message || "Verification failed", "error"),
   });
 
-  const postNowMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/ambassador/post-now", {}),
-    onSuccess: (data: any) => {
-      showNotification(data.message || `Code ${data.code} posted!`, "success");
-      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
-    },
-    onError: (e: any) => showNotification(e?.message || "Failed to post", "error"),
-  });
-
-  // ── Share promo post ─────────────────────────────────────────────────────────
-  const sharePromo = async () => {
-    if (!latestActiveCode) return;
-    setIsSharing(true);
-    try {
-      const shareText =
-        `🎉 Paid Adz Giveaway\n\n` +
-        `⚡ All Withdrawals are Instantly Paid Out\n\n` +
-        `👤 Only for the First 100 Active Users\n\n` +
-        `🤩 Promo Code: ${latestActiveCode}\n\n` +
-        `👀 Open Paid Adz & Claim Now!`;
-      const shareUrl = referralLink;
-      const tgWebApp = (window as any).Telegram?.WebApp;
-      const url = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
-      if (tgWebApp?.openTelegramLink) {
-        tgWebApp.openTelegramLink(url);
-      } else {
-        window.open(url, "_blank");
-      }
-    } catch (_) {}
-    setIsSharing(false);
-  };
-
-  const copyCode = () => {
-    if (!latestActiveCode) return;
-    navigator.clipboard.writeText(latestActiveCode);
-    showNotification("Promo code copied!", "success");
+  const cycleSchedule = () => {
+    const currentCount = (amb as any)?.dailyPromoCount ?? 1;
+    const next = (currentCount % 3) + 1;
+    scheduleMutation.mutate(next);
   };
 
   // ── Loading state ─────────────────────────────────────────────────────────
@@ -279,11 +231,7 @@ export default function Ambassador() {
   // ── Ambassador Dashboard ───────────────────────────────────────────────────
   if (status?.isAmbassador && amb) {
     const promoPrefix = (amb.promoPrefix || amb.promoCodeName || "").toUpperCase();
-    const nextPromoIn = amb.nextPromoAt
-      ? Math.max(0, Math.round((new Date(amb.nextPromoAt).getTime() - Date.now()) / 60000))
-      : null;
     const totalEarnings = parseFloat(stats?.totalEarnings || "0");
-    const todayEarnings = parseFloat(stats?.todayEarnings || "0");
     const isVerified = amb.channelVerified;
     const scheduleCount = amb.dailyPromoCount || 1;
 
@@ -303,47 +251,39 @@ export default function Ambassador() {
             </p>
           </div>
 
-          {/* Share + Copy row */}
+          {/* Claim History + Schedule row */}
           <div className="mb-4 flex items-center gap-3">
             <button
-              onClick={sharePromo}
-              disabled={isSharing || !latestActiveCode}
-              className="flex-1 h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform disabled:opacity-50"
+              onClick={() => setHistoryOpen(true)}
+              className="flex-1 h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform"
               style={{ background: "rgba(255,255,255,0.12)" }}
             >
-              <Send className="w-5 h-5 text-white/70" />
-              <span className="text-white font-bold tracking-widest text-sm">
-                {latestActiveCode ? "Share Promo Post" : "No Active Code"}
-              </span>
+              <Scroll className="w-5 h-5 text-white/70" />
+              <span className="text-white font-bold tracking-widest text-sm">Claim History</span>
             </button>
 
             <button
-              onClick={copyCode}
-              disabled={!latestActiveCode}
+              onClick={cycleSchedule}
+              disabled={scheduleMutation.isPending}
               className="w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 flex-shrink-0"
-              style={{ background: "rgba(255,255,255,0.12)" }}
-              title="Copy promo code"
+              style={{
+                background: "rgba(59,130,246,0.18)",
+                border: "1px solid rgba(59,130,246,0.3)",
+              }}
+              title="Posting frequency"
             >
-              <Copy className="w-5 h-5 text-white/70" />
+              {scheduleMutation.isPending
+                ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                : <span className="text-blue-400 font-bold text-sm">{scheduleCount}x</span>}
             </button>
           </div>
 
           {/* Active promo code display */}
           {latestActiveCode && (
-            <div className="mb-4 rounded-2xl px-4 py-3 flex items-center justify-between"
+            <div className="mb-4 rounded-2xl px-4 py-3"
               style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.2)" }}>
-              <div>
-                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-0.5">Active Promo Code</p>
-                <p className="text-white font-black text-lg tracking-widest">{latestActiveCode}</p>
-              </div>
-              {nextPromoIn !== null && (
-                <div className="text-right">
-                  <p className="text-[#888] text-[11px] uppercase tracking-wider">Next in</p>
-                  <p className="text-blue-400 font-bold text-sm">
-                    {nextPromoIn < 60 ? `${nextPromoIn}m` : `${Math.floor(nextPromoIn / 60)}h`}
-                  </p>
-                </div>
-              )}
+              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-0.5">Active Promo Code</p>
+              <p className="text-white font-black text-lg tracking-widest">{latestActiveCode}</p>
             </div>
           )}
 
@@ -404,16 +344,6 @@ export default function Ambassador() {
             </div>
           </div>
 
-          {/* Claim History button */}
-          <button
-            onClick={() => setHistoryOpen(true)}
-            className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
-            style={{ background: "rgba(255,255,255,0.12)" }}
-          >
-            <Scroll className="w-5 h-5 text-white/70" />
-            <span className="text-white font-semibold text-sm">📜 Claim History</span>
-          </button>
-
           {/* Channel Verification */}
           <div className="rounded-2xl p-4 mb-3">
             <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Setup</p>
@@ -437,7 +367,7 @@ export default function Ambassador() {
                     <div>
                       <p className="text-yellow-400 text-sm font-semibold">Bot Admin Required</p>
                       <p className="text-[#888] text-xs mt-1 leading-relaxed">
-                        Add <span className="text-white font-semibold">@PaidAdzbot</span> as an administrator in your channel with permission to <span className="text-white font-semibold">Post Messages</span>.
+                        Add <span className="text-white font-semibold">@Paid_Adzbot</span> as an administrator in your channel with permission to <span className="text-white font-semibold">Post Messages</span>.
                       </p>
                     </div>
                   </div>
@@ -460,47 +390,6 @@ export default function Ambassador() {
                 )}
               </>
             )}
-          </div>
-
-          {/* Post Schedule + Post Now */}
-          <div className="rounded-2xl p-4 mb-3">
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Posting Schedule</p>
-
-            <div className="flex gap-2 mb-4">
-              {[1, 2, 3].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => {
-                    setPromoSchedule(n);
-                    scheduleMutation.mutate(n);
-                  }}
-                  className="flex-1 h-10 rounded-xl flex flex-col items-center justify-center active:scale-95 transition-all"
-                  style={{
-                    background: scheduleCount === n ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.08)",
-                    border: scheduleCount === n ? "1px solid rgba(59,130,246,0.5)" : "1px solid transparent",
-                  }}
-                >
-                  <span className={`text-sm font-bold ${scheduleCount === n ? "text-blue-400" : "text-white/60"}`}>{n}x</span>
-                  <span className={`text-[10px] ${scheduleCount === n ? "text-blue-300/70" : "text-white/30"}`}>
-                    {n === 1 ? "daily" : n === 2 ? "12h" : "8h"}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={() => postNowMutation.mutate()}
-              disabled={postNowMutation.isPending}
-              className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
-              style={{ background: "rgba(59,130,246,0.18)", border: "1px solid rgba(59,130,246,0.3)" }}
-            >
-              {postNowMutation.isPending
-                ? <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                : <Zap className="w-5 h-5 text-blue-400" />}
-              <span className="text-blue-400 font-bold text-sm">
-                {postNowMutation.isPending ? "Posting…" : "⚡ Post Now"}
-              </span>
-            </button>
           </div>
 
           {/* Custom Promo Code */}
@@ -565,7 +454,7 @@ export default function Ambassador() {
         <Drawer open={historyOpen} onOpenChange={setHistoryOpen}>
           <DrawerContent className="bg-[#111] border-none max-h-[80vh]">
             <DrawerHeader className="flex items-center justify-between pb-2">
-              <DrawerTitle className="text-white font-bold text-lg">📜 Claim History</DrawerTitle>
+              <DrawerTitle className="text-white font-bold text-lg">Claim History</DrawerTitle>
               <DrawerClose asChild>
                 <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
                   Close
@@ -663,7 +552,7 @@ export default function Ambassador() {
               style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>2</div>
             <div>
               <p className="text-white text-sm font-semibold">Add bot as admin</p>
-              <p className="text-[#888] text-xs mt-0.5">Grant <span className="text-white">@PaidAdzbot</span> posting permission</p>
+              <p className="text-[#888] text-xs mt-0.5">Grant <span className="text-white">@Paid_Adzbot</span> posting permission</p>
             </div>
           </div>
 
@@ -739,7 +628,7 @@ export default function Ambassador() {
         <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.04)" }}>
           <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-2">Requirements</p>
           <div className="space-y-1.5">
-            {["Active Telegram channel", "Add @PaidAdzbot as admin", "Permission to post messages", "Genuine followers (no bots)"].map((req, i) => (
+            {["Active Telegram channel", "Add @Paid_Adzbot as admin", "Permission to post messages", "Genuine followers (no bots)"].map((req, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400/50 flex-shrink-0" />
                 <span className="text-[#888] text-xs">{req}</span>
