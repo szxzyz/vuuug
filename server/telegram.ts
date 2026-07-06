@@ -2962,7 +2962,7 @@ function randomSuffix(len = 4): string {
  * Generate a unique promo code for an ambassador (prefix + random suffix).
  * Returns the created code string.
  */
-export async function generateUniqueAmbassadorCode(prefix: string): Promise<string> {
+export async function generateUniqueAmbassadorCode(prefix: string, exclude: Set<string> = new Set()): Promise<string> {
   const { db: dbConn } = await import('./db');
   const { promoCodes } = await import('../shared/schema');
   const { eq } = await import('drizzle-orm');
@@ -2970,13 +2970,16 @@ export async function generateUniqueAmbassadorCode(prefix: string): Promise<stri
   let attempts = 0;
   while (attempts < 20) {
     const candidate = `${prefix.toUpperCase()}${randomSuffix()}`;
+    if (exclude.has(candidate)) { attempts++; continue; }
     const [existing] = await dbConn.select({ id: promoCodes.id }).from(promoCodes)
       .where(eq(promoCodes.code, candidate)).limit(1);
     if (!existing) return candidate;
     attempts++;
   }
-  // Fallback: longer suffix
-  return `${prefix.toUpperCase()}${randomSuffix(6)}`;
+  // Fallback: longer suffix with exclusion check
+  let fallback = `${prefix.toUpperCase()}${randomSuffix(6)}`;
+  while (exclude.has(fallback)) fallback = `${prefix.toUpperCase()}${randomSuffix(6)}`;
+  return fallback;
 }
 
 /**
@@ -3014,11 +3017,10 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
       }).where(eq(ambassadors.id, amb.id));
       // Notify ambassador
       if (user?.telegram_id) {
-        await sendTelegramMessage(user.telegram_id,
+        await sendUserTelegramNotification(user.telegram_id,
           `<b>Posting Paused</b>\n\n` +
           `The bot no longer has permission to post to your channel.\n\n` +
-          `Please re-add <b>@Paid_Adzbot</b> as an administrator with <b>Post Messages</b> permission to resume auto-posting.`,
-          { parse_mode: 'HTML' }
+          `Please re-add <b>@Paid_Adzbot</b> as an administrator with <b>Post Messages</b> permission to resume auto-posting.`
         ).catch(() => {});
       }
       return null;
@@ -3030,25 +3032,24 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     }
   }
 
-  // ── Generate promo code ───────────────────────────────────────────────────
+  // ── Generate 2 promo codes ────────────────────────────────────────────────
   const [rewardSetting] = await dbConn.select({ v: adminSettings.settingValue })
     .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
   const rewardAmount = rewardSetting?.v || '10000';
 
   const prefix = (amb.promoPrefix || amb.promoCodeName).toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const uniqueCode = await generateUniqueAmbassadorCode(prefix);
+  const uniqueCode1 = await generateUniqueAmbassadorCode(prefix);
+  // Generate second code with in-memory exclusion of the first to prevent collisions
+  const uniqueCode2 = await generateUniqueAmbassadorCode(prefix, new Set([uniqueCode1]));
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 h
 
-  // 100-claim limit OR 24 h, whichever hits first
-  await dbConn.insert(promoCodes).values({
-    code: uniqueCode,
-    rewardAmount,
-    rewardType: 'PAD',
-    usageLimit: 100,
-    perUserLimit: 1,
-    isActive: true,
-    expiresAt,
-  });
+  // 100-claim limit OR 24 h, whichever hits first — insert both codes
+  await dbConn.insert(promoCodes).values([
+    { code: uniqueCode1, rewardAmount, rewardType: 'PAD', usageLimit: 100, perUserLimit: 1, isActive: true, expiresAt },
+    { code: uniqueCode2, rewardAmount, rewardType: 'PAD', usageLimit: 100, perUserLimit: 1, isActive: true, expiresAt },
+  ]);
+  // Keep uniqueCode as first code for DM summary
+  const uniqueCode = uniqueCode1;
 
   // ── Build message ─────────────────────────────────────────────────────────
   const botUsername = process.env.BOT_USERNAME || 'Paid_Adzbot';
@@ -3057,15 +3058,16 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     : `https://t.me/${botUsername}/MyWAdz`;
 
   const postText =
-    `<tg-emoji emoji-id="5841700171657779627">💸</tg-emoji> <b>Paid Adz Giveaway is LIVE!</b>\n\n` +
-    `<tg-emoji emoji-id="5319070993254201336">⚡️</tg-emoji> Instant Withdrawals\n` +
-    `<tg-emoji emoji-id="5258011929993026890">👤</tg-emoji> First 100 Active Users Only\n\n` +
-    `<tg-emoji emoji-id="5357592164090028726">🎟</tg-emoji> Code: <code>${uniqueCode}</code>\n\n` +
-    `<tg-emoji emoji-id="5997099132173424576">🚀</tg-emoji> Open Paid Adz and claim your reward now before it's gone!`;
+    `<tg-emoji emoji-id="5841700171657779627">💸</tg-emoji> <b>Paid Adz Promo Code is LIVE!</b>\n\n` +
+    `<tg-emoji emoji-id="5258011929993026890">👤</tg-emoji> <b>First 100 Active Users Only</b>\n\n` +
+    `<tg-emoji emoji-id="5884147165940421826">🎁</tg-emoji> <b>Reward:</b> 10,000 POW\n\n` +
+    `<tg-emoji emoji-id="5357592164090028726">🎟</tg-emoji> <b>Code:</b> <code>${uniqueCode1}</code>\n` +
+    `<tg-emoji emoji-id="5357592164090028726">🎟</tg-emoji> <b>Code:</b> <code>${uniqueCode2}</code>\n\n` +
+    `<tg-emoji emoji-id="5997099132173424576">🚀</tg-emoji> <b>Open Paid Adz and claim your reward now before it's gone!</b>`;
 
   const inlineKeyboard = {
     inline_keyboard: [[
-      { text: 'Open Paid Adz', url: referralLink },
+      { text: '👉🏻 Click here to claim 👈🏻', url: referralLink },
     ]],
   };
 
@@ -3093,23 +3095,22 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     }
   }
 
-  // ── Advance schedule: next post in 4 hours ────────────────────────────────
+  // ── Advance schedule: next post in 12 hours (2 posts per day) ───────────
   await dbConn.update(ambassadors).set({
     lastPromoSentAt: new Date(),
-    nextPromoAt: new Date(Date.now() + 4 * 60 * 60 * 1000),
+    nextPromoAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
     updatedAt: new Date(),
   }).where(eq(ambassadors.id, amb.id));
 
   // ── DM ambassador ─────────────────────────────────────────────────────────
   if (user?.telegram_id) {
-    await sendTelegramMessage(user.telegram_id,
+    await sendUserTelegramNotification(user.telegram_id,
       `<tg-emoji emoji-id="5841700171657779627">💸</tg-emoji> <b>Promo Post is Live!</b>\n\n` +
-      `Code: <code>${uniqueCode}</code>\n` +
-      `Expires: 24 hours · Max claims: 100\n\n` +
+      `Codes: <code>${uniqueCode1}</code> &amp; <code>${uniqueCode2}</code>\n` +
+      `Expires: 24 hours · Max claims: 100 each\n\n` +
       (postedToChannel
         ? `Posted to your channel automatically.`
-        : `Share this with your followers:\n\n${postText}`),
-      { parse_mode: 'HTML' }
+        : `Share this with your followers:\n\n${postText}`)
     ).catch(() => {});
   }
 

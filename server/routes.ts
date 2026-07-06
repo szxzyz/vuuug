@@ -8694,10 +8694,14 @@ ${walletAddress}
         .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_program_enabled')).limit(1);
       if (programSetting?.settingValue === 'false') return;
 
-      // Find ambassador by promo code name (case-insensitive)
-      const [ambassador] = await db.select().from(ambassadors)
-        .where(sql`UPPER(${ambassadors.promoCodeName}) = ${code.toUpperCase()}`)
-        .limit(1);
+      // Find ambassador whose promo prefix is the start of this code — pick longest match to avoid prefix-overlap ambiguity
+      const allMatchingAmbs = await db.select().from(ambassadors)
+        .where(sql`${code.toUpperCase()} LIKE UPPER(COALESCE(${ambassadors.promoPrefix}, ${ambassadors.promoCodeName})) || '%'`);
+      const [ambassador] = allMatchingAmbs.sort((a, b) => {
+        const lenA = (a.promoPrefix || a.promoCodeName || '').length;
+        const lenB = (b.promoPrefix || b.promoCodeName || '').length;
+        return lenB - lenA; // longest prefix first
+      });
       if (!ambassador || ambassador.status !== 'active') return;
 
       // Get commission rate from admin settings
@@ -10805,18 +10809,65 @@ ${walletAddress}
       const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
       if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
 
-      // Get recent promo history (earnings) with claim user username
-      const history = await db.select({
+      // Get recent promo history (individual earnings) with claim user info
+      const historyRows = await db.select({
         id: ambassadorEarnings.id,
         promoCode: ambassadorEarnings.promoCode,
         commissionUsd: ambassadorEarnings.commissionUsd,
         createdAt: ambassadorEarnings.createdAt,
         claimUserUsername: users.username,
+        claimUserFirstName: users.firstName,
       }).from(ambassadorEarnings)
         .leftJoin(users, eq(ambassadorEarnings.claimUserId, users.id))
         .where(eq(ambassadorEarnings.ambassadorId, ambassador.id))
         .orderBy(desc(ambassadorEarnings.createdAt))
+        .limit(200);
+
+      // Get all promo codes for this ambassador (by prefix) with usage counts
+      const prefix2 = (ambassador.promoPrefix || ambassador.promoCodeName).toUpperCase();
+      const allAmbassadorCodes = await db.select().from(promoCodes)
+        .where(sql`UPPER(${promoCodes.code}) LIKE ${prefix2 + '%'}`)
+        .orderBy(desc(promoCodes.createdAt))
         .limit(50);
+
+      // Build grouped per-promo-code history
+      const claimsByCode: Record<string, typeof historyRows> = {};
+      for (const row of historyRows) {
+        if (!claimsByCode[row.promoCode]) claimsByCode[row.promoCode] = [];
+        claimsByCode[row.promoCode].push(row);
+      }
+
+      const promoCodeHistory = allAmbassadorCodes.map(pc => {
+        const claims = claimsByCode[pc.code] || [];
+        const totalEarnings = claims.reduce((sum, c) => sum + parseFloat(c.commissionUsd || '0'), 0);
+        const isExpired = pc.expiresAt ? new Date(pc.expiresAt) < new Date() : false;
+        const status = (!pc.isActive || isExpired) ? 'expired' : 'active';
+        return {
+          promoCode: pc.code,
+          totalClaims: claims.length,
+          totalEarnings: totalEarnings.toFixed(4),
+          createdAt: pc.createdAt,
+          expiresAt: pc.expiresAt,
+          rewardAmount: pc.rewardAmount,
+          status,
+          claims: claims.map(c => ({
+            id: c.id,
+            username: c.claimUserUsername || null,
+            firstName: c.claimUserFirstName || null,
+            claimedAt: c.createdAt,
+            rewardGranted: pc.rewardAmount || '10000',
+          })),
+        };
+      });
+
+      // Keep flat history for backward compat
+      const history = historyRows.slice(0, 50).map(r => ({
+        id: r.id,
+        promoCode: r.promoCode,
+        commissionUsd: r.commissionUsd,
+        createdAt: r.createdAt,
+        claimUserUsername: r.claimUserUsername,
+      }));
 
       // Get today/week/month claims from earnings table
       const now = new Date();
@@ -10853,6 +10904,7 @@ ${walletAddress}
           totalEarnings: ambassador.totalEarningsUsd || '0',
         },
         promoHistory: history,
+        promoCodeHistory,
         activePromos,
       });
     } catch (error) {
@@ -11137,13 +11189,23 @@ ${walletAddress}
           await sendTelegramMessage(user.telegram_id,
             `<b>Congratulations! You're now a Paid Adz Ambassador!</b>\n\n` +
             `Your promo code prefix: <b>${promoCodeName}</b>\n\n` +
-            `Your first promo post will go out in <b>1 minute</b>. After that, a new post will be published automatically every <b>4 hours</b>.\n\n` +
-            `Every time someone claims your code, you earn <b>$0.0001</b>!\n\n` +
+            `Your first promo post will go out shortly. After that, a new post will be published automatically every <b>12 hours</b> (2 posts per day).\n\n` +
+            `Every time someone claims your code, they receive <b>10,000 POW</b> and you earn <b>$0.0001</b>!\n\n` +
             `Open the app to view your Ambassador Dashboard.`,
             { parse_mode: 'HTML' }
           );
         }
       } catch (_) {}
+
+      // Fire first promo post immediately (async — don't block the response)
+      setTimeout(async () => {
+        try {
+          const { sendAmbassadorPromo } = await import('./telegram');
+          await sendAmbassadorPromo(ambassador.id);
+        } catch (err) {
+          console.error('First promo post error for new ambassador:', err);
+        }
+      }, 5_000);
 
       res.json({ success: true, ambassador });
     } catch (error) {
