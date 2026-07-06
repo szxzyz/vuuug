@@ -89,6 +89,8 @@ export default function Layout({ children }: LayoutProps) {
   const handlePlusClick = () => {
     if (isAdmin) {
       setPanelOpen((prev) => !prev);
+    } else {
+      navigate("/ambassador");
     }
   };
 
@@ -211,8 +213,8 @@ export default function Layout({ children }: LayoutProps) {
             })}
           </nav>
 
-          {/* Floating "+" circular button — only shown for admins */}
-          {isAdmin && (
+          {/* Floating "+" circular button — shown for all users */}
+          {(
             <motion.button
               onClick={handlePlusClick}
               whileTap={{ scale: 0.88 }}
