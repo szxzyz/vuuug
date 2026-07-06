@@ -5,20 +5,26 @@ import Layout from "@/components/Layout";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
 import {
-  Award, TrendingUp, Copy, Clock, BarChart2,
-  CheckCircle2, XCircle, Loader2, Star, Send,
-  Users, DollarSign, Calendar, Settings
+  Copy, Send, CheckCircle2, XCircle, Loader2,
+  Scroll, Shield, Zap, AlertTriangle, ExternalLink,
 } from "lucide-react";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerClose,
+} from "@/components/ui/drawer";
+import { Badge } from "@/components/ui/badge";
 
-// ── Design tokens (matches Missions/Home) ─────────────────────────────────────
-const BLUE   = "#3b82f6";
-const BLUE_D = "#2563eb";
-const TEXT   = "#fff";
-const TEXT_DIM  = "rgba(255,255,255,0.35)";
-const TEXT_FAINT = "rgba(255,255,255,0.22)";
-const CARD   = "rgba(255,255,255,0.07)";
-const DIVIDER = "rgba(255,255,255,0.05)";
-const ACCENT = "#3b82f6";
+function StatSkeleton() {
+  return (
+    <div style={{
+      height: 22, width: 52, background: "rgba(255,255,255,0.08)",
+      borderRadius: 6, display: "inline-block", animation: "pulse 1.5s ease-in-out infinite",
+    }} />
+  );
+}
 
 interface AmbassadorStatus {
   isAmbassador: boolean;
@@ -43,34 +49,9 @@ interface DashboardData {
     promoCode: string;
     commissionUsd: string;
     createdAt: string;
+    claimUserUsername?: string;
   }>;
   activePromos: any[];
-}
-
-function SectionLabel({ title }: { title: string }) {
-  return (
-    <div style={{ marginBottom: 10, marginTop: 6 }}>
-      <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,0.28)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-        {title}
-      </span>
-    </div>
-  );
-}
-
-function StatRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px" }}>
-      <span style={{ color: TEXT_DIM, fontSize: 13 }}>{label}</span>
-      <div style={{ textAlign: "right" }}>
-        <span style={{ color: TEXT, fontSize: 14, fontWeight: 700 }}>{value}</span>
-        {sub && <div style={{ color: TEXT_FAINT, fontSize: 11, marginTop: 1 }}>{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-function Divider() {
-  return <div style={{ height: 1, background: DIVIDER, margin: "0 16px" }} />;
 }
 
 export default function Ambassador() {
@@ -78,332 +59,571 @@ export default function Ambassador() {
   const queryClient = useQueryClient();
   const [channelLink, setChannelLink] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [customPromoName, setCustomPromoName] = useState("");
-  const [showPromoRequest, setShowPromoRequest] = useState(false);
+  const [customPromoInput, setCustomPromoInput] = useState("");
+  const [promoSchedule, setPromoSchedule] = useState(1);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [verifyingChannel, setVerifyingChannel] = useState(false);
+  const [postingNow, setPostingNow] = useState(false);
 
-  const { data: statusData, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
+  const { data: botInfo } = useQuery<{ username: string }>({
+    queryKey: ["/api/bot-info"],
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const botUsername = botInfo?.username || import.meta.env.VITE_BOT_USERNAME || "PaidAdzbot";
+
+  const { data: status, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
     queryKey: ["/api/ambassador/status"],
     retry: false,
   });
 
-  const { data: dashboard } = useQuery<DashboardData>({
+  const { data: dashboard, isLoading: dashLoading } = useQuery<DashboardData>({
     queryKey: ["/api/ambassador/dashboard"],
-    enabled: statusData?.isAmbassador === true,
-    refetchInterval: 30000,
+    retry: false,
+    enabled: status?.isAmbassador === true,
   });
 
+  const amb = dashboard?.ambassador ?? status?.ambassador;
+  const stats = dashboard?.stats;
+  const referralLink = user?.referralCode
+    ? `https://t.me/${botUsername}?start=${user.referralCode}`
+    : "";
+
+  // Get latest active promo code
+  const latestActiveCode = dashboard?.activePromos?.[0]?.code ?? "";
+
+  // ── Mutations ────────────────────────────────────────────────────────────────
+
   const applyMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/ambassador/apply", { channelLink, termsAccepted }).then(r => r.json()),
-    onSuccess: (data) => {
-      if (data.success) {
-        showNotification("Application submitted! We'll review it shortly.", "success");
-        queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
-      } else {
-        showNotification(data.message || "Failed to submit application", "error");
-      }
+    mutationFn: (data: { channelLink: string; termsAccepted: boolean }) =>
+      apiRequest("POST", "/api/ambassador/apply", data),
+    onSuccess: () => {
+      showNotification("Application submitted! We'll review it soon.", "success");
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
     },
-    onError: () => showNotification("Failed to submit application", "error"),
+    onError: (e: any) => showNotification(e?.message || "Failed to submit application", "error"),
   });
 
   const scheduleMutation = useMutation({
-    mutationFn: (count: number) => apiRequest("POST", "/api/ambassador/schedule", { dailyPromoCount: count }).then(r => r.json()),
-    onSuccess: () => {
-      showNotification("Schedule updated!", "success");
+    mutationFn: (dailyPromoCount: number) =>
+      apiRequest("POST", "/api/ambassador/schedule", { dailyPromoCount }),
+    onSuccess: (_, count) => {
+      showNotification(`Schedule updated: ${count}x per day`, "success");
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
     },
+    onError: (e: any) => showNotification(e?.message || "Failed to update schedule", "error"),
   });
 
-  const promoRequestMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/ambassador/request-promo-name", { promoCodeName: customPromoName }).then(r => r.json()),
-    onSuccess: (data) => {
-      if (data.success) {
-        showNotification("Request submitted for admin review!", "success");
-        setShowPromoRequest(false);
-        setCustomPromoName("");
-        queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
-      } else {
-        showNotification(data.message || "Failed to submit request", "error");
-      }
+  const promoNameMutation = useMutation({
+    mutationFn: (promoCodeName: string) =>
+      apiRequest("POST", "/api/ambassador/request-promo-name", { promoCodeName }),
+    onSuccess: () => {
+      showNotification("Custom name request submitted for review!", "success");
+      setCustomPromoInput("");
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
     },
+    onError: (e: any) => showNotification(e?.message || "Failed to submit request", "error"),
   });
 
-  const copyCode = (code: string) => {
-    navigator.clipboard.writeText(code).then(() => showNotification("Code copied!", "success")).catch(() => {});
+  const verifyChannelMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/ambassador/verify-channel", {}),
+    onSuccess: (data: any) => {
+      if (data.verified) {
+        showNotification(data.message || "Channel verified!", "success");
+      } else {
+        showNotification(data.message || "Verification failed", "error");
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
+    },
+    onError: (e: any) => showNotification(e?.message || "Verification failed", "error"),
+  });
+
+  const postNowMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/ambassador/post-now", {}),
+    onSuccess: (data: any) => {
+      showNotification(data.message || `Code ${data.code} posted!`, "success");
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
+    },
+    onError: (e: any) => showNotification(e?.message || "Failed to post", "error"),
+  });
+
+  // ── Share promo post ─────────────────────────────────────────────────────────
+  const sharePromo = async () => {
+    if (!latestActiveCode) return;
+    setIsSharing(true);
+    try {
+      const shareText =
+        `🎉 Paid Adz Giveaway\n\n` +
+        `⚡ All Withdrawals are Instantly Paid Out\n\n` +
+        `👤 Only for the First 100 Active Users\n\n` +
+        `🤩 Promo Code: ${latestActiveCode}\n\n` +
+        `👀 Open Paid Adz & Claim Now!`;
+      const shareUrl = referralLink;
+      const tgWebApp = (window as any).Telegram?.WebApp;
+      const url = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
+      if (tgWebApp?.openTelegramLink) {
+        tgWebApp.openTelegramLink(url);
+      } else {
+        window.open(url, "_blank");
+      }
+    } catch (_) {}
+    setIsSharing(false);
   };
 
+  const copyCode = () => {
+    if (!latestActiveCode) return;
+    navigator.clipboard.writeText(latestActiveCode);
+    showNotification("Promo code copied!", "success");
+  };
+
+  // ── Loading state ─────────────────────────────────────────────────────────
   if (statusLoading) {
     return (
       <Layout>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-          <Loader2 style={{ width: 22, height: 22, color: BLUE, animation: "spin 1s linear infinite" }} />
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
+        <main className="max-w-md mx-auto px-4 pt-4 bg-black">
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 text-white/30 animate-spin" />
+          </div>
+        </main>
+      </Layout>
+    );
+  }
+
+  // ── Pending state ─────────────────────────────────────────────────────────
+  if (status?.application?.status === "pending" && !status?.isAmbassador) {
+    return (
+      <Layout>
+        <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
+          <div className="mb-6">
+            <h1 className="text-2xl font-black text-white tracking-tight mb-2">
+              Under Review
+            </h1>
+            <p className="text-[#888] text-sm leading-relaxed">
+              Your application is being reviewed. We'll notify you via{" "}
+              <span className="text-white font-semibold">Telegram</span> once a decision is made.
+            </p>
+          </div>
+
+          <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.07)" }}>
+            <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Channel</p>
+              <p className="text-white text-sm font-medium">{status.application.channelLink}</p>
+            </div>
+            {status.application.channelTitle && (
+              <div className="flex items-center justify-between py-2 border-b border-white/5">
+                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Title</p>
+                <p className="text-white text-sm font-medium">{status.application.channelTitle}</p>
+              </div>
+            )}
+            {status.application.subscriberCount && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Subscribers</p>
+                <p className="text-white text-sm font-medium">{status.application.subscriberCount.toLocaleString()}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 rounded-2xl p-4 flex items-center gap-3" style={{ background: "rgba(234,179,8,0.08)" }}>
+            <Loader2 className="w-5 h-5 text-yellow-400 animate-spin flex-shrink-0" />
+            <p className="text-yellow-400 text-sm font-medium">Review in progress — typically within 24 hours</p>
+          </div>
+        </main>
+      </Layout>
+    );
+  }
+
+  // ── Rejected state ─────────────────────────────────────────────────────────
+  if (status?.application?.status === "rejected" && !status?.isAmbassador) {
+    return (
+      <Layout>
+        <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
+          <div className="mb-6">
+            <h1 className="text-2xl font-black text-white tracking-tight mb-2">
+              Not Approved
+            </h1>
+            <p className="text-[#888] text-sm leading-relaxed">
+              {status.application.rejectionReason
+                ? <><span className="text-white font-semibold">Reason: </span>{status.application.rejectionReason}</>
+                : "Your application was not approved at this time. You may reapply."}
+            </p>
+          </div>
+
+          <div className="rounded-2xl p-4 mb-4" style={{ background: "rgba(239,68,68,0.08)" }}>
+            <div className="flex items-center gap-3">
+              <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+              <p className="text-red-400 text-sm font-medium">Application rejected</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setChannelLink("");
+              setTermsAccepted(false);
+              queryClient.setQueryData(["/api/ambassador/status"], (old: any) => ({
+                ...old,
+                application: null,
+              }));
+            }}
+            className="w-full h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-transform"
+            style={{ background: "rgba(255,255,255,0.12)" }}
+          >
+            <span className="text-white font-semibold text-sm">Apply Again</span>
+          </button>
+        </main>
       </Layout>
     );
   }
 
   // ── Ambassador Dashboard ───────────────────────────────────────────────────
-  if (statusData?.isAmbassador && dashboard?.ambassador) {
-    const amb = dashboard.ambassador;
-    const stats = dashboard.stats;
-    const currentSchedule = amb.dailyPromoCount || 1;
+  if (status?.isAmbassador && amb) {
+    const promoPrefix = (amb.promoPrefix || amb.promoCodeName || "").toUpperCase();
+    const nextPromoIn = amb.nextPromoAt
+      ? Math.max(0, Math.round((new Date(amb.nextPromoAt).getTime() - Date.now()) / 60000))
+      : null;
+    const totalEarnings = parseFloat(stats?.totalEarnings || "0");
+    const todayEarnings = parseFloat(stats?.todayEarnings || "0");
+    const isVerified = amb.channelVerified;
+    const scheduleCount = amb.dailyPromoCount || 1;
 
     return (
       <Layout>
-        <div style={{ background: "#000", minHeight: "100vh", paddingBottom: 100, color: TEXT }}>
-          <div style={{ maxWidth: 440, margin: "0 auto", padding: "16px 16px 0" }}>
+        <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
 
-            {/* Header */}
-            <div style={{ marginBottom: 20 }}>
-              <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-                Ambassador Dashboard
-              </h1>
-              <p className="text-[#888] text-sm leading-relaxed">
-                Your promo code is{" "}
-                <span className="text-white font-semibold">{amb.promoCodeName}</span>.{" "}
-                Earn <span className="text-white font-semibold">$0.0001</span> for every successful claim.
-              </p>
-            </div>
+          {/* Header */}
+          <div className="mb-6">
+            <h1 className="text-2xl font-black text-white tracking-tight mb-2">
+              Ambassador Dashboard
+            </h1>
+            <p className="text-[#888] text-sm leading-relaxed">
+              Your code prefix is{" "}
+              <span className="text-white font-semibold">{promoPrefix}</span>.
+              Earn <span className="text-white font-semibold">$0.0001</span> for every claim.
+            </p>
+          </div>
 
-            {/* Promo Code Banner */}
-            <div style={{ background: `linear-gradient(135deg, ${BLUE}18, rgba(167,139,250,0.1))`, borderRadius: 18, padding: "18px 18px", marginBottom: 20 }}>
-              <div style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
-                Your Promo Code
+          {/* Share + Copy row */}
+          <div className="mb-4 flex items-center gap-3">
+            <button
+              onClick={sharePromo}
+              disabled={isSharing || !latestActiveCode}
+              className="flex-1 h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform disabled:opacity-50"
+              style={{ background: "rgba(255,255,255,0.12)" }}
+            >
+              <Send className="w-5 h-5 text-white/70" />
+              <span className="text-white font-bold tracking-widest text-sm">
+                {latestActiveCode ? "Share Promo Post" : "No Active Code"}
+              </span>
+            </button>
+
+            <button
+              onClick={copyCode}
+              disabled={!latestActiveCode}
+              className="w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 flex-shrink-0"
+              style={{ background: "rgba(255,255,255,0.12)" }}
+              title="Copy promo code"
+            >
+              <Copy className="w-5 h-5 text-white/70" />
+            </button>
+          </div>
+
+          {/* Active promo code display */}
+          {latestActiveCode && (
+            <div className="mb-4 rounded-2xl px-4 py-3 flex items-center justify-between"
+              style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.2)" }}>
+              <div>
+                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-0.5">Active Promo Code</p>
+                <p className="text-white font-black text-lg tracking-widest">{latestActiveCode}</p>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 26, fontWeight: 900, color: BLUE, fontFamily: "monospace", letterSpacing: "0.1em" }}>
-                  {amb.promoCodeName}
+              {nextPromoIn !== null && (
+                <div className="text-right">
+                  <p className="text-[#888] text-[11px] uppercase tracking-wider">Next in</p>
+                  <p className="text-blue-400 font-bold text-sm">
+                    {nextPromoIn < 60 ? `${nextPromoIn}m` : `${Math.floor(nextPromoIn / 60)}h`}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Statistics */}
+          <div className="rounded-2xl p-4 mb-3">
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Statistics</p>
+
+            <div className="flex items-center justify-between py-3 border-b border-white/5">
+              <div>
+                <p className="text-white text-sm font-semibold">Total Promo Earnings</p>
+                <p className="text-[#888] text-xs mt-0.5">All-time commissions earned</p>
+              </div>
+              {dashLoading ? <StatSkeleton /> : (
+                <span className="text-green-400 text-lg font-black">
+                  ${totalEarnings > 0 ? totalEarnings.toFixed(4) : "0.0000"}
                 </span>
-                <button
-                  onClick={() => copyCode(amb.promoCodeName)}
-                  style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                >
-                  <Copy style={{ width: 15, height: 15, color: TEXT_DIM }} />
-                </button>
-              </div>
-              {amb.customPromoRequestStatus === "pending" && (
-                <div style={{ color: "#fbbf24", fontSize: 11, marginTop: 8 }}>⏳ Custom name request pending review</div>
-              )}
-              {amb.lastPromoSentAt && (
-                <div style={{ color: TEXT_FAINT, fontSize: 11, marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
-                  <Clock style={{ width: 11, height: 11 }} />
-                  Last sent: {new Date(amb.lastPromoSentAt).toLocaleDateString()}
-                </div>
               )}
             </div>
 
-            {/* Stats */}
-            <SectionLabel title="Stats" />
-            <div style={{ background: CARD, borderRadius: 16, overflow: "hidden", marginBottom: 20 }}>
-              <StatRow label="Today's Claims" value={String(stats.todayClaims)} />
-              <Divider />
-              <StatRow label="Today's Earnings" value={`$${parseFloat(stats.todayEarnings || "0").toFixed(4)}`} />
-              <Divider />
-              <StatRow label="This Week" value={String(stats.weekClaims)} sub="claims" />
-              <Divider />
-              <StatRow label="This Month" value={String(stats.monthClaims)} sub="claims" />
-              <Divider />
-              <StatRow label="Lifetime Claims" value={String(stats.lifetimeClaims)} />
-              <Divider />
-              <StatRow label="Total Earnings" value={`$${parseFloat(stats.totalEarnings || "0").toFixed(4)}`} />
-            </div>
-
-            {/* Daily Schedule */}
-            <SectionLabel title="Daily Promo Schedule" />
-            <div style={{ background: CARD, borderRadius: 16, padding: "16px 16px", marginBottom: 20 }}>
-              <div style={{ color: TEXT_DIM, fontSize: 12, marginBottom: 12 }}>
-                How many promo codes sent to you per day?
+            <div className="flex items-center justify-between py-3 border-b border-white/5">
+              <div>
+                <p className="text-white text-sm font-semibold">Total Promo Claims</p>
+                <p className="text-[#888] text-xs mt-0.5">All users who claimed your code</p>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {[1, 2, 3].map(n => (
-                  <button
-                    key={n}
-                    onClick={() => scheduleMutation.mutate(n)}
-                    style={{
-                      flex: 1, padding: "10px 0", borderRadius: 10, border: "none",
-                      background: currentSchedule === n ? `${BLUE}22` : "rgba(255,255,255,0.05)",
-                      color: currentSchedule === n ? BLUE : TEXT_DIM,
-                      fontSize: 13, fontWeight: 700, cursor: "pointer",
-                      outline: currentSchedule === n ? `1.5px solid ${BLUE}55` : "none",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {n}×/day
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom Promo Name */}
-            <SectionLabel title="Custom Promo Name" />
-            <div style={{ background: CARD, borderRadius: 16, padding: "16px 16px", marginBottom: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showPromoRequest ? 12 : 0 }}>
-                <span style={{ color: TEXT_DIM, fontSize: 13 }}>
-                  {amb.customPromoRequestStatus === "pending" ? "Request pending review" : "Request a different promo code name"}
-                </span>
-                {amb.customPromoRequestStatus !== "pending" && (
-                  <button
-                    onClick={() => setShowPromoRequest(!showPromoRequest)}
-                    style={{ color: BLUE, fontSize: 12, fontWeight: 700, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}
-                  >
-                    {showPromoRequest ? "Cancel" : "Request"}
-                  </button>
-                )}
-              </div>
-              {showPromoRequest && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <input
-                    value={customPromoName}
-                    onChange={e => setCustomPromoName(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-                    placeholder="e.g. MYCHANNEL1"
-                    maxLength={20}
-                    style={{
-                      width: "100%", background: "rgba(255,255,255,0.05)", border: "none",
-                      borderRadius: 10, padding: "12px 14px", color: TEXT, fontSize: 14,
-                      outline: "none", boxSizing: "border-box",
-                    }}
-                  />
-                  <div style={{ color: TEXT_FAINT, fontSize: 11 }}>3–20 letters/numbers only. Requires admin approval.</div>
-                  <button
-                    onClick={() => promoRequestMutation.mutate()}
-                    disabled={customPromoName.length < 3 || promoRequestMutation.isPending}
-                    style={{
-                      padding: "12px", borderRadius: 12, border: "none",
-                      background: customPromoName.length >= 3 ? `linear-gradient(135deg, ${BLUE_D}, ${BLUE})` : "rgba(255,255,255,0.06)",
-                      color: customPromoName.length >= 3 ? "#fff" : TEXT_FAINT,
-                      fontSize: 14, fontWeight: 700, cursor: customPromoName.length >= 3 ? "pointer" : "not-allowed",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                    }}
-                  >
-                    {promoRequestMutation.isPending
-                      ? <><Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} /> Submitting...</>
-                      : "Submit Request"}
-                  </button>
-                </div>
+              {dashLoading ? <StatSkeleton /> : (
+                <span className="text-white text-xl font-black">{stats?.lifetimeClaims ?? 0}</span>
               )}
             </div>
 
-            {/* Claim History */}
-            <SectionLabel title="Claim History" />
-            <div style={{ background: CARD, borderRadius: 16, overflow: "hidden", marginBottom: 20 }}>
-              {dashboard.promoHistory.length === 0 ? (
-                <div style={{ padding: "24px 16px", textAlign: "center", color: TEXT_FAINT, fontSize: 13 }}>
-                  No claims yet. Share your code!
+            <div className="flex items-center justify-between py-3 border-b border-white/5">
+              <div>
+                <p className="text-white text-sm font-semibold">Active Promo Codes</p>
+                <p className="text-[#888] text-xs mt-0.5">Currently valid codes</p>
+              </div>
+              {dashLoading ? <StatSkeleton /> : (
+                <span className="text-white text-xl font-black">{dashboard?.activePromos?.length ?? 0}</span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between py-3 border-b border-white/5">
+              <div>
+                <p className="text-white text-sm font-semibold">Today's Claims</p>
+                <p className="text-[#888] text-xs mt-0.5">Claims in the last 24 hours</p>
+              </div>
+              {dashLoading ? <StatSkeleton /> : (
+                <span className="text-white text-xl font-black">{stats?.todayClaims ?? 0}</span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-3">
+              <div>
+                <p className="text-white text-sm font-semibold">Ambassador Level</p>
+                <p className="text-[#888] text-xs mt-0.5">Your current tier</p>
+              </div>
+              <span className="text-blue-400 text-sm font-bold">
+                {(amb.totalClaims || 0) >= 500 ? "⭐ Elite" : (amb.totalClaims || 0) >= 100 ? "🔥 Pro" : "🚀 Starter"}
+              </span>
+            </div>
+          </div>
+
+          {/* Claim History button */}
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
+            style={{ background: "rgba(255,255,255,0.12)" }}
+          >
+            <Scroll className="w-5 h-5 text-white/70" />
+            <span className="text-white font-semibold text-sm">📜 Claim History</span>
+          </button>
+
+          {/* Channel Verification */}
+          <div className="rounded-2xl p-4 mb-3">
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Setup</p>
+
+            {isVerified ? (
+              <div className="flex items-center gap-3 py-2">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ background: "rgba(34,197,94,0.15)" }}>
+                  <CheckCircle2 className="w-5 h-5 text-green-400" />
                 </div>
-              ) : (
-                dashboard.promoHistory.map((entry, i) => (
-                  <div key={entry.id}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px" }}>
-                      <div>
-                        <div style={{ color: BLUE, fontSize: 13, fontWeight: 700, fontFamily: "monospace" }}>{entry.promoCode}</div>
-                        <div style={{ color: TEXT_FAINT, fontSize: 11, marginTop: 2 }}>{new Date(entry.createdAt).toLocaleString()}</div>
-                      </div>
-                      <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>
-                        +${parseFloat(entry.commissionUsd).toFixed(4)}
-                      </span>
+                <div>
+                  <p className="text-white text-sm font-semibold">Channel Verified ✅</p>
+                  <p className="text-[#888] text-xs mt-0.5">Auto-posting is enabled to your channel</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-xl p-3 mb-3" style={{ background: "rgba(234,179,8,0.08)" }}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-yellow-400 text-sm font-semibold">Bot Admin Required</p>
+                      <p className="text-[#888] text-xs mt-1 leading-relaxed">
+                        Add <span className="text-white font-semibold">@PaidAdzbot</span> as an administrator in your channel with permission to <span className="text-white font-semibold">Post Messages</span>.
+                      </p>
                     </div>
-                    {i < dashboard.promoHistory.length - 1 && <Divider />}
                   </div>
-                ))
-              )}
-            </div>
-
+                </div>
+                <button
+                  onClick={() => verifyChannelMutation.mutate()}
+                  disabled={verifyChannelMutation.isPending}
+                  className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
+                  style={{ background: "rgba(59,130,246,0.18)", border: "1px solid rgba(59,130,246,0.3)" }}
+                >
+                  {verifyChannelMutation.isPending
+                    ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                    : <Shield className="w-4 h-4 text-blue-400" />}
+                  <span className="text-blue-400 font-semibold text-sm">Verify Bot Permission</span>
+                </button>
+                {verifyChannelMutation.data && !(verifyChannelMutation.data as any).verified && (
+                  <p className="text-red-400 text-xs mt-2 text-center">
+                    {(verifyChannelMutation.data as any).message}
+                  </p>
+                )}
+              </>
+            )}
           </div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      </Layout>
-    );
-  }
 
-  // ── Pending Application ────────────────────────────────────────────────────
-  if (statusData?.application?.status === "pending") {
-    return (
-      <Layout>
-        <div style={{ background: "#000", minHeight: "100vh", padding: "16px 16px 0", color: TEXT }}>
-          <div style={{ maxWidth: 440, margin: "0 auto" }}>
-            {/* Header */}
-            <div style={{ marginBottom: 28 }}>
-              <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-                Under Review
-              </h1>
-              <p className="text-[#888] text-sm leading-relaxed">
-                Your Ambassador application is being reviewed.{" "}
-                <span className="text-white font-semibold">We'll notify you via Telegram</span>{" "}
-                once a decision is made.
-              </p>
-            </div>
+          {/* Post Schedule + Post Now */}
+          <div className="rounded-2xl p-4 mb-3">
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Posting Schedule</p>
 
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
-              <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(251,191,36,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Clock style={{ width: 26, height: 26, color: "#fbbf24" }} />
-              </div>
-            </div>
-            <div style={{ background: CARD, borderRadius: 16, overflow: "hidden" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 16px" }}>
-                <span style={{ color: TEXT_DIM, fontSize: 13 }}>Channel</span>
-                <span style={{ color: TEXT, fontSize: 13, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {statusData.application.channelLink}
-                </span>
-              </div>
-              {statusData.application.channelTitle && (
-                <>
-                  <Divider />
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 16px" }}>
-                    <span style={{ color: TEXT_DIM, fontSize: 13 }}>Title</span>
-                    <span style={{ color: TEXT, fontSize: 13 }}>{statusData.application.channelTitle}</span>
-                  </div>
-                </>
-              )}
-              <Divider />
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 16px" }}>
-                <span style={{ color: TEXT_DIM, fontSize: 13 }}>Status</span>
-                <span style={{ fontSize: 11, fontWeight: 700, background: "rgba(251,191,36,0.15)", color: "#fbbf24", borderRadius: 5, padding: "2px 7px" }}>PENDING</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
-  // ── Rejected Application ───────────────────────────────────────────────────
-  if (statusData?.application?.status === "rejected") {
-    return (
-      <Layout>
-        <div style={{ background: "#000", minHeight: "100vh", padding: "16px 16px 0", color: TEXT }}>
-          <div style={{ maxWidth: 440, margin: "0 auto" }}>
-            {/* Header */}
-            <div style={{ marginBottom: 28 }}>
-              <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-                Not Approved
-              </h1>
-              <p className="text-[#888] text-sm leading-relaxed">
-                {statusData.application.rejectionReason
-                  ? <><span className="text-white font-semibold">Reason:</span> {statusData.application.rejectionReason}. </>
-                  : null}
-                You may reapply with a different channel.
-              </p>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
-              <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(239,68,68,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <XCircle style={{ width: 26, height: 26, color: "#f87171" }} />
-              </div>
+            <div className="flex gap-2 mb-4">
+              {[1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => {
+                    setPromoSchedule(n);
+                    scheduleMutation.mutate(n);
+                  }}
+                  className="flex-1 h-10 rounded-xl flex flex-col items-center justify-center active:scale-95 transition-all"
+                  style={{
+                    background: scheduleCount === n ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.08)",
+                    border: scheduleCount === n ? "1px solid rgba(59,130,246,0.5)" : "1px solid transparent",
+                  }}
+                >
+                  <span className={`text-sm font-bold ${scheduleCount === n ? "text-blue-400" : "text-white/60"}`}>{n}x</span>
+                  <span className={`text-[10px] ${scheduleCount === n ? "text-blue-300/70" : "text-white/30"}`}>
+                    {n === 1 ? "daily" : n === 2 ? "12h" : "8h"}
+                  </span>
+                </button>
+              ))}
             </div>
 
             <button
-              onClick={() => queryClient.setQueryData(["/api/ambassador/status"], { ...statusData, application: null })}
-              style={{
-                width: "100%", padding: "14px", borderRadius: 14, border: "none",
-                background: `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`,
-                color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer",
-                boxShadow: `0 4px 20px ${BLUE}40`,
-              }}
+              onClick={() => postNowMutation.mutate()}
+              disabled={postNowMutation.isPending}
+              className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
+              style={{ background: "rgba(59,130,246,0.18)", border: "1px solid rgba(59,130,246,0.3)" }}
             >
-              Apply Again
+              {postNowMutation.isPending
+                ? <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                : <Zap className="w-5 h-5 text-blue-400" />}
+              <span className="text-blue-400 font-bold text-sm">
+                {postNowMutation.isPending ? "Posting…" : "⚡ Post Now"}
+              </span>
             </button>
           </div>
-        </div>
+
+          {/* Custom Promo Code */}
+          <div className="rounded-2xl p-4 mb-3">
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Custom Promo Name</p>
+
+            <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
+              <div>
+                <p className="text-white text-sm font-semibold">Current Prefix</p>
+                <p className="text-[#888] text-xs mt-0.5">Used as code prefix</p>
+              </div>
+              <span className="text-white font-black tracking-widest">{promoPrefix}</span>
+            </div>
+
+            {amb.customPromoRequest && (
+              <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
+                <div>
+                  <p className="text-white text-sm font-semibold">Requested Name</p>
+                  <p className="text-[#888] text-xs mt-0.5">{amb.customPromoRequest}</p>
+                </div>
+                <Badge className={
+                  amb.customPromoRequestStatus === "approved"
+                    ? "bg-green-600/20 text-green-400 border-green-600/30"
+                    : amb.customPromoRequestStatus === "rejected"
+                    ? "bg-red-600/20 text-red-400 border-red-600/30"
+                    : "bg-yellow-600/20 text-yellow-400 border-yellow-600/30"
+                }>
+                  {amb.customPromoRequestStatus === "approved" ? "Approved" :
+                   amb.customPromoRequestStatus === "rejected" ? "Rejected" : "Pending"}
+                </Badge>
+              </div>
+            )}
+
+            {(!amb.customPromoRequest || amb.customPromoRequestStatus === "rejected") && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customPromoInput}
+                  onChange={(e) => setCustomPromoInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                  placeholder="E.g. MYCHAIN"
+                  maxLength={20}
+                  className="flex-1 h-11 rounded-xl px-3 text-white text-sm font-mono focus:outline-none"
+                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
+                />
+                <button
+                  onClick={() => promoNameMutation.mutate(customPromoInput)}
+                  disabled={customPromoInput.length < 3 || promoNameMutation.isPending}
+                  className="h-11 px-4 rounded-xl flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
+                  style={{ background: "rgba(255,255,255,0.12)" }}
+                >
+                  {promoNameMutation.isPending
+                    ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    : <span className="text-white font-semibold text-sm">Request</span>}
+                </button>
+              </div>
+            )}
+          </div>
+
+        </main>
+
+        {/* Claim History Drawer */}
+        <Drawer open={historyOpen} onOpenChange={setHistoryOpen}>
+          <DrawerContent className="bg-[#111] border-none max-h-[80vh]">
+            <DrawerHeader className="flex items-center justify-between pb-2">
+              <DrawerTitle className="text-white font-bold text-lg">📜 Claim History</DrawerTitle>
+              <DrawerClose asChild>
+                <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
+                  Close
+                </button>
+              </DrawerClose>
+            </DrawerHeader>
+
+            <div className="px-4 pb-6 overflow-y-auto">
+              {dashLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="text-white/40 text-sm">Loading…</div>
+                </div>
+              ) : (dashboard?.promoHistory?.length ?? 0) === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <Scroll className="w-10 h-10 text-white/20" />
+                  <p className="text-white/40 text-sm">No claims yet</p>
+                  <p className="text-white/25 text-xs">Start posting to get your first claim</p>
+                </div>
+              ) : (
+                <>
+                  {/* Header row */}
+                  <div className="grid grid-cols-3 gap-2 pb-2 border-b border-white/10 mb-2">
+                    <span className="text-[#888] text-xs font-semibold uppercase tracking-wider">Code</span>
+                    <span className="text-[#888] text-xs font-semibold uppercase tracking-wider text-center">User</span>
+                    <span className="text-[#888] text-xs font-semibold uppercase tracking-wider text-right">Earned</span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {dashboard?.promoHistory?.map((item) => (
+                      <div key={item.id} className="grid grid-cols-3 gap-2 items-center py-2.5 border-b border-white/5">
+                        <div className="min-w-0">
+                          <p className="text-white text-xs font-mono font-bold truncate">{item.promoCode}</p>
+                          <p className="text-[#666] text-[10px] mt-0.5">
+                            {new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </p>
+                        </div>
+                        <div className="flex justify-center">
+                          <p className="text-[#888] text-xs truncate">
+                            {item.claimUserUsername ? `@${item.claimUserUsername}` : "User"}
+                          </p>
+                        </div>
+                        <div className="flex justify-end">
+                          <span className="text-green-400 text-xs font-bold">
+                            +${parseFloat(item.commissionUsd).toFixed(4)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-[#666] text-xs mt-4 text-center">
+                    {dashboard?.promoHistory?.length} claim{(dashboard?.promoHistory?.length ?? 0) !== 1 ? "s" : ""}
+                  </p>
+                </>
+              )}
+            </div>
+          </DrawerContent>
+        </Drawer>
       </Layout>
     );
   }
@@ -411,120 +631,124 @@ export default function Ambassador() {
   // ── Application Form ───────────────────────────────────────────────────────
   return (
     <Layout>
-      <div style={{ background: "#000", minHeight: "100vh", paddingBottom: 100, color: TEXT }}>
-        <div style={{ maxWidth: 440, margin: "0 auto", padding: "16px 16px 0" }}>
+      <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
 
-          {/* Header — matches Affiliates page style */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-              Ambassador Program
-            </h1>
-            <p className="text-[#888] text-sm leading-relaxed">
-              Promote Paid Adz through your Telegram channel and earn{" "}
-              <span className="text-white font-semibold">$0.0001</span>{" "}
-              for every successful promo code claim.
-            </p>
-          </div>
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-black text-white tracking-tight mb-2">
+            Ambassador Program
+          </h1>
+          <p className="text-[#888] text-sm leading-relaxed">
+            Promote Paid Adz on your Telegram channel and earn{" "}
+            <span className="text-white font-semibold">$0.0001</span>{" "}
+            for every user who claims your promo code.
+          </p>
+        </div>
 
-          {/* How it works */}
-          <SectionLabel title="How It Works" />
-          <div style={{ background: CARD, borderRadius: 16, overflow: "hidden", marginBottom: 20 }}>
-            {[
-              "Submit your Telegram channel link",
-              "Our team reviews your application",
-              "Get approved & receive your unique promo code",
-              "Bot sends promo codes to you daily",
-              "Earn $0.0001 for every successful claim",
-            ].map((text, i, arr) => (
-              <div key={i}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: `${BLUE}22`, color: BLUE, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {i + 1}
-                  </div>
-                  <span style={{ color: TEXT_DIM, fontSize: 13 }}>{text}</span>
-                </div>
-                {i < arr.length - 1 && <Divider />}
-              </div>
-            ))}
-          </div>
+        {/* How it works */}
+        <div className="rounded-2xl p-4 mb-3">
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">How It Works</p>
 
-          {/* Earnings Example */}
-          <SectionLabel title="Earnings Example" />
-          <div style={{ background: CARD, borderRadius: 16, overflow: "hidden", marginBottom: 20 }}>
-            {[["100 claims", "$0.01"], ["1,000 claims", "$0.10"], ["10,000 claims", "$1.00"]].map(([claims, earn], i, arr) => (
-              <div key={claims}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px" }}>
-                  <span style={{ color: TEXT_DIM, fontSize: 13 }}>{claims}</span>
-                  <span style={{ color: "#4ade80", fontSize: 14, fontWeight: 700 }}>{earn}</span>
-                </div>
-                {i < arr.length - 1 && <Divider />}
-              </div>
-            ))}
-          </div>
-
-          {/* Application Form */}
-          <SectionLabel title="Application Form" />
-          <div style={{ background: CARD, borderRadius: 16, padding: "16px 16px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="flex items-start gap-3 py-3 border-b border-white/5">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
+              style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>1</div>
             <div>
-              <div style={{ color: TEXT_FAINT, fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>
-                Telegram Channel Link
-              </div>
-              <input
-                value={channelLink}
-                onChange={e => setChannelLink(e.target.value)}
-                placeholder="https://t.me/yourchannel or @yourchannel"
-                style={{
-                  width: "100%", background: "rgba(255,255,255,0.05)", border: "none",
-                  borderRadius: 10, padding: "12px 14px", color: TEXT, fontSize: 14,
-                  outline: "none", boxSizing: "border-box",
-                }}
-              />
-              <div style={{ color: TEXT_FAINT, fontSize: 11, marginTop: 6 }}>Must be a public Telegram channel you own or manage.</div>
+              <p className="text-white text-sm font-semibold">Apply with your channel</p>
+              <p className="text-[#888] text-xs mt-0.5">Submit your Telegram channel link for review</p>
             </div>
+          </div>
 
-            {/* T&C */}
+          <div className="flex items-start gap-3 py-3 border-b border-white/5">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
+              style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>2</div>
+            <div>
+              <p className="text-white text-sm font-semibold">Add bot as admin</p>
+              <p className="text-[#888] text-xs mt-0.5">Grant <span className="text-white">@PaidAdzbot</span> posting permission</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 py-3 border-b border-white/5">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
+              style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>3</div>
+            <div>
+              <p className="text-white text-sm font-semibold">Auto-posting begins</p>
+              <p className="text-[#888] text-xs mt-0.5">Unique promo codes posted to your channel automatically</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 pt-3">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
+              style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>4</div>
+            <div>
+              <p className="text-white text-sm font-semibold">Earn per claim</p>
+              <p className="text-[#888] text-xs mt-0.5">Get <span className="text-green-400 font-semibold">$0.0001</span> instantly for every successful claim</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Application form */}
+        <div className="rounded-2xl p-4 mb-4">
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Apply Now</p>
+
+          <div className="mb-3">
+            <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
+              Telegram Channel Link
+            </label>
+            <input
+              type="text"
+              value={channelLink}
+              onChange={(e) => setChannelLink(e.target.value)}
+              placeholder="t.me/yourchannel or @yourchannel"
+              className="w-full h-11 rounded-xl px-3 text-white text-sm focus:outline-none"
+              style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
+            />
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer mt-4">
             <div
               onClick={() => setTermsAccepted(!termsAccepted)}
-              style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}
-            >
-              <div style={{
-                width: 20, height: 20, borderRadius: 6, flexShrink: 0, marginTop: 1,
-                background: termsAccepted ? BLUE : "rgba(255,255,255,0.08)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "background 0.15s",
-              }}>
-                {termsAccepted && <CheckCircle2 style={{ width: 13, height: 13, color: "#fff" }} />}
-              </div>
-              <span style={{ color: TEXT_DIM, fontSize: 13, lineHeight: 1.5 }}>
-                I accept the <span style={{ color: BLUE }}>Terms & Conditions</span> of the Paid Adz Ambassador Program.
-              </span>
-            </div>
-
-            <button
-              onClick={() => applyMutation.mutate()}
-              disabled={!channelLink.trim() || !termsAccepted || applyMutation.isPending}
+              className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 cursor-pointer transition-all"
               style={{
-                width: "100%", padding: "14px", borderRadius: 13, border: "none",
-                background: channelLink.trim() && termsAccepted && !applyMutation.isPending
-                  ? `linear-gradient(135deg, ${BLUE_D}, ${BLUE})`
-                  : "rgba(255,255,255,0.06)",
-                color: channelLink.trim() && termsAccepted ? "#fff" : TEXT_FAINT,
-                fontSize: 15, fontWeight: 700,
-                cursor: channelLink.trim() && termsAccepted && !applyMutation.isPending ? "pointer" : "not-allowed",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                boxShadow: channelLink.trim() && termsAccepted ? `0 4px 20px ${BLUE}40` : "none",
-                transition: "all 0.2s",
+                background: termsAccepted ? "#3b82f6" : "rgba(255,255,255,0.08)",
+                border: termsAccepted ? "none" : "1px solid rgba(255,255,255,0.2)",
               }}
             >
-              {applyMutation.isPending
-                ? <><Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} /> Submitting...</>
-                : "Submit Application"}
-            </button>
-          </div>
-
+              {termsAccepted && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+            </div>
+            <span className="text-[#888] text-xs leading-relaxed">
+              I agree to post only legitimate promotional content and to add the bot as admin with posting permissions before auto-posting is enabled.
+            </span>
+          </label>
         </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
+
+        <button
+          onClick={() => applyMutation.mutate({ channelLink, termsAccepted })}
+          disabled={!channelLink.trim() || !termsAccepted || applyMutation.isPending}
+          className="w-full h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40 mb-4"
+          style={{ background: "rgba(255,255,255,0.12)" }}
+        >
+          {applyMutation.isPending
+            ? <Loader2 className="w-5 h-5 text-white animate-spin" />
+            : <ExternalLink className="w-5 h-5 text-white/70" />}
+          <span className="text-white font-bold tracking-widest text-sm">
+            {applyMutation.isPending ? "Submitting…" : "Submit Application"}
+          </span>
+        </button>
+
+        {/* Requirements note */}
+        <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.04)" }}>
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-2">Requirements</p>
+          <div className="space-y-1.5">
+            {["Active Telegram channel", "Add @PaidAdzbot as admin", "Permission to post messages", "Genuine followers (no bots)"].map((req, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-400/50 flex-shrink-0" />
+                <span className="text-[#888] text-xs">{req}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </main>
     </Layout>
   );
 }
