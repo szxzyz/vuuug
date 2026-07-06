@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
 import {
   CheckCircle2, XCircle, Loader2,
-  Scroll, Shield, AlertTriangle, ExternalLink,
+  Scroll, Shield, AlertTriangle, Send, Info, UserCheck,
 } from "lucide-react";
 import {
   Drawer,
@@ -15,6 +15,8 @@ import {
   DrawerClose,
 } from "@/components/ui/drawer";
 import { Badge } from "@/components/ui/badge";
+
+const SECTION_BG = "#1C1C1E";
 
 function StatSkeleton() {
   return (
@@ -57,8 +59,10 @@ export default function Ambassador() {
   const queryClient = useQueryClient();
   const [channelLink, setChannelLink] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [channelAdded, setChannelAdded] = useState(false);
   const [customPromoInput, setCustomPromoInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   const { data: status, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
     queryKey: ["/api/ambassador/status"],
@@ -74,9 +78,6 @@ export default function Ambassador() {
   const amb = dashboard?.ambassador ?? status?.ambassador;
   const stats = dashboard?.stats;
 
-  // Get latest active promo code
-  const latestActiveCode = dashboard?.activePromos?.[0]?.code ?? "";
-
   // ── Mutations ────────────────────────────────────────────────────────────────
 
   const applyMutation = useMutation({
@@ -87,16 +88,6 @@ export default function Ambassador() {
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
     },
     onError: (e: any) => showNotification(e?.message || "Failed to submit application", "error"),
-  });
-
-  const scheduleMutation = useMutation({
-    mutationFn: (dailyPromoCount: number) =>
-      apiRequest("POST", "/api/ambassador/schedule", { dailyPromoCount }),
-    onSuccess: (_, count) => {
-      showNotification(`Schedule updated: ${count}x per day`, "success");
-      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
-    },
-    onError: (e: any) => showNotification(e?.message || "Failed to update schedule", "error"),
   });
 
   const promoNameMutation = useMutation({
@@ -124,11 +115,38 @@ export default function Ambassador() {
     onError: (e: any) => showNotification(e?.message || "Verification failed", "error"),
   });
 
-  const cycleSchedule = () => {
-    const currentCount = (amb as any)?.dailyPromoCount ?? 1;
-    const next = (currentCount % 3) + 1;
-    scheduleMutation.mutate(next);
-  };
+  // ── How It Works Drawer ───────────────────────────────────────────────────
+  const HowItWorksDrawer = (
+    <Drawer open={howItWorksOpen} onOpenChange={setHowItWorksOpen}>
+      <DrawerContent className="border-none max-h-[80vh]" style={{ background: SECTION_BG }}>
+        <DrawerHeader className="flex items-center justify-between pb-2">
+          <DrawerTitle className="text-white font-bold text-lg">How It Works</DrawerTitle>
+          <DrawerClose asChild>
+            <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
+              Close
+            </button>
+          </DrawerClose>
+        </DrawerHeader>
+        <div className="px-4 pb-6 overflow-y-auto space-y-1">
+          {[
+            { n: 1, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Apply with your channel", sub: "Submit your Telegram channel link for review" },
+            { n: 2, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Add bot as admin", sub: "Grant @Paid_Adzbot posting permission in your channel" },
+            { n: 3, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Auto-posting begins", sub: "Unique promo codes posted to your channel every 4 hours" },
+            { n: 4, color: "#22c55e", bg: "rgba(34,197,94,0.15)", title: "Earn per claim", sub: "Get $0.0001 for every successful claim" },
+          ].map(({ n, color, bg, title, sub }) => (
+            <div key={n} className="flex items-start gap-3 py-3 border-b border-white/5 last:border-none">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
+                style={{ background: bg, color }}>{n}</div>
+              <div>
+                <p className="text-white text-sm font-semibold">{title}</p>
+                <p className="text-[#888] text-xs mt-0.5">{sub}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </DrawerContent>
+    </Drawer>
+  );
 
   // ── Loading state ─────────────────────────────────────────────────────────
   if (statusLoading) {
@@ -158,7 +176,7 @@ export default function Ambassador() {
             </p>
           </div>
 
-          <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.07)" }}>
+          <div className="rounded-2xl p-4" style={{ background: SECTION_BG }}>
             <div className="flex items-center justify-between py-2 border-b border-white/5">
               <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Channel</p>
               <p className="text-white text-sm font-medium">{status.application.channelLink}</p>
@@ -213,6 +231,7 @@ export default function Ambassador() {
             onClick={() => {
               setChannelLink("");
               setTermsAccepted(false);
+              setChannelAdded(false);
               queryClient.setQueryData(["/api/ambassador/status"], (old: any) => ({
                 ...old,
                 application: null,
@@ -233,7 +252,6 @@ export default function Ambassador() {
     const promoPrefix = (amb.promoPrefix || amb.promoCodeName || "").toUpperCase();
     const totalEarnings = parseFloat(stats?.totalEarnings || "0");
     const isVerified = amb.channelVerified;
-    const scheduleCount = amb.dailyPromoCount || 1;
 
     return (
       <Layout>
@@ -251,44 +269,20 @@ export default function Ambassador() {
             </p>
           </div>
 
-          {/* Claim History + Schedule row */}
-          <div className="mb-4 flex items-center gap-3">
+          {/* Claim History button */}
+          <div className="mb-4">
             <button
               onClick={() => setHistoryOpen(true)}
-              className="flex-1 h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform"
+              className="w-full h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform"
               style={{ background: "rgba(255,255,255,0.12)" }}
             >
               <Scroll className="w-5 h-5 text-white/70" />
               <span className="text-white font-bold tracking-widest text-sm">Claim History</span>
             </button>
-
-            <button
-              onClick={cycleSchedule}
-              disabled={scheduleMutation.isPending}
-              className="w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 flex-shrink-0"
-              style={{
-                background: "rgba(59,130,246,0.18)",
-                border: "1px solid rgba(59,130,246,0.3)",
-              }}
-              title="Posting frequency"
-            >
-              {scheduleMutation.isPending
-                ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-                : <span className="text-blue-400 font-bold text-sm">{scheduleCount}x</span>}
-            </button>
           </div>
 
-          {/* Active promo code display */}
-          {latestActiveCode && (
-            <div className="mb-4 rounded-2xl px-4 py-3"
-              style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.2)" }}>
-              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-0.5">Active Promo Code</p>
-              <p className="text-white font-black text-lg tracking-widest">{latestActiveCode}</p>
-            </div>
-          )}
-
           {/* Statistics */}
-          <div className="rounded-2xl p-4 mb-3">
+          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
             <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Statistics</p>
 
             <div className="flex items-center justify-between py-3 border-b border-white/5">
@@ -323,7 +317,7 @@ export default function Ambassador() {
               )}
             </div>
 
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
+            <div className="flex items-center justify-between pt-3">
               <div>
                 <p className="text-white text-sm font-semibold">Today's Claims</p>
                 <p className="text-[#888] text-xs mt-0.5">Claims in the last 24 hours</p>
@@ -332,20 +326,10 @@ export default function Ambassador() {
                 <span className="text-white text-xl font-black">{stats?.todayClaims ?? 0}</span>
               )}
             </div>
-
-            <div className="flex items-center justify-between pt-3">
-              <div>
-                <p className="text-white text-sm font-semibold">Ambassador Level</p>
-                <p className="text-[#888] text-xs mt-0.5">Your current tier</p>
-              </div>
-              <span className="text-blue-400 text-sm font-bold">
-                {(amb.totalClaims || 0) >= 500 ? "⭐ Elite" : (amb.totalClaims || 0) >= 100 ? "🔥 Pro" : "🚀 Starter"}
-              </span>
-            </div>
           </div>
 
           {/* Channel Verification */}
-          <div className="rounded-2xl p-4 mb-3">
+          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
             <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Setup</p>
 
             {isVerified ? (
@@ -355,7 +339,7 @@ export default function Ambassador() {
                   <CheckCircle2 className="w-5 h-5 text-green-400" />
                 </div>
                 <div>
-                  <p className="text-white text-sm font-semibold">Channel Verified ✅</p>
+                  <p className="text-white text-sm font-semibold">Channel Verified</p>
                   <p className="text-[#888] text-xs mt-0.5">Auto-posting is enabled to your channel</p>
                 </div>
               </div>
@@ -393,7 +377,7 @@ export default function Ambassador() {
           </div>
 
           {/* Custom Promo Code */}
-          <div className="rounded-2xl p-4 mb-3">
+          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
             <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Custom Promo Name</p>
 
             <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
@@ -452,7 +436,7 @@ export default function Ambassador() {
 
         {/* Claim History Drawer */}
         <Drawer open={historyOpen} onOpenChange={setHistoryOpen}>
-          <DrawerContent className="bg-[#111] border-none max-h-[80vh]">
+          <DrawerContent className="border-none max-h-[80vh]" style={{ background: SECTION_BG }}>
             <DrawerHeader className="flex items-center justify-between pb-2">
               <DrawerTitle className="text-white font-bold text-lg">Claim History</DrawerTitle>
               <DrawerClose asChild>
@@ -475,7 +459,6 @@ export default function Ambassador() {
                 </div>
               ) : (
                 <>
-                  {/* Header row */}
                   <div className="grid grid-cols-3 gap-2 pb-2 border-b border-white/10 mb-2">
                     <span className="text-[#888] text-xs font-semibold uppercase tracking-wider">Code</span>
                     <span className="text-[#888] text-xs font-semibold uppercase tracking-wider text-center">User</span>
@@ -518,6 +501,8 @@ export default function Ambassador() {
   }
 
   // ── Application Form ───────────────────────────────────────────────────────
+  const canSubmit = channelLink.trim().length > 0 && channelAdded && termsAccepted;
+
   return (
     <Layout>
       <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
@@ -534,52 +519,22 @@ export default function Ambassador() {
           </p>
         </div>
 
-        {/* How it works */}
-        <div className="rounded-2xl p-4 mb-3">
-          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">How It Works</p>
+        {/* How It Works button */}
+        <button
+          onClick={() => setHowItWorksOpen(true)}
+          className="w-full h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform mb-4"
+          style={{ background: "rgba(255,255,255,0.12)" }}
+        >
+          <Info className="w-5 h-5 text-white/70" />
+          <span className="text-white font-bold tracking-widest text-sm">How It Works</span>
+        </button>
 
-          <div className="flex items-start gap-3 py-3 border-b border-white/5">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
-              style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>1</div>
-            <div>
-              <p className="text-white text-sm font-semibold">Apply with your channel</p>
-              <p className="text-[#888] text-xs mt-0.5">Submit your Telegram channel link for review</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 py-3 border-b border-white/5">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
-              style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>2</div>
-            <div>
-              <p className="text-white text-sm font-semibold">Add bot as admin</p>
-              <p className="text-[#888] text-xs mt-0.5">Grant <span className="text-white">@Paid_Adzbot</span> posting permission</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 py-3 border-b border-white/5">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
-              style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>3</div>
-            <div>
-              <p className="text-white text-sm font-semibold">Auto-posting begins</p>
-              <p className="text-[#888] text-xs mt-0.5">Unique promo codes posted to your channel automatically</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 pt-3">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
-              style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>4</div>
-            <div>
-              <p className="text-white text-sm font-semibold">Earn per claim</p>
-              <p className="text-[#888] text-xs mt-0.5">Get <span className="text-green-400 font-semibold">$0.0001</span> instantly for every successful claim</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Application form */}
-        <div className="rounded-2xl p-4 mb-4">
+        {/* Apply Now */}
+        <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
           <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Apply Now</p>
 
-          <div className="mb-3">
+          {/* Channel link */}
+          <div className="mb-4">
             <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
               Telegram Channel Link
             </label>
@@ -593,7 +548,48 @@ export default function Ambassador() {
             />
           </div>
 
-          <label className="flex items-start gap-3 cursor-pointer mt-4">
+          {/* Channel Setup step */}
+          <div className="border-t border-white/5 pt-4 mb-4">
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Setup</p>
+
+            {channelAdded ? (
+              <div className="flex items-center gap-3 py-2">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ background: "rgba(34,197,94,0.15)" }}>
+                  <CheckCircle2 className="w-5 h-5 text-green-400" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-semibold">Bot Added</p>
+                  <p className="text-[#888] text-xs mt-0.5">@Paid_Adzbot is set as admin in your channel</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-xl p-3 mb-3" style={{ background: "rgba(234,179,8,0.08)" }}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-yellow-400 text-sm font-semibold">Required Step</p>
+                      <p className="text-[#888] text-xs mt-1 leading-relaxed">
+                        Add <span className="text-white font-semibold">@Paid_Adzbot</span> as an administrator in your channel with permission to <span className="text-white font-semibold">Post Messages</span>, then confirm below.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setChannelAdded(true)}
+                  className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                  style={{ background: "rgba(59,130,246,0.18)", border: "1px solid rgba(59,130,246,0.3)" }}
+                >
+                  <UserCheck className="w-4 h-4 text-blue-400" />
+                  <span className="text-blue-400 font-semibold text-sm">I've Added the Bot as Admin</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Terms */}
+          <label className="flex items-start gap-3 cursor-pointer">
             <div
               onClick={() => setTermsAccepted(!termsAccepted)}
               className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 cursor-pointer transition-all"
@@ -605,30 +601,36 @@ export default function Ambassador() {
               {termsAccepted && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
             </div>
             <span className="text-[#888] text-xs leading-relaxed">
-              I agree to post only legitimate promotional content and to add the bot as admin with posting permissions before auto-posting is enabled.
+              I agree to post only legitimate promotional content and to maintain bot admin permissions for auto-posting to work.
             </span>
           </label>
         </div>
 
+        {/* Submit */}
         <button
           onClick={() => applyMutation.mutate({ channelLink, termsAccepted })}
-          disabled={!channelLink.trim() || !termsAccepted || applyMutation.isPending}
+          disabled={!canSubmit || applyMutation.isPending}
           className="w-full h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40 mb-4"
           style={{ background: "rgba(255,255,255,0.12)" }}
         >
           {applyMutation.isPending
             ? <Loader2 className="w-5 h-5 text-white animate-spin" />
-            : <ExternalLink className="w-5 h-5 text-white/70" />}
+            : <Send className="w-5 h-5 text-white/70" />}
           <span className="text-white font-bold tracking-widest text-sm">
             {applyMutation.isPending ? "Submitting…" : "Submit Application"}
           </span>
         </button>
 
-        {/* Requirements note */}
-        <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.04)" }}>
+        {/* Requirements */}
+        <div className="rounded-2xl p-4" style={{ background: SECTION_BG }}>
           <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-2">Requirements</p>
           <div className="space-y-1.5">
-            {["Active Telegram channel", "Add @Paid_Adzbot as admin", "Permission to post messages", "Genuine followers (no bots)"].map((req, i) => (
+            {[
+              "Active Telegram channel",
+              "Add @Paid_Adzbot as admin",
+              "Permission to post messages",
+              "Genuine followers (no bots)",
+            ].map((req, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400/50 flex-shrink-0" />
                 <span className="text-[#888] text-xs">{req}</span>
@@ -638,6 +640,8 @@ export default function Ambassador() {
         </div>
 
       </main>
+
+      {HowItWorksDrawer}
     </Layout>
   );
 }
