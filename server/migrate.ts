@@ -700,9 +700,13 @@ export async function ensureDatabaseSchema(): Promise<void> {
         user_id VARCHAR NOT NULL UNIQUE REFERENCES users(id),
         application_id VARCHAR REFERENCES ambassador_applications(id),
         promo_code_name VARCHAR NOT NULL UNIQUE,
+        promo_prefix VARCHAR,
         custom_promo_request VARCHAR,
         custom_promo_request_status VARCHAR DEFAULT 'none',
         daily_promo_count INTEGER DEFAULT 1,
+        channel_verified BOOLEAN DEFAULT false,
+        channel_id VARCHAR,
+        next_promo_at TIMESTAMP,
         total_claims INTEGER DEFAULT 0,
         today_claims INTEGER DEFAULT 0,
         week_claims INTEGER DEFAULT 0,
@@ -716,6 +720,19 @@ export async function ensureDatabaseSchema(): Promise<void> {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
+
+    // Add new ambassador columns to existing rows
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS promo_prefix VARCHAR;
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS channel_verified BOOLEAN DEFAULT false;
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS channel_id VARCHAR;
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS next_promo_at TIMESTAMP;
+        END $$
+      `);
+    } catch { /* columns may already exist */ }
 
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS ambassador_earnings (

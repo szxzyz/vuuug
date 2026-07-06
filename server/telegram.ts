@@ -2903,104 +2903,189 @@ export async function checkBotStatus(): Promise<{ ok: boolean; username?: string
   }
 }
 
-// ── Ambassador Daily Promo Scheduler ─────────────────────────────────────────
-// Runs once at server start then every hour to check if it's time to send promos
+// ── Ambassador Promo Scheduler ────────────────────────────────────────────────
+// Runs every 15 minutes, checks nextPromoAt for each ambassador
+
+const SUFFIX_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** Generate a random 4-char alphanumeric suffix (no O/I/0/1 for clarity) */
+function randomSuffix(len = 4): string {
+  let result = '';
+  for (let i = 0; i < len; i++) {
+    result += SUFFIX_CHARS[Math.floor(Math.random() * SUFFIX_CHARS.length)];
+  }
+  return result;
+}
+
+/** 
+ * Generate a unique promo code for an ambassador (prefix + random suffix).
+ * Returns the created code string.
+ */
+export async function generateUniqueAmbassadorCode(prefix: string): Promise<string> {
+  const { db: dbConn } = await import('./db');
+  const { promoCodes } = await import('../shared/schema');
+  const { eq } = await import('drizzle-orm');
+
+  let attempts = 0;
+  while (attempts < 20) {
+    const candidate = `${prefix.toUpperCase()}${randomSuffix()}`;
+    const [existing] = await dbConn.select({ id: promoCodes.id }).from(promoCodes)
+      .where(eq(promoCodes.code, candidate)).limit(1);
+    if (!existing) return candidate;
+    attempts++;
+  }
+  // Fallback: longer suffix
+  return `${prefix.toUpperCase()}${randomSuffix(6)}`;
+}
+
+/**
+ * Create the promo code in DB and post to channel + DM ambassador.
+ * Returns the generated code string.
+ */
+export async function sendAmbassadorPromo(ambId: string): Promise<string | null> {
+  const { db: dbConn } = await import('./db');
+  const { ambassadors, promoCodes, adminSettings } = await import('../shared/schema');
+  const { eq, sql } = await import('drizzle-orm');
+  const { storage: stor } = await import('./storage');
+
+  const [amb] = await dbConn.select().from(ambassadors).where(eq(ambassadors.id, ambId)).limit(1);
+  if (!amb || amb.status !== 'active') return null;
+
+  // Check program enabled
+  const [programSetting] = await dbConn.select({ v: adminSettings.settingValue })
+    .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_program_enabled')).limit(1);
+  if (programSetting?.v === 'false') return null;
+
+  const [rewardSetting] = await dbConn.select({ v: adminSettings.settingValue })
+    .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
+  const rewardAmount = rewardSetting?.v || '10000';
+
+  const prefix = (amb.promoPrefix || amb.promoCodeName).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const uniqueCode = await generateUniqueAmbassadorCode(prefix);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+
+  // Create new promo code
+  await dbConn.insert(promoCodes).values({
+    code: uniqueCode,
+    rewardAmount,
+    rewardType: 'PAD',
+    usageLimit: null,
+    perUserLimit: 1,
+    isActive: true,
+    expiresAt,
+  });
+
+  // Compute next promo interval
+  const count = amb.dailyPromoCount || 1;
+  const intervalMs = (24 / count) * 60 * 60 * 1000; // 24h, 12h, or 8h
+  const nextPromoAt = new Date(Date.now() + intervalMs);
+
+  // Update ambassador record
+  await dbConn.update(ambassadors).set({
+    lastPromoSentAt: new Date(),
+    nextPromoAt,
+    updatedAt: new Date(),
+  }).where(eq(ambassadors.id, amb.id));
+
+  // Get ambassador user info
+  const user = await stor.getUser(amb.userId);
+  const referralLink = user?.referralCode
+    ? `https://t.me/${process.env.BOT_USERNAME || 'PaidAdzbot'}?start=${user.referralCode}`
+    : `https://t.me/${process.env.BOT_USERNAME || 'PaidAdzbot'}`;
+
+  const postText =
+    `🎉 <b>Paid Adz Giveaway</b>\n\n` +
+    `⚡ All Withdrawals are Instantly Paid Out\n\n` +
+    `👤 Only for the First 100 Active Users\n\n` +
+    `🤩 Promo Code: <code>${uniqueCode}</code>\n\n` +
+    `👀 Open Paid Adz & Claim Now!`;
+
+  const inlineKeyboard = {
+    inline_keyboard: [[
+      { text: '🚀 Claim Now', url: referralLink },
+    ]],
+  };
+
+  // Post to channel if verified
+  if (amb.channelVerified && amb.channelId) {
+    try {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (botToken) {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: amb.channelId,
+            text: postText,
+            parse_mode: 'HTML',
+            reply_markup: inlineKeyboard,
+          }),
+        });
+      }
+    } catch (err) {
+      console.error(`Failed to post to channel for ambassador ${amb.id}:`, err);
+    }
+  }
+
+  // DM the ambassador
+  if (user?.telegram_id) {
+    await sendTelegramMessage(user.telegram_id,
+      `🎯 <b>Your Promo Post is Live!</b>\n\n` +
+      `📛 Code: <code>${uniqueCode}</code>\n` +
+      `⏰ Expires in 24 hours\n\n` +
+      `${amb.channelVerified && amb.channelId ? '✅ Posted to your channel\n' : '📤 Share with your followers:\n\n' + postText + '\n\n'}` +
+      `You earn <b>$0.0001</b> for every successful claim. 🚀`,
+      { parse_mode: 'HTML' }
+    ).catch(() => {});
+  }
+
+  console.log(`✅ Ambassador promo sent: ${uniqueCode} for user ${amb.userId}`);
+  return uniqueCode;
+}
 
 export async function runAmbassadorDailyPromos(): Promise<void> {
   try {
     const { db: dbConn } = await import('./db');
-    const { ambassadors, promoCodes, adminSettings } = await import('../shared/schema');
-    const { eq, sql, and } = await import('drizzle-orm');
+    const { ambassadors, adminSettings } = await import('../shared/schema');
+    const { eq } = await import('drizzle-orm');
 
     // Check if program is enabled
     const [programSetting] = await dbConn.select({ v: adminSettings.settingValue })
       .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_program_enabled')).limit(1);
     if (programSetting?.v === 'false') return;
 
-    const [rewardSetting] = await dbConn.select({ v: adminSettings.settingValue })
-      .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
-    const rewardAmount = rewardSetting?.v || '10000';
-
-    const today = new Date().toISOString().split('T')[0];
-    const allAmbassadors = await dbConn.select().from(ambassadors)
+    const now = new Date();
+    // Find all active ambassadors, then filter by nextPromoAt in JS
+    const dueAmbassadors = await dbConn.select({ id: ambassadors.id }).from(ambassadors)
       .where(eq(ambassadors.status, 'active'));
 
-    for (const amb of allAmbassadors) {
+    for (const amb of dueAmbassadors) {
       try {
-        // Check if already sent today
-        const lastSent = amb.lastPromoSentAt;
-        if (lastSent) {
-          const lastSentDate = new Date(lastSent).toISOString().split('T')[0];
-          if (lastSentDate === today) continue; // already sent today
-        }
+        const [full] = await dbConn.select().from(ambassadors).where(eq(ambassadors.id, amb.id)).limit(1);
+        if (!full) continue;
 
-        const codeUpper = amb.promoCodeName.toUpperCase();
-        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        // Check if nextPromoAt is due
+        const due = !full.nextPromoAt || new Date(full.nextPromoAt) <= now;
+        if (!due) continue;
 
-        // Upsert promo code
-        const existingCode = await dbConn.select().from(promoCodes)
-          .where(eq(promoCodes.code, codeUpper)).limit(1);
-
-        if (existingCode.length > 0) {
-          await dbConn.update(promoCodes).set({
-            usageCount: 0,
-            usageLimit: null,
-            perUserLimit: 1,
-            isActive: true,
-            expiresAt: tomorrow,
-            rewardAmount,
-            rewardType: 'PAD',
-            updatedAt: new Date(),
-          }).where(eq(promoCodes.code, codeUpper));
-        } else {
-          await dbConn.insert(promoCodes).values({
-            code: codeUpper,
-            rewardAmount,
-            rewardType: 'PAD',
-            usageLimit: null,
-            perUserLimit: 1,
-            isActive: true,
-            expiresAt: tomorrow,
-          });
-        }
-
-        // Update last promo sent
-        await dbConn.update(ambassadors).set({ lastPromoSentAt: new Date(), updatedAt: new Date() })
-          .where(eq(ambassadors.id, amb.id));
-
-        // Get ambassador user and send notification
-        const { storage: stor } = await import('./storage');
-        const user = await stor.getUser(amb.userId);
-        if (user?.telegram_id) {
-          const count = amb.dailyPromoCount || 1;
-          await sendTelegramMessage(user.telegram_id,
-            `🎯 <b>Your Daily Promo Code${count > 1 ? 's Are' : ' Is'} Ready!</b>\n\n` +
-            `📛 Code: <code>${codeUpper}</code>\n` +
-            `⏰ Valid for 24 hours\n\n` +
-            `Share this code with your followers!\n` +
-            `You earn <b>$0.0001</b> for every successful claim. 🚀`,
-            { parse_mode: 'HTML' }
-          ).catch(() => {});
-        }
-
-        console.log(`✅ Ambassador daily promo sent: ${codeUpper} for user ${amb.userId}`);
+        await sendAmbassadorPromo(full.id);
       } catch (err) {
         console.error(`Failed to process ambassador ${amb.id}:`, err);
       }
     }
   } catch (err) {
-    console.error('Ambassador daily promo scheduler error:', err);
+    console.error('Ambassador promo scheduler error:', err);
   }
 }
 
-// Start ambassador promo scheduler — runs every hour, sends once per day per ambassador
+// Start ambassador promo scheduler — runs every 15 minutes
 export function startAmbassadorScheduler(): void {
-  // Run immediately on start (catches any missed sends from server restarts)
-  setTimeout(() => runAmbassadorDailyPromos().catch(console.error), 5000);
-  
-  // Then run every hour
-  setInterval(() => runAmbassadorDailyPromos().catch(console.error), 60 * 60 * 1000);
-  console.log('🎖️ Ambassador daily promo scheduler started');
+  // Run after 15 minutes of approval delay on server start
+  setTimeout(() => runAmbassadorDailyPromos().catch(console.error), 15 * 60 * 1000);
+
+  // Then run every 15 minutes
+  setInterval(() => runAmbassadorDailyPromos().catch(console.error), 15 * 60 * 1000);
+  console.log('🎖️ Ambassador promo scheduler started (15-min interval)');
 }
 
 export async function getWebhookInfo(): Promise<any> {
