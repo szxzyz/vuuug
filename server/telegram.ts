@@ -158,6 +158,47 @@ async function isBotAdminInChannel(botToken: string, channelIdentifier: string):
   return true; // fail open
 }
 
+/**
+ * Check whether the bot is an admin with Post Messages permission in the given channel.
+ * Also resolves and returns the numeric chat ID.
+ */
+export async function checkBotCanPostToChannel(
+  botToken: string,
+  channelIdentifier: string
+): Promise<{ canPost: boolean; chatId?: string }> {
+  try {
+    const botId = await getCachedBotId(botToken);
+    if (!botId) return { canPost: false };
+
+    // Resolve numeric chat ID via getChat
+    let chatId: string | undefined;
+    const chatRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent(channelIdentifier)}`
+    );
+    if (chatRes.ok) {
+      const chatData = await chatRes.json();
+      if (chatData.ok && chatData.result?.id) chatId = String(chatData.result.id);
+    }
+
+    // Check bot membership / permissions
+    const memberRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${botId}`
+    );
+    if (!memberRes.ok) return { canPost: false, chatId };
+    const memberData = await memberRes.json();
+    if (!memberData.ok) return { canPost: false, chatId };
+
+    const member = memberData.result;
+    const isCreator = member.status === 'creator';
+    const isAdmin  = member.status === 'administrator';
+    // can_post_messages may be absent for some admin configs — treat absence as allowed
+    const canPost  = isCreator || (isAdmin && member.can_post_messages !== false);
+    return { canPost, chatId };
+  } catch {
+    return { canPost: false };
+  }
+}
+
 export async function verifyChannelMembership(userId: number, channelIdOrUsername: string, botToken: string): Promise<boolean> {
   // Normalize channel identifier
   let channelIdentifier = channelIdOrUsername;
@@ -2940,12 +2981,13 @@ export async function generateUniqueAmbassadorCode(prefix: string): Promise<stri
 
 /**
  * Create the promo code in DB and post to channel + DM ambassador.
- * Returns the generated code string.
+ * Verifies bot posting permissions before every post.
+ * Returns the generated code string, or null if posting was skipped.
  */
 export async function sendAmbassadorPromo(ambId: string): Promise<string | null> {
   const { db: dbConn } = await import('./db');
   const { ambassadors, promoCodes, adminSettings } = await import('../shared/schema');
-  const { eq, sql } = await import('drizzle-orm');
+  const { eq } = await import('drizzle-orm');
   const { storage: stor } = await import('./storage');
 
   const [amb] = await dbConn.select().from(ambassadors).where(eq(ambassadors.id, ambId)).limit(1);
@@ -2956,89 +2998,122 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_program_enabled')).limit(1);
   if (programSetting?.v === 'false') return null;
 
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const user = await stor.getUser(amb.userId);
+
+  // ── Verify bot permissions before doing anything else ─────────────────────
+  if (botToken && amb.channelId) {
+    const { canPost } = await checkBotCanPostToChannel(botToken, amb.channelId);
+    if (!canPost) {
+      console.warn(`⚠️ Bot cannot post to channel for ambassador ${amb.id} — permissions missing`);
+      // Mark unverified and pause for 2 hours before retrying
+      await dbConn.update(ambassadors).set({
+        channelVerified: false,
+        nextPromoAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      }).where(eq(ambassadors.id, amb.id));
+      // Notify ambassador
+      if (user?.telegram_id) {
+        await sendTelegramMessage(user.telegram_id,
+          `<b>Posting Paused</b>\n\n` +
+          `The bot no longer has permission to post to your channel.\n\n` +
+          `Please re-add <b>@Paid_Adzbot</b> as an administrator with <b>Post Messages</b> permission to resume auto-posting.`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      }
+      return null;
+    }
+    // Restore verified flag if it was cleared
+    if (!amb.channelVerified) {
+      await dbConn.update(ambassadors).set({ channelVerified: true, updatedAt: new Date() })
+        .where(eq(ambassadors.id, amb.id));
+    }
+  }
+
+  // ── Generate promo code ───────────────────────────────────────────────────
   const [rewardSetting] = await dbConn.select({ v: adminSettings.settingValue })
     .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
   const rewardAmount = rewardSetting?.v || '10000';
 
   const prefix = (amb.promoPrefix || amb.promoCodeName).toUpperCase().replace(/[^A-Z0-9]/g, '');
   const uniqueCode = await generateUniqueAmbassadorCode(prefix);
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 h
 
-  // Create new promo code
+  // 100-claim limit OR 24 h, whichever hits first
   await dbConn.insert(promoCodes).values({
     code: uniqueCode,
     rewardAmount,
     rewardType: 'PAD',
-    usageLimit: null,
+    usageLimit: 100,
     perUserLimit: 1,
     isActive: true,
     expiresAt,
   });
 
-  // Fixed 4-hour interval between posts
-  const intervalMs = 4 * 60 * 60 * 1000;
-  const nextPromoAt = new Date(Date.now() + intervalMs);
-
-  // Update ambassador record
-  await dbConn.update(ambassadors).set({
-    lastPromoSentAt: new Date(),
-    nextPromoAt,
-    updatedAt: new Date(),
-  }).where(eq(ambassadors.id, amb.id));
-
-  // Get ambassador user info
-  const user = await stor.getUser(amb.userId);
+  // ── Build message ─────────────────────────────────────────────────────────
+  const botUsername = process.env.BOT_USERNAME || 'Paid_Adzbot';
   const referralLink = user?.referralCode
-    ? `https://t.me/${process.env.BOT_USERNAME || 'PaidAdzbot'}?start=${user.referralCode}`
-    : `https://t.me/${process.env.BOT_USERNAME || 'PaidAdzbot'}`;
+    ? `https://t.me/${botUsername}/MyWAdz?startapp=${user.referralCode}`
+    : `https://t.me/${botUsername}/MyWAdz`;
 
   const postText =
-    `🎉 <b>Paid Adz Giveaway</b>\n\n` +
-    `⚡ All Withdrawals are Instantly Paid Out\n\n` +
-    `👤 Only for the First 100 Active Users\n\n` +
-    `🤩 Promo Code: <code>${uniqueCode}</code>\n\n` +
-    `👀 Open Paid Adz & Claim Now!`;
+    `<tg-emoji emoji-id="5841700171657779627">💸</tg-emoji> <b>Paid Adz Giveaway is LIVE!</b>\n\n` +
+    `<tg-emoji emoji-id="5319070993254201336">⚡️</tg-emoji> Instant Withdrawals\n` +
+    `<tg-emoji emoji-id="5258011929993026890">👤</tg-emoji> First 100 Active Users Only\n\n` +
+    `<tg-emoji emoji-id="5357592164090028726">🎟</tg-emoji> Code: <code>${uniqueCode}</code>\n\n` +
+    `<tg-emoji emoji-id="5997099132173424576">🚀</tg-emoji> Open Paid Adz and claim your reward now before it's gone!`;
 
   const inlineKeyboard = {
     inline_keyboard: [[
-      { text: '🚀 Claim Now', url: referralLink },
+      { text: 'Open Paid Adz', url: referralLink },
     ]],
   };
 
-  // Post to channel if verified
-  if (amb.channelVerified && amb.channelId) {
+  // ── Post to channel ───────────────────────────────────────────────────────
+  let postedToChannel = false;
+  if (botToken && amb.channelId) {
     try {
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (botToken) {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: amb.channelId,
-            text: postText,
-            parse_mode: 'HTML',
-            reply_markup: inlineKeyboard,
-          }),
-        });
+      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: amb.channelId,
+          text: postText,
+          parse_mode: 'HTML',
+          reply_markup: inlineKeyboard,
+        }),
+      });
+      const respData = await resp.json();
+      postedToChannel = respData.ok === true;
+      if (!postedToChannel) {
+        console.error(`Channel post failed for ambassador ${amb.id}:`, respData.description);
       }
     } catch (err) {
-      console.error(`Failed to post to channel for ambassador ${amb.id}:`, err);
+      console.error(`Channel post error for ambassador ${amb.id}:`, err);
     }
   }
 
-  // DM the ambassador
+  // ── Advance schedule: next post in 4 hours ────────────────────────────────
+  await dbConn.update(ambassadors).set({
+    lastPromoSentAt: new Date(),
+    nextPromoAt: new Date(Date.now() + 4 * 60 * 60 * 1000),
+    updatedAt: new Date(),
+  }).where(eq(ambassadors.id, amb.id));
+
+  // ── DM ambassador ─────────────────────────────────────────────────────────
   if (user?.telegram_id) {
     await sendTelegramMessage(user.telegram_id,
-      `🎯 <b>Your Promo Post is Live!</b>\n\n` +
-      `📛 Code: <code>${uniqueCode}</code>\n` +
-      `⏰ Expires in 24 hours\n\n` +
-      `${amb.channelVerified && amb.channelId ? '✅ Posted to your channel\n' : '📤 Share with your followers:\n\n' + postText + '\n\n'}` +
-      `You earn <b>$0.0001</b> for every successful claim. 🚀`,
+      `<tg-emoji emoji-id="5841700171657779627">💸</tg-emoji> <b>Promo Post is Live!</b>\n\n` +
+      `Code: <code>${uniqueCode}</code>\n` +
+      `Expires: 24 hours · Max claims: 100\n\n` +
+      (postedToChannel
+        ? `Posted to your channel automatically.`
+        : `Share this with your followers:\n\n${postText}`),
       { parse_mode: 'HTML' }
     ).catch(() => {});
   }
 
-  console.log(`✅ Ambassador promo sent: ${uniqueCode} for user ${amb.userId}`);
+  console.log(`✅ Ambassador promo: ${uniqueCode} | ambassador ${amb.id} | channel post: ${postedToChannel}`);
   return uniqueCode;
 }
 
@@ -3077,14 +3152,13 @@ export async function runAmbassadorDailyPromos(): Promise<void> {
   }
 }
 
-// Start ambassador promo scheduler — runs every 15 minutes
+// Start ambassador promo scheduler — checks every minute for due posts
 export function startAmbassadorScheduler(): void {
-  // Run after 15 minutes of approval delay on server start
-  setTimeout(() => runAmbassadorDailyPromos().catch(console.error), 15 * 60 * 1000);
-
-  // Then run every 15 minutes
-  setInterval(() => runAmbassadorDailyPromos().catch(console.error), 15 * 60 * 1000);
-  console.log('🎖️ Ambassador promo scheduler started (15-min interval)');
+  // Run 10 seconds after server start to catch any posts missed during restart
+  setTimeout(() => runAmbassadorDailyPromos().catch(console.error), 10_000);
+  // Then run every minute
+  setInterval(() => runAmbassadorDailyPromos().catch(console.error), 60_000);
+  console.log('🎖️ Ambassador promo scheduler started (1-min check interval)');
 }
 
 export async function getWebhookInfo(): Promise<any> {

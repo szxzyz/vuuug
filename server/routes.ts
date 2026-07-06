@@ -11085,8 +11085,8 @@ ${walletAddress}
         promoCodeName = `${baseName}${suffix++}`;
       }
 
-      // Create ambassador record — first promo starts 15 minutes after approval
-      const firstPromoAt = new Date(Date.now() + 15 * 60 * 1000);
+      // Create ambassador record — first promo fires 1 minute after approval
+      const firstPromoAt = new Date(Date.now() + 60 * 1000);
       const [ambassador] = await db.insert(ambassadors).values({
         userId: application.userId,
         applicationId: id,
@@ -11101,15 +11101,43 @@ ${walletAddress}
       await db.update(ambassadorApplications).set({ status: 'approved', reviewedAt: new Date() })
         .where(eq(ambassadorApplications.id, id));
 
+      // Auto-verify the channel from the application link so posting starts immediately
+      try {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        if (botToken) {
+          const { checkBotCanPostToChannel } = await import('./telegram');
+          // Normalize channel link to an identifier Telegram accepts
+          const rawLink = application.channelUsername || application.channelLink || '';
+          const channelIdentifier = rawLink.startsWith('-')
+            ? rawLink
+            : '@' + rawLink
+                .replace('https://t.me/', '')
+                .replace('http://t.me/', '')
+                .replace('t.me/', '')
+                .replace(/^@/, '')
+                .split('/')[0];
+          const { canPost, chatId } = await checkBotCanPostToChannel(botToken, channelIdentifier);
+          if (canPost && chatId) {
+            await db.update(ambassadors)
+              .set({ channelVerified: true, channelId: chatId, updatedAt: new Date() })
+              .where(eq(ambassadors.id, ambassador.id));
+            console.log(`✅ Auto-verified channel for new ambassador ${ambassador.id}: ${chatId}`);
+          } else {
+            console.warn(`⚠️ Bot cannot post to channel for new ambassador ${ambassador.id} — they may need to add the bot`);
+          }
+        }
+      } catch (verifyErr) {
+        console.error('Auto-verify channel error:', verifyErr);
+      }
+
       // Notify user
       try {
         if (user?.telegram_id) {
           const { sendTelegramMessage } = await import('./telegram');
           await sendTelegramMessage(user.telegram_id,
-            `🎉 <b>Congratulations! You're now a Paid Adz Ambassador!</b>\n\n` +
-            `📛 Your promo code prefix: <b>${promoCodeName}</b>\n\n` +
-            `Your first promo post will go out in <b>15 minutes</b>.\n` +
-            `Add @PaidAdzbot as admin in your channel to enable auto-posting.\n\n` +
+            `<b>Congratulations! You're now a Paid Adz Ambassador!</b>\n\n` +
+            `Your promo code prefix: <b>${promoCodeName}</b>\n\n` +
+            `Your first promo post will go out in <b>1 minute</b>. After that, a new post will be published automatically every <b>4 hours</b>.\n\n` +
             `Every time someone claims your code, you earn <b>$0.0001</b>!\n\n` +
             `Open the app to view your Ambassador Dashboard.`,
             { parse_mode: 'HTML' }
