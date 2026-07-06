@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
 import {
   CheckCircle2, XCircle, Loader2,
-  Scroll, AlertTriangle, Send, Info, UserCheck,
+  Scroll, AlertTriangle, Send, Info, UserCheck, ChevronDown, ChevronRight,
 } from "lucide-react";
 import {
   Drawer,
@@ -33,6 +33,25 @@ interface AmbassadorStatus {
   application: any | null;
 }
 
+interface ClaimRecord {
+  id: string;
+  username: string | null;
+  firstName: string | null;
+  claimedAt: string;
+  rewardGranted: string;
+}
+
+interface PromoCodeHistoryRecord {
+  promoCode: string;
+  totalClaims: number;
+  totalEarnings: string;
+  createdAt: string;
+  expiresAt: string | null;
+  rewardAmount: string;
+  status: "active" | "expired";
+  claims: ClaimRecord[];
+}
+
 interface DashboardData {
   ambassador: any;
   stats: {
@@ -52,6 +71,7 @@ interface DashboardData {
     createdAt: string;
     claimUserUsername?: string;
   }>;
+  promoCodeHistory: PromoCodeHistoryRecord[];
   activePromos: any[];
 }
 
@@ -67,13 +87,17 @@ export default function Ambassador() {
   const { data: status, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
     queryKey: ["/api/ambassador/status"],
     retry: false,
+    refetchInterval: 30_000,
   });
 
   const { data: dashboard, isLoading: dashLoading } = useQuery<DashboardData>({
     queryKey: ["/api/ambassador/dashboard"],
     retry: false,
     enabled: status?.isAmbassador === true,
+    refetchInterval: 30_000,
   });
+
+  const [expandedCode, setExpandedCode] = useState<string | null>(null);
 
   const amb = dashboard?.ambassador ?? status?.ambassador;
   const stats = dashboard?.stats;
@@ -117,7 +141,7 @@ export default function Ambassador() {
           {[
             { n: 1, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Apply with your channel", sub: "Submit your Telegram channel link for review" },
             { n: 2, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Add bot as admin", sub: "Grant @Paid_Adzbot posting permission in your channel" },
-            { n: 3, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Auto-posting begins", sub: "Unique promo codes posted to your channel every 4 hours" },
+            { n: 3, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Auto-posting begins", sub: "2 promo posts per day, every 12 hours, with 2 unique codes each" },
             { n: 4, color: "#22c55e", bg: "rgba(34,197,94,0.15)", title: "Earn per claim", sub: "Get $0.0001 for every successful claim" },
           ].map(({ n, color, bg, title, sub }) => (
             <div key={n} className="flex items-start gap-3 py-3 border-b border-white/5 last:border-none">
@@ -373,7 +397,7 @@ export default function Ambassador() {
 
         {/* Claim History Drawer */}
         <Drawer open={historyOpen} onOpenChange={setHistoryOpen}>
-          <DrawerContent className="border-none max-h-[80vh]" style={{ background: SECTION_BG }}>
+          <DrawerContent className="border-none max-h-[85vh]" style={{ background: SECTION_BG }}>
             <DrawerHeader className="flex items-center justify-between pb-2">
               <DrawerTitle className="text-white font-bold text-lg">Claim History</DrawerTitle>
               <DrawerClose asChild>
@@ -386,49 +410,95 @@ export default function Ambassador() {
             <div className="px-4 pb-6 overflow-y-auto">
               {dashLoading ? (
                 <div className="flex items-center justify-center py-10">
-                  <div className="text-white/40 text-sm">Loading…</div>
+                  <Loader2 className="w-6 h-6 text-white/30 animate-spin" />
                 </div>
-              ) : (dashboard?.promoHistory?.length ?? 0) === 0 ? (
+              ) : (dashboard?.promoCodeHistory?.length ?? 0) === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">
                   <Scroll className="w-10 h-10 text-white/20" />
-                  <p className="text-white/40 text-sm">No claims yet</p>
-                  <p className="text-white/25 text-xs">Start posting to get your first claim</p>
+                  <p className="text-white/40 text-sm">No promo codes yet</p>
+                  <p className="text-white/25 text-xs">Your codes will appear here once posted</p>
                 </div>
               ) : (
-                <>
-                  <div className="grid grid-cols-3 gap-2 pb-2 border-b border-white/10 mb-2">
-                    <span className="text-[#888] text-xs font-semibold uppercase tracking-wider">Code</span>
-                    <span className="text-[#888] text-xs font-semibold uppercase tracking-wider text-center">User</span>
-                    <span className="text-[#888] text-xs font-semibold uppercase tracking-wider text-right">Earned</span>
-                  </div>
+                <div className="space-y-2">
+                  {dashboard?.promoCodeHistory?.map((item) => {
+                    const isExpanded = expandedCode === item.promoCode;
+                    return (
+                      <div key={item.promoCode} className="rounded-xl overflow-hidden"
+                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                        {/* Promo code header row — tap to expand */}
+                        <button
+                          className="w-full flex items-center justify-between px-3 py-3 active:bg-white/5 transition-colors"
+                          onClick={() => setExpandedCode(isExpanded ? null : item.promoCode)}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isExpanded
+                              ? <ChevronDown className="w-4 h-4 text-white/40 flex-shrink-0" />
+                              : <ChevronRight className="w-4 h-4 text-white/40 flex-shrink-0" />}
+                            <div className="min-w-0 text-left">
+                              <p className="text-white text-xs font-mono font-bold">{item.promoCode}</p>
+                              <p className="text-[#666] text-[10px] mt-0.5">
+                                Created {new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+                            <div className="text-right">
+                              <p className="text-white text-xs font-semibold">{item.totalClaims} user{item.totalClaims !== 1 ? "s" : ""}</p>
+                              <p className="text-green-400 text-[10px] font-bold">+${item.totalEarnings}</p>
+                            </div>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                              item.status === "active"
+                                ? "bg-green-500/15 text-green-400"
+                                : "bg-white/10 text-white/40"
+                            }`}>
+                              {item.status}
+                            </span>
+                          </div>
+                        </button>
 
-                  <div className="space-y-1">
-                    {dashboard?.promoHistory?.map((item) => (
-                      <div key={item.id} className="grid grid-cols-3 gap-2 items-center py-2.5 border-b border-white/5">
-                        <div className="min-w-0">
-                          <p className="text-white text-xs font-mono font-bold truncate">{item.promoCode}</p>
-                          <p className="text-[#666] text-[10px] mt-0.5">
-                            {new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                          </p>
-                        </div>
-                        <div className="flex justify-center">
-                          <p className="text-[#888] text-xs truncate">
-                            {item.claimUserUsername ? `@${item.claimUserUsername}` : "User"}
-                          </p>
-                        </div>
-                        <div className="flex justify-end">
-                          <span className="text-green-400 text-xs font-bold">
-                            +${parseFloat(item.commissionUsd).toFixed(4)}
-                          </span>
-                        </div>
+                        {/* Expanded: per-user claims */}
+                        {isExpanded && (
+                          <div className="border-t border-white/5 px-3 pb-2">
+                            {/* Reward info row */}
+                            <div className="py-2 border-b border-white/5 flex items-center justify-between">
+                              <span className="text-[#888] text-[10px]">Reward per claim</span>
+                              <span className="text-white text-[10px] font-semibold">
+                                {parseInt(item.rewardAmount || "10000").toLocaleString()} POW
+                              </span>
+                            </div>
+                            {item.claims.length === 0 ? (
+                              <p className="text-white/25 text-xs py-3 text-center">No claims yet</p>
+                            ) : (
+                              <>
+                                <div className="grid grid-cols-3 gap-1 pt-2 pb-1">
+                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider">User</span>
+                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider text-center">Date &amp; Time</span>
+                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider text-right">Reward</span>
+                                </div>
+                                <div className="space-y-0">
+                                  {item.claims.map((claim) => (
+                                    <div key={claim.id} className="grid grid-cols-3 gap-1 items-center py-1.5 border-b border-white/5 last:border-none">
+                                      <p className="text-[#aaa] text-[10px] truncate">
+                                        {claim.username ? `@${claim.username}` : claim.firstName || "User"}
+                                      </p>
+                                      <p className="text-[#666] text-[10px] text-center">
+                                        {new Date(claim.claimedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}{" "}
+                                        {new Date(claim.claimedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                                      </p>
+                                      <p className="text-green-400 text-[10px] font-bold text-right">
+                                        {parseInt(claim.rewardGranted || "10000").toLocaleString()} POW
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-
-                  <p className="text-[#666] text-xs mt-4 text-center">
-                    {dashboard?.promoHistory?.length} claim{(dashboard?.promoHistory?.length ?? 0) !== 1 ? "s" : ""}
-                  </p>
-                </>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </DrawerContent>

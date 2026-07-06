@@ -800,7 +800,7 @@ export default function Home() {
         <div
           className="mt-1 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
           style={{ height: 96 }}
-          onClick={() => window.open('https://t.me/Paid_Adzbot?start=refcontest', '_blank')}
+          onClick={() => setLocation('/leaderboard')}
         >
           <img
             src="/daily-contest-banner.jpg"
