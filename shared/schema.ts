@@ -408,10 +408,14 @@ export const ambassadors = pgTable("ambassadors", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull().unique(),
   applicationId: varchar("application_id").references(() => ambassadorApplications.id),
-  promoCodeName: varchar("promo_code_name").notNull().unique(), // e.g. "TheCoreApp1"
+  promoCodeName: varchar("promo_code_name").notNull().unique(), // base prefix e.g. "JOHN"
+  promoPrefix: varchar("promo_prefix"), // same as promoCodeName, used for suffix generation
   customPromoRequest: varchar("custom_promo_request"), // pending custom name
   customPromoRequestStatus: varchar("custom_promo_request_status").default("none"), // none | pending | approved | rejected
   dailyPromoCount: integer("daily_promo_count").default(1), // 1 | 2 | 3
+  channelVerified: boolean("channel_verified").default(false), // bot is admin in channel
+  channelId: varchar("channel_id"), // telegram chat_id for auto-posting
+  nextPromoAt: timestamp("next_promo_at"), // when to send the next scheduled promo
   totalClaims: integer("total_claims").default(0),
   todayClaims: integer("today_claims").default(0),
   weekClaims: integer("week_claims").default(0),
