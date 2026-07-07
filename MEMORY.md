@@ -1,0 +1,1 @@
+- [Advertiser task system](advertiser-tasks.md) — link field holds all formats; package tiers replace free-form pricing; auth required on all task endpoints
