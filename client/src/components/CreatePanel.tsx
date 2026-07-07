@@ -1,54 +1,52 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Radio, PartyPopper, ChevronLeft, Loader2, CheckCircle2, AlertCircle, Bot, Megaphone, Gift, Award } from "lucide-react";
+import { Cpu, Radio, PartyPopper, ChevronLeft, Loader2, CheckCircle2, AlertCircle, Gift, Award } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
 
-const VERIFIED_RATE = 0.0025;
-const PLAIN_RATE    = 0.0020;
-const MIN_CLICKS    = 100;
+// ─── Pricing packages ──────────────────────────────────────────
+const PACKAGES = [
+  { clicks: 100,   plain: 0.1500, verified: 0.2000 },
+  { clicks: 500,   plain: 0.7500, verified: 1.0000 },
+  { clicks: 1000,  plain: 1.5000, verified: 2.0000 },
+  { clicks: 2000,  plain: 3.0000, verified: 4.0000 },
+  { clicks: 5000,  plain: 7.5000, verified: 10.0000 },
+  { clicks: 10000, plain: 15.0000, verified: 20.0000 },
+];
 
 type Flow = "bot" | "channel" | "giveaway" | null;
-
 interface Props { open: boolean; onClose: () => void; }
 
-// ─── Design tokens ────────────────────────────────────────────
-const BG      = "rgba(13,13,16,0.98)";
-const CARD    = "rgba(255,255,255,0.055)";
-const BDR     = "rgba(255,255,255,0.09)";
-const T       = "#fff";
-const TDIM    = "rgba(255,255,255,0.42)";
-const TFAINT  = "rgba(255,255,255,0.22)";
-const BLUE    = "#3b82f6";
+// ─── Design tokens ─────────────────────────────────────────────
+const BG     = "rgba(13,13,16,0.98)";
+const CARD   = "rgba(255,255,255,0.055)";
+const BDR    = "rgba(255,255,255,0.09)";
+const T      = "#fff";
+const TDIM   = "rgba(255,255,255,0.42)";
+const TFAINT = "rgba(255,255,255,0.22)";
+const BLUE   = "#3b82f6";
 
-// ─── Small helpers ────────────────────────────────────────────
 const Label = ({ children }: { children: React.ReactNode }) => (
   <p style={{ color: BLUE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em",
-    textTransform: "uppercase", marginBottom: 10 }}>
-    {children}
-  </p>
+    textTransform: "uppercase", marginBottom: 10 }}>{children}</p>
 );
 
 const Field = ({
-  placeholder, value, onChange, type = "text", prefix,
+  placeholder, value, onChange, prefix,
 }: {
-  placeholder: string; value: string; onChange: (v: string) => void;
-  type?: string; prefix?: string;
+  placeholder: string; value: string; onChange: (v: string) => void; prefix?: string;
 }) => (
   <div style={{ position: "relative" }}>
     {prefix && (
       <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-        color: TDIM, fontSize: 15, pointerEvents: "none", userSelect: "none" }}>
-        {prefix}
-      </span>
+        color: TDIM, fontSize: 15, pointerEvents: "none", userSelect: "none" }}>{prefix}</span>
     )}
     <input
-      type={type}
+      type="text"
       placeholder={placeholder}
       value={value}
       onChange={e => onChange(e.target.value)}
-      min={type === "number" ? MIN_CLICKS : undefined}
       style={{
         width: "100%", background: "rgba(255,255,255,0.05)",
         border: `1px solid ${BDR}`, borderRadius: 14,
@@ -59,12 +57,8 @@ const Field = ({
   </div>
 );
 
-// ─── Radio-style type card ────────────────────────────────────
-function RadioCard({
-  selected, onClick, title, sub, tag,
-}: {
-  selected: boolean; onClick: () => void;
-  title: string; sub: string; tag?: string;
+function RadioCard({ selected, onClick, title, sub }: {
+  selected: boolean; onClick: () => void; title: string; sub: string;
 }) {
   return (
     <motion.button
@@ -74,16 +68,14 @@ function RadioCard({
         display: "flex", alignItems: "flex-start", gap: 12,
         background: selected ? "rgba(59,130,246,0.06)" : CARD,
         border: `1.5px solid ${selected ? "rgba(59,130,246,0.45)" : BDR}`,
-        borderRadius: 14, padding: "14px 14px", width: "100%", textAlign: "left",
+        borderRadius: 14, padding: "14px", width: "100%", textAlign: "left",
         transition: "border-color 0.15s, background 0.15s",
       }}
     >
       <div style={{ flex: 1 }}>
         <p style={{ color: T, fontWeight: 600, fontSize: 14.5 }}>{title}</p>
         <p style={{ color: TDIM, fontSize: 12.5, marginTop: 4, lineHeight: 1.45 }}>{sub}</p>
-        {tag && <p style={{ color: BLUE, fontSize: 11.5, marginTop: 6, fontWeight: 600 }}>{tag}</p>}
       </div>
-      {/* Radio circle */}
       <div style={{
         width: 20, height: 20, borderRadius: "50%", flexShrink: 0, marginTop: 2,
         border: `2px solid ${selected ? BLUE : "rgba(255,255,255,0.22)"}`,
@@ -97,53 +89,46 @@ function RadioCard({
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────
 export default function CreatePanel({ open, onClose }: Props) {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
 
-  // Pill menu
-  const [flow, setFlow] = useState<Flow>(null);
+  const [flow,         setFlow]         = useState<Flow>(null);
+  const [verifyType,   setVerifyType]   = useState<"verification" | "without">("without");
+  const [campaignName, setCampaignName] = useState("");
+  const [botLink,      setBotLink]      = useState("");       // without-verify: @username
+  const [botStartLink, setBotStartLink] = useState("");       // with-verify:    full https://t.me/Bot?start=CODE
+  const [channelLink,  setChannelLink]  = useState("");       // full URL: https://t.me/channel
+  const [selectedPkg,  setSelectedPkg]  = useState<number | null>(null);
 
-  // Form state
-  const [verifyType,       setVerifyType]       = useState<"verification" | "without">("without");
-  const [campaignName,     setCampaignName]     = useState("");
-  const [botLink,          setBotLink]          = useState("");
-  const [channelUsername,  setChannelUsername]  = useState("");
-  const [clicks,           setClicks]           = useState("");
+  const [chVerifying, setChVerifying] = useState(false);
+  const [chVerified,  setChVerified]  = useState(false);
+  const [chError,     setChError]     = useState("");
 
-  // Channel verify
-  const [chVerifying,  setChVerifying]  = useState(false);
-  const [chVerified,   setChVerified]   = useState(false);
-  const [chError,      setChError]      = useState("");
-
-  const parsedClicks    = parseInt(clicks) || 0;
   const isVerification  = verifyType === "verification";
-  const cost            = parsedClicks >= MIN_CLICKS
-    ? (parsedClicks * (isVerification ? VERIFIED_RATE : PLAIN_RATE)).toFixed(4)
+  const selectedPkgData = PACKAGES.find(p => p.clicks === selectedPkg);
+  const cost = selectedPkgData
+    ? (isVerification ? selectedPkgData.verified : selectedPkgData.plain).toFixed(4)
     : null;
 
   const reset = useCallback(() => {
     setFlow(null);
-    setVerifyType("without"); setCampaignName(""); setBotLink("");
-    setChannelUsername(""); setClicks("");
+    setVerifyType("without"); setCampaignName(""); setBotLink(""); setBotStartLink("");
+    setChannelLink(""); setSelectedPkg(null);
     setChVerifying(false); setChVerified(false); setChError("");
   }, []);
 
-  const handleClose = useCallback(() => {
-    onClose(); setTimeout(reset, 350);
-  }, [onClose, reset]);
+  const handleClose = useCallback(() => { onClose(); setTimeout(reset, 350); }, [onClose, reset]);
 
-  // Channel verify API call
   const verifyChannel = async () => {
-    if (!channelUsername.trim()) return;
+    const trimmed = channelLink.trim();
+    if (!trimmed) return;
     setChVerifying(true); setChError(""); setChVerified(false);
     try {
-      const username = channelUsername.replace(/^@/, "").trim();
       const res = await fetch("/api/advertiser-tasks/verify-channel", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelLink: `https://t.me/${username}` }),
+        body: JSON.stringify({ channelLink: trimmed }),
       });
       const data = await res.json();
       if (data.success) setChVerified(true);
@@ -152,18 +137,19 @@ export default function CreatePanel({ open, onClose }: Props) {
     finally { setChVerifying(false); }
   };
 
-  // Submit
   const createMutation = useMutation({
     mutationFn: async () => {
       const link = flow === "bot"
-        ? `https://t.me/${botLink.replace(/^@/, "").trim()}`
-        : `https://t.me/${channelUsername.replace(/^@/, "").trim()}`;
+        ? isVerification
+          ? botStartLink.trim()
+          : `https://t.me/${botLink.replace(/^@/, "").trim()}`
+        : channelLink.trim();
       const res = await fetch("/api/advertiser-tasks/create", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           taskType: flow, title: campaignName.trim(), link,
-          totalClicksRequired: parsedClicks,
+          totalClicksRequired: selectedPkg,
           verificationRequired: isVerification,
           channelVerified: flow === "channel" ? chVerified : false,
         }),
@@ -181,16 +167,18 @@ export default function CreatePanel({ open, onClose }: Props) {
   });
 
   const canSubmit = (() => {
-    if (!campaignName.trim() || parsedClicks < MIN_CLICKS) return false;
-    if (flow === "bot" && !botLink.trim()) return false;
+    if (!campaignName.trim() || !selectedPkg) return false;
+    if (flow === "bot") {
+      if (isVerification && !botStartLink.trim()) return false;
+      if (!isVerification && !botLink.trim()) return false;
+    }
     if (flow === "channel") {
-      if (!channelUsername.trim()) return false;
+      if (!channelLink.trim() || !channelLink.includes("t.me/")) return false;
       if (isVerification && !chVerified) return false;
     }
     return true;
   })();
 
-  // ── FAB PILLS ──────────────────────────────────────────────
   const pills: { id: Flow; label: string; Icon: React.ElementType; navigate?: string }[] = [
     { id: "bot",      label: "Bot",        Icon: Cpu         },
     { id: "channel",  label: "Channel",    Icon: Radio       },
@@ -200,12 +188,12 @@ export default function CreatePanel({ open, onClose }: Props) {
 
   return (
     <>
-      {/* ── Full-screen blur backdrop ── */}
+      {/* Backdrop */}
       <AnimatePresence>
         {open && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.15 }}
             className="fixed inset-0 z-[49]"
             style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
             onClick={onClose}
@@ -213,7 +201,7 @@ export default function CreatePanel({ open, onClose }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── Vertical pill stack above "+" button ── */}
+      {/* Pill stack */}
       <AnimatePresence>
         {open && (
           <div
@@ -223,26 +211,19 @@ export default function CreatePanel({ open, onClose }: Props) {
             {pills.map(({ id, label, Icon, navigate: navTo }, i) => (
               <motion.button
                 key={label}
-                initial={{ opacity: 0, x: 20, scale: 0.88 }}
+                initial={{ opacity: 0, x: 12, scale: 0.92 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: 16, scale: 0.88 }}
-                transition={{ delay: i * 0.05, type: "spring", stiffness: 360, damping: 28 }}
+                exit={{ opacity: 0, x: 10, scale: 0.92 }}
+                transition={{ delay: i * 0.025, type: "spring", stiffness: 480, damping: 32 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={() => {
-                  if (navTo) { onClose(); navigate(navTo); }
-                  else setFlow(id);
-                }}
+                onClick={() => { if (navTo) { onClose(); navigate(navTo); } else setFlow(id); }}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 10,
-                  height: 64,
-                  width: "max-content",
-                  background: "rgba(28,28,30,0.85)",
-                  backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-                  border: "none",
-                  borderRadius: 32,
-                  padding: "0 22px 0 18px",
-                  cursor: "pointer",
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                  height: 64, width: "max-content",
+                  background: "rgba(28,28,30,0.88)",
+                  backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
+                  border: "none", borderRadius: 32, padding: "0 22px 0 18px",
+                  cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
                 }}
               >
                 <Icon style={{ width: 24, height: 24, color: "rgba(255,255,255,0.88)", strokeWidth: 1.8, flexShrink: 0 }} />
@@ -253,23 +234,21 @@ export default function CreatePanel({ open, onClose }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── Bottom sheet (opens when a pill is chosen) ── */}
+      {/* Bottom sheet */}
       <AnimatePresence>
         {flow !== null && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: 0.18 }}
               className="fixed inset-0 z-[68]"
               style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(5px)" }}
               onClick={handleClose}
             />
 
-            {/* Sheet */}
             <motion.div
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-              transition={{ type: "spring", stiffness: 340, damping: 38 }}
+              transition={{ type: "spring", stiffness: 400, damping: 42 }}
               className="fixed bottom-0 left-0 right-0 z-[69]"
               style={{
                 background: BG,
@@ -299,82 +278,75 @@ export default function CreatePanel({ open, onClose }: Props) {
                   <ChevronLeft style={{ width: 17, height: 17, color: TDIM }} />
                 </button>
                 <h2 style={{ color: T, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>
-                  {flow === "bot" ? "Promote Bot"
-                    : flow === "channel" ? "Promote Channel"
-                    : "Giveaway"}
+                  {flow === "bot" ? "Promote Bot" : flow === "channel" ? "Promote Channel" : "Giveaway"}
                 </h2>
               </div>
 
               <div style={{ padding: "16px 20px 0" }}>
-                {/* ── Giveaway coming soon ── */}
+
+                {/* Giveaway */}
                 {flow === "giveaway" && (
                   <div className="flex flex-col items-center justify-center gap-4 py-12">
                     <Gift style={{ width: 44, height: 44, color: "#fbbf24" }} />
                     <div className="text-center">
                       <p style={{ color: T, fontWeight: 700, fontSize: 19 }}>Coming Soon</p>
-                      <p style={{ color: TDIM, fontSize: 13.5, marginTop: 6 }}>
-                        Giveaway campaigns are in development.
-                      </p>
+                      <p style={{ color: TDIM, fontSize: 13.5, marginTop: 6 }}>Giveaway campaigns are in development.</p>
                     </div>
                   </div>
                 )}
 
-                {/* ── Bot / Channel form (all-in-one) ── */}
+                {/* Bot / Channel form */}
                 {(flow === "bot" || flow === "channel") && (
                   <div className="flex flex-col gap-5">
 
-                    {/* ── PROMO TYPE ── */}
+                    {/* TYPE */}
                     <div>
-                      <Label>Promo Type</Label>
+                      <Label>Type</Label>
                       <div className="flex flex-col gap-2">
                         <RadioCard
                           selected={verifyType === "verification"}
                           onClick={() => { setVerifyType("verification"); setChVerified(false); setChError(""); }}
                           title="With Verification"
-                          sub="Users must verify before claiming reward"
-                          tag={`100 clicks = ${(100 * VERIFIED_RATE).toFixed(2)} TON`}
+                          sub={flow === "bot"
+                            ? "Users start your bot via the referral link — verified before reward"
+                            : "Users must join the channel — bot verifies membership automatically"}
                         />
                         <RadioCard
                           selected={verifyType === "without"}
                           onClick={() => setVerifyType("without")}
                           title="Without Verification"
-                          sub="Users complete task without verification"
-                          tag={`100 clicks = ${(100 * PLAIN_RATE).toFixed(2)} TON`}
+                          sub={flow === "bot"
+                            ? "Users open your bot — reward is granted instantly"
+                            : "Users open the channel — reward is granted instantly"}
                         />
                       </div>
                     </div>
 
-                    {/* ── CHANNEL INPUT (only for channel) ── */}
+                    {/* CHANNEL LINK (full URL) */}
                     {flow === "channel" && (
                       <div>
                         <Label>Your Channel</Label>
                         <div className="flex gap-2">
                           <div style={{ flex: 1 }}>
                             <Field
-                              placeholder="channel username"
-                              prefix="@"
-                              value={channelUsername}
-                              onChange={v => { setChannelUsername(v); setChVerified(false); setChError(""); }}
+                              placeholder="https://t.me/YourChannel"
+                              value={channelLink}
+                              onChange={v => { setChannelLink(v); setChVerified(false); setChError(""); }}
                             />
                           </div>
                           {isVerification && (
                             <motion.button
                               whileTap={{ scale: 0.95 }}
                               onClick={verifyChannel}
-                              disabled={chVerifying || !channelUsername.trim() || chVerified}
+                              disabled={chVerifying || !channelLink.trim() || chVerified}
                               style={{
                                 padding: "0 15px", borderRadius: 14, flexShrink: 0,
-                                background: chVerified
-                                  ? "rgba(34,197,94,0.15)"
-                                  : "rgba(59,130,246,0.15)",
-                                border: chVerified
-                                  ? "1px solid rgba(34,197,94,0.3)"
-                                  : "1px solid rgba(59,130,246,0.3)",
+                                background: chVerified ? "rgba(34,197,94,0.15)" : "rgba(59,130,246,0.15)",
+                                border: chVerified ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(59,130,246,0.3)",
                                 color: chVerified ? "#4ade80" : "#93c5fd",
                                 fontSize: 13, fontWeight: 600,
                                 cursor: chVerifying || chVerified ? "default" : "pointer",
-                                display: "flex", alignItems: "center", gap: 6, minWidth: 78,
-                                justifyContent: "center",
+                                display: "flex", alignItems: "center", gap: 6, minWidth: 78, justifyContent: "center",
                               }}
                             >
                               {chVerifying
@@ -386,10 +358,14 @@ export default function CreatePanel({ open, onClose }: Props) {
                           )}
                         </div>
 
-                        {/* Verify hint */}
-                        {isVerification && !chVerified && channelUsername.trim() && (
+                        {isVerification && !chVerified && channelLink.trim() && (
                           <p style={{ color: "rgba(147,197,253,0.75)", fontSize: 12, marginTop: 7, lineHeight: 1.5 }}>
-                            Add <strong>@PaidAdzBot</strong> as admin to your channel, then tap Verify.
+                            Add <strong>@Paid_Adzbot</strong> as admin to your channel, then tap Verify.
+                          </p>
+                        )}
+                        {!isVerification && (
+                          <p style={{ color: TDIM, fontSize: 12, marginTop: 6 }}>
+                            Example: https://t.me/YourChannel
                           </p>
                         )}
                         {chError && (
@@ -401,33 +377,74 @@ export default function CreatePanel({ open, onClose }: Props) {
                       </div>
                     )}
 
-                    {/* ── BOT LINK (only for bot) ── */}
+                    {/* BOT LINK */}
                     {flow === "bot" && (
                       <div>
-                        <Label>Your Bot</Label>
-                        <Field placeholder="bot username" prefix="@" value={botLink} onChange={setBotLink} />
+                        <Label>{isVerification ? "Bot Referral Start Link" : "Your Bot"}</Label>
+                        {isVerification ? (
+                          <>
+                            <Field
+                              placeholder="https://t.me/YourBot?start=YOUR_CODE"
+                              value={botStartLink}
+                              onChange={setBotStartLink}
+                            />
+                            <p style={{ color: TDIM, fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+                              Provide the full start link with your referral code so users join through your link.
+                            </p>
+                          </>
+                        ) : (
+                          <Field
+                            placeholder="bot username"
+                            prefix="@"
+                            value={botLink}
+                            onChange={setBotLink}
+                          />
+                        )}
                       </div>
                     )}
 
-                    {/* ── CAMPAIGN DETAILS ── */}
+                    {/* CAMPAIGN NAME */}
                     <div>
                       <Label>Campaign Details</Label>
-                      <div className="flex flex-col gap-3">
-                        <Field
-                          placeholder="Campaign name"
-                          value={campaignName}
-                          onChange={setCampaignName}
-                        />
-                        <Field
-                          type="number"
-                          placeholder={`Required clicks (min ${MIN_CLICKS})`}
-                          value={clicks}
-                          onChange={setClicks}
-                        />
+                      <Field
+                        placeholder={flow === "bot" ? "e.g. Join My Earning Bot" : "e.g. Join Paid Adz News"}
+                        value={campaignName}
+                        onChange={setCampaignName}
+                      />
+                    </div>
+
+                    {/* PACKAGE PICKER */}
+                    <div>
+                      <Label>Completions &amp; Price</Label>
+                      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                        {PACKAGES.map(pkg => {
+                          const price = isVerification ? pkg.verified : pkg.plain;
+                          const sel = selectedPkg === pkg.clicks;
+                          return (
+                            <button
+                              key={pkg.clicks}
+                              onClick={() => setSelectedPkg(pkg.clicks)}
+                              style={{
+                                padding: "10px 14px", borderRadius: 12, flexShrink: 0,
+                                background: sel ? "rgba(59,130,246,0.12)" : CARD,
+                                border: `1.5px solid ${sel ? "rgba(59,130,246,0.45)" : BDR}`,
+                                cursor: "pointer", minWidth: 82, textAlign: "center",
+                                transition: "border-color 0.15s, background 0.15s",
+                              }}
+                            >
+                              <div style={{ color: T, fontWeight: 700, fontSize: 14 }}>
+                                {pkg.clicks >= 1000 ? `${pkg.clicks / 1000}K` : pkg.clicks}
+                              </div>
+                              <div style={{ color: sel ? "#93c5fd" : TDIM, fontSize: 11, marginTop: 3 }}>
+                                {price.toFixed(4)} TON
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    {/* ── COST DISPLAY ── */}
+                    {/* COST */}
                     {cost && (
                       <div style={{
                         padding: "12px 14px", borderRadius: 13,
@@ -439,19 +456,15 @@ export default function CreatePanel({ open, onClose }: Props) {
                       </div>
                     )}
 
-                    {/* ── SUBMIT ── */}
+                    {/* SUBMIT */}
                     <motion.button
                       whileTap={canSubmit && !createMutation.isPending ? { scale: 0.97 } : {}}
                       onClick={() => createMutation.mutate()}
                       disabled={!canSubmit || createMutation.isPending}
                       style={{
                         width: "100%", padding: "15px", borderRadius: 15,
-                        background: canSubmit && !createMutation.isPending
-                          ? "rgba(59,130,246,0.18)"
-                          : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${canSubmit && !createMutation.isPending
-                          ? "rgba(59,130,246,0.4)"
-                          : BDR}`,
+                        background: canSubmit && !createMutation.isPending ? "rgba(59,130,246,0.18)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${canSubmit && !createMutation.isPending ? "rgba(59,130,246,0.4)" : BDR}`,
                         color: canSubmit && !createMutation.isPending ? "#93c5fd" : TFAINT,
                         fontSize: 15, fontWeight: 700,
                         cursor: canSubmit && !createMutation.isPending ? "pointer" : "not-allowed",

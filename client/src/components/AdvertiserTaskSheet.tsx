@@ -5,7 +5,6 @@ import {
   CheckCircle2, Loader2, AlertCircle, X, ShieldCheck, Zap,
 } from "lucide-react";
 
-// ── Types ──────────────────────────────────────────────────────
 interface Task {
   id: string;
   taskType: string;
@@ -24,7 +23,6 @@ interface AdvertiserTaskSheetProps {
   claiming?: boolean;
 }
 
-// ── Shared styles ──────────────────────────────────────────────
 const SHEET_BG   = "rgba(13,13,15,0.99)";
 const CARD_BG    = "rgba(255,255,255,0.055)";
 const CARD_BDR   = "rgba(255,255,255,0.08)";
@@ -45,7 +43,6 @@ function openLink(link: string) {
   }
 }
 
-// ── Step indicator ─────────────────────────────────────────────
 function StepDots({ total, current }: { total: number; current: number }) {
   return (
     <div className="flex items-center justify-center gap-[6px]" style={{ marginBottom: "4px" }}>
@@ -64,7 +61,6 @@ function StepDots({ total, current }: { total: number; current: number }) {
   );
 }
 
-// ── Step row ───────────────────────────────────────────────────
 function StepRow({
   num, Icon, title, body, accent = "rgba(255,255,255,0.7)",
 }: {
@@ -87,21 +83,36 @@ function StepRow({
   );
 }
 
-// ── Main component ─────────────────────────────────────────────
+// 7-day penalty warning banner — shown for all verified channel tasks
+function ChannelPenaltyWarning() {
+  return (
+    <div style={{
+      padding: "12px 14px", borderRadius: "12px",
+      background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.22)",
+      display: "flex", alignItems: "flex-start", gap: "8px",
+    }}>
+      <span style={{ fontSize: "14px", flexShrink: 0, lineHeight: 1.4 }}>⚠️</span>
+      <p style={{ color: "rgba(251,191,36,0.85)", fontSize: "12px", lineHeight: 1.55, margin: 0 }}>
+        <strong>Warning:</strong> If you leave this channel within 7 days, a{" "}
+        <strong>50,000 POW penalty</strong> will automatically be deducted from your account.
+      </p>
+    </div>
+  );
+}
+
 export default function AdvertiserTaskSheet({
   task, open, reward, onClose, onClaim, claiming = false,
 }: AdvertiserTaskSheetProps) {
-  const [botStep, setBotStep]      = useState(0); // 0,1,2
+  const [botStep, setBotStep]      = useState(0);
   const [referralPasted, setReferralPasted] = useState("");
   const [opened, setOpened]        = useState(false);
-  const [countdown, setCountdown]  = useState<number | null>(null);
   const [canClaim, setCanClaim]    = useState(false);
   const [verifying, setVerifying]  = useState(false);
   const [verifyError, setVerifyError] = useState("");
 
   const reset = () => {
     setBotStep(0); setReferralPasted(""); setOpened(false);
-    setCountdown(null); setCanClaim(false); setVerifying(false); setVerifyError("");
+    setCanClaim(false); setVerifying(false); setVerifyError("");
   };
 
   const handleClose = () => { onClose(); setTimeout(reset, 380); };
@@ -112,44 +123,31 @@ export default function AdvertiserTaskSheet({
   const isChannel = task.taskType === "channel";
   const withVerif = task.verificationRequired === true;
 
-  // ── Start countdown helper ──
-  const startCountdown = (secs: number, onDone: () => void) => {
-    setCountdown(secs);
-    const iv = setInterval(() => {
-      setCountdown(prev => {
-        if (prev === null || prev <= 1) { clearInterval(iv); onDone(); return null; }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
-  // ── Open the task link ──
+  // Open the task link — for without-verification: instant claim
   const handleOpen = () => {
     openLink(task.link);
     setOpened(true);
     if (!withVerif) {
-      startCountdown(4, () => setCanClaim(true));
+      setCanClaim(true); // No verification: grant claim immediately, no countdown
     }
   };
 
-  // ── Bot verified: verify referral link ──
+  // Bot with verification: validate pasted referral link
   const handleVerifyReferral = async () => {
     if (!referralPasted.trim()) return;
     setVerifying(true);
     setVerifyError("");
-    // Simulate verification (bot link check)
-    await new Promise(r => setTimeout(r, 1200));
-    // Accept any link that contains t.me (basic check)
+    await new Promise(r => setTimeout(r, 1000));
     if (referralPasted.includes("t.me") || referralPasted.startsWith("https://")) {
       setVerifying(false);
       setCanClaim(true);
     } else {
       setVerifying(false);
-      setVerifyError("Invalid referral link. Please paste the correct link.");
+      setVerifyError("Invalid referral link. Please paste the correct link from the bot.");
     }
   };
 
-  // ── Channel verified: check membership ──
+  // Channel with verification: check membership via API and auto-claim if verified
   const handleCheckMembership = async () => {
     setVerifying(true);
     setVerifyError("");
@@ -162,19 +160,21 @@ export default function AdvertiserTaskSheet({
       });
       const data = await res.json();
       if (data.success || data.verified) {
-        setCanClaim(true);
+        setVerifying(false);
+        // Membership confirmed — auto-complete the task immediately
+        onClaim(task.id);
+        handleClose();
       } else {
         setVerifyError(data.message || "You haven't joined the channel yet.");
+        setVerifying(false);
       }
     } catch {
-      // Fallback: if API fails, allow claim after opening
-      setCanClaim(opened);
-    } finally {
+      setVerifyError("Network error. Please try again.");
       setVerifying(false);
     }
   };
 
-  // ── BOT with VERIFICATION — 3-step flow ──
+  // ── BOT with VERIFICATION (3-step) ──
   const BotVerifiedFlow = () => (
     <div className="flex flex-col gap-5">
       <StepDots total={3} current={botStep} />
@@ -195,7 +195,7 @@ export default function AdvertiserTaskSheet({
             <StepRow
               num={1} Icon={Bot} accent="#818cf8"
               title="Open Bot & Start It"
-              body="Open the bot and press Start to activate it and get your unique referral link."
+              body="Open the bot via the referral link and press Start to activate it."
             />
             <motion.button
               whileTap={{ scale: 0.97 }}
@@ -249,19 +249,17 @@ export default function AdvertiserTaskSheet({
               title="Paste Your Referral Link"
               body="Come back here and paste the referral link you copied from the bot."
             />
-            <div style={{ position: "relative" }}>
-              <input
-                type="text"
-                placeholder="Paste your referral link here"
-                value={referralPasted}
-                onChange={e => { setReferralPasted(e.target.value); setVerifyError(""); }}
-                style={{
-                  width: "100%", background: "rgba(255,255,255,0.05)",
-                  border: `1px solid ${CARD_BDR}`, borderRadius: "14px",
-                  padding: "14px 16px", color: TEXT, fontSize: "14px", outline: "none",
-                }}
-              />
-            </div>
+            <input
+              type="text"
+              placeholder="Paste your referral link here"
+              value={referralPasted}
+              onChange={e => { setReferralPasted(e.target.value); setVerifyError(""); }}
+              style={{
+                width: "100%", background: "rgba(255,255,255,0.05)",
+                border: `1px solid ${CARD_BDR}`, borderRadius: "14px",
+                padding: "14px 16px", color: TEXT, fontSize: "14px", outline: "none",
+              }}
+            />
             {verifyError && (
               <div className="flex items-center gap-2">
                 <AlertCircle style={{ width: "13px", height: "13px", color: "#f87171", flexShrink: 0 }} />
@@ -322,7 +320,7 @@ export default function AdvertiserTaskSheet({
     </div>
   );
 
-  // ── BOT / CHANNEL without verification — simple flow ──
+  // ── BOT / CHANNEL without verification — instant claim ──
   const SimpleFlow = () => (
     <div className="flex flex-col gap-5">
       <div style={{
@@ -345,9 +343,7 @@ export default function AdvertiserTaskSheet({
               {isBot ? "Open and start the bot" : "Open and join the channel"}
             </p>
             <p style={{ color: TEXT_DIM, fontSize: "12px", marginTop: "2px" }}>
-              {isBot
-                ? "Press Start in the bot to complete the task"
-                : "Join the channel to complete the task"}
+              {isBot ? "Press Start — reward is granted instantly" : "Join the channel — reward is granted instantly"}
             </p>
           </div>
         </div>
@@ -368,14 +364,6 @@ export default function AdvertiserTaskSheet({
           <ExternalLink style={{ width: "17px", height: "17px" }} />
           {isBot ? "Open Bot" : "Open Channel"}
         </motion.button>
-      ) : countdown !== null ? (
-        <div style={{
-          padding: "15px", borderRadius: "16px", textAlign: "center",
-          background: "rgba(255,255,255,0.04)", border: `1px solid ${CARD_BDR}`,
-          color: TEXT_DIM, fontSize: "15px", fontWeight: 600,
-        }}>
-          Please wait {countdown}s…
-        </div>
       ) : canClaim ? (
         <motion.button
           whileTap={{ scale: 0.97 }}
@@ -396,13 +384,16 @@ export default function AdvertiserTaskSheet({
     </div>
   );
 
-  // ── CHANNEL with VERIFICATION ──
+  // ── CHANNEL with VERIFICATION — join + auto-verify ──
   const ChannelVerifiedFlow = () => (
     <div className="flex flex-col gap-5">
+      {/* 7-day penalty warning */}
+      <ChannelPenaltyWarning />
+
       <StepRow
         num={1} Icon={Megaphone} accent="#4ade80"
         title="Join the Channel"
-        body="Open and join this channel. The bot will verify your membership automatically."
+        body="Open and join this channel. Tap 'Verify Membership' — the bot checks automatically."
       />
 
       {!opened ? (
@@ -418,7 +409,7 @@ export default function AdvertiserTaskSheet({
         >
           <ExternalLink style={{ width: "17px", height: "17px" }} /> Open Channel
         </motion.button>
-      ) : !canClaim ? (
+      ) : (
         <div className="flex flex-col gap-3">
           {verifyError && (
             <div className="flex items-center gap-2">
@@ -442,22 +433,6 @@ export default function AdvertiserTaskSheet({
               : <><ShieldCheck style={{ width: "17px", height: "17px" }} /> Verify Membership</>}
           </motion.button>
         </div>
-      ) : (
-        <motion.button
-          whileTap={{ scale: 0.97 }}
-          onClick={() => { onClaim(task.id); handleClose(); }}
-          disabled={claiming}
-          style={{
-            padding: "15px", borderRadius: "16px", fontWeight: 700, fontSize: "15px",
-            background: "rgba(34,197,94,0.18)", border: "1px solid rgba(34,197,94,0.3)",
-            color: "#4ade80", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-          }}
-        >
-          {claiming
-            ? <Loader2 style={{ width: "17px", height: "17px", animation: "spin 1s linear infinite" }} />
-            : <><CheckCircle2 style={{ width: "17px", height: "17px" }} /> Claim +{reward.toLocaleString()} POW</>}
-        </motion.button>
       )}
     </div>
   );
@@ -466,17 +441,14 @@ export default function AdvertiserTaskSheet({
     ? (withVerif ? "Bot · Verification" : "Bot · No Verification")
     : (withVerif ? "Channel · Verification" : "Channel · No Verification");
 
-  const flowIcon = isBot
-    ? (withVerif ? <ShieldCheck style={{ width: "13px", height: "13px", color: "#60a5fa" }} />
-                 : <Zap        style={{ width: "13px", height: "13px", color: "#facc15" }} />)
-    : (withVerif ? <ShieldCheck style={{ width: "13px", height: "13px", color: "#60a5fa" }} />
-                 : <Zap        style={{ width: "13px", height: "13px", color: "#facc15" }} />);
+  const flowIcon = withVerif
+    ? <ShieldCheck style={{ width: "13px", height: "13px", color: "#60a5fa" }} />
+    : <Zap        style={{ width: "13px", height: "13px", color: "#facc15" }} />;
 
   return (
     <AnimatePresence>
       {open && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.22 }}
@@ -485,10 +457,9 @@ export default function AdvertiserTaskSheet({
             onClick={handleClose}
           />
 
-          {/* Sheet */}
           <motion.div
             initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 340, damping: 36 }}
+            transition={{ type: "spring", stiffness: 380, damping: 40 }}
             className="fixed bottom-0 left-0 right-0 z-[73]"
             style={{
               background: SHEET_BG,
@@ -512,7 +483,7 @@ export default function AdvertiserTaskSheet({
               </button>
             </div>
 
-            {/* Title block */}
+            {/* Title */}
             <div className="text-center px-6 pt-4 pb-2">
               <h2 style={{ color: TEXT, fontSize: "20px", fontWeight: 800, letterSpacing: "-0.02em" }}>
                 {task.title}
@@ -526,10 +497,8 @@ export default function AdvertiserTaskSheet({
               </div>
             </div>
 
-            {/* Divider */}
             <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "12px 20px 16px" }} />
 
-            {/* Flow content */}
             <div className="px-5">
               {isBot && withVerif  && <BotVerifiedFlow />}
               {isBot && !withVerif && <SimpleFlow />}
