@@ -2,7 +2,7 @@ import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { showNotification } from "@/components/AppNotification";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import PromoCodeInput from "@/components/PromoCodeInput";
 import { useLanguage } from "@/hooks/useLanguage";
@@ -295,6 +295,12 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
           <span style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 600 }}>POW</span>
           <span style={{ color: TEXT_DIM, fontSize: 10, fontWeight: 500, opacity: 0.6 }}>· {typeLabel}</span>
         </div>
+        {task.taskType === 'channel' && task.verificationRequired && (
+          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 10 }}>⚠️</span>
+            <span style={{ color: 'rgba(251,191,36,0.72)', fontSize: 10, fontWeight: 600 }}>7-day penalty applies</span>
+          </div>
+        )}
       </div>
 
       {/* Button */}
@@ -363,6 +369,15 @@ export default function Missions() {
   const isAdmin = adminData?.isAdmin || false;
   const [activeTab, setActiveTab] = useState<MainTab>('all');
 
+  /* Silently check for channel-leave penalties on mount */
+  useEffect(() => {
+    fetch('/api/tasks/check-channel-penalties', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => {}); // Non-blocking, ignore errors
+  }, []);
+
   /* Feed task state */
   const [clickedTasks, setClickedTasks] = useState<Set<string>>(new Set());
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
@@ -402,7 +417,7 @@ export default function Missions() {
   const botReward     = appSettings?.botTaskReward     || 20;
   const partnerReward = appSettings?.partnerTaskReward  || 5;
 
-  const botUsername = botInfo?.username || (import.meta as any).env?.VITE_BOT_USERNAME || 'PaidAdzbot';
+  const botUsername = botInfo?.username || (import.meta as any).env?.VITE_BOT_USERNAME || 'Paid_Adzbot';
   const referralLink = (user as any)?.referralCode
     ? `https://t.me/${botUsername}?start=${(user as any).referralCode}`
     : '';
