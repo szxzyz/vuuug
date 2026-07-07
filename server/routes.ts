@@ -11066,71 +11066,72 @@ ${walletAddress}
     }
   });
 
-  // Verify bot is admin in ambassador's channel
+  // Verify bot is admin with Post Messages permission in ambassador's channel
   app.post('/api/ambassador/verify-channel', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
       const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
       if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
 
-      // Get channel from the application
+      // Accept optional channelUsername override, fall back to application
       const [application] = await db.select().from(ambassadorApplications)
         .where(eq(ambassadorApplications.id, ambassador.applicationId || '')).limit(1);
-      const channelUsername = req.body.channelUsername || application?.channelUsername || '';
-      if (!channelUsername) {
-        return res.status(400).json({ success: false, message: 'No channel found for this ambassador' });
+      const rawChannel = req.body.channelUsername || application?.channelUsername || '';
+      if (!rawChannel) {
+        return res.status(400).json({ success: false, message: 'No channel found for this ambassador.' });
       }
 
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (!botToken) return res.status(500).json({ success: false, message: 'Bot not configured' });
+      if (!botToken) return res.status(500).json({ success: false, message: 'Bot not configured.' });
 
-      // Get chat info + chat_id
-      const cleanUsername = channelUsername.replace('@', '');
-      let chatId: string | null = null;
-      try {
-        const chatResp = await fetch(`https://api.telegram.org/bot${botToken}/getChat?chat_id=@${cleanUsername}`);
-        const chatData = await chatResp.json();
-        if (chatData.ok) chatId = String(chatData.result.id);
-      } catch (_) {}
+      // Normalize to @username or numeric id
+      const channelIdentifier = rawChannel.startsWith('-')
+        ? rawChannel
+        : '@' + rawChannel.replace('https://t.me/', '').replace('http://t.me/', '').replace(/^@/, '').split('/')[0];
 
-      if (!chatId) {
-        return res.json({ success: false, verified: false, message: 'Could not find channel. Make sure the username is correct.' });
+      const { checkBotCanPostToChannel } = await import('./telegram');
+      const check = await checkBotCanPostToChannel(botToken, channelIdentifier);
+
+      console.log(`🔍 Ambassador verify-channel [${ambassador.id}]:`, {
+        channelIdentifier,
+        isAdmin: check.isAdmin,
+        hasPostPermission: check.hasPostPermission,
+        canPost: check.canPost,
+        chatId: check.chatId,
+        chatType: check.chatType,
+        error: check.error,
+      });
+
+      if (!check.chatId) {
+        return res.json({ success: false, verified: false, message: 'Could not find this channel. Make sure the username is correct and the channel is public.' });
       }
 
-      // Check if bot is admin
-      let isAdmin = false;
-      try {
-        const adminsResp = await fetch(`https://api.telegram.org/bot${botToken}/getChatAdministrators?chat_id=${chatId}`);
-        const adminsData = await adminsResp.json();
-        if (adminsData.ok) {
-          const botResp = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
-          const botData = await botResp.json();
-          if (botData.ok) {
-            const botId = botData.result.id;
-            isAdmin = adminsData.result.some((m: any) => m.user.id === botId);
-          }
-        }
-      } catch (_) {}
-
-      if (!isAdmin) {
+      if (!check.isAdmin) {
         return res.json({
-          success: false,
-          verified: false,
-          message: 'Bot is not an admin in this channel. Please add @Paid_Adzbot as administrator with permission to post messages.'
+          success: false, verified: false,
+          message: 'The Paid Adz Bot is not an administrator in your channel. Please add @Paid_Adzbot as administrator with Post Messages permission.',
         });
       }
 
-      // Save verified channel
+      if (!check.hasPostPermission) {
+        return res.json({
+          success: false, verified: false,
+          message: '⚠️ The Paid Adz Bot is an administrator in your channel, but it does not have permission to post messages. Please enable the "Post Messages" permission and verify again to continue.',
+        });
+      }
+
+      // All good — save verified channel ID (numeric, stable across username changes)
       await db.update(ambassadors).set({
         channelVerified: true,
-        channelId: chatId,
+        channelId: check.chatId,
         updatedAt: new Date(),
       }).where(eq(ambassadors.id, ambassador.id));
 
-      res.json({ success: true, verified: true, message: '✅ Channel verified! Auto-posting is now enabled.' });
+      console.log(`✅ Ambassador channel verified [${ambassador.id}]: chatId=${check.chatId}`);
+      res.json({ success: true, verified: true, message: '✅ Channel verified! The bot can now post to your channel.' });
     } catch (error) {
       console.error('Error verifying channel:', error);
-      res.status(500).json({ success: false, message: 'Failed to verify channel' });
+      res.status(500).json({ success: false, message: 'Failed to verify channel.' });
     }
   });
 
@@ -11398,6 +11399,8 @@ ${walletAddress}
           totalClaims: ambassadors.totalClaims,
           totalEarningsUsd: ambassadors.totalEarningsUsd,
           status: ambassadors.status,
+          channelId: ambassadors.channelId,
+          channelVerified: ambassadors.channelVerified,
           lastPromoSentAt: ambassadors.lastPromoSentAt,
           createdAt: ambassadors.createdAt,
           username: users.username,
@@ -11485,6 +11488,28 @@ ${walletAddress}
     } catch (error) {
       console.error('Error rejecting promo name:', error);
       res.status(500).json({ message: 'Failed to reject' });
+    }
+  });
+
+  // Admin: Post promo NOW to an ambassador's channel (manual trigger)
+  app.post('/api/admin/ambassadors/:id/post-now', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.id, id)).limit(1);
+      if (!ambassador) return res.status(404).json({ message: 'Ambassador not found' });
+      if (ambassador.status !== 'active') return res.status(400).json({ success: false, message: 'Ambassador is not active' });
+      if (!ambassador.channelId) return res.status(400).json({ success: false, message: 'No verified channel — ambassador must verify their channel first' });
+
+      const { sendAmbassadorPromo } = await import('./telegram');
+      const code = await sendAmbassadorPromo(ambassador.id);
+      if (!code) {
+        return res.status(500).json({ success: false, message: 'Failed to post promo. Bot may not have Post Messages permission — check server logs.' });
+      }
+
+      res.json({ success: true, code, message: `✅ Promo posted! Code: ${code}` });
+    } catch (error) {
+      console.error('Admin post-now error:', error);
+      res.status(500).json({ success: false, message: 'Internal error posting promo' });
     }
   });
 

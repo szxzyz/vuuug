@@ -163,41 +163,66 @@ async function isBotAdminInChannel(botToken: string, channelIdentifier: string):
 /**
  * Check whether the bot is an admin with Post Messages permission in the given channel.
  * Also resolves and returns the numeric chat ID.
+ * Returns detail on WHY permission fails (not admin vs admin-but-no-post-permission).
  */
 export async function checkBotCanPostToChannel(
   botToken: string,
   channelIdentifier: string
-): Promise<{ canPost: boolean; chatId?: string }> {
+): Promise<{
+  canPost: boolean;
+  isAdmin: boolean;
+  hasPostPermission: boolean;
+  chatId?: string;
+  chatType?: string;
+  error?: string;
+}> {
   try {
     const botId = await getCachedBotId(botToken);
-    if (!botId) return { canPost: false };
+    if (!botId) return { canPost: false, isAdmin: false, hasPostPermission: false, error: 'Could not resolve bot ID' };
 
-    // Resolve numeric chat ID via getChat
+    // Resolve numeric chat ID and type via getChat
     let chatId: string | undefined;
+    let chatType: string | undefined;
     const chatRes = await fetch(
       `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent(channelIdentifier)}`
     );
     if (chatRes.ok) {
       const chatData = await chatRes.json();
-      if (chatData.ok && chatData.result?.id) chatId = String(chatData.result.id);
+      if (chatData.ok && chatData.result?.id) {
+        chatId   = String(chatData.result.id);
+        chatType = chatData.result.type; // 'channel' | 'supergroup' | 'group' | 'private'
+      }
     }
 
     // Check bot membership / permissions
     const memberRes = await fetch(
       `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${botId}`
     );
-    if (!memberRes.ok) return { canPost: false, chatId };
+    if (!memberRes.ok) return { canPost: false, isAdmin: false, hasPostPermission: false, chatId, chatType, error: 'Telegram API error fetching membership' };
     const memberData = await memberRes.json();
-    if (!memberData.ok) return { canPost: false, chatId };
+    if (!memberData.ok) return { canPost: false, isAdmin: false, hasPostPermission: false, chatId, chatType, error: memberData.description || 'Membership check failed' };
 
-    const member = memberData.result;
+    const member    = memberData.result;
     const isCreator = member.status === 'creator';
-    const isAdmin  = member.status === 'administrator';
-    // can_post_messages may be absent for some admin configs — treat absence as allowed
-    const canPost  = isCreator || (isAdmin && member.can_post_messages !== false);
-    return { canPost, chatId };
-  } catch {
-    return { canPost: false };
+    const isAdmin   = isCreator || member.status === 'administrator';
+
+    if (!isAdmin) {
+      return { canPost: false, isAdmin: false, hasPostPermission: false, chatId, chatType, error: 'Bot is not an administrator' };
+    }
+
+    // For channels: can_post_messages must be explicitly true (Telegram omits it if not granted).
+    // For groups/supergroups: admins can always post — field is not applicable.
+    let hasPostPermission: boolean;
+    if (chatType === 'channel') {
+      hasPostPermission = isCreator || member.can_post_messages === true;
+    } else {
+      hasPostPermission = true; // groups/supergroups — posting is implied by admin
+    }
+
+    const errorMsg = hasPostPermission ? undefined : 'Bot is admin but does not have "Post Messages" permission';
+    return { canPost: hasPostPermission, isAdmin: true, hasPostPermission, chatId, chatType, error: errorMsg };
+  } catch (err) {
+    return { canPost: false, isAdmin: false, hasPostPermission: false, error: String(err) };
   }
 }
 
@@ -3198,30 +3223,55 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
 
   // ── Verify bot permissions before doing anything else ─────────────────────
   if (botToken && amb.channelId) {
-    const { canPost } = await checkBotCanPostToChannel(botToken, amb.channelId);
-    if (!canPost) {
-      console.warn(`⚠️ Bot cannot post to channel for ambassador ${amb.id} — permissions missing`);
-      // Mark unverified and pause for 2 hours before retrying
+    console.log(`🔍 [Ambassador ${amb.id}] Checking bot permissions on channel: ${amb.channelId}`);
+    const permCheck = await checkBotCanPostToChannel(botToken, amb.channelId);
+    console.log(`🔍 [Ambassador ${amb.id}] Permission check result:`, {
+      channelId: amb.channelId,
+      isAdmin: permCheck.isAdmin,
+      hasPostPermission: permCheck.hasPostPermission,
+      canPost: permCheck.canPost,
+      chatType: permCheck.chatType,
+      error: permCheck.error,
+    });
+
+    if (!permCheck.canPost) {
+      // Determine the exact reason for clearer DM notification
+      let dmMessage: string;
+      if (!permCheck.isAdmin) {
+        dmMessage =
+          `<b>⚠️ Posting Paused</b>\n\n` +
+          `The bot is no longer an administrator in your channel.\n\n` +
+          `Please re-add <b>@Paid_Adzbot</b> as administrator with <b>Post Messages</b> permission.`;
+      } else {
+        dmMessage =
+          `<b>⚠️ Posting Paused</b>\n\n` +
+          `The Paid Adz Bot is an administrator in your channel, but it does not have permission to post messages.\n\n` +
+          `Please enable the <b>"Post Messages"</b> permission for <b>@Paid_Adzbot</b> and verify again to continue.`;
+      }
+
+      console.warn(`⚠️ [Ambassador ${amb.id}] Cannot post — isAdmin=${permCheck.isAdmin} hasPostPerm=${permCheck.hasPostPermission} error="${permCheck.error}"`);
+
       await dbConn.update(ambassadors).set({
         channelVerified: false,
         nextPromoAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
         updatedAt: new Date(),
       }).where(eq(ambassadors.id, amb.id));
-      // Notify ambassador
+
       if (user?.telegram_id) {
-        await sendUserTelegramNotification(user.telegram_id,
-          `<b>Posting Paused</b>\n\n` +
-          `The bot no longer has permission to post to your channel.\n\n` +
-          `Please re-add <b>@Paid_Adzbot</b> as an administrator with <b>Post Messages</b> permission to resume auto-posting.`
-        ).catch(() => {});
+        await sendUserTelegramNotification(user.telegram_id, dmMessage, undefined, 'HTML').catch(() => {});
       }
       return null;
     }
+
     // Restore verified flag if it was cleared
     if (!amb.channelVerified) {
       await dbConn.update(ambassadors).set({ channelVerified: true, updatedAt: new Date() })
         .where(eq(ambassadors.id, amb.id));
     }
+    console.log(`✅ [Ambassador ${amb.id}] Bot permissions confirmed — posting to channel ${amb.channelId}`);
+  } else {
+    console.warn(`⚠️ [Ambassador ${amb.id}] channelId is missing (channelId=${amb.channelId}) — cannot post to channel`);
+    return null;
   }
 
   // ── Generate 2 promo codes ────────────────────────────────────────────────
@@ -3271,17 +3321,25 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
       form.append('caption_entities', JSON.stringify(postEntities));
       form.append('reply_markup', JSON.stringify(inlineKeyboard));
 
+      console.log(`📤 [Ambassador ${amb.id}] Sending photo to channel ${amb.channelId}...`);
       const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: 'POST',
         body: form,
       });
       const respData = await resp.json();
       postedToChannel = respData.ok === true;
-      if (!postedToChannel) {
-        console.error(`Channel photo post failed for ambassador ${amb.id}:`, respData.description);
+      if (postedToChannel) {
+        console.log(`✅ [Ambassador ${amb.id}] Photo posted to channel ${amb.channelId} — message_id: ${respData.result?.message_id}`);
+      } else {
+        console.error(`❌ [Ambassador ${amb.id}] Channel post FAILED:`, {
+          channelId: amb.channelId,
+          errorCode: respData.error_code,
+          description: respData.description,
+          parameters: respData.parameters,
+        });
       }
     } catch (err) {
-      console.error(`Channel photo post error for ambassador ${amb.id}:`, err);
+      console.error(`❌ [Ambassador ${amb.id}] Channel post exception:`, err);
     }
   }
 
