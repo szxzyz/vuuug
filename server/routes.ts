@@ -1177,9 +1177,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getBotUsername } = await import('./telegram');
       const username = await getBotUsername();
-      res.json({ username: username || 'PaidAdzbot' });
+      res.json({ username: username || 'Paid_Adzbot' });
     } catch (error) {
-      res.json({ username: process.env.TELEGRAM_BOT_TOKEN ? 'unknown' : 'PaidAdzbot' });
+      res.json({ username: process.env.TELEGRAM_BOT_TOKEN ? 'unknown' : 'Paid_Adzbot' });
     }
   });
 
@@ -3245,6 +3245,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: 'Failed to complete task'
       });
+    }
+  });
+
+  // Verify a user is a member of an advertiser channel task
+  app.post('/api/tasks/verify-channel-membership', authenticateTelegram, async (req: any, res) => {
+    try {
+      const telegramUserId = req.user?.telegramUser?.id || req.session?.user?.telegramUser?.id;
+      const { channelUsername } = req.body;
+
+      if (!channelUsername) {
+        return res.status(400).json({ success: false, message: 'Channel link required' });
+      }
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken) {
+        // Dev mode: assume membership
+        return res.json({ success: true, verified: true, message: 'Dev mode: membership assumed' });
+      }
+
+      if (!telegramUserId) {
+        return res.status(401).json({ success: false, message: 'Could not identify Telegram user' });
+      }
+
+      // Extract public channel username from URL; reject private invite links (+hash)
+      let channelId = channelUsername.trim();
+      const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
+      if (urlMatch && urlMatch[1]) {
+        const segment = urlMatch[1];
+        if (segment.startsWith('+') || segment.startsWith('joinchat')) {
+          return res.status(400).json({ success: false, message: 'Private invite links cannot be verified. Use a public channel username link.' });
+        }
+        channelId = `@${segment}`;
+      } else if (!channelId.startsWith('@')) {
+        channelId = `@${channelId}`;
+      }
+
+      // Validate that the resulting identifier looks like a Telegram username
+      if (!/^@[A-Za-z][A-Za-z0-9_]{2,31}$/.test(channelId)) {
+        return res.status(400).json({ success: false, message: 'Invalid channel username format. Provide a public channel link like https://t.me/YourChannel.' });
+      }
+
+      const isMember = await verifyChannelMembership(
+        parseInt(String(telegramUserId)),
+        channelId,
+        botToken
+      );
+
+      if (isMember) {
+        return res.json({ success: true, verified: true, message: 'Membership verified' });
+      } else {
+        return res.json({
+          success: false, verified: false,
+          message: "You haven't joined the channel yet. Please join and try again."
+        });
+      }
+    } catch (error) {
+      console.error('Error verifying channel membership:', error);
+      res.status(500).json({ success: false, message: 'Verification failed. Please try again.' });
+    }
+  });
+
+  // Check and apply 7-day channel-leave penalties
+  app.post('/api/tasks/check-channel-penalties', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user?.user?.id || req.session?.user?.user?.id;
+      const telegramUserId = req.user?.telegramUser?.id || req.session?.user?.telegramUser?.id;
+
+      if (!userId || !telegramUserId) {
+        return res.json({ success: true, penaltiesApplied: 0 });
+      }
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken) {
+        return res.json({ success: true, penaltiesApplied: 0 });
+      }
+
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const PENALTY = 50000;
+
+      // Find verified channel tasks completed by this user in the last 7 days
+      const completedChannelTasks = await db
+        .select({
+          taskId: taskClicks.taskId,
+          clickedAt: taskClicks.clickedAt,
+          link: advertiserTasks.link,
+          title: advertiserTasks.title,
+        })
+        .from(taskClicks)
+        .innerJoin(advertiserTasks, eq(taskClicks.taskId, advertiserTasks.id))
+        .where(
+          and(
+            eq(taskClicks.publisherId, userId),
+            eq(advertiserTasks.taskType, 'channel'),
+            eq(advertiserTasks.verificationRequired, true),
+            sql`${taskClicks.clickedAt} > ${sevenDaysAgo}`
+          )
+        );
+
+      let penaltiesApplied = 0;
+
+      for (const task of completedChannelTasks) {
+        let channelId = task.link?.trim() || '';
+        const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
+        if (urlMatch) channelId = `@${urlMatch[1]}`;
+
+        try {
+          const isMember = await verifyChannelMembership(
+            parseInt(String(telegramUserId)),
+            channelId,
+            botToken
+          );
+
+          if (!isMember) {
+            // User left — deduct penalty and remove the taskClick record
+            await db.transaction(async (tx) => {
+              await tx.execute(
+                sql`UPDATE users SET balance = GREATEST(balance - ${PENALTY}::numeric, 0), updated_at = NOW() WHERE id = ${userId}`
+              );
+              await tx.delete(taskClicks).where(
+                and(eq(taskClicks.taskId, task.taskId), eq(taskClicks.publisherId, userId))
+              );
+            });
+            penaltiesApplied++;
+          }
+        } catch (e) {
+          console.warn(`Could not check membership for task ${task.taskId}:`, e);
+        }
+      }
+
+      res.json({ success: true, penaltiesApplied });
+    } catch (error) {
+      console.error('Error checking channel penalties:', error);
+      res.status(500).json({ success: false, message: 'Penalty check failed' });
     }
   });
 
@@ -10983,7 +11116,7 @@ ${walletAddress}
         return res.json({
           success: false,
           verified: false,
-          message: 'Bot is not an admin in this channel. Please add @PaidAdzbot as administrator with permission to post messages.'
+          message: 'Bot is not an admin in this channel. Please add @Paid_Adzbot as administrator with permission to post messages.'
         });
       }
 
