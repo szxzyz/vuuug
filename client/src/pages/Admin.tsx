@@ -4257,6 +4257,20 @@ function AmbassadorAdminSection() {
     },
   });
 
+  const [postingNow, setPostingNow] = useState<string | null>(null);
+  const postNowMutation = useMutation({
+    mutationFn: (id: string) => apiRequest('POST', `/api/admin/ambassadors/${id}/post-now`).then(r => r.json()),
+    onSuccess: (data: any, id: string) => {
+      showNotification(data.message || 'Promo posted!', 'success');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors'] });
+      setPostingNow(null);
+    },
+    onError: (e: any, id: string) => {
+      showNotification(e?.message || 'Failed to post promo', 'error');
+      setPostingNow(null);
+    },
+  });
+
   const saveSettings = async () => {
     setSaving(true);
     try {
@@ -4409,16 +4423,19 @@ function AmbassadorAdminSection() {
                   <span className="text-[#4cd3ff] font-mono font-bold">{amb.promoCodeName}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-gray-400">Channel:</span>
+                  <span className={amb.channelVerified ? 'text-green-400' : 'text-yellow-400'}>
+                    {amb.channelVerified ? `✅ Verified` : '⚠️ Not Verified'}
+                    {amb.channelId && <span className="text-gray-500 ml-1 font-mono text-[10px]">({amb.channelId})</span>}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-gray-400">Total Claims:</span>
                   <span className="text-white">{amb.totalClaims || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Total Earnings:</span>
                   <span className="text-green-400">${parseFloat(amb.totalEarningsUsd || '0').toFixed(4)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Daily Promos:</span>
-                  <span className="text-white">{amb.dailyPromoCount || 1}×/day</span>
                 </div>
                 {amb.lastPromoSentAt && (
                   <div className="flex justify-between">
@@ -4427,6 +4444,23 @@ function AmbassadorAdminSection() {
                   </div>
                 )}
               </div>
+
+              {/* Post Promo Now button */}
+              <Button
+                size="sm"
+                className="w-full h-8 text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30"
+                onClick={() => {
+                  setPostingNow(amb.id);
+                  postNowMutation.mutate(amb.id);
+                }}
+                disabled={postNowMutation.isPending && postingNow === amb.id || amb.status !== 'active' || !amb.channelVerified}
+              >
+                {postNowMutation.isPending && postingNow === amb.id
+                  ? '⏳ Posting…'
+                  : !amb.channelVerified
+                    ? '📤 Post Promo Now (channel not verified)'
+                    : '📤 Post Promo Now'}
+              </Button>
 
               {/* Custom promo name request */}
               {amb.customPromoRequest && amb.customPromoRequestStatus === 'pending' && (

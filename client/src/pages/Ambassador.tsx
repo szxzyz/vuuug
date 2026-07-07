@@ -125,6 +125,19 @@ export default function Ambassador() {
     onError: (e: any) => showNotification(e?.message || "Failed to submit request", "error"),
   });
 
+  const [verifyMsg, setVerifyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const verifyChannelMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/ambassador/verify-channel").then(r => r.json()),
+    onSuccess: (data: any) => {
+      setVerifyMsg({ ok: data.success, text: data.message || (data.success ? "Channel verified!" : "Verification failed.") });
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
+      }
+    },
+    onError: () => setVerifyMsg({ ok: false, text: "Network error. Please try again." }),
+  });
+
   // ── How It Works Drawer ───────────────────────────────────────────────────
   const HowItWorksDrawer = (
     <Drawer open={howItWorksOpen} onOpenChange={setHowItWorksOpen}>
