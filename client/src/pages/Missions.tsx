@@ -642,14 +642,7 @@ export default function Missions() {
     onError: (error: Error) => { showNotification(error.message, "error"); setLoadingTaskId(null); },
   });
 
-  const handleTaskGo = (task: Task) => {
-    if (!task.link || claimReadyTasks.has(task.id) || clickedTasks.has(task.id)) return;
-    // Bot/channel tasks → open interactive sheet
-    if (task.taskType === 'bot' || task.taskType === 'channel') {
-      setActiveTaskSheet(task);
-      return;
-    }
-    // Other tasks → direct open + countdown
+  const openTaskLink = (task: Task) => {
     let link = task.link.trim();
     if (!link.startsWith('http')) link = 'https://' + link;
     const tg = (window as any).Telegram?.WebApp;
@@ -671,6 +664,17 @@ export default function Missions() {
         return m;
       });
     }, 1000);
+  };
+
+  const handleTaskGo = (task: Task) => {
+    if (!task.link || claimReadyTasks.has(task.id) || clickedTasks.has(task.id)) return;
+    // Verified bot/channel tasks → open interactive sheet
+    if ((task.taskType === 'bot' || task.taskType === 'channel') && task.verificationRequired) {
+      setActiveTaskSheet(task);
+      return;
+    }
+    // All other tasks (including non-verified bot/channel) → direct open + countdown
+    openTaskLink(task);
   };
 
   if (isLoading) {
