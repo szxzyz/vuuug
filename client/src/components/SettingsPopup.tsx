@@ -129,14 +129,34 @@ export const SettingsPopup: React.FC<SettingsPopupProps> = ({ onClose }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const cycleLanguage = () => {
-    const order: Array<import('@/hooks/useLanguage').Language> = ['en', 'ru', 'ar'];
-    const idx = order.indexOf(language as any);
-    const next = order[(idx + 1) % order.length];
-    setLanguage(next);
+  const ALL_LANGUAGES: Array<import('@/hooks/useLanguage').Language> = [
+    'en', 'ru', 'ar', 'uk', 'de', 'zh', 'pt', 'es', 'vi', 'bn',
+  ];
+
+  const LANGUAGE_LABELS: Record<string, string> = {
+    en: 'English', ru: 'Русский', ar: 'العربية', uk: 'Українська',
+    de: 'Deutsch', zh: '中文', pt: 'Português', es: 'Español',
+    vi: 'Tiếng Việt', bn: 'বাংলা',
   };
 
-  const languageLabel = language === 'en' ? t('english') : language === 'ru' ? t('russian') : t('arabic');
+  const cycleLanguage = async () => {
+    const idx = ALL_LANGUAGES.indexOf(language as any);
+    const next = ALL_LANGUAGES[(idx + 1) % ALL_LANGUAGES.length];
+    setLanguage(next);
+    // Persist to server so ambassador promo uses correct language image + caption
+    try {
+      await fetch('/api/user/language', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: next }),
+        credentials: 'include',
+      });
+    } catch {
+      // Non-critical — localStorage is already updated
+    }
+  };
+
+  const languageLabel = LANGUAGE_LABELS[language] ?? 'English';
 
   const openLink = (url: string) => {
     if (window.Telegram?.WebApp?.openTelegramLink) {
