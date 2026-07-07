@@ -3292,16 +3292,16 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     updatedAt: new Date(),
   }).where(eq(ambassadors.id, amb.id));
 
-  // ── DM ambassador (plain text — no parse_mode needed for a simple notification) ──
-  if (user?.telegram_id) {
-    const dmText =
-      `💸 Promo Post is Live!\n\n` +
-      `Codes: ${uniqueCode1} & ${uniqueCode2}\n` +
-      `Expires: 24 hours · Max claims: 100 each\n\n` +
-      (postedToChannel
-        ? `Posted to your channel automatically.`
-        : `Share this with your followers:\n\n${postText}`);
-    await sendUserTelegramNotification(user.telegram_id, dmText, undefined, 'HTML').catch(() => {});
+  // ── If posting to channel failed, notify ambassador so they can fix permissions ──
+  if (!postedToChannel && user?.telegram_id) {
+    await sendUserTelegramNotification(
+      user.telegram_id,
+      `<b>Promo Post Failed</b>\n\n` +
+      `The bot was unable to post to your channel. Please ensure <b>@Paid_Adzbot</b> has administrator ` +
+      `permissions with <b>Post Messages</b> enabled and try again.`,
+      undefined,
+      'HTML'
+    ).catch(() => {});
   }
 
   console.log(`✅ Ambassador promo: ${uniqueCode} | ambassador ${amb.id} | channel post: ${postedToChannel}`);
