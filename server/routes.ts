@@ -808,7 +808,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/user/language', authenticateTelegram, async (req: any, res) => {
     try {
       const { language } = req.body;
-      const validLanguages = ['en', 'ru', 'ar'];
+      const validLanguages = ['en', 'ru', 'ar', 'uk', 'de', 'zh', 'pt', 'es', 'vi', 'bn'];
       if (!language || !validLanguages.includes(language)) {
         return res.status(400).json({ success: false, message: 'Invalid language' });
       }
@@ -11145,9 +11145,14 @@ ${walletAddress}
 
       const { sendAmbassadorPromo } = await import('./telegram');
       const code = await sendAmbassadorPromo(ambassador.id);
-      if (!code) return res.status(500).json({ success: false, message: 'Failed to generate promo code' });
+      if (!code) {
+        return res.status(500).json({
+          success: false,
+          message: 'The bot failed to post to your channel. Check that @Paid_Adzbot is still an administrator with Post Messages permission enabled. Check server logs for the exact Telegram error.',
+        });
+      }
 
-      res.json({ success: true, code, message: `Promo code ${code} posted successfully!` });
+      res.json({ success: true, code, message: `✅ Promo posted to your channel! Code: ${code}` });
     } catch (error) {
       console.error('Error posting promo now:', error);
       res.status(500).json({ success: false, message: 'Failed to post promo' });
@@ -11503,10 +11508,13 @@ ${walletAddress}
       const { sendAmbassadorPromo } = await import('./telegram');
       const code = await sendAmbassadorPromo(ambassador.id);
       if (!code) {
-        return res.status(500).json({ success: false, message: 'Failed to post promo. Bot may not have Post Messages permission — check server logs.' });
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to post to the ambassador\'s channel. The bot may lack Post Messages permission, or the stored channel ID is stale. Check server logs for the exact Telegram API error.',
+        });
       }
 
-      res.json({ success: true, code, message: `✅ Promo posted! Code: ${code}` });
+      res.json({ success: true, code, message: `✅ Promo posted to channel! Code: ${code}` });
     } catch (error) {
       console.error('Admin post-now error:', error);
       res.status(500).json({ success: false, message: 'Internal error posting promo' });

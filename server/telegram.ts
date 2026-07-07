@@ -786,10 +786,20 @@ const AMB_PROMO_STRINGS: Record<AmbPromoLang, AmbPromoStrings> = {
 function getPromoImagePath(lang: string): string {
   const normLang = lang.toLowerCase().split(/[-_]/)[0];
   const dir = join(process.cwd(), 'server', 'assets', 'promo');
+  // Languages with dedicated promo images. All others fall back to English.
+  // To add a new language image: drop promo_<lang>.png in server/assets/promo/
+  // and add the mapping below.
   const map: Record<string, string> = {
     ru: join(dir, 'promo_ru.png'),
     uk: join(dir, 'promo_uk.png'),
     ar: join(dir, 'promo_ar.png'),
+    // de / zh / pt / es / vi / bn → English image (no dedicated banner yet)
+    de: join(dir, 'promo_en.png'),
+    zh: join(dir, 'promo_en.png'),
+    pt: join(dir, 'promo_en.png'),
+    es: join(dir, 'promo_en.png'),
+    vi: join(dir, 'promo_en.png'),
+    bn: join(dir, 'promo_en.png'),
   };
   return map[normLang] ?? join(dir, 'promo_en.png');
 }
@@ -799,66 +809,45 @@ function getPromoImagePath(lang: string): string {
  * the ambassador's chosen language. Returns text + entities + inlineKeyboard
  * — use without parse_mode so entities are applied correctly.
  */
+// Escape a string for use inside Telegram HTML parse_mode captions.
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Build a promo caption using Telegram HTML parse_mode.
+ * Returns an HTML string + inlineKeyboard — set parse_mode='HTML' when posting.
+ *
+ * HTML parse_mode is used here instead of raw entities because Telegram rejects
+ * caption_entities containing custom_emoji for bot-posted channel messages
+ * (ENTITY_TEXT_INVALID / "entity begins in a middle of a UTF-16 symbol"), and
+ * manual UTF-16 offset arithmetic is fragile across multilingual strings.
+ * HTML mode is fully reliable for bold and code formatting.
+ */
 function buildAmbassadorPromoPayload(
   lang: string,
   code1: string,
   code2: string,
   rewardAmount: string,
   referralLink: string,
-): { text: string; entities: any[]; inlineKeyboard: any } {
+): { html: string; inlineKeyboard: any } {
   const s = AMB_PROMO_STRINGS[(lang as AmbPromoLang)] ?? AMB_PROMO_STRINGS.en;
   const rewardPow = parseInt(rewardAmount || '10000').toLocaleString('en-US');
 
-  const E_MONEY  = '5841700171657779627';
-  const E_USER   = '5258011929993026890';
-  const E_GIFT   = '5884147165940421826';
-  const E_TICKET = '5357592164090028726';
-  const E_ROCKET = '5997099132173424576';
+  const lines: string[] = [
+    `💸 <b>${escHtml(s.title)}</b>`,
+    '',
+    `👤 <b>${escHtml(s.subtitle)}</b>`,
+    '',
+    `🎁 <b>${escHtml(s.rewardLabel)}</b> ${escHtml(rewardPow)} POW`,
+    '',
+    `🎟 <b>${escHtml(s.codeLabel)}</b> <code>${escHtml(code1)}</code>`,
+    `🎟 <b>${escHtml(s.codeLabel)}</b> <code>${escHtml(code2)}</code>`,
+    '',
+    `🚀 <b>${escHtml(s.cta)}</b>`,
+  ];
 
-  let text = '';
-  const entities: any[] = [];
-
-  const add = (str: string, opts?: { emojiId?: string; bold?: boolean; code?: boolean }) => {
-    const offset = utf16Len(text);
-    const length = utf16Len(str);
-    if (opts?.emojiId) entities.push({ type: 'custom_emoji', offset, length, custom_emoji_id: opts.emojiId });
-    if (opts?.bold)    entities.push({ type: 'bold', offset, length });
-    if (opts?.code)    entities.push({ type: 'code', offset, length });
-    text += str;
-  };
-
-  add('💸', { emojiId: E_MONEY });
-  add(' ');
-  add(s.title, { bold: true });
-  add('\n\n');
-
-  add('👤', { emojiId: E_USER });
-  add(' ');
-  add(s.subtitle, { bold: true });
-  add('\n\n');
-
-  add('🎁', { emojiId: E_GIFT });
-  add(' ');
-  add(s.rewardLabel, { bold: true });
-  add(` ${rewardPow} POW\n\n`);
-
-  add('🎟', { emojiId: E_TICKET });
-  add(' ');
-  add(s.codeLabel, { bold: true });
-  add(' ');
-  add(code1, { code: true });
-  add('\n');
-
-  add('🎟', { emojiId: E_TICKET });
-  add(' ');
-  add(s.codeLabel, { bold: true });
-  add(' ');
-  add(code2, { code: true });
-  add('\n\n');
-
-  add('🚀', { emojiId: E_ROCKET });
-  add(' ');
-  add(s.cta, { bold: true });
+  const html = lines.join('\n');
 
   const inlineKeyboard = {
     inline_keyboard: [[
@@ -866,7 +855,7 @@ function buildAmbassadorPromoPayload(
     ]],
   };
 
-  return { text, entities, inlineKeyboard };
+  return { html, inlineKeyboard };
 }
 
 // Helper: build plain text + entities array for custom emoji
@@ -3207,7 +3196,7 @@ export async function generateUniqueAmbassadorCode(prefix: string, exclude: Set<
 export async function sendAmbassadorPromo(ambId: string): Promise<string | null> {
   const { db: dbConn } = await import('./db');
   const { ambassadors, promoCodes, adminSettings } = await import('../shared/schema');
-  const { eq } = await import('drizzle-orm');
+  const { eq, inArray } = await import('drizzle-orm');
   const { storage: stor } = await import('./storage');
 
   const [amb] = await dbConn.select().from(ambassadors).where(eq(ambassadors.id, ambId)).limit(1);
@@ -3285,62 +3274,117 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
   const uniqueCode2 = await generateUniqueAmbassadorCode(prefix, new Set([uniqueCode1]));
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 h
 
-  // 100-claim limit OR 24 h, whichever hits first — insert both codes
+  console.log(`🎟 [Ambassador ${amb.id}] Generated promo codes: ${uniqueCode1}, ${uniqueCode2} | reward: ${rewardAmount} PAD | expires: ${expiresAt.toISOString()}`);
+
+  // Insert both codes — they will be deactivated below if the channel post fails
   await dbConn.insert(promoCodes).values([
     { code: uniqueCode1, rewardAmount, rewardType: 'PAD', usageLimit: 100, perUserLimit: 1, isActive: true, expiresAt },
     { code: uniqueCode2, rewardAmount, rewardType: 'PAD', usageLimit: 100, perUserLimit: 1, isActive: true, expiresAt },
   ]);
-  // Keep uniqueCode as first code for DM summary
-  const uniqueCode = uniqueCode1;
 
-  // ── Build message in ambassador's language using entities (Premium Custom Emojis) ──
+  // ── Build message in ambassador's language ────────────────────────────────
   const botUsername = process.env.BOT_USERNAME || 'Paid_Adzbot';
   const referralLink = user?.referralCode
     ? `https://t.me/${botUsername}/MyWAdz?startapp=${user.referralCode}`
     : `https://t.me/${botUsername}/MyWAdz`;
 
-  // Read user's language (updates automatically when they change it in the app)
   const ambLang = (user?.language as string) || 'en';
-  const { text: postText, entities: postEntities, inlineKeyboard } =
+  const { html: postHtml, inlineKeyboard } =
     buildAmbassadorPromoPayload(ambLang, uniqueCode1, uniqueCode2, rewardAmount, referralLink);
 
-  // ── Post to channel as photo with caption_entities (Premium Custom Emojis) ──
+  // ── Post to channel ───────────────────────────────────────────────────────
   let postedToChannel = false;
+  let postFailureReason = '';
+
   if (botToken && amb.channelId) {
     try {
       const imagePath = getPromoImagePath(ambLang);
       const imageBuffer = readFileSync(imagePath);
 
       // Telegram caption limit is 1024 chars; truncate safely if ever exceeded
-      const safeCaption = postText.length <= 1024 ? postText : postText.slice(0, 1021) + '…';
+      const safeCaption = postHtml.length <= 1024 ? postHtml : postHtml.slice(0, 1021) + '…';
 
       const form = new FormData();
       form.append('chat_id', amb.channelId);
       form.append('photo', new Blob([imageBuffer], { type: 'image/png' }), 'promo.png');
       form.append('caption', safeCaption);
-      form.append('caption_entities', JSON.stringify(postEntities));
+      form.append('parse_mode', 'HTML');
       form.append('reply_markup', JSON.stringify(inlineKeyboard));
 
-      console.log(`📤 [Ambassador ${amb.id}] Sending photo to channel ${amb.channelId}...`);
+      console.log(`📤 [Ambassador ${amb.id}] Posting to channel — summary:`, {
+        ambassadorId: amb.id,
+        channelId: amb.channelId,
+        channelVerified: amb.channelVerified,
+        lang: ambLang,
+        codes: [uniqueCode1, uniqueCode2],
+        captionLength: safeCaption.length,
+        parseMode: 'HTML',
+        imagePath,
+        imageBytes: imageBuffer.length,
+        inlineKeyboard,
+      });
+
       const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: 'POST',
         body: form,
       });
-      const respData = await resp.json();
+      const respData = await resp.json() as any;
       postedToChannel = respData.ok === true;
+
       if (postedToChannel) {
-        console.log(`✅ [Ambassador ${amb.id}] Photo posted to channel ${amb.channelId} — message_id: ${respData.result?.message_id}`);
+        console.log(`✅ [Ambassador ${amb.id}] Photo posted successfully — channel: ${amb.channelId} | message_id: ${respData.result?.message_id}`);
       } else {
-        console.error(`❌ [Ambassador ${amb.id}] Channel post FAILED:`, {
+        postFailureReason = `Telegram error ${respData.error_code}: ${respData.description}`;
+        console.error(`❌ [Ambassador ${amb.id}] sendPhoto FAILED — full Telegram response:`, {
+          ambassadorId: amb.id,
           channelId: amb.channelId,
+          httpStatus: resp.status,
+          ok: respData.ok,
           errorCode: respData.error_code,
           description: respData.description,
           parameters: respData.parameters,
+          fullResponse: JSON.stringify(respData),
         });
       }
-    } catch (err) {
-      console.error(`❌ [Ambassador ${amb.id}] Channel post exception:`, err);
+    } catch (err: any) {
+      postFailureReason = `Exception: ${err?.message || err}`;
+      console.error(`❌ [Ambassador ${amb.id}] sendPhoto threw an exception:`, err);
     }
+  } else {
+    postFailureReason = `Missing botToken=${!!botToken} or channelId=${amb.channelId}`;
+    console.error(`❌ [Ambassador ${amb.id}] Cannot post — ${postFailureReason}`);
+  }
+
+  // ── Handle failure: deactivate codes, back off schedule, notify ambassador ─
+  if (!postedToChannel) {
+    // Deactivate the codes we just created so they aren't wasted
+    await dbConn.update(promoCodes)
+      .set({ isActive: false })
+      .where(inArray(promoCodes.code, [uniqueCode1, uniqueCode2]));
+    console.warn(`⚠️ [Ambassador ${amb.id}] Deactivated codes [${uniqueCode1}, ${uniqueCode2}] — channel post failed: ${postFailureReason}`);
+
+    // Advance nextPromoAt so the scheduler does not retry every cycle and hammer a broken channel.
+    // Retry in 2 hours instead of the normal 12-hour interval.
+    await dbConn.update(ambassadors).set({
+      nextPromoAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+    }).where(eq(ambassadors.id, amb.id));
+    console.warn(`⚠️ [Ambassador ${amb.id}] Scheduled retry in 2 h due to post failure`);
+
+    if (user?.telegram_id) {
+      await sendUserTelegramNotification(
+        user.telegram_id,
+        `<b>Promo Post Failed</b>\n\n` +
+        `The bot was unable to post to your channel (<code>${amb.channelId}</code>).\n\n` +
+        `Reason: <code>${postFailureReason}</code>\n\n` +
+        `Please ensure <b>@Paid_Adzbot</b> is an administrator with <b>Post Messages</b> permission enabled.`,
+        undefined,
+        'HTML'
+      ).catch(() => {});
+    }
+
+    // Return null so callers know the channel post did NOT succeed
+    return null;
   }
 
   // ── Advance schedule: next post in 12 hours (2 posts per day) ───────────
@@ -3350,20 +3394,8 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     updatedAt: new Date(),
   }).where(eq(ambassadors.id, amb.id));
 
-  // ── If posting to channel failed, notify ambassador so they can fix permissions ──
-  if (!postedToChannel && user?.telegram_id) {
-    await sendUserTelegramNotification(
-      user.telegram_id,
-      `<b>Promo Post Failed</b>\n\n` +
-      `The bot was unable to post to your channel. Please ensure <b>@Paid_Adzbot</b> has administrator ` +
-      `permissions with <b>Post Messages</b> enabled and try again.`,
-      undefined,
-      'HTML'
-    ).catch(() => {});
-  }
-
-  console.log(`✅ Ambassador promo: ${uniqueCode} | ambassador ${amb.id} | channel post: ${postedToChannel}`);
-  return uniqueCode;
+  console.log(`✅ [Ambassador ${amb.id}] Promo cycle complete — codes: ${uniqueCode1}, ${uniqueCode2} | channel: ${amb.channelId}`);
+  return uniqueCode1;
 }
 
 export async function runAmbassadorDailyPromos(): Promise<void> {
