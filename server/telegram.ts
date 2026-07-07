@@ -1,5 +1,7 @@
 // Telegram Bot API integration for sending notifications
 import TelegramBot from 'node-telegram-bot-api';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { storage } from './storage';
 import { db } from './db';
 import { earnings } from '../shared/schema';
@@ -650,6 +652,196 @@ function utf16Len(str: string): number {
     len += (ch.codePointAt(0)! > 0xffff) ? 2 : 1;
   }
   return len;
+}
+
+// ── Ambassador promo multilingual strings ─────────────────────────────────
+
+type AmbPromoLang = 'en' | 'ru' | 'ar' | 'uk' | 'de' | 'zh' | 'pt' | 'es' | 'vi' | 'bn';
+
+interface AmbPromoStrings {
+  title: string;
+  subtitle: string;
+  rewardLabel: string;
+  codeLabel: string;
+  cta: string;
+  button: string;
+}
+
+const AMB_PROMO_STRINGS: Record<AmbPromoLang, AmbPromoStrings> = {
+  en: {
+    title: 'Paid Adz Promo Code is LIVE!',
+    subtitle: 'First 100 Active Users Only',
+    rewardLabel: 'Reward:',
+    codeLabel: 'Code:',
+    cta: "Open Paid Adz and claim your reward now before it's gone!",
+    button: '👉🏻 Click here to claim 👈🏻',
+  },
+  ru: {
+    title: 'Промокод Paid Adz уже АКТИВЕН!',
+    subtitle: 'Только первые 100 активных пользователей',
+    rewardLabel: 'Награда:',
+    codeLabel: 'Код:',
+    cta: 'Откройте Paid Adz и заберите награду, пока не поздно!',
+    button: '👉🏻 Нажмите, чтобы получить 👈🏻',
+  },
+  ar: {
+    title: 'رمز ترويجي Paid Adz متاح الآن!',
+    subtitle: 'أول 100 مستخدم نشط فقط',
+    rewardLabel: 'المكافأة:',
+    codeLabel: 'الرمز:',
+    cta: 'افتح Paid Adz واحصل على مكافأتك قبل أن تنتهي!',
+    button: '👉🏻 اضغط هنا للمطالبة 👈🏻',
+  },
+  uk: {
+    title: 'Промокод Paid Adz вже АКТИВНИЙ!',
+    subtitle: 'Лише перші 100 активних користувачів',
+    rewardLabel: 'Нагорода:',
+    codeLabel: 'Код:',
+    cta: 'Відкрийте Paid Adz та отримайте нагороду, поки не сплив час!',
+    button: '👉🏻 Натисніть, щоб отримати 👈🏻',
+  },
+  de: {
+    title: 'Paid Adz Promo-Code ist LIVE!',
+    subtitle: 'Nur die ersten 100 aktiven Nutzer',
+    rewardLabel: 'Belohnung:',
+    codeLabel: 'Code:',
+    cta: 'Öffne Paid Adz und sichere dir deine Belohnung, bevor sie weg ist!',
+    button: '👉🏻 Hier klicken zum Einlösen 👈🏻',
+  },
+  zh: {
+    title: 'Paid Adz 促销码现已上线！',
+    subtitle: '仅限前 100 位活跃用户',
+    rewardLabel: '奖励：',
+    codeLabel: '码：',
+    cta: '立即打开 Paid Adz 领取奖励，先到先得！',
+    button: '👉🏻 点击领取 👈🏻',
+  },
+  pt: {
+    title: 'Código Promo Paid Adz está LIVE!',
+    subtitle: 'Apenas os primeiros 100 usuários ativos',
+    rewardLabel: 'Recompensa:',
+    codeLabel: 'Código:',
+    cta: 'Abra o Paid Adz e resgate sua recompensa antes que acabe!',
+    button: '👉🏻 Clique aqui para resgatar 👈🏻',
+  },
+  es: {
+    title: '¡El código promo de Paid Adz está EN VIVO!',
+    subtitle: 'Solo los primeros 100 usuarios activos',
+    rewardLabel: 'Recompensa:',
+    codeLabel: 'Código:',
+    cta: '¡Abre Paid Adz y reclama tu recompensa antes de que se acabe!',
+    button: '👉🏻 Haz clic aquí para reclamar 👈🏻',
+  },
+  vi: {
+    title: 'Mã khuyến mãi Paid Adz đã ra mắt!',
+    subtitle: 'Chỉ 100 người dùng hoạt động đầu tiên',
+    rewardLabel: 'Phần thưởng:',
+    codeLabel: 'Mã:',
+    cta: 'Mở Paid Adz và nhận phần thưởng của bạn ngay trước khi hết!',
+    button: '👉🏻 Nhấp vào đây để nhận 👈🏻',
+  },
+  bn: {
+    title: 'Paid Adz প্রোমো কোড লাইভ!',
+    subtitle: 'শুধুমাত্র প্রথম ১০০ জন সক্রিয় ব্যবহারকারী',
+    rewardLabel: 'পুরস্কার:',
+    codeLabel: 'কোড:',
+    cta: 'Paid Adz খুলুন এবং এখনই আপনার পুরস্কার দাবি করুন!',
+    button: '👉🏻 এখানে ক্লিক করুন 👈🏻',
+  },
+};
+
+/**
+ * Return the absolute path to the promo banner image for a given language.
+ * ru → Russian banner, uk → Ukrainian banner, ar → Arabic banner,
+ * everything else → English banner.
+ *
+ * Uses process.cwd() (ESM-safe — __dirname is unavailable with "type":"module").
+ * Normalises lang to lowercase base code (e.g. "ru-RU" → "ru") before lookup.
+ */
+function getPromoImagePath(lang: string): string {
+  const normLang = lang.toLowerCase().split(/[-_]/)[0];
+  const dir = join(process.cwd(), 'server', 'assets', 'promo');
+  const map: Record<string, string> = {
+    ru: join(dir, 'promo_ru.png'),
+    uk: join(dir, 'promo_uk.png'),
+    ar: join(dir, 'promo_ar.png'),
+  };
+  return map[normLang] ?? join(dir, 'promo_en.png');
+}
+
+/**
+ * Build a promo message using Telegram entities (Premium Custom Emojis) in
+ * the ambassador's chosen language. Returns text + entities + inlineKeyboard
+ * — use without parse_mode so entities are applied correctly.
+ */
+function buildAmbassadorPromoPayload(
+  lang: string,
+  code1: string,
+  code2: string,
+  rewardAmount: string,
+  referralLink: string,
+): { text: string; entities: any[]; inlineKeyboard: any } {
+  const s = AMB_PROMO_STRINGS[(lang as AmbPromoLang)] ?? AMB_PROMO_STRINGS.en;
+  const rewardPow = parseInt(rewardAmount || '10000').toLocaleString('en-US');
+
+  const E_MONEY  = '5841700171657779627';
+  const E_USER   = '5258011929993026890';
+  const E_GIFT   = '5884147165940421826';
+  const E_TICKET = '5357592164090028726';
+  const E_ROCKET = '5997099132173424576';
+
+  let text = '';
+  const entities: any[] = [];
+
+  const add = (str: string, opts?: { emojiId?: string; bold?: boolean; code?: boolean }) => {
+    const offset = utf16Len(text);
+    const length = utf16Len(str);
+    if (opts?.emojiId) entities.push({ type: 'custom_emoji', offset, length, custom_emoji_id: opts.emojiId });
+    if (opts?.bold)    entities.push({ type: 'bold', offset, length });
+    if (opts?.code)    entities.push({ type: 'code', offset, length });
+    text += str;
+  };
+
+  add('💸', { emojiId: E_MONEY });
+  add(' ');
+  add(s.title, { bold: true });
+  add('\n\n');
+
+  add('👤', { emojiId: E_USER });
+  add(' ');
+  add(s.subtitle, { bold: true });
+  add('\n\n');
+
+  add('🎁', { emojiId: E_GIFT });
+  add(' ');
+  add(s.rewardLabel, { bold: true });
+  add(` ${rewardPow} POW\n\n`);
+
+  add('🎟', { emojiId: E_TICKET });
+  add(' ');
+  add(s.codeLabel, { bold: true });
+  add(' ');
+  add(code1, { code: true });
+  add('\n');
+
+  add('🎟', { emojiId: E_TICKET });
+  add(' ');
+  add(s.codeLabel, { bold: true });
+  add(' ');
+  add(code2, { code: true });
+  add('\n\n');
+
+  add('🚀', { emojiId: E_ROCKET });
+  add(' ');
+  add(s.cta, { bold: true });
+
+  const inlineKeyboard = {
+    inline_keyboard: [[
+      { text: s.button, url: referralLink },
+    ]],
+  };
+
+  return { text, entities, inlineKeyboard };
 }
 
 // Helper: build plain text + entities array for custom emoji
@@ -3051,47 +3243,45 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
   // Keep uniqueCode as first code for DM summary
   const uniqueCode = uniqueCode1;
 
-  // ── Build message ─────────────────────────────────────────────────────────
+  // ── Build message in ambassador's language using entities (Premium Custom Emojis) ──
   const botUsername = process.env.BOT_USERNAME || 'Paid_Adzbot';
   const referralLink = user?.referralCode
     ? `https://t.me/${botUsername}/MyWAdz?startapp=${user.referralCode}`
     : `https://t.me/${botUsername}/MyWAdz`;
 
-  const postText =
-    `<tg-emoji emoji-id="5841700171657779627">💸</tg-emoji> <b>Paid Adz Promo Code is LIVE!</b>\n\n` +
-    `<tg-emoji emoji-id="5258011929993026890">👤</tg-emoji> <b>First 100 Active Users Only</b>\n\n` +
-    `<tg-emoji emoji-id="5884147165940421826">🎁</tg-emoji> <b>Reward:</b> 10,000 POW\n\n` +
-    `<tg-emoji emoji-id="5357592164090028726">🎟</tg-emoji> <b>Code:</b> <code>${uniqueCode1}</code>\n` +
-    `<tg-emoji emoji-id="5357592164090028726">🎟</tg-emoji> <b>Code:</b> <code>${uniqueCode2}</code>\n\n` +
-    `<tg-emoji emoji-id="5997099132173424576">🚀</tg-emoji> <b>Open Paid Adz and claim your reward now before it's gone!</b>`;
+  // Read user's language (updates automatically when they change it in the app)
+  const ambLang = (user?.language as string) || 'en';
+  const { text: postText, entities: postEntities, inlineKeyboard } =
+    buildAmbassadorPromoPayload(ambLang, uniqueCode1, uniqueCode2, rewardAmount, referralLink);
 
-  const inlineKeyboard = {
-    inline_keyboard: [[
-      { text: '👉🏻 Click here to claim 👈🏻', url: referralLink },
-    ]],
-  };
-
-  // ── Post to channel ───────────────────────────────────────────────────────
+  // ── Post to channel as photo with caption_entities (Premium Custom Emojis) ──
   let postedToChannel = false;
   if (botToken && amb.channelId) {
     try {
-      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      const imagePath = getPromoImagePath(ambLang);
+      const imageBuffer = readFileSync(imagePath);
+
+      // Telegram caption limit is 1024 chars; truncate safely if ever exceeded
+      const safeCaption = postText.length <= 1024 ? postText : postText.slice(0, 1021) + '…';
+
+      const form = new FormData();
+      form.append('chat_id', amb.channelId);
+      form.append('photo', new Blob([imageBuffer], { type: 'image/png' }), 'promo.png');
+      form.append('caption', safeCaption);
+      form.append('caption_entities', JSON.stringify(postEntities));
+      form.append('reply_markup', JSON.stringify(inlineKeyboard));
+
+      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: amb.channelId,
-          text: postText,
-          parse_mode: 'HTML',
-          reply_markup: inlineKeyboard,
-        }),
+        body: form,
       });
       const respData = await resp.json();
       postedToChannel = respData.ok === true;
       if (!postedToChannel) {
-        console.error(`Channel post failed for ambassador ${amb.id}:`, respData.description);
+        console.error(`Channel photo post failed for ambassador ${amb.id}:`, respData.description);
       }
     } catch (err) {
-      console.error(`Channel post error for ambassador ${amb.id}:`, err);
+      console.error(`Channel photo post error for ambassador ${amb.id}:`, err);
     }
   }
 
@@ -3102,16 +3292,16 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     updatedAt: new Date(),
   }).where(eq(ambassadors.id, amb.id));
 
-  // ── DM ambassador ─────────────────────────────────────────────────────────
+  // ── DM ambassador (plain text — no parse_mode needed for a simple notification) ──
   if (user?.telegram_id) {
-    await sendUserTelegramNotification(user.telegram_id,
-      `<tg-emoji emoji-id="5841700171657779627">💸</tg-emoji> <b>Promo Post is Live!</b>\n\n` +
-      `Codes: <code>${uniqueCode1}</code> &amp; <code>${uniqueCode2}</code>\n` +
+    const dmText =
+      `💸 Promo Post is Live!\n\n` +
+      `Codes: ${uniqueCode1} & ${uniqueCode2}\n` +
       `Expires: 24 hours · Max claims: 100 each\n\n` +
       (postedToChannel
         ? `Posted to your channel automatically.`
-        : `Share this with your followers:\n\n${postText}`)
-    ).catch(() => {});
+        : `Share this with your followers:\n\n${postText}`);
+    await sendUserTelegramNotification(user.telegram_id, dmText, undefined, 'HTML').catch(() => {});
   }
 
   console.log(`✅ Ambassador promo: ${uniqueCode} | ambassador ${amb.id} | channel post: ${postedToChannel}`);
