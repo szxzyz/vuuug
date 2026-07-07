@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Radio, PartyPopper, ChevronLeft, Loader2, CheckCircle2, AlertCircle, Gift, Award } from "lucide-react";
+import { Cpu, Radio, ChevronLeft, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
 
@@ -15,7 +15,8 @@ const PACKAGES = [
   { clicks: 10000, plain: 15.0000, verified: 20.0000 },
 ];
 
-type Flow = "bot" | "channel" | "giveaway" | null;
+type Flow = "advertise" | "giveaway" | null;
+type AdvertiseTarget = "bot" | "channel" | null;
 interface Props { open: boolean; onClose: () => void; }
 
 // ─── Design tokens ─────────────────────────────────────────────
@@ -93,18 +94,20 @@ export default function CreatePanel({ open, onClose }: Props) {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
 
-  const [flow,         setFlow]         = useState<Flow>(null);
-  const [verifyType,   setVerifyType]   = useState<"verification" | "without">("without");
-  const [campaignName, setCampaignName] = useState("");
-  const [botLink,      setBotLink]      = useState("");       // without-verify: @username
-  const [botStartLink, setBotStartLink] = useState("");       // with-verify:    full https://t.me/Bot?start=CODE
-  const [channelLink,  setChannelLink]  = useState("");       // full URL: https://t.me/channel
-  const [selectedPkg,  setSelectedPkg]  = useState<number | null>(null);
+  const [flow,           setFlow]           = useState<Flow>(null);
+  const [advertiseTarget, setAdvertiseTarget] = useState<AdvertiseTarget>(null);
+  const [verifyType,     setVerifyType]     = useState<"verification" | "without">("without");
+  const [campaignName,   setCampaignName]   = useState("");
+  const [botLink,        setBotLink]        = useState("");
+  const [botStartLink,   setBotStartLink]   = useState("");
+  const [channelLink,    setChannelLink]    = useState("");
+  const [selectedPkg,    setSelectedPkg]    = useState<number | null>(null);
 
   const [chVerifying, setChVerifying] = useState(false);
   const [chVerified,  setChVerified]  = useState(false);
   const [chError,     setChError]     = useState("");
 
+  const taskFlow = advertiseTarget; // "bot" | "channel" | null
   const isVerification  = verifyType === "verification";
   const selectedPkgData = PACKAGES.find(p => p.clicks === selectedPkg);
   const cost = selectedPkgData
@@ -113,12 +116,24 @@ export default function CreatePanel({ open, onClose }: Props) {
 
   const reset = useCallback(() => {
     setFlow(null);
+    setAdvertiseTarget(null);
     setVerifyType("without"); setCampaignName(""); setBotLink(""); setBotStartLink("");
     setChannelLink(""); setSelectedPkg(null);
     setChVerifying(false); setChVerified(false); setChError("");
   }, []);
 
   const handleClose = useCallback(() => { onClose(); setTimeout(reset, 350); }, [onClose, reset]);
+
+  const handleBack = () => {
+    if (advertiseTarget !== null) {
+      setAdvertiseTarget(null);
+      setVerifyType("without"); setCampaignName(""); setBotLink(""); setBotStartLink("");
+      setChannelLink(""); setSelectedPkg(null);
+      setChVerifying(false); setChVerified(false); setChError("");
+    } else {
+      handleClose();
+    }
+  };
 
   const verifyChannel = async () => {
     const trimmed = channelLink.trim();
@@ -139,7 +154,7 @@ export default function CreatePanel({ open, onClose }: Props) {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const link = flow === "bot"
+      const link = taskFlow === "bot"
         ? isVerification
           ? botStartLink.trim()
           : `https://t.me/${botLink.replace(/^@/, "").trim()}`
@@ -148,10 +163,10 @@ export default function CreatePanel({ open, onClose }: Props) {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          taskType: flow, title: campaignName.trim(), link,
+          taskType: taskFlow, title: campaignName.trim(), link,
           totalClicksRequired: selectedPkg,
           verificationRequired: isVerification,
-          channelVerified: flow === "channel" ? chVerified : false,
+          channelVerified: taskFlow === "channel" ? chVerified : false,
         }),
       });
       const data = await res.json();
@@ -168,23 +183,32 @@ export default function CreatePanel({ open, onClose }: Props) {
 
   const canSubmit = (() => {
     if (!campaignName.trim() || !selectedPkg) return false;
-    if (flow === "bot") {
+    if (taskFlow === "bot") {
       if (isVerification && !botStartLink.trim()) return false;
       if (!isVerification && !botLink.trim()) return false;
     }
-    if (flow === "channel") {
+    if (taskFlow === "channel") {
       if (!channelLink.trim() || !channelLink.includes("t.me/")) return false;
       if (isVerification && !chVerified) return false;
     }
     return true;
   })();
 
-  const pills: { id: Flow; label: string; Icon: React.ElementType; navigate?: string }[] = [
-    { id: "bot",      label: "Bot",        Icon: Cpu         },
-    { id: "channel",  label: "Channel",    Icon: Radio       },
-    { id: "giveaway", label: "Giveaway",   Icon: PartyPopper },
-    { id: null,       label: "Ambassador", Icon: Award, navigate: "/ambassador" },
+  const pills = [
+    { id: "advertise" as Flow,  label: "Advertise",  emoji: "📢" },
+    { id: "giveaway"  as Flow,  label: "Giveaway",   emoji: "🎁" },
+    { id: null        as Flow,  label: "Ambassador", emoji: "🚀", navigate: "/ambassador" },
   ];
+
+  // ── Header title
+  const sheetTitle = (() => {
+    if (flow === "giveaway") return "Giveaway";
+    if (flow === "advertise") {
+      if (!advertiseTarget) return "Advertise";
+      return advertiseTarget === "bot" ? "Promote Bot" : "Promote Channel";
+    }
+    return "";
+  })();
 
   return (
     <>
@@ -208,7 +232,7 @@ export default function CreatePanel({ open, onClose }: Props) {
             className="fixed z-[65]"
             style={{ bottom: "92px", right: "16px", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}
           >
-            {pills.map(({ id, label, Icon, navigate: navTo }, i) => (
+            {pills.map(({ id, label, emoji, navigate: navTo }, i) => (
               <motion.button
                 key={label}
                 initial={{ opacity: 0, x: 12, scale: 0.92 }}
@@ -216,17 +240,20 @@ export default function CreatePanel({ open, onClose }: Props) {
                 exit={{ opacity: 0, x: 10, scale: 0.92 }}
                 transition={{ delay: i * 0.025, type: "spring", stiffness: 480, damping: 32 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={() => { if (navTo) { onClose(); navigate(navTo); } else setFlow(id); }}
+                onClick={() => {
+                  if (navTo) { onClose(); navigate(navTo); }
+                  else setFlow(id);
+                }}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 10,
-                  height: 64, width: "max-content",
-                  background: "rgba(28,28,30,0.88)",
+                  height: 56, width: "max-content",
+                  background: "rgba(28,28,30,0.92)",
                   backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
-                  border: "none", borderRadius: 32, padding: "0 22px 0 18px",
+                  border: "none", borderRadius: 28, padding: "0 20px 0 16px",
                   cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
                 }}
               >
-                <Icon style={{ width: 24, height: 24, color: "rgba(255,255,255,0.88)", strokeWidth: 1.8, flexShrink: 0 }} />
+                <span style={{ fontSize: 20 }}>{emoji}</span>
                 <span style={{ color: "#fff", fontSize: 15, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>
               </motion.button>
             ))}
@@ -238,56 +265,70 @@ export default function CreatePanel({ open, onClose }: Props) {
       <AnimatePresence>
         {flow !== null && (
           <>
+            {/* Sheet backdrop */}
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.18 }}
               className="fixed inset-0 z-[68]"
-              style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(5px)" }}
+              style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
               onClick={handleClose}
             />
 
+            {/* Sheet */}
             <motion.div
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-              transition={{ type: "spring", stiffness: 400, damping: 42 }}
+              transition={{ type: "spring", stiffness: 380, damping: 40 }}
               className="fixed bottom-0 left-0 right-0 z-[69]"
               style={{
                 background: BG,
                 backdropFilter: "blur(40px)", WebkitBackdropFilter: "blur(40px)",
                 borderRadius: "24px 24px 0 0",
-                borderTop: "1px solid rgba(255,255,255,0.07)",
-                maxHeight: "88vh", overflowY: "auto",
-                paddingBottom: "calc(env(safe-area-inset-bottom,0px) + 110px)",
+                maxHeight: "88vh",
+                display: "flex",
+                flexDirection: "column",
               }}
               onClick={e => e.stopPropagation()}
             >
-              {/* Handle */}
-              <div className="flex justify-center pt-3 pb-0">
-                <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.12)" }} />
+              {/* ── Sticky header ── */}
+              <div style={{ flexShrink: 0 }}>
+                {/* Handle */}
+                <div className="flex justify-center pt-3">
+                  <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.12)" }} />
+                </div>
+
+                {/* Title row */}
+                <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+                  <button
+                    onClick={handleBack}
+                    style={{
+                      width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                      background: "rgba(255,255,255,0.07)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    <ChevronLeft style={{ width: 17, height: 17, color: TDIM }} />
+                  </button>
+                  <h2 style={{ color: T, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>
+                    {sheetTitle}
+                  </h2>
+                </div>
+
+                {/* Divider */}
+                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "0 20px" }} />
               </div>
 
-              {/* Header */}
-              <div className="flex items-center gap-3 px-5 pt-4 pb-1">
-                <button
-                  onClick={handleClose}
-                  style={{
-                    width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-                    background: "rgba(255,255,255,0.07)", border: `1px solid ${BDR}`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                >
-                  <ChevronLeft style={{ width: 17, height: 17, color: TDIM }} />
-                </button>
-                <h2 style={{ color: T, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>
-                  {flow === "bot" ? "Promote Bot" : flow === "channel" ? "Promote Channel" : "Giveaway"}
-                </h2>
-              </div>
-
-              <div style={{ padding: "16px 20px 0" }}>
+              {/* ── Scrollable content ── */}
+              <div style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "20px 20px",
+                paddingBottom: "calc(env(safe-area-inset-bottom,0px) + 100px)",
+              }}>
 
                 {/* Giveaway */}
                 {flow === "giveaway" && (
                   <div className="flex flex-col items-center justify-center gap-4 py-12">
-                    <Gift style={{ width: 44, height: 44, color: "#fbbf24" }} />
+                    <span style={{ fontSize: 44 }}>🎁</span>
                     <div className="text-center">
                       <p style={{ color: T, fontWeight: 700, fontSize: 19 }}>Coming Soon</p>
                       <p style={{ color: TDIM, fontSize: 13.5, marginTop: 6 }}>Giveaway campaigns are in development.</p>
@@ -295,8 +336,60 @@ export default function CreatePanel({ open, onClose }: Props) {
                   </div>
                 )}
 
-                {/* Bot / Channel form */}
-                {(flow === "bot" || flow === "channel") && (
+                {/* Advertise — target selector */}
+                {flow === "advertise" && !advertiseTarget && (
+                  <div className="flex flex-col gap-3">
+                    <p style={{ color: TDIM, fontSize: 13, marginBottom: 4 }}>
+                      What would you like to promote?
+                    </p>
+                    <motion.button
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setAdvertiseTarget("bot")}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 14,
+                        background: CARD, border: `1.5px solid ${BDR}`,
+                        borderRadius: 16, padding: "16px 18px", width: "100%", textAlign: "left",
+                      }}
+                    >
+                      <div style={{
+                        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                        background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.25)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <Cpu style={{ width: 22, height: 22, color: "#818cf8" }} />
+                      </div>
+                      <div>
+                        <p style={{ color: T, fontWeight: 700, fontSize: 15 }}>Bot</p>
+                        <p style={{ color: TDIM, fontSize: 12.5, marginTop: 3 }}>Drive users to your Telegram bot</p>
+                      </div>
+                    </motion.button>
+
+                    <motion.button
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setAdvertiseTarget("channel")}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 14,
+                        background: CARD, border: `1.5px solid ${BDR}`,
+                        borderRadius: 16, padding: "16px 18px", width: "100%", textAlign: "left",
+                      }}
+                    >
+                      <div style={{
+                        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                        background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.2)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <Radio style={{ width: 22, height: 22, color: "#4ade80" }} />
+                      </div>
+                      <div>
+                        <p style={{ color: T, fontWeight: 700, fontSize: 15 }}>Channel</p>
+                        <p style={{ color: TDIM, fontSize: 12.5, marginTop: 3 }}>Grow your Telegram channel subscribers</p>
+                      </div>
+                    </motion.button>
+                  </div>
+                )}
+
+                {/* Advertise — form (bot or channel selected) */}
+                {flow === "advertise" && (advertiseTarget === "bot" || advertiseTarget === "channel") && (
                   <div className="flex flex-col gap-5">
 
                     {/* TYPE */}
@@ -307,7 +400,7 @@ export default function CreatePanel({ open, onClose }: Props) {
                           selected={verifyType === "verification"}
                           onClick={() => { setVerifyType("verification"); setChVerified(false); setChError(""); }}
                           title="With Verification"
-                          sub={flow === "bot"
+                          sub={advertiseTarget === "bot"
                             ? "Users start your bot via the referral link — verified before reward"
                             : "Users must join the channel — bot verifies membership automatically"}
                         />
@@ -315,15 +408,15 @@ export default function CreatePanel({ open, onClose }: Props) {
                           selected={verifyType === "without"}
                           onClick={() => setVerifyType("without")}
                           title="Without Verification"
-                          sub={flow === "bot"
+                          sub={advertiseTarget === "bot"
                             ? "Users open your bot — reward is granted instantly"
                             : "Users open the channel — reward is granted instantly"}
                         />
                       </div>
                     </div>
 
-                    {/* CHANNEL LINK (full URL) */}
-                    {flow === "channel" && (
+                    {/* CHANNEL LINK */}
+                    {advertiseTarget === "channel" && (
                       <div>
                         <Label>Your Channel</Label>
                         <div className="flex gap-2">
@@ -378,7 +471,7 @@ export default function CreatePanel({ open, onClose }: Props) {
                     )}
 
                     {/* BOT LINK */}
-                    {flow === "bot" && (
+                    {advertiseTarget === "bot" && (
                       <div>
                         <Label>{isVerification ? "Bot Referral Start Link" : "Your Bot"}</Label>
                         {isVerification ? (
@@ -407,7 +500,7 @@ export default function CreatePanel({ open, onClose }: Props) {
                     <div>
                       <Label>Campaign Details</Label>
                       <Field
-                        placeholder={flow === "bot" ? "e.g. Join My Earning Bot" : "e.g. Join Paid Adz News"}
+                        placeholder={advertiseTarget === "bot" ? "e.g. Join My Earning Bot" : "e.g. Join Paid Adz News"}
                         value={campaignName}
                         onChange={setCampaignName}
                       />
