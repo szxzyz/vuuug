@@ -6455,11 +6455,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Minimum clicks: 1 for partner tasks, use admin settings for others
+      // Minimum clicks: 1 for partner tasks, use admin settings for others.
+      // Fixed advertiser package tiers (100/500/1000/2000/5000/10000) are always
+      // accepted regardless of the generic admin minimum — that setting is meant
+      // to guard arbitrary/manual click counts, not the official package sizes.
+      const ADVERTISER_PACKAGE_SIZES = [100, 500, 1000, 2000, 5000, 10000];
       const minClicksSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'minimum_clicks')).limit(1);
       const minClicksFromSettings = parseInt(minClicksSetting[0]?.settingValue || '500');
       const minClicks = taskType === "partner" ? 1 : minClicksFromSettings;
-      if (totalClicksRequired < minClicks) {
+      const parsedClicksRequired = Number(totalClicksRequired);
+      if (!Number.isFinite(parsedClicksRequired) || !Number.isInteger(parsedClicksRequired) || parsedClicksRequired <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid number of completions"
+        });
+      }
+      const isValidPackageSize = ADVERTISER_PACKAGE_SIZES.includes(parsedClicksRequired);
+      if (!isValidPackageSize && parsedClicksRequired < minClicks) {
         return res.status(400).json({
           success: false,
           message: `Minimum ${minClicks} clicks required`
@@ -6473,7 +6485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taskType,
           title,
           link,
-          totalClicksRequired,
+          totalClicksRequired: parsedClicksRequired,
           costPerClick: "0",
           totalCost: "0",
           status: "running",
@@ -6509,7 +6521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taskType,
           title,
           link,
-          totalClicksRequired,
+          totalClicksRequired: parsedClicksRequired,
           costPerClick: "0",
           totalCost: "0",
           status: "running",
@@ -6541,7 +6553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const botCostPerClickTON = parseFloat(botTonCostSetting[0]?.settingValue || "0.0003");
         
         const costPerClickTON = taskType === "channel" ? channelCostPerClickTON : botCostPerClickTON;
-        const totalCostTON = costPerClickTON * totalClicksRequired;
+        const totalCostTON = costPerClickTON * parsedClicksRequired;
         
         // Fetch TON balance
         const [userTonData] = await db
@@ -6575,7 +6587,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           type: "deduction",
           source: "task_creation",
           description: `Created ${taskType} task: ${title}`,
-          metadata: { taskId: null, taskType, totalClicksRequired, paymentMethod: 'TON' }
+          metadata: { taskId: null, taskType, totalClicksRequired: parsedClicksRequired, paymentMethod: 'TON' }
         });
 
         // Create task with TON cost
@@ -6584,7 +6596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taskType,
           title,
           link,
-          totalClicksRequired,
+          totalClicksRequired: parsedClicksRequired,
           costPerClick: costPerClickTON.toFixed(10),
           totalCost: totalCostTON.toFixed(10),
           status: "under_review",
@@ -7136,6 +7148,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false, 
         message: "Failed to verify channel" 
       });
+    }
+  });
+
+  // Proxy a Telegram channel/bot's profile photo — never expose the bot token
+  // (Telegram's file download URL embeds it) to the client, so we stream the
+  // image bytes back through our own server instead of returning a raw URL.
+  app.get('/api/advertiser-tasks/avatar', authenticateTelegram, async (req: any, res) => {
+    try {
+      const link = String(req.query.link || '');
+      const match = link.match(/t\.me\/([^/?]+)/);
+      const username = match?.[1];
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!username || !botToken) return res.status(404).end();
+
+      const chatRes = await fetch(
+        `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent('@' + username)}`
+      );
+      const chatData = await chatRes.json();
+      const fileId = chatData?.result?.photo?.small_file_id;
+      if (!chatData.ok || !fileId) return res.status(404).end();
+
+      const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
+      const fileData = await fileRes.json();
+      const filePath = fileData?.result?.file_path;
+      if (!fileData.ok || !filePath) return res.status(404).end();
+
+      const imgRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`);
+      if (!imgRes.ok || !imgRes.body) return res.status(404).end();
+
+      res.setHeader('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      res.end(buf);
+    } catch {
+      // Never log the raw error here — it may embed the bot token via the
+      // Telegram request URL (fetch errors often include the failed URL).
+      console.error('Error fetching chat avatar');
+      res.status(404).end();
     }
   });
   
