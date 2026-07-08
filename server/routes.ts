@@ -6716,135 +6716,128 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Increase task click limit
-  app.post('/api/advertiser-tasks/:taskId/increase-limit', authenticateTelegram, async (req: any, res) => {
-    try {
-      const userId = req.user.user.id;
-      const { taskId } = req.params;
-      const { additionalClicks } = req.body;
+  // Per-user+task in-flight lock — prevents double-submission from rapid taps
+  const _increaseLimitInFlight = new Set<string>();
 
-      // Validation - minimum additional clicks from admin settings
+  app.post('/api/advertiser-tasks/:taskId/increase-limit', authenticateTelegram, async (req: any, res) => {
+    const userId = req.user.user.id;
+    const { taskId } = req.params;
+    const lockKey = `${userId}:${taskId}`;
+
+    if (_increaseLimitInFlight.has(lockKey)) {
+      return res.status(409).json({ success: false, message: "A request for this task is already being processed. Please wait." });
+    }
+    _increaseLimitInFlight.add(lockKey);
+
+    try {
+      // ── Strict input validation ──────────────────────────────────────────
+      const rawClicks = req.body?.additionalClicks;
+      const additionalClicks = Math.floor(Number(rawClicks));
+      if (!Number.isFinite(additionalClicks) || additionalClicks <= 0) {
+        return res.status(400).json({ success: false, message: "additionalClicks must be a positive integer" });
+      }
+
+      // Minimum clicks from admin settings
       const addMinClicksSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'minimum_clicks')).limit(1);
       const minAddClicks = parseInt(addMinClicksSetting[0]?.settingValue || '500');
-      if (!additionalClicks || additionalClicks < minAddClicks) {
-        return res.status(400).json({
-          success: false,
-          message: `Minimum ${minAddClicks} additional clicks required`
-        });
+      if (additionalClicks < minAddClicks) {
+        return res.status(400).json({ success: false, message: `Minimum ${minAddClicks} additional clicks required` });
       }
 
-      // Verify task ownership
+      // ── Ownership check (outside transaction — read-only) ────────────────
       const task = await storage.getTaskById(taskId);
       if (!task) {
-        return res.status(404).json({
-          success: false,
-          message: "Task not found"
-        });
+        return res.status(404).json({ success: false, message: "Task not found" });
       }
-
       if (task.advertiserId !== userId) {
-        return res.status(403).json({
-          success: false,
-          message: "You don't own this task"
-        });
+        return res.status(403).json({ success: false, message: "You don't own this task" });
       }
 
-      // Fetch dynamic task cost per click from admin settings
-      const taskCostSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'task_creation_cost')).limit(1);
-      const costPerClick = taskCostSetting[0]?.settingValue || "0.0003";
-      const additionalCost = (parseFloat(costPerClick) * additionalClicks).toFixed(8);
+      // ── Cost calculation ─────────────────────────────────────────────────
+      const [taskCostSetting, userRow] = await Promise.all([
+        db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'task_creation_cost')).limit(1),
+        db.select({ tonBalance: users.tonBalance, usdBalance: users.usdBalance, telegram_id: users.telegram_id })
+          .from(users).where(eq(users.id, userId)).limit(1).then(r => r[0]),
+      ]);
 
-      // Get user data to check if admin
-      const [user] = await db
-        .select({ 
-          tonBalance: users.tonBalance, 
-          telegram_id: users.telegram_id 
-        })
-        .from(users)
-        .where(eq(users.id, userId));
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
+      if (!userRow) {
+        return res.status(404).json({ success: false, message: "User not found" });
       }
 
-      const userIsAdminFlag = isAdmin(user.telegram_id || '');
-      const requiredAmount = parseFloat(additionalCost);
+      const costPerClick  = taskCostSetting[0]?.settingValue || "0.0003";
+      const requiredAmount = parseFloat((parseFloat(costPerClick) * additionalClicks).toFixed(8));
+      const additionalCost = requiredAmount.toFixed(8);
+      const userIsAdminFlag = isAdmin(userRow.telegram_id || '');
 
-      // Admin users: use USD balance
-      // Regular users: use TON balance
+      // Pre-flight balance check (outside transaction — fail fast)
       if (userIsAdminFlag) {
-        console.log('🔑 Admin adding clicks - using USD balance');
-        const [adminUserData] = await db
-          .select({ usdBalance: users.usdBalance })
-          .from(users)
-          .where(eq(users.id, userId));
-        
-        const currentUSDBalance = parseFloat(adminUserData?.usdBalance || '0');
-
-        // Check if admin has sufficient USD balance
-        if (currentUSDBalance < requiredAmount) {
-          return res.status(400).json({
-            success: false,
-            message: "Insufficient USD balance. Please top up your USD balance."
-          });
+        const currentUSD = parseFloat(userRow.usdBalance || '0');
+        if (currentUSD < requiredAmount) {
+          return res.status(400).json({ success: false, message: "Insufficient USD balance. Please top up your USD balance." });
         }
-
-        // Deduct USD balance
-        const newUSDBalance = (currentUSDBalance - requiredAmount).toFixed(10);
-        await db
-          .update(users)
-          .set({ usdBalance: newUSDBalance, updatedAt: new Date() })
-          .where(eq(users.id, userId));
-
-        console.log('✅ Payment deducted (USD):', { oldBalance: currentUSDBalance, newBalance: newUSDBalance, deducted: additionalCost });
       } else {
-        console.log('👤 Regular user adding clicks - using TON balance');
-        const currentTonBalance = parseFloat(user.tonBalance || '0');
-
-        // Check if user has sufficient TON balance
-        if (currentTonBalance < requiredAmount) {
-          return res.status(400).json({
-            success: false,
-            message: "Insufficient TON. You need TON to add more clicks."
-          });
+        const currentTON = parseFloat(userRow.tonBalance || '0');
+        if (currentTON < requiredAmount) {
+          return res.status(400).json({ success: false, message: "Insufficient TON. You need TON to add more clicks." });
         }
-
-        // Deduct TON balance
-        const newTonBalance = (currentTonBalance - requiredAmount).toFixed(8);
-        await db
-          .update(users)
-          .set({ tonBalance: newTonBalance, updatedAt: new Date() })
-          .where(eq(users.id, userId));
-
-        console.log('✅ Payment deducted (TON):', { oldBalance: currentTonBalance, newBalance: newTonBalance, deducted: additionalCost });
       }
 
-      // Increase task limit
-      const updatedTask = await storage.increaseTaskLimit(taskId, additionalClicks, additionalCost);
+      // ── Atomic transaction: deduct → increase limit → log ───────────────
+      let updatedTask: any;
+      await db.transaction(async (tx) => {
+        if (userIsAdminFlag) {
+          console.log('🔑 Admin adding clicks - using USD balance');
+          const [freshUser] = await tx.select({ usdBalance: users.usdBalance }).from(users).where(eq(users.id, userId));
+          const currentUSD = parseFloat(freshUser?.usdBalance || '0');
+          if (currentUSD < requiredAmount) throw new Error("Insufficient USD balance.");
+          const newUSD = (currentUSD - requiredAmount).toFixed(10);
+          await tx.update(users).set({ usdBalance: newUSD, updatedAt: new Date() }).where(eq(users.id, userId));
+          console.log('✅ Payment deducted (USD):', { currentUSD, newUSD, deducted: additionalCost });
+        } else {
+          console.log('👤 Regular user adding clicks - using TON balance');
+          const [freshUser] = await tx.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId));
+          const currentTON = parseFloat(freshUser?.tonBalance || '0');
+          if (currentTON < requiredAmount) throw new Error("Insufficient TON.");
+          const newTON = (currentTON - requiredAmount).toFixed(8);
+          await tx.update(users).set({ tonBalance: newTON, updatedAt: new Date() }).where(eq(users.id, userId));
+          console.log('✅ Payment deducted (TON):', { currentTON, newTON, deducted: additionalCost });
+        }
 
-      // Log transaction
-      await storage.logTransaction({
-        userId,
-        amount: additionalCost,
-        type: "deduction",
-        source: "task_limit_increase",
-        description: `Increased limit for task: ${task.title}`,
-        metadata: { taskId, additionalClicks }
+        // Increase task limit
+        const [result] = await tx
+          .update(advertiserTasks)
+          .set({ totalClicksRequired: sql`${advertiserTasks.totalClicksRequired} + ${additionalClicks}`, updatedAt: new Date() })
+          .where(eq(advertiserTasks.id, taskId))
+          .returning();
+        if (!result) throw new Error("Task update failed — task may have been deleted.");
+        updatedTask = result;
+
+        // Log transaction
+        await tx.insert(transactions).values({
+          userId,
+          amount: additionalCost,
+          type: "deduction",
+          source: "task_limit_increase",
+          description: `Increased limit for task: ${task.title}`,
+          metadata: { taskId, additionalClicks },
+          createdAt: new Date(),
+        } as any);
       });
 
-      res.json({ 
-        success: true, 
-        message: "Task limit increased successfully",
-        task: updatedTask 
-      });
-    } catch (error) {
+      res.json({ success: true, message: "Task limit increased successfully", task: updatedTask });
+    } catch (error: any) {
       console.error("Error increasing task limit:", error);
-      res.status(500).json({ 
-        success: false, 
-        message: "Failed to increase task limit" 
-      });
+      const msg = error?.message || "Failed to increase task limit";
+      // Business errors thrown inside the transaction surface as 400/409; unexpected failures as 500
+      if (msg.includes("Insufficient")) {
+        return res.status(400).json({ success: false, message: msg });
+      }
+      if (msg.includes("already being processed") || msg.includes("conflict")) {
+        return res.status(409).json({ success: false, message: msg });
+      }
+      res.status(500).json({ success: false, message: "Failed to increase task limit" });
+    } finally {
+      _increaseLimitInFlight.delete(lockKey);
     }
   });
 
