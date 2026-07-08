@@ -416,6 +416,7 @@ export const ambassadors = pgTable("ambassadors", {
   channelVerified: boolean("channel_verified").default(false), // bot is admin in channel
   channelId: varchar("channel_id"), // telegram chat_id for auto-posting
   nextPromoAt: timestamp("next_promo_at"), // when to send the next scheduled promo
+  postingSchedule: text("posting_schedule"), // JSON array of "HH:MM" UTC time strings e.g. '["06:30","19:30"]'
   totalClaims: integer("total_claims").default(0),
   todayClaims: integer("today_claims").default(0),
   weekClaims: integer("week_claims").default(0),
