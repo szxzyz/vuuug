@@ -157,7 +157,7 @@ export default function Header() {
               padding: '6px 10px 6px 7px',
               borderRadius: 50,
               cursor: 'pointer',
-              border: '1px solid rgba(255,255,255,0.15)',
+              border: 'none',
               background: 'linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 100%)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',

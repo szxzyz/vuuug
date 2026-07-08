@@ -5,6 +5,7 @@ import {
   X, Loader2, AlertTriangle, ClipboardList,
   CheckCircle2, ShieldCheck, ShieldOff, Plus, ChevronLeft,
   Type, LayoutGrid, ArrowUpRight, Trash2, Pause, Play,
+  Radio, Rocket,
 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
@@ -23,7 +24,7 @@ const PACKAGES = [
 type Flow       = "advertise" | "giveaway" | null;
 type Category   = "channel" | "bot";
 type VerifyType = "verification" | "without";
-interface Props { open: boolean; onClose: () => void; }
+interface Props { open: boolean; onClose: () => void; onFlowChange?: (flow: Flow) => void; }
 interface MyTask {
   id: string;
   title: string;
@@ -44,7 +45,7 @@ const SHEET_TRANSITION = { type: "tween" as const, duration: 0.28, ease: [0.32, 
 const BLUE = "#4cd3ff";
 const BLUE_HOVER = "#6ddeff";
 
-export default function CreatePanel({ open, onClose }: Props) {
+export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
 
@@ -76,12 +77,18 @@ export default function CreatePanel({ open, onClose }: Props) {
   const cost        = pkgData ? (isVerif ? pkgData.verified : pkgData.price).toFixed(4) : null;
   const chVerified  = chState === "ok";
 
+  // Notify parent whenever flow changes so Layout.tsx can swap the + button icon
+  const setFlowWithNotify = useCallback((f: Flow) => {
+    setFlow(f);
+    onFlowChange?.(f);
+  }, [onFlowChange]);
+
   const reset = useCallback(() => {
-    setFlow(null); setCategory("channel"); setVerifyType("verification");
+    setFlowWithNotify(null); setCategory("channel"); setVerifyType("verification");
     setTaskName(""); setChannelLink(""); setBotUser(""); setBotStart("");
     setSelectedPkg(null); setChState("idle"); setChError("");
     setAdvTab("add"); setTopUpOpen(false); setAddClicksTaskId(null); setAddClicksValue("500");
-  }, []);
+  }, [setFlowWithNotify]);
 
   const handleClose = useCallback(() => {
     onClose(); setTimeout(reset, 400);
@@ -201,9 +208,8 @@ export default function CreatePanel({ open, onClose }: Props) {
   })();
 
   const pills = [
-    { id: "advertise" as Flow, label: "Advertise",  emoji: "📢" },
-    { id: "giveaway"  as Flow, label: "Giveaway",   emoji: "🎁" },
-    { id: null        as Flow, label: "Ambassador", emoji: "🚀", nav: "/ambassador" },
+    { id: "advertise" as Flow, label: "Advertise",  icon: Radio,   nav: undefined },
+    { id: null        as Flow, label: "Ambassador", icon: Rocket,  nav: "/ambassador" },
   ];
 
   return (
@@ -226,24 +232,24 @@ export default function CreatePanel({ open, onClose }: Props) {
         {open && flow === null && (
           <div className="fixed z-[65]"
             style={{ bottom: 92, right: 16, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-            {pills.map(({ id, label, emoji, nav }, i) => (
+            {pills.map(({ id, label, icon: Icon, nav }, i) => (
               <motion.button key={label}
                 initial={{ opacity: 0, x: 14, scale: 0.88 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 10, scale: 0.9 }}
                 transition={{ delay: i * 0.03, ...SPRING }}
                 whileTap={{ scale: 0.88 }}
-                onClick={() => { if (nav) { onClose(); navigate(nav); } else setFlow(id); }}
+                onClick={() => { if (nav) { onClose(); navigate(nav); } else setFlowWithNotify(id); }}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 10, height: 48,
-                  background: "rgba(255,255,255,0.12)", backdropFilter: "blur(16px)",
+                  background: "rgba(28,28,30,0.9)", backdropFilter: "blur(16px)",
                   WebkitBackdropFilter: "blur(16px)", border: "none",
                   borderRadius: 24, padding: "0 18px 0 14px", cursor: "pointer",
                   boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
                 }}
               >
-                <span style={{ fontSize: 18 }}>{emoji}</span>
-                <span style={{ color: "#fff", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>
+                <Icon style={{ width: 32, height: 32, color: "#6E6E73", strokeWidth: 2 }} />
+                <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>
               </motion.button>
             ))}
           </div>
@@ -540,96 +546,68 @@ export default function CreatePanel({ open, onClose }: Props) {
                 )}
               </div>
 
-              {/* ════ FLOATING NAV (matches app-wide floating nav in Layout.tsx) ════ */}
+              {/* ════ BOTTOM NAV — TON pill only (back button lives in Layout.tsx as the + button) ════ */}
               {flow === "advertise" && (
                 <div style={{
                   flexShrink: 0,
                   paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
-                  paddingLeft: 12,
-                  paddingRight: 12,
-                  paddingTop: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
+                  paddingLeft: 16, paddingRight: 16, paddingTop: 10,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 12,
                   background: "transparent",
                 }}>
-
-                  {/* ── Left floating pill: TON balance + top-up ── */}
+                  {/* TON balance | Pay — mirrors the nav pill position */}
                   <div style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    height: 64, padding: "0 18px",
+                    display: "flex", alignItems: "center",
+                    height: 56, borderRadius: 40, overflow: "hidden",
                     background: "rgba(28,28,30,0.9)",
-                    backdropFilter: "blur(16px)",
-                    WebkitBackdropFilter: "blur(16px)",
-                    borderRadius: 40,
+                    backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
-                    flexShrink: 0,
                   }}>
-                    <img src="/images/ton.png" alt="TON" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: "50%", flexShrink: 0 }} />
-                    <span style={{ color: "#fff", fontSize: 14, fontWeight: 800, letterSpacing: "0.01em", whiteSpace: "nowrap" }}>{tonFormatted}</span>
+                    {/* TON balance + top-up */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px 0 18px" }}>
+                      <img src="/images/ton.png" alt="TON" style={{ width: 20, height: 20, objectFit: "cover", borderRadius: "50%", flexShrink: 0 }} />
+                      <span style={{ color: "#fff", fontSize: 13, fontWeight: 800, letterSpacing: "0.01em", whiteSpace: "nowrap" }}>{tonFormatted}</span>
+                      <motion.button
+                        onClick={() => setTopUpOpen(true)}
+                        whileTap={{ scale: 0.82 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                        style={{
+                          width: 28, height: 28, borderRadius: "50%",
+                          background: "rgba(255,255,255,0.10)", border: "none",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: "pointer", flexShrink: 0,
+                        }}
+                      >
+                        <Plus style={{ width: 13, height: 13, color: "#fff" }} />
+                      </motion.button>
+                    </div>
+
+                    {/* Divider */}
+                    <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.10)", flexShrink: 0 }} />
+
+                    {/* Pay button */}
                     <motion.button
-                      onClick={() => setTopUpOpen(true)}
-                      whileTap={{ scale: 0.82 }}
+                      onClick={() => createMutation.mutate()}
+                      disabled={!canSubmit}
+                      whileTap={{ scale: canSubmit ? 0.94 : 1 }}
                       transition={{ type: "spring", stiffness: 400, damping: 17 }}
                       style={{
-                        width: 32, height: 32, borderRadius: "50%",
-                        background: "rgba(255,255,255,0.12)", border: "none",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        cursor: "pointer", flexShrink: 0,
+                        height: "100%", padding: "0 22px", border: "none",
+                        background: canSubmit ? BLUE : "transparent",
+                        color: canSubmit ? "#000" : "rgba(255,255,255,0.25)",
+                        fontSize: 14, fontWeight: 700, letterSpacing: "0.01em",
+                        whiteSpace: "nowrap", cursor: canSubmit ? "pointer" : "not-allowed",
+                        display: "flex", alignItems: "center", gap: 7,
+                        transition: "background 150ms, color 150ms",
                       }}
                     >
-                      <Plus style={{ width: 15, height: 15, color: "#fff" }} />
+                      {createMutation.isPending
+                        ? <><Loader2 size={14} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
+                        : <>Pay {cost ? `${cost} TON` : "—"}</>
+                      }
                     </motion.button>
                   </div>
-
-                  {/* ── Center floating pill: Pay ── */}
-                  <motion.button
-                    onClick={() => createMutation.mutate()}
-                    disabled={!canSubmit}
-                    whileTap={{ scale: canSubmit ? 0.88 : 1 }}
-                    whileHover={{ scale: canSubmit ? 1.04 : 1 }}
-                    transition={{ type: "spring", stiffness: 380, damping: 22 }}
-                    style={{
-                      flex: 1,
-                      height: 64, borderRadius: 40, border: "none",
-                      background: canSubmit ? BLUE : "rgba(28,28,30,0.9)",
-                      backdropFilter: "blur(16px)",
-                      WebkitBackdropFilter: "blur(16px)",
-                      boxShadow: canSubmit
-                        ? "0 8px 32px rgba(76,211,255,0.28)"
-                        : "0 8px 24px rgba(0,0,0,0.45)",
-                      color: canSubmit ? "#000" : "rgba(255,255,255,0.2)",
-                      fontSize: 15, fontWeight: 700, letterSpacing: "0.01em",
-                      cursor: canSubmit ? "pointer" : "not-allowed",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    }}
-                  >
-                    {createMutation.isPending
-                      ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
-                      : <>Pay {cost ? `${cost} TON` : "—"}</>
-                    }
-                  </motion.button>
-
-                  {/* ── Right floating button: Back ── */}
-                  <motion.button
-                    onClick={handleClose}
-                    whileTap={{ scale: 0.82 }}
-                    whileHover={{ scale: 1.06 }}
-                    transition={{ type: "spring", stiffness: 380, damping: 22 }}
-                    style={{
-                      width: 64, height: 64, borderRadius: 40, flexShrink: 0,
-                      background: "rgba(28,28,30,0.9)",
-                      backdropFilter: "blur(16px)",
-                      WebkitBackdropFilter: "blur(16px)",
-                      border: "none",
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <ChevronLeft style={{ width: 22, height: 22, color: "rgba(255,255,255,0.85)" }} />
-                  </motion.button>
-
                 </div>
               )}
 
