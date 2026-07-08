@@ -540,58 +540,96 @@ export default function CreatePanel({ open, onClose }: Props) {
                 )}
               </div>
 
-              {/* ════ BOTTOM NAV BAR ════ */}
+              {/* ════ FLOATING NAV (matches app-wide floating nav in Layout.tsx) ════ */}
               {flow === "advertise" && (
                 <div style={{
-                  flexShrink: 0, padding: "8px 14px",
-                  paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
-                  background: "#000",
-                  borderTop: "1px solid rgba(255,255,255,0.06)",
-                  display: "flex", alignItems: "center", gap: 10, height: 64,
+                  flexShrink: 0,
+                  paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  paddingTop: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  background: "transparent",
                 }}>
-                  {/* left — TON balance + top-up */}
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, minWidth: 0 }}>
-                    <img src="/images/ton.png" alt="TON" style={{ width: 24, height: 24, objectFit: "cover", borderRadius: "50%", flexShrink: 0 }} />
-                    <span style={{ color: "#fff", fontSize: 14, fontWeight: 800, letterSpacing: "0.01em" }}>{tonFormatted}</span>
-                    <button
+
+                  {/* ── Left floating pill: TON balance + top-up ── */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    height: 64, padding: "0 18px",
+                    background: "rgba(28,28,30,0.9)",
+                    backdropFilter: "blur(16px)",
+                    WebkitBackdropFilter: "blur(16px)",
+                    borderRadius: 40,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+                    flexShrink: 0,
+                  }}>
+                    <img src="/images/ton.png" alt="TON" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: "50%", flexShrink: 0 }} />
+                    <span style={{ color: "#fff", fontSize: 14, fontWeight: 800, letterSpacing: "0.01em", whiteSpace: "nowrap" }}>{tonFormatted}</span>
+                    <motion.button
                       onClick={() => setTopUpOpen(true)}
-                      className="active:scale-95 transition-transform"
-                      style={navCircleBtnStyle}
+                      whileTap={{ scale: 0.82 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                      style={{
+                        width: 32, height: 32, borderRadius: "50%",
+                        background: "rgba(255,255,255,0.12)", border: "none",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: "pointer", flexShrink: 0,
+                      }}
                     >
                       <Plus style={{ width: 15, height: 15, color: "#fff" }} />
-                    </button>
+                    </motion.button>
                   </div>
 
-                  {/* center — Pay button */}
-                  <div style={{ flex: 1.4, display: "flex", justifyContent: "center" }}>
-                    <button
-                      onClick={() => createMutation.mutate()}
-                      disabled={!canSubmit}
-                      className="transition-colors"
-                      style={{
-                        width: "100%", maxWidth: 200, height: 48, padding: "0 16px", borderRadius: 24, border: "none",
-                        background: canSubmit ? BLUE : "#1a1a1a",
-                        color: canSubmit ? "#000" : "rgba(255,255,255,0.2)",
-                        fontSize: 14.5, fontWeight: 700, letterSpacing: "0.01em", whiteSpace: "nowrap",
-                        cursor: canSubmit ? "pointer" : "not-allowed",
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                      }}
-                      onMouseEnter={e => { if (canSubmit) e.currentTarget.style.background = BLUE_HOVER; }}
-                      onMouseLeave={e => { if (canSubmit) e.currentTarget.style.background = BLUE; }}
-                    >
-                      {createMutation.isPending
-                        ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
-                        : <>Pay {cost ? `${cost} TON` : "—"}</>
-                      }
-                    </button>
-                  </div>
+                  {/* ── Center floating pill: Pay ── */}
+                  <motion.button
+                    onClick={() => createMutation.mutate()}
+                    disabled={!canSubmit}
+                    whileTap={{ scale: canSubmit ? 0.88 : 1 }}
+                    whileHover={{ scale: canSubmit ? 1.04 : 1 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                    style={{
+                      flex: 1,
+                      height: 64, borderRadius: 40, border: "none",
+                      background: canSubmit ? BLUE : "rgba(28,28,30,0.9)",
+                      backdropFilter: "blur(16px)",
+                      WebkitBackdropFilter: "blur(16px)",
+                      boxShadow: canSubmit
+                        ? "0 8px 32px rgba(76,211,255,0.28)"
+                        : "0 8px 24px rgba(0,0,0,0.45)",
+                      color: canSubmit ? "#000" : "rgba(255,255,255,0.2)",
+                      fontSize: 15, fontWeight: 700, letterSpacing: "0.01em",
+                      cursor: canSubmit ? "pointer" : "not-allowed",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    }}
+                  >
+                    {createMutation.isPending
+                      ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
+                      : <>Pay {cost ? `${cost} TON` : "—"}</>
+                    }
+                  </motion.button>
 
-                  {/* right — back icon */}
-                  <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-                    <button onClick={handleClose} style={navCircleBtnStyle}>
-                      <ChevronLeft style={{ width: 20, height: 20, color: "rgba(255,255,255,0.85)" }} />
-                    </button>
-                  </div>
+                  {/* ── Right floating button: Back ── */}
+                  <motion.button
+                    onClick={handleClose}
+                    whileTap={{ scale: 0.82 }}
+                    whileHover={{ scale: 1.06 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                    style={{
+                      width: 64, height: 64, borderRadius: 40, flexShrink: 0,
+                      background: "rgba(28,28,30,0.9)",
+                      backdropFilter: "blur(16px)",
+                      WebkitBackdropFilter: "blur(16px)",
+                      border: "none",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <ChevronLeft style={{ width: 22, height: 22, color: "rgba(255,255,255,0.85)" }} />
+                  </motion.button>
+
                 </div>
               )}
 
@@ -690,7 +728,7 @@ function MyMissionsList({
         const addingHere = addClicksTaskId === task.id;
 
         return (
-          <div key={task.id} style={{ background: "#111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 12 }}>
+          <div key={task.id} style={{ background: "#111", borderRadius: 14, padding: 12 }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
               <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {task.title}
