@@ -208,15 +208,13 @@ app.use((req, res, next) => {
       }
     }, 5 * 60 * 1000);
 
-    // Ambassador auto-scheduler DISABLED — admin triggers posts manually via Admin Panel → Ambassadors → Post Promo Now
-    // Uncomment to re-enable:
-    // try {
-    //   const { startAmbassadorScheduler } = await import('./telegram');
-    //   startAmbassadorScheduler();
-    // } catch (error) {
-    //   console.error('❌ Error starting ambassador scheduler:', error);
-    // }
-    console.log('ℹ️ Ambassador auto-scheduler is disabled — use Admin Panel to post manually');
+    // Ambassador auto-scheduler — checks every minute for due posts
+    try {
+      const { startAmbassadorScheduler } = await import('./telegram');
+      startAmbassadorScheduler();
+    } catch (error) {
+      console.error('❌ Error starting ambassador scheduler:', error);
+    }
 
     // Auto-setup Telegram webhook
     if (process.env.TELEGRAM_BOT_TOKEN) {

@@ -11187,6 +11187,43 @@ ${walletAddress}
   });
 
   // Verify bot is admin with Post Messages permission in ambassador's channel
+  // Pre-verify a channel before the user submits an application (no ambassador record required)
+  app.post('/api/ambassador/pre-verify-channel', authenticateTelegram, async (req: any, res) => {
+    try {
+      const { channelLink } = req.body;
+      if (!channelLink?.trim()) {
+        return res.status(400).json({ success: false, message: 'Channel link is required.' });
+      }
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken) return res.status(500).json({ success: false, message: 'Bot not configured.' });
+
+      const cleanLink = channelLink.trim()
+        .replace('https://t.me/', '').replace('http://t.me/', '')
+        .replace('t.me/', '').replace(/^@/, '').split('/')[0];
+      const channelIdentifier = cleanLink.startsWith('-') ? cleanLink : `@${cleanLink}`;
+
+      const { checkBotCanPostToChannel, getBotUsername } = await import('./telegram');
+      const check = await checkBotCanPostToChannel(botToken, channelIdentifier);
+      const botName = await getBotUsername();
+
+      if (!check.chatId) {
+        return res.json({ success: false, verified: false, message: `Channel not found. Make sure the username is correct and the channel is public. (tried: ${channelIdentifier})` });
+      }
+      if (!check.isAdmin) {
+        return res.json({ success: false, verified: false, message: `@${botName} is not an administrator in this channel. Please add it as administrator with "Post Messages" permission, then verify again.` });
+      }
+      if (!check.hasPostPermission) {
+        return res.json({ success: false, verified: false, message: `@${botName} is an admin but "Post Messages" permission is disabled. Please enable it and verify again.` });
+      }
+
+      res.json({ success: true, verified: true, message: `✅ Channel verified! @${botName} can post to this channel.` });
+    } catch (error) {
+      console.error('Error pre-verifying channel:', error);
+      res.status(500).json({ success: false, message: 'Failed to verify channel.' });
+    }
+  });
+
   app.post('/api/ambassador/verify-channel', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
@@ -11384,35 +11421,7 @@ ${walletAddress}
         return res.json({ success: true, message: 'Application approved (already ambassador)' });
       }
 
-      // Generate unique promo code name
-      const user = await storage.getUser(application.userId);
-      const baseName = (user?.username || user?.firstName || 'PADZ').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
-      let promoCodeName = baseName;
-      let suffix = 1;
-      while (true) {
-        const [taken] = await db.select({ id: ambassadors.id }).from(ambassadors)
-          .where(sql`UPPER(${ambassadors.promoCodeName}) = ${promoCodeName}`).limit(1);
-        if (!taken) break;
-        promoCodeName = `${baseName}${suffix++}`;
-      }
-
-      // Create ambassador record — first promo fires 1 minute after approval
-      const firstPromoAt = new Date(Date.now() + 60 * 1000);
-      const [ambassador] = await db.insert(ambassadors).values({
-        userId: application.userId,
-        applicationId: id,
-        promoCodeName,
-        promoPrefix: promoCodeName,
-        status: 'active',
-        dailyPromoCount: 1,
-        nextPromoAt: firstPromoAt,
-      }).returning();
-
-      // Update application status
-      await db.update(ambassadorApplications).set({ status: 'approved', reviewedAt: new Date() })
-        .where(eq(ambassadorApplications.id, id));
-
-      // ── Mandatory channel verification — block approval if bot cannot post ──────
+      // ── Mandatory channel verification FIRST — never create records before this passes ──
       const approveBot = process.env.TELEGRAM_BOT_TOKEN;
       if (!approveBot) {
         return res.status(503).json({ message: 'Bot token not configured. Cannot verify channel.' });
@@ -11435,12 +11444,39 @@ ${walletAddress}
           : `The bot lacks "Post Messages" permission.`;
         return res.status(400).json({ message: `Cannot approve: ${reason} Ask the user to fix this and re-apply.` });
       }
+      console.log(`✅ Channel verified for incoming approval — chatId=${approveCheck.chatId} channel="${approveChannelId}"`);
 
-      // Verified — save channel id and mark verified right away
-      await db.update(ambassadors)
-        .set({ channelVerified: true, channelId: approveCheck.chatId, updatedAt: new Date() })
-        .where(eq(ambassadors.id, ambassador.id));
-      console.log(`✅ Channel verified for new ambassador ${ambassador.id}: ${approveCheck.chatId}`);
+      // ── Channel verified — now safe to write to DB ────────────────────────────
+      const user = await storage.getUser(application.userId);
+      const baseName = (user?.username || user?.firstName || 'PADZ').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+      let promoCodeName = baseName;
+      let suffix = 1;
+      while (true) {
+        const [taken] = await db.select({ id: ambassadors.id }).from(ambassadors)
+          .where(sql`UPPER(${ambassadors.promoCodeName}) = ${promoCodeName}`).limit(1);
+        if (!taken) break;
+        promoCodeName = `${baseName}${suffix++}`;
+      }
+
+      // Create ambassador record with channel already verified
+      const firstPromoAt = new Date(Date.now() + 60 * 1000);
+      const [ambassador] = await db.insert(ambassadors).values({
+        userId: application.userId,
+        applicationId: id,
+        promoCodeName,
+        promoPrefix: promoCodeName,
+        status: 'active',
+        dailyPromoCount: 1,
+        nextPromoAt: firstPromoAt,
+        channelVerified: true,
+        channelId: approveCheck.chatId,
+      }).returning();
+
+      // Update application status
+      await db.update(ambassadorApplications).set({ status: 'approved', reviewedAt: new Date() })
+        .where(eq(ambassadorApplications.id, id));
+
+      console.log(`✅ Ambassador ${ambassador.id} created with verified channel: ${approveCheck.chatId}`);
 
       // Notify user
       try {
@@ -11705,8 +11741,19 @@ ${walletAddress}
       // Delete ambassador earnings first (FK dependency)
       await db.delete(ambassadorEarnings).where(eq(ambassadorEarnings.ambassadorId, id));
 
-      // Delete ambassador record (leaves users + ambassador_applications intact)
+      // Delete ambassador record
       await db.delete(ambassadors).where(eq(ambassadors.id, id));
+
+      // Reset linked application so the user can re-apply with a clean slate
+      if (amb.applicationId) {
+        await db.update(ambassadorApplications)
+          .set({ status: 'rejected', rejectionReason: 'Profile deleted by admin', reviewedAt: new Date() })
+          .where(eq(ambassadorApplications.id, amb.applicationId));
+      }
+      // Also clear any other non-pending applications for this user so status page is clean
+      await db.update(ambassadorApplications)
+        .set({ status: 'rejected', rejectionReason: 'Profile deleted by admin', reviewedAt: new Date() })
+        .where(and(eq(ambassadorApplications.userId, amb.userId), sql`${ambassadorApplications.status} != 'pending'`));
 
       console.log(`🗑️ Ambassador ${id} (userId: ${amb.userId}) permanently deleted by admin`);
       res.json({ success: true, message: 'Ambassador deleted. The user can re-apply.' });
