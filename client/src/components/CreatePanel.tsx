@@ -1,12 +1,15 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft, Loader2, AlertTriangle,
+  X, Loader2, AlertTriangle, ClipboardList,
   CheckCircle2, ShieldCheck, ShieldOff,
 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
+import {
+  Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
+} from "@/components/ui/drawer";
 
 // ─── Pricing ───────────────────────────────────────────────────
 const PACKAGES = [
@@ -22,11 +25,25 @@ type Flow       = "advertise" | "giveaway" | null;
 type Category   = "channel" | "bot";
 type VerifyType = "verification" | "without";
 interface Props { open: boolean; onClose: () => void; }
+interface MyTask {
+  id: string;
+  title: string;
+  taskType: string;
+  status: string;
+  currentClicks: number;
+  totalClicksRequired: number;
+}
 
 const BOT_NAME = "@Paid_Adzbot";
 
-// spring preset — very fast, no bounce
+// spring preset — very fast, no bounce (pill stack)
 const SPRING = { type: "spring" as const, stiffness: 500, damping: 42, mass: 0.9 };
+
+// native iOS-style sheet easing (matches vaul's drawer feel used elsewhere in the app)
+const SHEET_TRANSITION = { type: "tween" as const, duration: 0.28, ease: [0.32, 0.72, 0, 1] as [number, number, number, number] };
+
+const BLUE = "#4cd3ff";
+const BLUE_HOVER = "#6ddeff";
 
 export default function CreatePanel({ open, onClose }: Props) {
   const queryClient = useQueryClient();
@@ -43,6 +60,7 @@ export default function CreatePanel({ open, onClose }: Props) {
   const [selectedPkg,  setSelectedPkg]  = useState<number | null>(null);
   const [chState,      setChState]      = useState<"idle" | "checking" | "ok" | "err">("idle");
   const [chError,      setChError]      = useState("");
+  const [myMissionsOpen, setMyMissionsOpen] = useState(false);
 
   const isVerif     = verifyType === "verification";
   const pkgData     = PACKAGES.find(p => p.clicks === selectedPkg);
@@ -53,6 +71,7 @@ export default function CreatePanel({ open, onClose }: Props) {
     setFlow(null); setCategory("channel"); setVerifyType("verification");
     setTaskName(""); setChannelLink(""); setBotUser(""); setBotStart("");
     setSelectedPkg(null); setChState("idle"); setChError("");
+    setMyMissionsOpen(false);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -76,6 +95,12 @@ export default function CreatePanel({ open, onClose }: Props) {
       else { setChState("err"); setChError(data.message || "Bot is not admin on this channel."); }
     } catch { setChState("err"); setChError("Network error. Try again."); }
   };
+
+  const { data: myTasksData } = useQuery<{ success: boolean; tasks: MyTask[] }>({
+    queryKey: ["/api/advertiser-tasks/my-tasks"],
+    enabled: myMissionsOpen,
+  });
+  const myTasks = myTasksData?.tasks || [];
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -101,6 +126,7 @@ export default function CreatePanel({ open, onClose }: Props) {
     onSuccess: () => {
       showNotification("Mission created!", "success");
       queryClient.invalidateQueries({ queryKey: ["/api/advertiser-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/advertiser-tasks/my-tasks"] });
       handleClose();
     },
     onError: (e: Error) => showNotification(e.message, "error"),
@@ -184,7 +210,7 @@ export default function CreatePanel({ open, onClose }: Props) {
             {/* page */}
             <motion.div
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-              transition={SPRING}
+              transition={SHEET_TRANSITION}
               className="fixed inset-x-0 bottom-0 z-[69]"
               style={{
                 /* full viewport height → true page feel */
@@ -205,38 +231,55 @@ export default function CreatePanel({ open, onClose }: Props) {
                 flexShrink: 0,
                 background: "#000",
                 borderBottom: "1px solid rgba(255,255,255,0.06)",
-                paddingTop: "env(safe-area-inset-top, 12px)",
+                paddingTop: "env(safe-area-inset-top, 6px)",
               }}>
                 {/* drag handle */}
-                <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, paddingBottom: 6 }}>
+                <div style={{ display: "flex", justifyContent: "center", paddingTop: 8, paddingBottom: 4 }}>
                   <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.1)" }} />
                 </div>
 
                 {/* title row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px 14px" }}>
-                  <button onClick={handleClose} style={backBtnStyle}>
-                    <ChevronLeft style={{ width: 18, height: 18, color: "rgba(255,255,255,0.55)" }} />
-                  </button>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "6px 16px 12px" }}>
                   {flow === "advertise" ? (
                     <div>
-                      <p style={{ color: "#fff", fontSize: 17, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.01em" }}>
-                        Add Mission
+                      <p style={{ color: "#fff", fontSize: 19, fontWeight: 800, lineHeight: 1.2, letterSpacing: "-0.01em" }}>
+                        Advertise
                       </p>
-                      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 12, marginTop: 2 }}>
-                        Promote your channel or bot
+                      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 12.5, marginTop: 3, lineHeight: 1.4 }}>
+                        Promote your Telegram channel or bot and grow your audience.
                       </p>
                     </div>
                   ) : (
                     <p style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>Giveaway</p>
                   )}
+                  <button onClick={handleClose} style={closeBtnStyle}>
+                    <X style={{ width: 15, height: 15, color: "rgba(255,255,255,0.55)" }} />
+                  </button>
                 </div>
+
+                {flow === "advertise" && (
+                  <div style={{ padding: "0 16px 12px" }}>
+                    <button
+                      onClick={() => setMyMissionsOpen(true)}
+                      className="active:scale-95 transition-transform"
+                      style={{
+                        width: "100%", height: 48, borderRadius: 9999, border: "none",
+                        background: "rgba(255,255,255,0.12)", cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                      }}
+                    >
+                      <ClipboardList style={{ width: 17, height: 17, color: "rgba(255,255,255,0.7)" }} />
+                      <span style={{ color: "#fff", fontWeight: 700, fontSize: 14, letterSpacing: "0.02em" }}>My Missions</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* ════ SCROLLABLE BODY ════ */}
               <div style={{
                 flex: 1, overflowY: "auto", overflowX: "hidden",
                 WebkitOverflowScrolling: "touch",
-                padding: "20px 16px 8px",
+                padding: "14px 16px 8px",
               }}>
 
                 {/* ── Giveaway coming soon ── */}
@@ -310,7 +353,8 @@ export default function CreatePanel({ open, onClose }: Props) {
                             <button
                               onClick={verifyChannel}
                               disabled={chState === "checking" || chVerified || !channelLink.trim()}
-                              style={verifyBtnStyle(chState)}
+                              className="transition-colors"
+                              style={verifyBtnStyle(chState, !!channelLink.trim())}
                             >
                               {chState === "checking"
                                 ? <Loader2 size={13} style={{ animation: "spin 0.8s linear infinite" }} />
@@ -396,16 +440,16 @@ export default function CreatePanel({ open, onClose }: Props) {
                               onClick={() => setSelectedPkg(pkg.clicks)}
                               style={{
                                 padding: "12px 4px", borderRadius: 12, border: "none",
-                                background: sel ? "rgba(59,130,246,0.13)" : "#1a1a1a",
-                                outline: `1.5px solid ${sel ? "rgba(59,130,246,0.55)" : "transparent"}`,
+                                background: sel ? "rgba(76,211,255,0.14)" : "#1a1a1a",
+                                outline: `1.5px solid ${sel ? "rgba(76,211,255,0.6)" : "transparent"}`,
                                 cursor: "pointer", textAlign: "center",
                                 transition: "background 120ms, outline-color 120ms",
                               }}
                             >
-                              <p style={{ color: sel ? "#60a5fa" : "#fff", fontWeight: 700, fontSize: 15, lineHeight: 1 }}>
+                              <p style={{ color: sel ? BLUE : "#fff", fontWeight: 700, fontSize: 15, lineHeight: 1 }}>
                                 {pkg.clicks >= 1000 ? `${pkg.clicks / 1000}K` : pkg.clicks}
                               </p>
-                              <p style={{ color: sel ? "rgba(147,197,253,0.7)" : "rgba(255,255,255,0.28)", fontSize: 10.5, marginTop: 4, fontWeight: 500 }}>
+                              <p style={{ color: sel ? "rgba(76,211,255,0.7)" : "rgba(255,255,255,0.28)", fontSize: 10.5, marginTop: 4, fontWeight: 500 }}>
                                 {price.toFixed(4)} TON
                               </p>
                             </button>
@@ -414,8 +458,6 @@ export default function CreatePanel({ open, onClose }: Props) {
                       </div>
                     </Field>
 
-                    {/* bottom spacing so sticky footer doesn't overlap last field */}
-                    <div style={{ height: 20 }} />
                   </div>
                 )}
               </div>
@@ -431,24 +473,23 @@ export default function CreatePanel({ open, onClose }: Props) {
                   <button
                     onClick={() => createMutation.mutate()}
                     disabled={!canSubmit}
+                    className="transition-colors"
                     style={{
                       width: "100%", height: 50, borderRadius: 14, border: "none",
-                      background: canSubmit ? "#3b82f6" : "#1a1a1a",
-                      color: canSubmit ? "#fff" : "rgba(255,255,255,0.2)",
+                      background: canSubmit ? BLUE : "#1a1a1a",
+                      color: canSubmit ? "#000" : "rgba(255,255,255,0.2)",
                       fontSize: 15, fontWeight: 700, letterSpacing: "0.01em",
                       cursor: canSubmit ? "pointer" : "not-allowed",
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                      transition: "background 150ms",
                     }}
+                    onMouseEnter={e => { if (canSubmit) e.currentTarget.style.background = BLUE_HOVER; }}
+                    onMouseLeave={e => { if (canSubmit) e.currentTarget.style.background = BLUE; }}
                   >
                     {createMutation.isPending
                       ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
                       : <>▽ Pay {cost ? `${cost} TON` : "—"}</>
                     }
                   </button>
-                  <p style={{ color: "rgba(255,255,255,0.18)", fontSize: 11, textAlign: "center", marginTop: 8 }}>
-                    Automated verification via Blockchain.
-                  </p>
                 </div>
               )}
 
@@ -457,8 +498,62 @@ export default function CreatePanel({ open, onClose }: Props) {
         )}
       </AnimatePresence>
 
+      {/* ── My Missions drawer ── */}
+      <Drawer open={myMissionsOpen} onOpenChange={setMyMissionsOpen}>
+        <DrawerContent className="bg-[#111] border-none max-h-[80vh]">
+          <DrawerHeader className="flex items-center justify-between pb-2">
+            <DrawerTitle className="text-white font-bold text-lg">My Missions</DrawerTitle>
+            <DrawerClose asChild>
+              <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
+                Close
+              </button>
+            </DrawerClose>
+          </DrawerHeader>
+          <div className="px-4 pb-6 overflow-y-auto">
+            {myTasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <ClipboardList className="w-10 h-10 text-white/20" />
+                <p className="text-white/40 text-sm">No missions yet</p>
+                <p className="text-white/25 text-xs">Create one to start promoting</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {myTasks.map(task => (
+                  <div key={task.id} className="flex items-center justify-between gap-3 py-3 border-b border-white/5">
+                    <div className="min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{task.title}</p>
+                      <p className="text-[#888] text-xs mt-0.5">{task.currentClicks}/{task.totalClicksRequired} completions</p>
+                    </div>
+                    <MissionStatusBadge status={task.status} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </>
+  );
+}
+
+function MissionStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    running:      { label: "Running",   color: "#4ade80", bg: "rgba(34,197,94,0.14)" },
+    under_review: { label: "Pending",   color: "#facc15", bg: "rgba(234,179,8,0.14)" },
+    paused:       { label: "Paused",    color: "#fb923c", bg: "rgba(251,146,60,0.14)" },
+    completed:    { label: "Completed", color: "#4ade80", bg: "rgba(34,197,94,0.14)" },
+    rejected:     { label: "Rejected",  color: "#f87171", bg: "rgba(248,113,113,0.14)" },
+  };
+  const s = map[status] || { label: status, color: "rgba(255,255,255,0.5)", bg: "rgba(255,255,255,0.08)" };
+  return (
+    <span style={{
+      flexShrink: 0, padding: "4px 10px", borderRadius: 20, fontSize: 11.5, fontWeight: 700,
+      color: s.color, background: s.bg,
+    }}>
+      {s.label}
+    </span>
   );
 }
 
@@ -511,8 +606,8 @@ const INPUT: React.CSSProperties = {
   color: "#fff", fontSize: 14, outline: "none", fontFamily: "inherit",
 };
 
-const backBtnStyle: React.CSSProperties = {
-  width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+const closeBtnStyle: React.CSSProperties = {
+  width: 30, height: 30, borderRadius: "50%", flexShrink: 0, marginTop: 2,
   background: "rgba(255,255,255,0.08)", border: "none",
   display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
 };
@@ -523,17 +618,16 @@ const warningBox: React.CSSProperties = {
   padding: "9px 11px", display: "flex", gap: 8, alignItems: "flex-start",
 };
 
-function verifyBtnStyle(state: "idle" | "checking" | "ok" | "err"): React.CSSProperties {
+function verifyBtnStyle(state: "idle" | "checking" | "ok" | "err", hasLink: boolean): React.CSSProperties {
   const ok = state === "ok";
   return {
     flexShrink: 0, height: 46, padding: "0 14px", borderRadius: 12, border: "none",
-    background: ok ? "rgba(34,197,94,0.14)" : "rgba(59,130,246,0.14)",
-    color: ok ? "#4ade80" : "#60a5fa",
+    background: ok ? "rgba(34,197,94,0.14)" : hasLink ? BLUE : "rgba(76,211,255,0.14)",
+    color: ok ? "#4ade80" : hasLink ? "#000" : BLUE,
     fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
     display: "flex", alignItems: "center", gap: 5,
     cursor: state === "checking" || ok ? "default" : "pointer",
-    opacity: state === "idle" ? 1 : 1,
-    transition: "background 150ms",
+    transition: "background 150ms, color 150ms",
   };
 }
 

@@ -1,9 +1,50 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bot, Megaphone, ExternalLink, ClipboardPaste, Link2,
   CheckCircle2, Loader2, AlertCircle, X, ShieldCheck, Zap,
 } from "lucide-react";
+
+const BLUE_ACCENT = "#4cd3ff";
+
+function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
+  const [imgOk, setImgOk] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const src = `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}`;
+
+  // Reset load state whenever the underlying task/link changes — otherwise a
+  // failed load for one task permanently hides the image for every task after it.
+  useEffect(() => {
+    setImgOk(true);
+    setLoaded(false);
+  }, [task.link]);
+
+  return (
+    <div style={{
+      width: 56, height: 56, borderRadius: 16, margin: "0 auto 12px",
+      overflow: "hidden",
+      background: isBot ? "rgba(99,102,241,0.12)" : "rgba(34,197,94,0.10)",
+      border: isBot ? "1px solid rgba(99,102,241,0.22)" : "1px solid rgba(34,197,94,0.18)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      {imgOk && (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          onLoad={() => setLoaded(true)}
+          onError={() => setImgOk(false)}
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: loaded ? "block" : "none" }}
+        />
+      )}
+      {(!imgOk || !loaded) && (
+        isBot
+          ? <Bot style={{ width: "24px", height: "24px", color: "#818cf8" }} />
+          : <Megaphone style={{ width: "24px", height: "24px", color: "#4ade80" }} />
+      )}
+    </div>
+  );
+}
 
 interface Task {
   id: string;
@@ -106,9 +147,10 @@ function ActionBtn({
   onClick?: () => void; disabled?: boolean; color: string; children: React.ReactNode;
 }) {
   const colors: Record<string, { bg: string; border: string; text: string }> = {
-    indigo: { bg: "rgba(99,102,241,0.16)", border: "rgba(99,102,241,0.3)", text: "#a5b4fc" },
-    green:  { bg: "rgba(34,197,94,0.14)",  border: "rgba(34,197,94,0.28)", text: "#4ade80" },
-    blue:   { bg: "rgba(59,130,246,0.14)", border: "rgba(59,130,246,0.28)", text: "#93c5fd" },
+    // primary CTA — matches the Withdraw page's action button
+    indigo: { bg: BLUE_ACCENT, border: "transparent", text: "#000" },
+    green:  { bg: BLUE_ACCENT, border: "transparent", text: "#000" },
+    blue:   { bg: BLUE_ACCENT, border: "transparent", text: "#000" },
     ghost:  { bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.09)", text: TEXT_DIM },
   };
   const c = colors[color] ?? colors.blue;
@@ -412,23 +454,13 @@ export default function AdvertiserTaskSheet({
 
               {/* Task info */}
               <div className="text-center px-6 pt-4 pb-4">
-                {/* Icon */}
-                <div style={{
-                  width: 56, height: 56, borderRadius: 16, margin: "0 auto 12px",
-                  background: isBot ? "rgba(99,102,241,0.12)" : "rgba(34,197,94,0.10)",
-                  border: isBot ? "1px solid rgba(99,102,241,0.22)" : "1px solid rgba(34,197,94,0.18)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  {isBot
-                    ? <Bot style={{ width: "24px", height: "24px", color: "#818cf8" }} />
-                    : <Megaphone style={{ width: "24px", height: "24px", color: "#4ade80" }} />}
-                </div>
+                <TaskAvatar task={task} isBot={isBot} />
 
                 <h2 style={{ color: TEXT, fontSize: "19px", fontWeight: 800, letterSpacing: "-0.025em", lineHeight: 1.2 }}>
                   {task.title}
                 </h2>
                 <p style={{ color: TEXT_DIM, fontSize: "13px", marginTop: "5px" }}>
-                  {isBot ? "Looking for referrals" : "Looking for subscribers"}
+                  {isBot ? "is looking for new users" : "is looking for subscribers"}
                 </p>
 
                 {/* Badges */}
