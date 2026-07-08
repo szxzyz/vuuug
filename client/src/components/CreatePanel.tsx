@@ -4,12 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   X, Loader2, AlertTriangle, ClipboardList,
   CheckCircle2, ShieldCheck, ShieldOff, Plus, ChevronLeft,
+  Type, LayoutGrid, ArrowUpRight, Trash2, Pause, Play,
 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
-import {
-  Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
-} from "@/components/ui/drawer";
 import TopUpPopup from "@/components/TopUpPopup";
 
 // ─── Pricing ───────────────────────────────────────────────────
@@ -61,8 +59,10 @@ export default function CreatePanel({ open, onClose }: Props) {
   const [selectedPkg,  setSelectedPkg]  = useState<number | null>(null);
   const [chState,      setChState]      = useState<"idle" | "checking" | "ok" | "err">("idle");
   const [chError,      setChError]      = useState("");
-  const [myMissionsOpen, setMyMissionsOpen] = useState(false);
+  const [advTab,       setAdvTab]       = useState<"add" | "mine">("add");
   const [topUpOpen,    setTopUpOpen]    = useState(false);
+  const [addClicksTaskId, setAddClicksTaskId] = useState<string | null>(null);
+  const [addClicksValue,  setAddClicksValue]  = useState("500");
 
   const { data: authUser } = useQuery<any>({
     queryKey: ["/api/auth/user"],
@@ -80,7 +80,7 @@ export default function CreatePanel({ open, onClose }: Props) {
     setFlow(null); setCategory("channel"); setVerifyType("verification");
     setTaskName(""); setChannelLink(""); setBotUser(""); setBotStart("");
     setSelectedPkg(null); setChState("idle"); setChError("");
-    setMyMissionsOpen(false); setTopUpOpen(false);
+    setAdvTab("add"); setTopUpOpen(false); setAddClicksTaskId(null); setAddClicksValue("500");
   }, []);
 
   const handleClose = useCallback(() => {
@@ -105,11 +105,58 @@ export default function CreatePanel({ open, onClose }: Props) {
     } catch { setChState("err"); setChError("Network error. Try again."); }
   };
 
-  const { data: myTasksData } = useQuery<{ success: boolean; tasks: MyTask[] }>({
+  const { data: myTasksData, isLoading: isLoadingMyTasks } = useQuery<{ success: boolean; tasks: MyTask[] }>({
     queryKey: ["/api/advertiser-tasks/my-tasks"],
-    enabled: myMissionsOpen,
+    enabled: flow === "advertise" && advTab === "mine",
   });
   const myTasks = myTasksData?.tasks || [];
+
+  const invalidateMyTasks = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/advertiser-tasks/my-tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/advertiser-tasks"] });
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const res = await fetch(`/api/advertiser-tasks/${taskId}`, { method: "DELETE", credentials: "include" });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "Failed to delete");
+      return data;
+    },
+    onSuccess: () => { showNotification("Mission deleted", "success"); invalidateMyTasks(); },
+    onError: (e: Error) => showNotification(e.message, "error"),
+  });
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: async ({ taskId, action }: { taskId: string; action: "pause" | "resume" }) => {
+      const res = await fetch(`/api/advertiser-tasks/${taskId}/${action}`, { method: "POST", credentials: "include" });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "Failed");
+      return data;
+    },
+    onSuccess: (_d, vars) => { showNotification(vars.action === "pause" ? "Mission paused" : "Mission resumed", "success"); invalidateMyTasks(); },
+    onError: (e: Error) => showNotification(e.message, "error"),
+  });
+
+  const addClicksMutation = useMutation({
+    mutationFn: async ({ taskId, additionalClicks }: { taskId: string; additionalClicks: number }) => {
+      const res = await fetch(`/api/advertiser-tasks/${taskId}/increase-limit`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ additionalClicks }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "Failed to add clicks");
+      return data;
+    },
+    onSuccess: () => {
+      showNotification("Clicks added!", "success");
+      invalidateMyTasks();
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      setAddClicksTaskId(null); setAddClicksValue("500");
+    },
+    onError: (e: Error) => showNotification(e.message, "error"),
+  });
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -243,14 +290,30 @@ export default function CreatePanel({ open, onClose }: Props) {
                   paddingTop: "env(safe-area-inset-top, 6px)",
                 }}>
                   <div style={{ padding: "10px 16px 12px" }}>
-                    <button
-                      onClick={() => setMyMissionsOpen(true)}
-                      className="w-full h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform"
-                      style={{ background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer" }}
-                    >
-                      <ClipboardList className="w-5 h-5 text-white/70" />
-                      <span className="text-white font-bold tracking-widest text-sm">My Tasks</span>
-                    </button>
+                    <div className="w-full h-12 rounded-2xl flex items-center p-1" style={{ background: "rgba(255,255,255,0.12)" }}>
+                      <button
+                        onClick={() => setAdvTab("add")}
+                        className="flex-1 h-full rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                        style={{
+                          background: advTab === "add" ? "rgba(255,255,255,0.14)" : "transparent",
+                          border: "none", cursor: "pointer",
+                        }}
+                      >
+                        <Plus className="w-4 h-4" style={{ color: advTab === "add" ? "#fff" : "rgba(255,255,255,0.5)" }} />
+                        <span className="font-semibold text-sm" style={{ color: advTab === "add" ? "#fff" : "rgba(255,255,255,0.5)" }}>Add Missions</span>
+                      </button>
+                      <button
+                        onClick={() => setAdvTab("mine")}
+                        className="flex-1 h-full rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                        style={{
+                          background: advTab === "mine" ? "rgba(255,255,255,0.14)" : "transparent",
+                          border: "none", cursor: "pointer",
+                        }}
+                      >
+                        <ClipboardList className="w-4 h-4" style={{ color: advTab === "mine" ? "#fff" : "rgba(255,255,255,0.5)" }} />
+                        <span className="font-semibold text-sm" style={{ color: advTab === "mine" ? "#fff" : "rgba(255,255,255,0.5)" }}>My Missions</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -293,12 +356,32 @@ export default function CreatePanel({ open, onClose }: Props) {
                   </div>
                 )}
 
+                {/* ── My Missions list ── */}
+                {flow === "advertise" && advTab === "mine" && (
+                  <MyMissionsList
+                    tasks={myTasks}
+                    isLoading={isLoadingMyTasks}
+                    onDelete={id => { if (window.confirm("Delete this mission? Remaining balance will be refunded.")) deleteMutation.mutate(id); }}
+                    onToggleStatus={(id, action) => toggleStatusMutation.mutate({ taskId: id, action })}
+                    addClicksTaskId={addClicksTaskId}
+                    setAddClicksTaskId={setAddClicksTaskId}
+                    addClicksValue={addClicksValue}
+                    setAddClicksValue={setAddClicksValue}
+                    onConfirmAddClicks={id => {
+                      const n = parseInt(addClicksValue, 10);
+                      if (!n || n <= 0) { showNotification("Enter a valid number of clicks", "error"); return; }
+                      addClicksMutation.mutate({ taskId: id, additionalClicks: n });
+                    }}
+                    isAddingClicks={addClicksMutation.isPending}
+                  />
+                )}
+
                 {/* ── Advertise form ── */}
-                {flow === "advertise" && (
+                {flow === "advertise" && advTab === "add" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
 
                     {/* TASK NAME */}
-                    <Field label="Task Name">
+                    <Field label="Task Name" icon={<Type size={13} />}>
                       <input
                         type="text"
                         placeholder={category === "channel" ? "e.g. Join PaidAdz Channel" : "e.g. Start My Earning Bot"}
@@ -309,7 +392,7 @@ export default function CreatePanel({ open, onClose }: Props) {
                     </Field>
 
                     {/* CATEGORY */}
-                    <Field label="Category">
+                    <Field label="Category" icon={<LayoutGrid size={13} />}>
                       <PillToggle
                         options={[
                           { id: "channel", label: "Channel / Group" },
@@ -324,7 +407,7 @@ export default function CreatePanel({ open, onClose }: Props) {
                     </Field>
 
                     {/* TYPE */}
-                    <Field label="Verification Type">
+                    <Field label="Verification Type" icon={<ShieldCheck size={13} />}>
                       <PillToggle
                         options={[
                           { id: "verification", label: "With Verification",    icon: <ShieldCheck size={12} /> },
@@ -460,40 +543,36 @@ export default function CreatePanel({ open, onClose }: Props) {
               {/* ════ BOTTOM NAV BAR ════ */}
               {flow === "advertise" && (
                 <div style={{
-                  flexShrink: 0, padding: "10px 16px",
-                  paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
+                  flexShrink: 0, padding: "8px 14px",
+                  paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
                   background: "#000",
                   borderTop: "1px solid rgba(255,255,255,0.06)",
-                  display: "flex", alignItems: "center",
+                  display: "flex", alignItems: "center", gap: 10, height: 64,
                 }}>
                   {/* left — TON balance + top-up */}
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6 }}>
-                    <img src="/images/ton.png" alt="TON" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: "50%" }} />
-                    <span style={{ color: "#fff", fontSize: 13, fontWeight: 800, letterSpacing: "0.01em" }}>{tonFormatted}</span>
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, minWidth: 0 }}>
+                    <img src="/images/ton.png" alt="TON" style={{ width: 24, height: 24, objectFit: "cover", borderRadius: "50%", flexShrink: 0 }} />
+                    <span style={{ color: "#fff", fontSize: 14, fontWeight: 800, letterSpacing: "0.01em" }}>{tonFormatted}</span>
                     <button
                       onClick={() => setTopUpOpen(true)}
                       className="active:scale-95 transition-transform"
-                      style={{
-                        width: 22, height: 22, borderRadius: "50%", border: "none", flexShrink: 0,
-                        background: "rgba(255,255,255,0.12)", cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}
+                      style={navCircleBtnStyle}
                     >
-                      <Plus style={{ width: 13, height: 13, color: "#fff" }} />
+                      <Plus style={{ width: 15, height: 15, color: "#fff" }} />
                     </button>
                   </div>
 
                   {/* center — Pay button */}
-                  <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                  <div style={{ flex: 1.4, display: "flex", justifyContent: "center" }}>
                     <button
                       onClick={() => createMutation.mutate()}
                       disabled={!canSubmit}
                       className="transition-colors"
                       style={{
-                        height: 44, padding: "0 22px", borderRadius: 22, border: "none",
+                        width: "100%", maxWidth: 200, height: 48, padding: "0 16px", borderRadius: 24, border: "none",
                         background: canSubmit ? BLUE : "#1a1a1a",
                         color: canSubmit ? "#000" : "rgba(255,255,255,0.2)",
-                        fontSize: 14, fontWeight: 700, letterSpacing: "0.01em", whiteSpace: "nowrap",
+                        fontSize: 14.5, fontWeight: 700, letterSpacing: "0.01em", whiteSpace: "nowrap",
                         cursor: canSubmit ? "pointer" : "not-allowed",
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                       }}
@@ -509,8 +588,8 @@ export default function CreatePanel({ open, onClose }: Props) {
 
                   {/* right — back icon */}
                   <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-                    <button onClick={handleClose} style={closeBtnStyle}>
-                      <ChevronLeft style={{ width: 18, height: 18, color: "rgba(255,255,255,0.7)" }} />
+                    <button onClick={handleClose} style={navCircleBtnStyle}>
+                      <ChevronLeft style={{ width: 20, height: 20, color: "rgba(255,255,255,0.85)" }} />
                     </button>
                   </div>
                 </div>
@@ -522,41 +601,6 @@ export default function CreatePanel({ open, onClose }: Props) {
           </>
         )}
       </AnimatePresence>
-
-      {/* ── My Missions drawer ── */}
-      <Drawer open={myMissionsOpen} onOpenChange={setMyMissionsOpen}>
-        <DrawerContent className="bg-[#111] border-none max-h-[80vh]">
-          <DrawerHeader className="flex items-center justify-between pb-2">
-            <DrawerTitle className="text-white font-bold text-lg">My Missions</DrawerTitle>
-            <DrawerClose asChild>
-              <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
-                Close
-              </button>
-            </DrawerClose>
-          </DrawerHeader>
-          <div className="px-4 pb-6 overflow-y-auto">
-            {myTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-2">
-                <ClipboardList className="w-10 h-10 text-white/20" />
-                <p className="text-white/40 text-sm">No missions yet</p>
-                <p className="text-white/25 text-xs">Create one to start promoting</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {myTasks.map(task => (
-                  <div key={task.id} className="flex items-center justify-between gap-3 py-3 border-b border-white/5">
-                    <div className="min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{task.title}</p>
-                      <p className="text-[#888] text-xs mt-0.5">{task.currentClicks}/{task.totalClicksRequired} completions</p>
-                    </div>
-                    <MissionStatusBadge status={task.status} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </DrawerContent>
-      </Drawer>
 
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </>
@@ -584,13 +628,157 @@ function MissionStatusBadge({ status }: { status: string }) {
 
 // ─── Sub-components ────────────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 9 }}>
-        {label}
-      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 9 }}>
+        {icon && (
+          <div style={{ width: 18, height: 18, borderRadius: "50%", background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "rgba(255,255,255,0.45)" }}>
+            {icon}
+          </div>
+        )}
+        <p style={{ fontSize: 9, fontWeight: 600, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {label}
+        </p>
+      </div>
       {children}
+    </div>
+  );
+}
+
+function MyMissionsList({
+  tasks, isLoading, onDelete, onToggleStatus,
+  addClicksTaskId, setAddClicksTaskId, addClicksValue, setAddClicksValue,
+  onConfirmAddClicks, isAddingClicks,
+}: {
+  tasks: MyTask[];
+  isLoading: boolean;
+  onDelete: (id: string) => void;
+  onToggleStatus: (id: string, action: "pause" | "resume") => void;
+  addClicksTaskId: string | null;
+  setAddClicksTaskId: (id: string | null) => void;
+  addClicksValue: string;
+  setAddClicksValue: (v: string) => void;
+  onConfirmAddClicks: (id: string) => void;
+  isAddingClicks: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-5 h-5 text-white/30" style={{ animation: "spin 0.8s linear infinite" }} />
+      </div>
+    );
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <ClipboardList className="w-10 h-10 text-white/20" />
+        <p className="text-white/40 text-sm">No missions yet</p>
+        <p className="text-white/25 text-xs">Create one from the Add Missions tab</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {tasks.map((task: any) => {
+        const pct = task.totalClicksRequired > 0
+          ? Math.min(100, Math.round((task.currentClicks / task.totalClicksRequired) * 100))
+          : 0;
+        const canToggle = task.status === "running" || task.status === "paused";
+        const addingHere = addClicksTaskId === task.id;
+
+        return (
+          <div key={task.id} style={{ background: "#111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 12 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+              <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {task.title}
+              </p>
+              <MissionStatusBadge status={task.status} />
+            </div>
+
+            <a href={task.link} target="_blank" rel="noopener noreferrer"
+              style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, color: "rgba(76,211,255,0.7)", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: "none" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.link}</span>
+              <ArrowUpRight size={12} style={{ flexShrink: 0 }} />
+            </a>
+
+            {/* progress bar */}
+            <div style={{ marginTop: 10 }}>
+              <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, borderRadius: 3, background: BLUE, transition: "width 200ms" }} />
+              </div>
+              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, marginTop: 5 }}>
+                {task.currentClicks} / {task.totalClicksRequired} completions ({pct}%)
+              </p>
+            </div>
+
+            {/* actions */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+              {canToggle && (
+                <button
+                  onClick={() => onToggleStatus(task.id, task.status === "running" ? "pause" : "resume")}
+                  className="active:scale-95 transition-transform"
+                  style={miniActionBtnStyle}
+                >
+                  {task.status === "running" ? <Pause size={12} /> : <Play size={12} />}
+                  {task.status === "running" ? "Pause" : "Resume"}
+                </button>
+              )}
+              <button
+                onClick={() => { setAddClicksTaskId(addingHere ? null : task.id); setAddClicksValue("500"); }}
+                className="active:scale-95 transition-transform"
+                style={miniActionBtnStyle}
+              >
+                <Plus size={12} /> Add Clicks
+              </button>
+              <button
+                onClick={() => onDelete(task.id)}
+                className="active:scale-95 transition-transform"
+                style={{ ...miniActionBtnStyle, background: "rgba(248,113,113,0.12)", color: "#f87171", marginLeft: "auto" }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+
+            <AnimatePresence>
+              {addingHere && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.15 }}
+                  style={{ overflow: "hidden" }}
+                >
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <input
+                      type="number"
+                      min={1}
+                      value={addClicksValue}
+                      onChange={e => setAddClicksValue(e.target.value)}
+                      style={{ ...INPUT, flex: 1, padding: "9px 12px" }}
+                      placeholder="Additional clicks"
+                    />
+                    <button
+                      onClick={() => onConfirmAddClicks(task.id)}
+                      disabled={isAddingClicks}
+                      style={{
+                        flexShrink: 0, height: 40, padding: "0 16px", borderRadius: 10, border: "none",
+                        background: BLUE, color: "#000", fontSize: 12.5, fontWeight: 700,
+                        cursor: isAddingClicks ? "default" : "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      }}
+                    >
+                      {isAddingClicks ? <Loader2 size={13} style={{ animation: "spin 0.8s linear infinite" }} /> : "Confirm"}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -635,6 +823,20 @@ const closeBtnStyle: React.CSSProperties = {
   width: 30, height: 30, borderRadius: "50%", flexShrink: 0, marginTop: 2,
   background: "rgba(255,255,255,0.08)", border: "none",
   display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+};
+
+// matches the app's main bottom nav scale (Layout.tsx) for the CreatePanel's own footer icons
+const navCircleBtnStyle: React.CSSProperties = {
+  width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+  background: "rgba(255,255,255,0.10)", border: "none",
+  display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+};
+
+const miniActionBtnStyle: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 5,
+  height: 30, padding: "0 10px", borderRadius: 8, border: "none",
+  background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.75)",
+  fontSize: 11.5, fontWeight: 600, cursor: "pointer",
 };
 
 const warningBox: React.CSSProperties = {
