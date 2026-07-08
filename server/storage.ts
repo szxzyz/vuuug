@@ -471,27 +471,36 @@ export class DatabaseStorage implements IStorage {
         // Don't throw - the earning was already recorded
       }
 
-      // Balance integrity guard: if balance is 0 but totalEarned is positive, sync balance
-      // This can happen if a repair/reset script accidentally zeroed the balance column
+      // Balance integrity guard: sync users.balance from canonical user_balances if they drift.
+      // Uses a single JOIN query to minimise DB round-trips on the hot path.
+      // Drift can happen when a repair/reset script touches one table but not the other.
       try {
-        const [userCheck] = await db
-          .select({ balance: users.balance, totalEarned: users.totalEarned })
-          .from(users)
-          .where(eq(users.id, earning.userId));
-        if (
-          userCheck &&
-          parseFloat(String(userCheck.balance || '0')) === 0 &&
-          parseFloat(String(userCheck.totalEarned || '0')) > 0
-        ) {
-          console.warn(`⚠️ Balance integrity issue detected for user ${earning.userId}: balance=0 but totalEarned=${userCheck.totalEarned}. Auto-syncing...`);
-          await db
-            .update(users)
-            .set({
-              balance: sql`COALESCE(${users.totalEarned}, 0)`,
-              updatedAt: new Date(),
-            })
-            .where(eq(users.id, earning.userId));
-          console.log(`✅ Balance synced from totalEarned for user ${earning.userId}`);
+        const driftCheck = await db.execute(sql`
+          SELECT u.balance AS users_balance, ub.balance AS canonical_balance
+          FROM users u
+          JOIN user_balances ub ON ub.user_id = u.id
+          WHERE u.id = ${earning.userId}
+          LIMIT 1
+        `);
+        const row = driftCheck.rows[0] as { users_balance: string; canonical_balance: string } | undefined;
+        if (row) {
+          const usersBalanceVal = parseFloat(String(row.users_balance || '0'));
+          const canonicalBalance = parseFloat(String(row.canonical_balance || '0'));
+          // Sync on any drift > 1 PAD in either direction (canonical is authoritative)
+          if (Math.abs(canonicalBalance - usersBalanceVal) > 1) {
+            console.warn(
+              `⚠️ Balance drift detected for user ${earning.userId}: ` +
+              `users.balance=${usersBalanceVal}, user_balances.balance=${canonicalBalance}. Auto-syncing...`
+            );
+            // Use UPDATE...FROM to avoid a subquery that could resolve to NULL
+            await db.execute(sql`
+              UPDATE users u
+              SET balance = ub.balance, updated_at = NOW()
+              FROM user_balances ub
+              WHERE ub.user_id = u.id AND u.id = ${earning.userId}
+            `);
+            console.log(`✅ Balance synced from user_balances for user ${earning.userId}`);
+          }
         }
       } catch (integrityError) {
         console.error('⚠️ Balance integrity check failed (non-critical):', integrityError);
