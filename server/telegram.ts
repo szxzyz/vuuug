@@ -424,6 +424,11 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// ── Withdrawal notification channel — hardcoded to prevent DB misconfiguration ──
+// This is the ONLY channel where withdrawal requests and approvals are posted.
+// Do NOT change this without updating admin_settings.withdrawal_group_chat_id too.
+const WITHDRAWAL_GROUP_CHAT_ID = '-1003881171760';
+
 // Post a new withdrawal REQUEST to the group chat with Approve / Reject buttons
 export async function sendWithdrawalRequestToGroup(withdrawalData: {
   withdrawalId: string;
@@ -441,8 +446,7 @@ export async function sendWithdrawalRequestToGroup(withdrawalData: {
   }
 
   try {
-    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1003881171760');
-    const groupChatId = groupSetting || '-1003881171760';
+    const groupChatId = WITHDRAWAL_GROUP_CHAT_ID;
 
     const botUsername = await getBotUsername();
     const currentDate = new Date().toUTCString();
@@ -498,8 +502,7 @@ export async function sendWithdrawalApprovedNotification(withdrawal: any): Promi
   }
 
   try {
-    const groupSetting = await storage.getAppSetting('withdrawal_group_chat_id', '-1003881171760');
-    const WITHDRAWAL_CHANNEL_ID = groupSetting || '-1003881171760';
+    const WITHDRAWAL_CHANNEL_ID = WITHDRAWAL_GROUP_CHAT_ID;
     console.log(`📤 Sending withdrawal approval notification to group: ${WITHDRAWAL_CHANNEL_ID}`);
 
     const user = await storage.getUser(withdrawal.userId);
@@ -3493,7 +3496,7 @@ export function startAmbassadorScheduler(): void {
 // called /api/ton/deposit/verify (blockchain not yet visible) and credits them
 // once they appear on-chain.
 
-const TON_DEPOSIT_WALLET = 'UQCW9LwFkPRsLOVsGfl-65t9AJsfPXs8fTpDDEJL_RQhwPvJ';
+const TON_DEPOSIT_WALLET = 'UQC4E8orjioFZB3ePOKzlhjMWLLpTDjIk7ZRY2YS6K_fEdxL';
 
 export async function retryPendingTonDeposits(): Promise<void> {
   try {
@@ -3520,7 +3523,8 @@ export async function retryPendingTonDeposits(): Promise<void> {
     console.log(`💎 [TON Poller] Checking ${pending.length} pending deposit(s)...`);
 
     // Fetch up to 100 recent transactions from the deposit wallet
-    const url = `https://toncenter.com/api/v2/getTransactions?address=${TON_DEPOSIT_WALLET}&limit=100&archival=false`;
+    // Using TonCenter v3 API — v2 returns LITE_SERVER_UNKNOWN errors
+    const url = `https://toncenter.com/api/v3/transactions?account=${TON_DEPOSIT_WALLET}&limit=100&sort=desc`;
     let chainTxs: any[] = [];
     try {
       const resp = await fetch(url, {
@@ -3529,7 +3533,8 @@ export async function retryPendingTonDeposits(): Promise<void> {
       });
       if (resp.ok) {
         const data = await resp.json() as any;
-        if (data.ok && Array.isArray(data.result)) chainTxs = data.result;
+        // v3 returns { transactions: [...] }
+        if (Array.isArray(data.transactions)) chainTxs = data.transactions;
       }
     } catch (err) {
       console.warn('💎 [TON Poller] TON Center API unreachable, will retry next cycle');
@@ -3549,12 +3554,13 @@ export async function retryPendingTonDeposits(): Promise<void> {
       const windowStartSec = depCreatedSec - 300; // 5-min before tolerance
 
       const match = chainTxs.find((tx: any) => {
-        const txHash: string = tx.transaction_id?.hash ?? tx.hash ?? '';
+        // v3: tx.hash directly, tx.now for timestamp
+        const txHash: string = tx.hash ?? '';
         if (usedHashes.has(txHash)) return false;
         const inNano = tx.in_msg?.value ? BigInt(tx.in_msg.value) : 0n;
-        // Amount must match exactly ±1 nanoton (gas rounding)
+        // Amount must match exactly ±1 nanoton (gas rounding), allow up to 0.001 TON fee tolerance
         if (inNano < expectedNano - 1n || inNano > expectedNano + 1_000_000n) return false;
-        const txTime: number = tx.utime ?? 0;
+        const txTime: number = tx.now ?? 0;
         if (txTime < windowStartSec) return false; // tx too old relative to deposit record
         return true;
       });
@@ -3564,12 +3570,23 @@ export async function retryPendingTonDeposits(): Promise<void> {
         continue;
       }
 
-      const txHash: string = match.transaction_id?.hash ?? match.hash ?? '';
+      const txHash: string = match.hash ?? '';
       const actualNano = BigInt(match.in_msg.value);
       const actualAmount = Number(actualNano) / 1_000_000_000;
       usedHashes.add(txHash);
 
-      // Credit the user atomically
+      // Atomic claim: UPDATE WHERE status='pending' — if 0 rows affected,
+      // the verify endpoint already claimed this deposit; skip to prevent double-credit
+      const claimed = await dbConn.update(tonDeposits)
+        .set({ status: 'confirmed', confirmedAt: new Date() } as any)
+        .where(and(eq(tonDeposits.id, dep.id), eq(tonDeposits.status as any, 'pending')))
+        .returning({ id: tonDeposits.id });
+
+      if (claimed.length === 0) {
+        console.log(`💎 [TON Poller] Deposit ${dep.id} already claimed by verify endpoint — skipping`);
+        continue;
+      }
+
       const [currentUser] = await dbConn
         .select({ tonBalance: users.tonBalance, telegramId: users.telegram_id })
         .from(users)
@@ -3578,10 +3595,6 @@ export async function retryPendingTonDeposits(): Promise<void> {
       if (!currentUser) continue;
 
       const newBalance = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
-
-      await dbConn.update(tonDeposits)
-        .set({ status: 'confirmed', confirmedAt: new Date() } as any)
-        .where(eq(tonDeposits.id, dep.id));
 
       await dbConn.update(users)
         .set({ tonBalance: newBalance, updatedAt: new Date() } as any)

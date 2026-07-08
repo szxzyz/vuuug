@@ -7207,25 +7207,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // ── TON Deposit Verification (with on-chain check via TON Center API) ───────
-  const DEPOSIT_WALLET = 'UQCW9LwFkPRsLOVsGfl-65t9AJsfPXs8fTpDDEJL_RQhwPvJ';
+  const DEPOSIT_WALLET = 'UQC4E8orjioFZB3ePOKzlhjMWLLpTDjIk7ZRY2YS6K_fEdxL';
 
   // Verify transaction actually landed on-chain at the deposit wallet
-  async function verifyTonTransaction(expectedNano: bigint, windowMs = 15 * 60 * 1000): Promise<{ verified: boolean; txHash?: string; actualNano?: bigint }> {
+  // Uses TonCenter v3 API (v2 returns LITE_SERVER_UNKNOWN errors)
+  async function verifyTonTransaction(expectedNano: bigint, windowMs = 30 * 60 * 1000): Promise<{ verified: boolean; txHash?: string; actualNano?: bigint }> {
     try {
-      const url = `https://toncenter.com/api/v2/getTransactions?address=${DEPOSIT_WALLET}&limit=20&archival=false`;
-      const resp = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000) });
+      const url = `https://toncenter.com/api/v3/transactions?account=${DEPOSIT_WALLET}&limit=50&sort=desc`;
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) });
       if (!resp.ok) {
-        console.warn(`⚠️ TON Center API returned ${resp.status} — skipping on-chain check`);
+        console.warn(`⚠️ TON Center v3 API returned ${resp.status} — skipping on-chain check`);
         return { verified: false };
       }
       const data = await resp.json() as any;
-      if (!data.ok || !Array.isArray(data.result)) return { verified: false };
+      // v3 returns { transactions: [...] }
+      const txs: any[] = data.transactions ?? [];
+      if (!Array.isArray(txs) || txs.length === 0) return { verified: false };
 
       const nowSec = Math.floor(Date.now() / 1000);
       const windowSec = Math.floor(windowMs / 1000);
 
-      for (const tx of data.result) {
-        const txTime: number = tx.utime ?? 0;
+      for (const tx of txs) {
+        // v3 uses tx.now (unix timestamp) instead of tx.utime
+        const txTime: number = tx.now ?? 0;
         if (nowSec - txTime > windowSec) continue; // outside window
 
         // in_msg.value is the amount in nanotons
@@ -7233,17 +7237,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!incoming || !incoming.value) continue;
 
         const inNano = BigInt(incoming.value);
-        // Allow ±1 nanoton tolerance for rounding
-        if (inNano >= expectedNano - 1n) {
-          const txHash: string = tx.transaction_id?.hash ?? tx.hash ?? '';
-          console.log(`✅ On-chain TX verified: hash=${txHash} nano=${inNano} time=${txTime}`);
+        // Allow up to 1,000,000 nanoton (0.001 TON) tolerance for gas/fees
+        if (inNano >= expectedNano - 1n && inNano <= expectedNano + 1_000_000n) {
+          // v3 uses tx.hash directly
+          const txHash: string = tx.hash ?? '';
+          console.log(`✅ On-chain TX verified (v3): hash=${txHash} nano=${inNano} time=${txTime}`);
           return { verified: true, txHash, actualNano: inNano };
         }
       }
 
       return { verified: false };
     } catch (err) {
-      console.warn('⚠️ TON on-chain verification error (proceeding with BOC trust):', err);
+      console.warn('⚠️ TON on-chain verification error:', err);
       return { verified: false };
     }
   }
@@ -7291,47 +7296,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // If txHash exists, use it as secondary dedup key
-      if (txHash) {
-        const hashExists = await db.select().from(tonDeposits).where(eq(tonDeposits.boc, txHash)).limit(1);
-        if (hashExists.length > 0 && hashExists[0].status === 'confirmed') {
-          return res.status(409).json({ success: false, message: 'This transaction has already been credited.' });
+      // ── Atomic claim: only ONE process (verify or poller) can credit this deposit ─
+      // Strategy:
+      //   1. Try UPDATE existing pending record → confirmed (WHERE status='pending')
+      //   2. If no pending row exists, try INSERT as confirmed (first-time, blockchain was instant)
+      //   3. If both fail → already confirmed by poller; return 409 (no double credit)
+
+      const actualAmount = actualNano ? Number(actualNano) / 1_000_000_000 : depositAmount;
+
+      // Step 1: claim by updating existing pending record (original BOC key)
+      const claimed = await db.update(tonDeposits)
+        .set({ status: 'confirmed', confirmedAt: new Date() } as any)
+        .where(and(eq(tonDeposits.boc, boc), eq(tonDeposits.status as any, 'pending')))
+        .returning({ id: tonDeposits.id });
+
+      if (claimed.length === 0) {
+        // Step 2: no pending row with this BOC — check if txHash was already confirmed
+        if (txHash) {
+          const hashExists = await db.select({ status: tonDeposits.status }).from(tonDeposits).where(eq(tonDeposits.boc, txHash)).limit(1);
+          if (hashExists.length > 0 && hashExists[0].status === 'confirmed') {
+            return res.status(409).json({ success: false, message: 'This transaction has already been credited.' });
+          }
+        }
+        // Try inserting as a fresh confirmed record (BOC = original boc, txHash in metadata)
+        const inserted = await db.insert(tonDeposits).values({
+          userId,
+          amount: actualAmount.toString(),
+          boc,   // always use original BOC — prevents poller picking it up again
+          status: 'confirmed',
+          confirmedAt: new Date(),
+        }).onConflictDoNothing().returning({ id: tonDeposits.id });
+
+        if (inserted.length === 0) {
+          // Another process already inserted/confirmed this BOC — abort to prevent double credit
+          return res.status(409).json({ success: false, message: 'This transaction has already been processed.' });
         }
       }
-      // ─────────────────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────────────
 
-      // Read current balance then compute new value (Drizzle pattern used throughout codebase)
+      // Safe to credit — we atomically claimed the deposit above
       const [currentUser] = await db.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId)).limit(1);
       if (!currentUser) {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
 
-      // Use actual on-chain amount (converted from nanotons) for accuracy
-      const actualAmount = actualNano ? Number(actualNano) / 1_000_000_000 : depositAmount;
       const newTonBalance = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
 
-      // Insert confirmed deposit record
-      await db.insert(tonDeposits).values({
-        userId,
-        amount: actualAmount.toString(),
-        boc: txHash || boc,
-        status: 'confirmed',
-        confirmedAt: new Date(),
-      }).onConflictDoNothing();
-
-      // Credit TON balance via Drizzle ORM
       await db.update(users)
         .set({ tonBalance: newTonBalance, updatedAt: new Date() })
         .where(eq(users.id, userId));
 
-      // Record transaction history
       await db.insert(transactions).values({
         userId,
         amount: actualAmount.toString(),
         type: 'addition',
         source: 'ton_deposit',
         description: `TON deposit verified on-chain: ${actualAmount} TON`,
-        metadata: { boc: (txHash || boc).slice(0, 64), txHash },
+        metadata: { boc: boc.slice(0, 64), txHash },
       });
 
       console.log(`✅ TON deposit credited: userId=${userId} amount=${actualAmount} TON newBalance=${newTonBalance} txHash=${txHash}`);
@@ -7345,6 +7366,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error('❌ TON deposit error:', err);
       return res.status(500).json({ success: false, message: 'Deposit processing failed. Your funds will be credited within 5 minutes.' });
+    }
+  });
+
+  // ── TON Deposit Status — polled by frontend to auto-confirm pending deposits ─
+  app.get('/api/ton/deposit/status', requireAuth, async (req: any, res) => {
+    try {
+      const userId: string = req.user.user.id;
+      const { boc } = req.query as { boc?: string };
+      if (!boc) return res.json({ confirmed: false });
+
+      const { tonDeposits } = await import('../shared/schema');
+      const [dep] = await db
+        .select({ status: tonDeposits.status })
+        .from(tonDeposits)
+        .where(eq(tonDeposits.boc, boc))
+        .limit(1);
+
+      if (!dep || dep.status !== 'confirmed') return res.json({ confirmed: false });
+
+      // Deposit confirmed — return fresh TON balance so frontend can update instantly
+      const [currentUser] = await db
+        .select({ tonBalance: users.tonBalance })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      return res.json({ confirmed: true, tonBalance: currentUser?.tonBalance ?? '0' });
+    } catch (err) {
+      console.error('❌ TON deposit status error:', err);
+      return res.json({ confirmed: false });
     }
   });
   // ─────────────────────────────────────────────────────────────────────────────
