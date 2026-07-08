@@ -81,6 +81,7 @@ export default function Ambassador() {
   const [channelLink, setChannelLink] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [channelAdded, setChannelAdded] = useState(false);
+  const [preVerifyResult, setPreVerifyResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [customPromoInput, setCustomPromoInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
@@ -130,6 +131,16 @@ export default function Ambassador() {
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
     },
     onError: (e: any) => showNotification(e?.message || "Failed to save schedule", "error"),
+  });
+
+  const preVerifyMutation = useMutation({
+    mutationFn: (link: string) =>
+      apiRequest("POST", "/api/ambassador/pre-verify-channel", { channelLink: link }).then((r: any) => r.json()),
+    onSuccess: (data: any) => {
+      setPreVerifyResult({ ok: data.success, text: data.message || (data.success ? "Channel verified!" : "Verification failed.") });
+      if (data.success) setChannelAdded(true);
+    },
+    onError: () => setPreVerifyResult({ ok: false, text: "Network error. Please try again." }),
   });
 
   const applyMutation = useMutation({
@@ -648,7 +659,14 @@ export default function Ambassador() {
             <input
               type="text"
               value={channelLink}
-              onChange={(e) => setChannelLink(e.target.value)}
+              onChange={(e) => {
+                setChannelLink(e.target.value);
+                // Reset verification state when the channel link changes
+                if (channelAdded || preVerifyResult) {
+                  setChannelAdded(false);
+                  setPreVerifyResult(null);
+                }
+              }}
               placeholder="t.me/yourchannel or @yourchannel"
               className="w-full h-11 rounded-xl px-3 text-white text-sm focus:outline-none"
               style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
@@ -657,18 +675,23 @@ export default function Ambassador() {
 
           {/* Channel Setup step */}
           <div className="border-t border-white/5 pt-4 mb-4">
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Setup</p>
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Verification</p>
 
             {channelAdded ? (
-              <div className="flex items-center gap-3 py-2">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ background: "rgba(34,197,94,0.15)" }}>
-                  <CheckCircle2 className="w-5 h-5 text-green-400" />
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 py-2 px-3 rounded-xl" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
+                  <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-green-400 text-sm font-semibold">Channel Verified</p>
+                    <p className="text-[#888] text-xs mt-0.5">@Paid_Adzbot has Post Messages permission ✓</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-white text-sm font-semibold">Bot Added</p>
-                  <p className="text-[#888] text-xs mt-0.5">@Paid_Adzbot is set as admin in your channel</p>
-                </div>
+                <button
+                  onClick={() => { setChannelAdded(false); setPreVerifyResult(null); }}
+                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  Use a different channel
+                </button>
               </div>
             ) : (
               <>
@@ -676,20 +699,46 @@ export default function Ambassador() {
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-yellow-400 text-sm font-semibold">Required Step</p>
+                      <p className="text-yellow-400 text-sm font-semibold">Required: Add Bot as Admin</p>
                       <p className="text-[#888] text-xs mt-1 leading-relaxed">
-                        Add <span className="text-white font-semibold">@Paid_Adzbot</span> as an administrator in your channel with permission to <span className="text-white font-semibold">Post Messages</span>, then confirm below.
+                        In your Telegram channel settings, add{" "}
+                        <span className="text-white font-semibold">@Paid_Adzbot</span> as administrator with{" "}
+                        <span className="text-white font-semibold">Post Messages</span> permission enabled.
+                        Then click Verify below.
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {/* Pre-verify result message */}
+                {preVerifyResult && !preVerifyResult.ok && (
+                  <div className="rounded-xl p-3 mb-3 flex items-start gap-2" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                    <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-red-400 text-xs leading-relaxed">{preVerifyResult.text}</p>
+                  </div>
+                )}
+
                 <button
-                  onClick={() => setChannelAdded(true)}
-                  className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                  onClick={() => {
+                    if (!channelLink.trim()) {
+                      setPreVerifyResult({ ok: false, text: "Enter your channel link above first." });
+                      return;
+                    }
+                    setPreVerifyResult(null);
+                    preVerifyMutation.mutate(channelLink.trim());
+                  }}
+                  disabled={preVerifyMutation.isPending}
+                  className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
                   style={{ background: "rgba(59,130,246,0.18)", border: "1px solid rgba(59,130,246,0.3)" }}
                 >
-                  <UserCheck className="w-4 h-4 text-blue-400" />
-                  <span className="text-blue-400 font-semibold text-sm">I've Added the Bot as Admin</span>
+                  {preVerifyMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                  ) : (
+                    <UserCheck className="w-4 h-4 text-blue-400" />
+                  )}
+                  <span className="text-blue-400 font-semibold text-sm">
+                    {preVerifyMutation.isPending ? "Verifying…" : "Verify Channel"}
+                  </span>
                 </button>
               </>
             )}

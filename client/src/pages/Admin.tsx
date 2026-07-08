@@ -4231,6 +4231,7 @@ function AmbassadorAdminSection() {
     onSuccess: () => {
       showNotification('Ambassador permanently deleted', 'success');
       queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors/applications'] });
     },
     onError: () => showNotification('Failed to delete ambassador', 'error'),
   });
@@ -4269,103 +4270,112 @@ function AmbassadorAdminSection() {
   const allAmbassadors = ambassadorsData?.ambassadors || [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Sub-tabs */}
-      <div className="flex gap-2 bg-[#121212] rounded-xl p-1 border border-white/10">
+      <div className="flex gap-1 bg-[#0a0a0a] rounded-xl p-1 border border-white/8">
         {[
-          { key: 'applications', label: `Applications ${pendingApps.length > 0 ? `(${pendingApps.length})` : ''}` },
-          { key: 'ambassadors', label: `Ambassadors (${allAmbassadors.length})` },
-          { key: 'settings', label: 'Settings' },
+          { key: 'applications', label: 'Applications', badge: pendingApps.length > 0 ? pendingApps.length : null },
+          { key: 'ambassadors', label: 'Ambassadors', badge: allAmbassadors.length > 0 ? allAmbassadors.length : null },
+          { key: 'settings', label: 'Settings', badge: null },
         ].map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveSubTab(tab.key as any)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              activeSubTab === tab.key ? 'bg-[#4cd3ff]/20 text-[#4cd3ff]' : 'text-gray-400 hover:text-white'
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+              activeSubTab === tab.key
+                ? 'bg-[#4cd3ff]/15 text-[#4cd3ff] shadow-sm'
+                : 'text-gray-500 hover:text-gray-300'
             }`}
           >
             {tab.label}
+            {tab.badge != null && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                activeSubTab === tab.key ? 'bg-[#4cd3ff]/20 text-[#4cd3ff]' : 'bg-white/10 text-gray-400'
+              }`}>{tab.badge}</span>
+            )}
           </button>
         ))}
       </div>
 
       {/* Applications */}
       {activeSubTab === 'applications' && (
-        <div className="space-y-3">
-          {applications.length === 0 && (
-            <p className="text-gray-500 text-sm text-center py-8">No applications yet</p>
-          )}
-          {applications.map(app => (
-            <div key={app.id} className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-3">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm font-medium text-white">
+        <div className="space-y-2">
+          {applications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <p className="text-gray-500 text-sm">No applications yet</p>
+              <p className="text-gray-600 text-xs mt-1">New applications will appear here</p>
+            </div>
+          ) : applications.map(app => (
+            <div key={app.id} className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
+              {/* Card header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
                     {app.firstName || ''} {app.lastName || ''}{app.username ? ` (@${app.username})` : ''}
                   </p>
-                  <p className="text-xs text-gray-400">TG: {app.telegramId} · ID: {app.userId?.slice(0, 8)}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">TG: {app.telegramId} · {new Date(app.createdAt).toLocaleDateString()}</p>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full ${
-                  app.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
-                  app.status === 'approved' ? 'bg-green-500/20 text-green-400' :
-                  'bg-red-500/20 text-red-400'
+                <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide flex-shrink-0 ml-2 ${
+                  app.status === 'pending' ? 'bg-yellow-500/15 text-yellow-400' :
+                  app.status === 'approved' ? 'bg-green-500/15 text-green-400' :
+                  'bg-red-500/15 text-red-400'
                 }`}>{app.status}</span>
               </div>
 
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Channel:</span>
-                  <a href={app.channelLink} target="_blank" rel="noopener noreferrer" className="text-[#4cd3ff] hover:underline truncate max-w-[180px]">
+              {/* Channel info */}
+              <div className="px-4 py-2.5 space-y-1.5 text-xs border-b border-white/5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500 flex-shrink-0">Channel</span>
+                  <a href={app.channelLink} target="_blank" rel="noopener noreferrer"
+                    className="text-[#4cd3ff] hover:underline truncate text-right max-w-[180px]">
                     {app.channelLink}
                   </a>
                 </div>
                 {app.channelTitle && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Title:</span>
-                    <span className="text-white">{app.channelTitle}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-500">Title</span>
+                    <span className="text-gray-300 truncate text-right max-w-[180px]">{app.channelTitle}</span>
                   </div>
                 )}
                 {app.channelUsername && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Username:</span>
-                    <span className="text-white">@{app.channelUsername}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-500">Username</span>
+                    <span className="text-gray-300">@{app.channelUsername}</span>
                   </div>
                 )}
                 {app.subscriberCount != null && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Subscribers:</span>
-                    <span className="text-white">{app.subscriberCount.toLocaleString()}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-500">Subscribers</span>
+                    <span className="text-white font-medium">{app.subscriberCount.toLocaleString()}</span>
                   </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Applied:</span>
-                  <span className="text-white">{new Date(app.createdAt).toLocaleDateString()}</span>
-                </div>
               </div>
 
+              {/* Actions */}
               {app.status === 'pending' && (
-                <div className="space-y-2">
+                <div className="px-4 py-3 space-y-2">
                   <input
                     value={rejectReason[app.id] || ''}
                     onChange={e => setRejectReason(r => ({ ...r, [app.id]: e.target.value }))}
                     placeholder="Rejection reason (optional)"
-                    className="w-full px-3 py-1.5 text-xs bg-[#1a1a1a] border border-white/10 rounded-lg text-white placeholder:text-gray-600"
+                    className="w-full px-3 py-2 text-xs bg-[#1a1a1a] border border-white/8 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:border-white/20"
                   />
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      className="flex-1 h-7 text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30"
+                      className="flex-1 h-8 text-xs bg-green-500/15 text-green-400 border border-green-500/25 hover:bg-green-500/25"
                       onClick={() => approveMutation.mutate(app.id)}
                       disabled={approveMutation.isPending}
                     >
-                      <CheckCircle2 className="w-3 h-3 mr-1" /> Approve
+                      <CheckCircle2 className="w-3 h-3 mr-1.5" /> Approve
                     </Button>
                     <Button
                       size="sm"
-                      className="flex-1 h-7 text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                      className="flex-1 h-8 text-xs bg-red-500/15 text-red-400 border border-red-500/25 hover:bg-red-500/25"
                       onClick={() => rejectMutation.mutate({ id: app.id, reason: rejectReason[app.id] || '' })}
                       disabled={rejectMutation.isPending}
                     >
-                      <XCircle className="w-3 h-3 mr-1" /> Reject
+                      <XCircle className="w-3 h-3 mr-1.5" /> Reject
                     </Button>
                   </div>
                 </div>
@@ -4377,107 +4387,111 @@ function AmbassadorAdminSection() {
 
       {/* Ambassadors List */}
       {activeSubTab === 'ambassadors' && (
-        <div className="space-y-3">
-          {allAmbassadors.length === 0 && (
-            <p className="text-gray-500 text-sm text-center py-8">No ambassadors yet</p>
-          )}
-          {allAmbassadors.map(amb => (
-            <div key={amb.id} className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-3">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm font-medium text-white">
+        <div className="space-y-2">
+          {allAmbassadors.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <p className="text-gray-500 text-sm">No active ambassadors</p>
+              <p className="text-gray-600 text-xs mt-1">Approve applications to add ambassadors</p>
+            </div>
+          ) : allAmbassadors.map(amb => (
+            <div key={amb.id} className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
+              {/* Card header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
                     {amb.firstName || ''} {amb.lastName || ''}{amb.username ? ` (@${amb.username})` : ''}
                   </p>
-                  <p className="text-xs text-gray-400">TG: {amb.telegramId}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-gray-500">TG: {amb.telegramId}</span>
+                    <span className={`text-[10px] font-mono font-bold text-[#4cd3ff]`}>{amb.promoCodeName}</span>
+                  </div>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full ${
-                  amb.status === 'active' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
+                <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide flex-shrink-0 ml-2 ${
+                  amb.status === 'active' ? 'bg-blue-500/15 text-blue-400' : 'bg-gray-500/15 text-gray-500'
                 }`}>{amb.status}</span>
               </div>
 
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Promo Code:</span>
-                  <span className="text-[#4cd3ff] font-mono font-bold">{amb.promoCodeName}</span>
+              {/* Stats grid */}
+              <div className="grid grid-cols-2 gap-px bg-white/5 border-b border-white/5">
+                <div className="bg-[#0f0f0f] px-4 py-2.5">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Claims</p>
+                  <p className="text-sm font-bold text-white mt-0.5">{amb.totalClaims || 0}</p>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Channel:</span>
-                  <span className={amb.channelVerified ? 'text-green-400' : 'text-yellow-400'}>
-                    {amb.channelVerified ? `✅ Verified` : '⚠️ Not Verified'}
-                    {amb.channelId && <span className="text-gray-500 ml-1 font-mono text-[10px]">({amb.channelId})</span>}
-                  </span>
+                <div className="bg-[#0f0f0f] px-4 py-2.5">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Earnings</p>
+                  <p className="text-sm font-bold text-green-400 mt-0.5">${parseFloat(amb.totalEarningsUsd || '0').toFixed(4)}</p>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Total Claims:</span>
-                  <span className="text-white">{amb.totalClaims || 0}</span>
+                <div className="bg-[#0f0f0f] px-4 py-2.5">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Channel</p>
+                  <p className={`text-xs font-semibold mt-0.5 ${amb.channelVerified ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {amb.channelVerified ? '✅ Verified' : '⚠️ Not Verified'}
+                  </p>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Total Earnings:</span>
-                  <span className="text-green-400">${parseFloat(amb.totalEarningsUsd || '0').toFixed(4)}</span>
+                <div className="bg-[#0f0f0f] px-4 py-2.5">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Last Promo</p>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    {amb.lastPromoSentAt ? new Date(amb.lastPromoSentAt).toLocaleDateString() : '—'}
+                  </p>
                 </div>
-                {amb.lastPromoSentAt && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Last Promo:</span>
-                    <span className="text-white">{new Date(amb.lastPromoSentAt).toLocaleDateString()}</span>
-                  </div>
-                )}
               </div>
-
-              {/* Post Promo Now button */}
-              <Button
-                size="sm"
-                className="w-full h-8 text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30"
-                onClick={() => {
-                  setPostingNow(amb.id);
-                  postNowMutation.mutate(amb.id);
-                }}
-                disabled={postNowMutation.isPending && postingNow === amb.id || amb.status !== 'active' || !amb.channelVerified}
-              >
-                {postNowMutation.isPending && postingNow === amb.id
-                  ? '⏳ Posting…'
-                  : !amb.channelVerified
-                    ? '📤 Post Promo Now (channel not verified)'
-                    : '📤 Post Promo Now'}
-              </Button>
 
               {/* Custom promo name request */}
               {amb.customPromoRequest && amb.customPromoRequestStatus === 'pending' && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 space-y-2">
-                  <p className="text-xs text-yellow-400 font-medium">Custom Name Request: <span className="font-mono">{amb.customPromoRequest}</span></p>
-                  <div className="flex gap-2">
-                    <Button size="sm" className="flex-1 h-6 text-xs bg-green-500/20 text-green-400 border border-green-500/30"
-                      onClick={() => approvePromoMutation.mutate(amb.id)}>Approve</Button>
-                    <Button size="sm" className="flex-1 h-6 text-xs bg-red-500/20 text-red-400 border border-red-500/30"
-                      onClick={() => rejectPromoMutation.mutate(amb.id)}>Reject</Button>
+                <div className="px-4 py-2.5 bg-yellow-500/5 border-b border-yellow-500/15">
+                  <p className="text-[10px] text-yellow-500 font-semibold uppercase tracking-wide mb-2">Custom Name Request</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-mono font-bold text-yellow-300">{amb.customPromoRequest}</span>
+                    <div className="flex gap-1.5">
+                      <button
+                        className="h-7 px-3 text-xs bg-green-500/15 text-green-400 border border-green-500/25 rounded-lg hover:bg-green-500/25 transition-colors"
+                        onClick={() => approvePromoMutation.mutate(amb.id)}>✓ Approve</button>
+                      <button
+                        className="h-7 px-3 text-xs bg-red-500/15 text-red-400 border border-red-500/25 rounded-lg hover:bg-red-500/25 transition-colors"
+                        onClick={() => rejectPromoMutation.mutate(amb.id)}>✕ Reject</button>
+                    </div>
                   </div>
                 </div>
               )}
 
-              <Button
-                size="sm"
-                className={`w-full h-7 text-xs ${
-                  amb.status === 'active'
-                    ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
-                    : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                }`}
-                onClick={() => suspendMutation.mutate({ id: amb.id, suspend: amb.status === 'active' })}
-                disabled={suspendMutation.isPending}
-              >
-                {amb.status === 'active' ? '⏸ Suspend' : '▶ Reinstate'} Ambassador
-              </Button>
+              {/* Action buttons */}
+              <div className="px-4 py-3 space-y-1.5">
+                <Button
+                  size="sm"
+                  className="w-full h-8 text-xs bg-[#4cd3ff]/10 text-[#4cd3ff] border border-[#4cd3ff]/20 hover:bg-[#4cd3ff]/20 disabled:opacity-40"
+                  onClick={() => { setPostingNow(amb.id); postNowMutation.mutate(amb.id); }}
+                  disabled={(postNowMutation.isPending && postingNow === amb.id) || amb.status !== 'active' || !amb.channelVerified}
+                >
+                  {postNowMutation.isPending && postingNow === amb.id ? '⏳ Posting…' : '📤 Post Promo Now'}
+                  {!amb.channelVerified && ' (channel not verified)'}
+                </Button>
 
-              <Button
-                size="sm"
-                className="w-full h-7 text-xs bg-red-900/30 text-red-300 border border-red-900/40 hover:bg-red-900/50"
-                onClick={() => {
-                  if (window.confirm(`Permanently delete ambassador "${amb.promoCodeName}"? The user can re-apply afterwards.`)) {
-                    deleteAmbassadorMutation.mutate(amb.id);
-                  }
-                }}
-                disabled={deleteAmbassadorMutation.isPending}
-              >
-                🗑 Delete Ambassador Permanently
-              </Button>
+                <div className="flex gap-1.5">
+                  <Button
+                    size="sm"
+                    className={`flex-1 h-8 text-xs ${
+                      amb.status === 'active'
+                        ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20'
+                        : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20'
+                    }`}
+                    onClick={() => suspendMutation.mutate({ id: amb.id, suspend: amb.status === 'active' })}
+                    disabled={suspendMutation.isPending}
+                  >
+                    {amb.status === 'active' ? '⏸ Suspend' : '▶ Reinstate'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1 h-8 text-xs bg-red-900/20 text-red-400 border border-red-900/30 hover:bg-red-900/35"
+                    onClick={() => {
+                      if (window.confirm(`Permanently delete ambassador "${amb.promoCodeName}"?\n\nThis removes their profile and all settings. The user can re-apply afterwards.`)) {
+                        deleteAmbassadorMutation.mutate(amb.id);
+                      }
+                    }}
+                    disabled={deleteAmbassadorMutation.isPending}
+                  >
+                    🗑 Delete
+                  </Button>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -4485,37 +4499,42 @@ function AmbassadorAdminSection() {
 
       {/* Settings */}
       {activeSubTab === 'settings' && (
-        <div className="space-y-4">
-          <div className="bg-[#121212] border border-white/10 rounded-xl p-4 space-y-4">
-            <h3 className="text-sm font-semibold text-white">Ambassador Program Settings</h3>
+        <div className="space-y-3">
+          <div className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/5">
+              <h3 className="text-sm font-semibold text-white">Ambassador Program</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">Global settings for all ambassadors</p>
+            </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-white">Program Enabled</p>
-                <p className="text-xs text-gray-400">Allow users to apply and earn commissions</p>
+            <div className="px-4 py-3 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-white font-medium">Program Enabled</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Allow applications and commission payouts</p>
+                </div>
+                <button
+                  onClick={() => setProgramEnabled(!programEnabled)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${programEnabled ? 'bg-green-500' : 'bg-white/15'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${programEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
               </div>
-              <button
-                onClick={() => setProgramEnabled(!programEnabled)}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${programEnabled ? 'bg-green-500' : 'bg-white/20'}`}
-              >
-                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${programEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-400">Commission per Claim (USD)</label>
-              <Input
-                value={commission}
-                onChange={e => setCommission(e.target.value)}
-                placeholder="0.0001"
-                className="bg-[#1a1a1a] border-white/20 text-white h-8 text-sm"
-              />
-              <p className="text-xs text-gray-500">Amount credited to ambassador for each successful promo code claim</p>
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 font-medium">Commission per Claim (USD)</label>
+                <Input
+                  value={commission}
+                  onChange={e => setCommission(e.target.value)}
+                  placeholder="0.0001"
+                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
+                />
+                <p className="text-[10px] text-gray-600">Credited to ambassador each time their promo code is claimed</p>
+              </div>
 
-            <Button onClick={saveSettings} disabled={saving} className="w-full h-9 text-sm font-semibold">
-              {saving ? 'Saving...' : '💾 Save Settings'}
-            </Button>
+              <Button onClick={saveSettings} disabled={saving} className="w-full h-9 text-sm font-semibold">
+                {saving ? 'Saving…' : '💾 Save Settings'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
