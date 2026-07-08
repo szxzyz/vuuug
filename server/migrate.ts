@@ -707,6 +707,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         channel_verified BOOLEAN DEFAULT false,
         channel_id VARCHAR,
         next_promo_at TIMESTAMP,
+        posting_schedule TEXT,
         total_claims INTEGER DEFAULT 0,
         today_claims INTEGER DEFAULT 0,
         week_claims INTEGER DEFAULT 0,
@@ -730,6 +731,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
           ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS channel_verified BOOLEAN DEFAULT false;
           ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS channel_id VARCHAR;
           ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS next_promo_at TIMESTAMP;
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS posting_schedule TEXT;
         END $$
       `);
     } catch { /* columns may already exist */ }
