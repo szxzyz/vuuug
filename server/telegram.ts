@@ -3488,6 +3488,141 @@ export function startAmbassadorScheduler(): void {
   console.log('🎖️ Ambassador promo scheduler started (1-min check interval)');
 }
 
+// ── TON Pending Deposit Retry Poller ─────────────────────────────────────────
+// Runs every 2 minutes. Picks up deposits that were pending when the user first
+// called /api/ton/deposit/verify (blockchain not yet visible) and credits them
+// once they appear on-chain.
+
+const TON_DEPOSIT_WALLET = 'UQCW9LwFkPRsLOVsGfl-65t9AJsfPXs8fTpDDEJL_RQhwPvJ';
+
+export async function retryPendingTonDeposits(): Promise<void> {
+  try {
+    const { db: dbConn } = await import('./db');
+    const { tonDeposits, users, transactions } = await import('../shared/schema');
+    const { eq, and, sql } = await import('drizzle-orm');
+
+    // Only process deposits created in the last 24 hours
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const pending = await dbConn
+      .select()
+      .from(tonDeposits)
+      .where(and(eq(tonDeposits.status, 'pending'), sql`${tonDeposits.createdAt} > ${cutoff}`));
+
+    // Also expire deposits older than 24 h that still haven't confirmed
+    const expiryCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await dbConn
+      .update(tonDeposits)
+      .set({ status: 'expired' } as any)
+      .where(and(eq(tonDeposits.status, 'pending'), sql`${tonDeposits.createdAt} < ${expiryCutoff}`));
+
+    if (pending.length === 0) return;
+
+    console.log(`💎 [TON Poller] Checking ${pending.length} pending deposit(s)...`);
+
+    // Fetch up to 100 recent transactions from the deposit wallet
+    const url = `https://toncenter.com/api/v2/getTransactions?address=${TON_DEPOSIT_WALLET}&limit=100&archival=false`;
+    let chainTxs: any[] = [];
+    try {
+      const resp = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (resp.ok) {
+        const data = await resp.json() as any;
+        if (data.ok && Array.isArray(data.result)) chainTxs = data.result;
+      }
+    } catch (err) {
+      console.warn('💎 [TON Poller] TON Center API unreachable, will retry next cycle');
+      return;
+    }
+
+    if (chainTxs.length === 0) return;
+
+    // Track which on-chain tx hashes have been claimed this pass (prevents double-credit)
+    const usedHashes = new Set<string>();
+
+    for (const dep of pending) {
+      const expectedNano = BigInt(Math.round(parseFloat(dep.amount) * 1_000_000_000));
+      // Deposit must have landed on-chain within 5 min before the record was created (clock skew)
+      // or any time after — up to 24 h
+      const depCreatedSec = Math.floor(new Date(dep.createdAt!).getTime() / 1000);
+      const windowStartSec = depCreatedSec - 300; // 5-min before tolerance
+
+      const match = chainTxs.find((tx: any) => {
+        const txHash: string = tx.transaction_id?.hash ?? tx.hash ?? '';
+        if (usedHashes.has(txHash)) return false;
+        const inNano = tx.in_msg?.value ? BigInt(tx.in_msg.value) : 0n;
+        // Amount must match exactly ±1 nanoton (gas rounding)
+        if (inNano < expectedNano - 1n || inNano > expectedNano + 1_000_000n) return false;
+        const txTime: number = tx.utime ?? 0;
+        if (txTime < windowStartSec) return false; // tx too old relative to deposit record
+        return true;
+      });
+
+      if (!match) {
+        console.log(`💎 [TON Poller] Deposit ${dep.id} (${dep.amount} TON) not yet on-chain`);
+        continue;
+      }
+
+      const txHash: string = match.transaction_id?.hash ?? match.hash ?? '';
+      const actualNano = BigInt(match.in_msg.value);
+      const actualAmount = Number(actualNano) / 1_000_000_000;
+      usedHashes.add(txHash);
+
+      // Credit the user atomically
+      const [currentUser] = await dbConn
+        .select({ tonBalance: users.tonBalance, telegramId: users.telegram_id })
+        .from(users)
+        .where(eq(users.id, dep.userId))
+        .limit(1);
+      if (!currentUser) continue;
+
+      const newBalance = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
+
+      await dbConn.update(tonDeposits)
+        .set({ status: 'confirmed', confirmedAt: new Date() } as any)
+        .where(eq(tonDeposits.id, dep.id));
+
+      await dbConn.update(users)
+        .set({ tonBalance: newBalance, updatedAt: new Date() } as any)
+        .where(eq(users.id, dep.userId));
+
+      await dbConn.insert(transactions).values({
+        userId: dep.userId,
+        amount: actualAmount.toString(),
+        type: 'addition',
+        source: 'ton_deposit',
+        description: `TON deposit confirmed (auto-retry): ${actualAmount} TON`,
+        metadata: { depositId: dep.id, txHash, autoRetry: true },
+      } as any);
+
+      console.log(`✅ [TON Poller] Credited deposit ${dep.id}: userId=${dep.userId} amount=${actualAmount} TON newBalance=${newBalance}`);
+
+      // Notify user via Telegram DM
+      if (currentUser.telegramId) {
+        await sendUserTelegramNotification(
+          currentUser.telegramId,
+          `<b>💎 TON Deposit Confirmed!</b>\n\n` +
+          `<b>${actualAmount.toFixed(4)} TON</b> has been credited to your account.\n\n` +
+          `Your new TON balance: <b>${newBalance} TON</b>`,
+          undefined,
+          'HTML',
+        ).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error('💎 [TON Poller] Error:', err);
+  }
+}
+
+export function startTonDepositPoller(): void {
+  // First check 30 s after start (catches any deposits missed during a restart)
+  setTimeout(() => retryPendingTonDeposits().catch(console.error), 30_000);
+  // Then every 2 minutes
+  setInterval(() => retryPendingTonDeposits().catch(console.error), 2 * 60 * 1000);
+  console.log('💎 TON deposit retry poller started (2-min interval)');
+}
+
 export async function getWebhookInfo(): Promise<any> {
   if (!TELEGRAM_BOT_TOKEN) {
     return { ok: false, error: 'Bot token not configured' };

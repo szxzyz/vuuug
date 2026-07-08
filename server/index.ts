@@ -216,6 +216,14 @@ app.use((req, res, next) => {
       console.error('❌ Error starting ambassador scheduler:', error);
     }
 
+    // TON pending deposit poller — retries unconfirmed deposits every 2 minutes
+    try {
+      const { startTonDepositPoller } = await import('./telegram');
+      startTonDepositPoller();
+    } catch (error) {
+      console.error('❌ Error starting TON deposit poller:', error);
+    }
+
     // Auto-setup Telegram webhook
     if (process.env.TELEGRAM_BOT_TOKEN) {
       try {
