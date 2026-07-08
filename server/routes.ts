@@ -10942,29 +10942,60 @@ ${walletAddress}
         return res.status(400).json({ success: false, message: 'You already have a pending application' });
       }
 
-      // Fetch channel info from Telegram
+      // ── Verify bot admin status FIRST (no bypass) ────────────────────────────
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const cleanLink = channelLink.trim()
+        .replace('https://t.me/', '').replace('http://t.me/', '')
+        .replace('t.me/', '').replace(/^@/, '').split('/')[0];
+
+      if (!botToken) {
+        return res.status(503).json({ success: false, message: 'Bot is not configured. Please contact support.' });
+      }
+
+      const { checkBotCanPostToChannel, getBotUsername } = await import('./telegram');
+      const channelIdentifier = cleanLink.startsWith('-') ? cleanLink : `@${cleanLink}`;
+      const permCheck = await checkBotCanPostToChannel(botToken, channelIdentifier);
+      const botName = await getBotUsername();
+
+      if (!permCheck.chatId) {
+        return res.status(400).json({
+          success: false,
+          message: `Channel not found. Make sure the username is correct and the channel is public. (tried: ${channelIdentifier})`,
+        });
+      }
+      if (!permCheck.isAdmin) {
+        return res.status(400).json({
+          success: false,
+          message: `@${botName} is not an administrator in this channel. Please:\n1. Open your channel settings\n2. Add @${botName} as administrator\n3. Enable "Post Messages" permission\n4. Then submit your application again.`,
+        });
+      }
+      if (!permCheck.hasPostPermission) {
+        return res.status(400).json({
+          success: false,
+          message: `@${botName} is an admin in your channel but "Post Messages" permission is disabled. Please enable it and try again.`,
+        });
+      }
+
+      // ── Fetch additional channel metadata ────────────────────────────────────
       let channelTitle: string | null = null;
       let channelUsername: string | null = null;
       let subscriberCount: number | null = null;
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      const cleanLink = channelLink.trim().replace('https://t.me/', '').replace('@', '');
-      if (botToken && cleanLink) {
-        try {
-          const chatResp = await fetch(`https://api.telegram.org/bot${botToken}/getChat?chat_id=@${cleanLink}`);
-          if (chatResp.ok) {
-            const chatData = await chatResp.json();
-            if (chatData.ok && chatData.result) {
-              channelTitle = chatData.result.title || null;
-              channelUsername = chatData.result.username || null;
-            }
+
+      try {
+        const chatResp = await fetch(`https://api.telegram.org/bot${botToken}/getChat?chat_id=${channelIdentifier}`);
+        if (chatResp.ok) {
+          const chatData = await chatResp.json();
+          if (chatData.ok && chatData.result) {
+            channelTitle = chatData.result.title || null;
+            channelUsername = chatData.result.username || null;
           }
-          const countResp = await fetch(`https://api.telegram.org/bot${botToken}/getChatMemberCount?chat_id=@${cleanLink}`);
-          if (countResp.ok) {
-            const countData = await countResp.json();
-            if (countData.ok) subscriberCount = countData.result;
-          }
-        } catch (_) {}
-      }
+        }
+        const countResp = await fetch(`https://api.telegram.org/bot${botToken}/getChatMemberCount?chat_id=${channelIdentifier}`);
+        if (countResp.ok) {
+          const countData = await countResp.json();
+          if (countData.ok) subscriberCount = countData.result;
+        }
+      } catch (_) {}
 
       const [application] = await db.insert(ambassadorApplications).values({
         userId,
@@ -11381,34 +11412,35 @@ ${walletAddress}
       await db.update(ambassadorApplications).set({ status: 'approved', reviewedAt: new Date() })
         .where(eq(ambassadorApplications.id, id));
 
-      // Auto-verify the channel from the application link so posting starts immediately
-      try {
-        const botToken = process.env.TELEGRAM_BOT_TOKEN;
-        if (botToken) {
-          const { checkBotCanPostToChannel } = await import('./telegram');
-          // Normalize channel link to an identifier Telegram accepts
-          const rawLink = application.channelUsername || application.channelLink || '';
-          const channelIdentifier = rawLink.startsWith('-')
-            ? rawLink
-            : '@' + rawLink
-                .replace('https://t.me/', '')
-                .replace('http://t.me/', '')
-                .replace('t.me/', '')
-                .replace(/^@/, '')
-                .split('/')[0];
-          const { canPost, chatId } = await checkBotCanPostToChannel(botToken, channelIdentifier);
-          if (canPost && chatId) {
-            await db.update(ambassadors)
-              .set({ channelVerified: true, channelId: chatId, updatedAt: new Date() })
-              .where(eq(ambassadors.id, ambassador.id));
-            console.log(`✅ Auto-verified channel for new ambassador ${ambassador.id}: ${chatId}`);
-          } else {
-            console.warn(`⚠️ Bot cannot post to channel for new ambassador ${ambassador.id} — they may need to add the bot`);
-          }
-        }
-      } catch (verifyErr) {
-        console.error('Auto-verify channel error:', verifyErr);
+      // ── Mandatory channel verification — block approval if bot cannot post ──────
+      const approveBot = process.env.TELEGRAM_BOT_TOKEN;
+      if (!approveBot) {
+        return res.status(503).json({ message: 'Bot token not configured. Cannot verify channel.' });
       }
+      const { checkBotCanPostToChannel: checkApprove } = await import('./telegram');
+      const rawLink = application.channelUsername || application.channelLink || '';
+      const approveChannelId = rawLink.startsWith('-')
+        ? rawLink
+        : '@' + rawLink
+            .replace('https://t.me/', '').replace('http://t.me/', '')
+            .replace('t.me/', '').replace(/^@/, '').split('/')[0];
+
+      const approveCheck = await checkApprove(approveBot, approveChannelId);
+      if (!approveCheck.chatId) {
+        return res.status(400).json({ message: `Channel not found (tried "${approveChannelId}"). Cannot approve until channel is accessible.` });
+      }
+      if (!approveCheck.canPost) {
+        const reason = !approveCheck.isAdmin
+          ? `The bot is not an administrator in this channel.`
+          : `The bot lacks "Post Messages" permission.`;
+        return res.status(400).json({ message: `Cannot approve: ${reason} Ask the user to fix this and re-apply.` });
+      }
+
+      // Verified — save channel id and mark verified right away
+      await db.update(ambassadors)
+        .set({ channelVerified: true, channelId: approveCheck.chatId, updatedAt: new Date() })
+        .where(eq(ambassadors.id, ambassador.id));
+      console.log(`✅ Channel verified for new ambassador ${ambassador.id}: ${approveCheck.chatId}`);
 
       // Notify user
       try {
