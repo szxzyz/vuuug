@@ -546,7 +546,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                 )}
               </div>
 
-              {/* ════ BOTTOM NAV — TON pill only (back button lives in Layout.tsx as the + button) ════ */}
+              {/* ════ BOTTOM NAV — matches exact floating nav style from Layout.tsx ════ */}
               {flow === "advertise" && (
                 <div style={{
                   flexShrink: 0,
@@ -556,13 +556,14 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                   gap: 12,
                   background: "transparent",
                 }}>
-                  {/* TON balance | Pay — mirrors the nav pill position */}
-                  <div style={{
+                  {/* Nav pill: TON balance | [Pay] — identical to main app nav */}
+                  <nav style={{
                     display: "flex", alignItems: "center",
-                    height: 56, borderRadius: 40, overflow: "hidden",
+                    height: 64, borderRadius: 40,
                     background: "rgba(28,28,30,0.9)",
-                    backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+                    backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                    overflow: "hidden",
                   }}>
                     {/* TON balance + top-up */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px 0 18px" }}>
@@ -583,31 +584,52 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                       </motion.button>
                     </div>
 
-                    {/* Divider */}
-                    <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.10)", flexShrink: 0 }} />
+                    {/* Divider + Pay — only on Add Missions tab */}
+                    {advTab === "add" && (
+                      <>
+                        <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.10)", flexShrink: 0 }} />
+                        <motion.button
+                          onClick={() => canSubmit && createMutation.mutate()}
+                          disabled={!canSubmit}
+                          whileTap={{ scale: canSubmit ? 0.94 : 1 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                          style={{
+                            height: "100%", padding: "0 22px", border: "none",
+                            background: canSubmit ? BLUE : "transparent",
+                            color: canSubmit ? "#000" : "rgba(255,255,255,0.25)",
+                            fontSize: 14, fontWeight: 700, letterSpacing: "0.01em",
+                            whiteSpace: "nowrap", cursor: canSubmit ? "pointer" : "not-allowed",
+                            display: "flex", alignItems: "center", gap: 7,
+                            transition: "background 150ms, color 150ms",
+                          }}
+                        >
+                          {createMutation.isPending
+                            ? <><Loader2 size={14} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
+                            : <>Pay {cost ? `${cost} TON` : "—"}</>
+                          }
+                        </motion.button>
+                      </>
+                    )}
+                  </nav>
 
-                    {/* Pay button */}
-                    <motion.button
-                      onClick={() => createMutation.mutate()}
-                      disabled={!canSubmit}
-                      whileTap={{ scale: canSubmit ? 0.94 : 1 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                      style={{
-                        height: "100%", padding: "0 22px", border: "none",
-                        background: canSubmit ? BLUE : "transparent",
-                        color: canSubmit ? "#000" : "rgba(255,255,255,0.25)",
-                        fontSize: 14, fontWeight: 700, letterSpacing: "0.01em",
-                        whiteSpace: "nowrap", cursor: canSubmit ? "pointer" : "not-allowed",
-                        display: "flex", alignItems: "center", gap: 7,
-                        transition: "background 150ms, color 150ms",
-                      }}
-                    >
-                      {createMutation.isPending
-                        ? <><Loader2 size={14} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
-                        : <>Pay {cost ? `${cost} TON` : "—"}</>
-                      }
-                    </motion.button>
-                  </div>
+                  {/* Back button — same size, position, and style as the + button in Layout.tsx */}
+                  <motion.button
+                    onClick={handleClose}
+                    whileTap={{ scale: 0.88 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                    aria-label="Back"
+                    style={{
+                      width: 56, height: 56, borderRadius: "50%", flexShrink: 0,
+                      background: "rgba(28,28,30,0.9)",
+                      backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+                      border: "none",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <ChevronLeft style={{ width: 22, height: 22, color: "rgba(255,255,255,0.85)", strokeWidth: 2.2 }} />
+                  </motion.button>
                 </div>
               )}
 
