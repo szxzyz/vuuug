@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTonConnectUI, useTonAddress } from "@tonconnect/ui-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, CheckCircle2, AlertCircle, Clock } from "lucide-react";
@@ -22,6 +22,50 @@ export default function TopUpPopup({ open, onOpenChange }: TopUpPopupProps) {
   const [amount, setAmount] = useState("");
   const [step, setStep] = useState<Step>("input");
   const [errorMsg, setErrorMsg] = useState("");
+  const pendingBocRef = useRef<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Auto-poll when pending — check every 10s if deposit was confirmed on-chain
+  useEffect(() => {
+    if (step === "pending" && pendingBocRef.current) {
+      const boc = pendingBocRef.current;
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(
+            `/api/ton/deposit/status?boc=${encodeURIComponent(boc)}`,
+            { credentials: "include" }
+          );
+          const data = await res.json();
+          if (data.confirmed) {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            // Update balance immediately using server value
+            queryClient.setQueryData(["/api/auth/user"], (old: any) => {
+              if (!old) return old;
+              return { ...old, tonBalance: data.tonBalance };
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
+            setStep("success");
+            showNotification("TON deposit confirmed!", "success");
+          }
+        } catch {
+          // silently retry next tick
+        }
+      }, 10_000);
+    } else {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    }
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, [step]);
 
   if (!open) return null;
 
@@ -78,6 +122,7 @@ export default function TopUpPopup({ open, onOpenChange }: TopUpPopupProps) {
         setStep("success");
         queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       } else if (data.pending) {
+        pendingBocRef.current = result.boc;
         setStep("pending");
       } else {
         setErrorMsg(data.message || "Verification failed. Your deposit will be credited within 5 minutes.");
