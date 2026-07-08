@@ -452,7 +452,7 @@ export default function Ambassador() {
               <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Posting Schedule (UTC)</p>
             </div>
             <p className="text-[#555] text-xs mb-4 leading-relaxed">
-              Set the UTC times when promos are auto-posted to your channel every day.
+              Set up to 3 UTC times when promos are auto-posted to your channel every day.
             </p>
 
             <div className="space-y-2 mb-3">
@@ -478,7 +478,7 @@ export default function Ambassador() {
               ))}
             </div>
 
-            {scheduleSlots.length < 10 && (
+            {scheduleSlots.length < 3 && (
               <button
                 onClick={() => setScheduleSlots(prev => [...prev, "12:00"])}
                 className="w-full h-10 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
