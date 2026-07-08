@@ -11156,7 +11156,7 @@ ${walletAddress}
       const updates: any = { updatedAt: new Date() };
 
       if (Array.isArray(postingTimes)) {
-        // Validate: strict HH:MM (00-23 hours, 00-59 minutes), max 10 entries, deduplicated + sorted
+        // Validate: strict HH:MM (00-23 hours, 00-59 minutes), max 3 entries, deduplicated + sorted
         const validTimes = [...new Set(
           postingTimes
             .filter((t: any) => {
@@ -11167,10 +11167,32 @@ ${walletAddress}
               const min = parseInt(m[2], 10);
               return h >= 0 && h <= 23 && min >= 0 && min <= 59;
             })
-            .slice(0, 10)
+            .slice(0, 3)
         )].sort();
         updates.postingSchedule = JSON.stringify(validTimes);
-        updates.dailyPromoCount = Math.max(1, Math.min(10, validTimes.length || 1));
+        updates.dailyPromoCount = Math.max(1, Math.min(3, validTimes.length || 1));
+
+        // Recalculate nextPromoAt from the new schedule so the scheduler fires
+        // at the correct time immediately — without this, the old nextPromoAt
+        // (set at approval, e.g. 12 h out) would be used and the schedule ignored.
+        if (validTimes.length > 0) {
+          const now = new Date();
+          const nowMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+          const timeMins = validTimes.map((t: string) => {
+            const parts = t.split(':');
+            return parseInt(parts[0]!, 10) * 60 + parseInt(parts[1]!, 10);
+          });
+          const nextMins = timeMins.find((t: number) => t > nowMins);
+          const next = new Date();
+          if (nextMins !== undefined) {
+            next.setUTCHours(Math.floor(nextMins / 60), nextMins % 60, 0, 0);
+          } else {
+            // All slots already passed today — wrap to first slot tomorrow
+            next.setUTCDate(next.getUTCDate() + 1);
+            next.setUTCHours(Math.floor(timeMins[0]! / 60), timeMins[0]! % 60, 0, 0);
+          }
+          updates.nextPromoAt = next;
+        }
       } else if (dailyPromoCount !== undefined) {
         const count = Math.max(1, Math.min(3, parseInt(dailyPromoCount) || 1));
         updates.dailyPromoCount = count;
