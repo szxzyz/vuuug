@@ -5968,6 +5968,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         await tx.update(users).set(updateData).where(eq(users.id, userId));
 
+        // Keep user_balances in sync — deduct the same PAD amount so the integrity guard
+        // doesn't mistake a legitimate conversion for drift and restore the old balance.
+        await tx
+          .update(userBalances)
+          .set({
+            balance: sql`GREATEST(0, COALESCE(${userBalances.balance}, 0) - ${String(convertAmount)})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(userBalances.userId, userId));
+
         // Log the conversion as a transaction record
         await tx.insert(transactions).values({
           userId,
@@ -6084,6 +6094,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updatedAt: new Date()
           })
           .where(eq(users.id, userId));
+
+        // Keep user_balances in sync — deduct the same PAD so the integrity guard
+        // doesn't mistake this legitimate reduction for drift and restore the old balance.
+        await tx
+          .update(userBalances)
+          .set({
+            balance: sql`GREATEST(0, COALESCE(${userBalances.balance}, 0) - ${String(convertAmount)})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(userBalances.userId, userId));
 
         // Log the conversion as a transaction record
         await tx.insert(transactions).values({
@@ -6212,6 +6232,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updatedAt: new Date()
           })
           .where(eq(users.id, userId));
+
+        // Keep user_balances in sync with the fee deduction
+        await db
+          .update(userBalances)
+          .set({
+            balance: sql`GREATEST(0, COALESCE(${userBalances.balance}, 0) - ${feeInPow.toString()})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(userBalances.userId, userId));
         
         // Record transaction
         await db.insert(transactions).values({
@@ -6331,6 +6360,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updatedAt: new Date()
           })
           .where(eq(users.id, userId));
+
+        // Keep user_balances in sync with the fee deduction
+        await db
+          .update(userBalances)
+          .set({
+            balance: sql`GREATEST(0, COALESCE(${userBalances.balance}, 0) - ${feeInPow.toString()})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(userBalances.userId, userId));
         
         // Record transaction
         await db.insert(transactions).values({
