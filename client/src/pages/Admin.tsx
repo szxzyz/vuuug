@@ -1864,8 +1864,6 @@ function SettingsSection() {
     withdrawalGroupChatId: '-1002480439556',
     channelTaskCost: '0.003',
     botTaskCost: '0.003',
-    channelTaskCostTON: '0.0003',
-    botTaskCostTON: '0.0003',
     channelTaskReward: '30',
     botTaskReward: '20',
     partnerTaskReward: '5',
@@ -1922,8 +1920,6 @@ function SettingsSection() {
         withdrawalGroupChatId: settingsData.withdrawalGroupChatId?.toString() || '-1002480439556',
         channelTaskCost: settingsData.channelTaskCost?.toString() || '0.003',
         botTaskCost: settingsData.botTaskCost?.toString() || '0.003',
-        channelTaskCostTON: settingsData.channelTaskCostTON?.toString() || '0.0003',
-        botTaskCostTON: settingsData.botTaskCostTON?.toString() || '0.0003',
         channelTaskReward: settingsData.channelTaskReward?.toString() || '30',
         botTaskReward: settingsData.botTaskReward?.toString() || '20',
         partnerTaskReward: settingsData.partnerTaskReward?.toString() || '5',
@@ -2014,8 +2010,6 @@ function SettingsSection() {
     const withdrawalFeeUSD = parseFloat(settings.withdrawalFeeUSD);
     const channelCost = parseFloat(settings.channelTaskCost);
     const botCost = parseFloat(settings.botTaskCost);
-    const channelCostTON = parseFloat(settings.channelTaskCostTON);
-    const botCostTON = parseFloat(settings.botTaskCostTON);
     const channelReward = parseInt(settings.channelTaskReward);
     const botReward = parseInt(settings.botTaskReward);
     const partnerReward = parseInt(settings.partnerTaskReward);
@@ -2049,8 +2043,6 @@ function SettingsSection() {
         withdrawalGroupChatId: settings.withdrawalGroupChatId,
         channelTaskCost: channelCost,
         botTaskCost: botCost,
-        channelTaskCostTON: channelCostTON,
-        botTaskCostTON: botCostTON,
         channelTaskReward: channelReward,
         botTaskReward: botReward,
         partnerTaskReward: partnerReward,
@@ -2610,29 +2602,16 @@ function SettingsSection() {
                 <i className="fas fa-bullhorn mr-2 text-cyan-600"></i>
                 Channel Task
               </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Cost (USD)</Label>
-                  <Input
-                    type="number"
-                    value={settings.channelTaskCost}
-                    onChange={(e) => setSettings({ ...settings, channelTaskCost: e.target.value })}
-                    placeholder="0.003"
-                    step="0.0001"
-                    className="h-8"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Cost (TON)</Label>
-                  <Input
-                    type="number"
-                    value={settings.channelTaskCostTON}
-                    onChange={(e) => setSettings({ ...settings, channelTaskCostTON: e.target.value })}
-                    placeholder="0.0003"
-                    step="0.0001"
-                    className="h-8"
-                  />
-                </div>
+              <div>
+                <Label className="text-xs">Cost (USD) — admin billing only</Label>
+                <Input
+                  type="number"
+                  value={settings.channelTaskCost}
+                  onChange={(e) => setSettings({ ...settings, channelTaskCost: e.target.value })}
+                  placeholder="0.003"
+                  step="0.0001"
+                  className="h-8"
+                />
               </div>
               <div>
                 <Label className="text-xs">Reward (POW)</Label>
@@ -2644,6 +2623,7 @@ function SettingsSection() {
                   className="h-8"
                 />
               </div>
+              <p className="text-xs text-muted-foreground">User TON pricing is determined by the package system (100/500/1K/2K/5K/10K clicks).</p>
             </div>
 
             <div className="space-y-2">
@@ -2651,29 +2631,16 @@ function SettingsSection() {
                 <i className="fas fa-robot mr-2 text-purple-600"></i>
                 Bot Task
               </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Cost (USD)</Label>
-                  <Input
-                    type="number"
-                    value={settings.botTaskCost}
-                    onChange={(e) => setSettings({ ...settings, botTaskCost: e.target.value })}
-                    placeholder="0.003"
-                    step="0.0001"
-                    className="h-8"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Cost (TON)</Label>
-                  <Input
-                    type="number"
-                    value={settings.botTaskCostTON}
-                    onChange={(e) => setSettings({ ...settings, botTaskCostTON: e.target.value })}
-                    placeholder="0.0003"
-                    step="0.0001"
-                    className="h-8"
-                  />
-                </div>
+              <div>
+                <Label className="text-xs">Cost (USD) — admin billing only</Label>
+                <Input
+                  type="number"
+                  value={settings.botTaskCost}
+                  onChange={(e) => setSettings({ ...settings, botTaskCost: e.target.value })}
+                  placeholder="0.003"
+                  step="0.0001"
+                  className="h-8"
+                />
               </div>
               <div>
                 <Label className="text-xs">Reward (POW)</Label>
@@ -2685,6 +2652,7 @@ function SettingsSection() {
                   className="h-8"
                 />
               </div>
+              <p className="text-xs text-muted-foreground">User TON pricing is determined by the package system (100/500/1K/2K/5K/10K clicks).</p>
             </div>
 
             <div className="space-y-2">
@@ -4257,6 +4225,16 @@ function AmbassadorAdminSection() {
     },
   });
 
+  const deleteAmbassadorMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest('DELETE', `/api/admin/ambassadors/${id}`).then(r => r.json()),
+    onSuccess: () => {
+      showNotification('Ambassador permanently deleted', 'success');
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors'] });
+    },
+    onError: () => showNotification('Failed to delete ambassador', 'error'),
+  });
+
   const [postingNow, setPostingNow] = useState<string | null>(null);
   const postNowMutation = useMutation({
     mutationFn: (id: string) => apiRequest('POST', `/api/admin/ambassadors/${id}/post-now`).then(r => r.json()),
@@ -4486,6 +4464,19 @@ function AmbassadorAdminSection() {
                 disabled={suspendMutation.isPending}
               >
                 {amb.status === 'active' ? '⏸ Suspend' : '▶ Reinstate'} Ambassador
+              </Button>
+
+              <Button
+                size="sm"
+                className="w-full h-7 text-xs bg-red-900/30 text-red-300 border border-red-900/40 hover:bg-red-900/50"
+                onClick={() => {
+                  if (window.confirm(`Permanently delete ambassador "${amb.promoCodeName}"? The user can re-apply afterwards.`)) {
+                    deleteAmbassadorMutation.mutate(amb.id);
+                  }
+                }}
+                disabled={deleteAmbassadorMutation.isPending}
+              >
+                🗑 Delete Ambassador Permanently
               </Button>
             </div>
           ))}

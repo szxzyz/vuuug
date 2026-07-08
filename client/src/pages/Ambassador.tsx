@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
 import { apiRequest } from "@/lib/queryClient";
@@ -6,6 +6,7 @@ import { showNotification } from "@/components/AppNotification";
 import {
   CheckCircle2, XCircle, Loader2,
   Scroll, AlertTriangle, Send, Info, UserCheck, ChevronDown, ChevronRight,
+  Clock, Plus, Trash2,
 } from "lucide-react";
 import {
   Drawer,
@@ -83,6 +84,7 @@ export default function Ambassador() {
   const [customPromoInput, setCustomPromoInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const [scheduleSlots, setScheduleSlots] = useState<string[]>(["06:30", "18:30"]);
 
   const { data: status, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
     queryKey: ["/api/ambassador/status"],
@@ -102,7 +104,33 @@ export default function Ambassador() {
   const amb = dashboard?.ambassador ?? status?.ambassador;
   const stats = dashboard?.stats;
 
+  // Sync schedule slots from server data once when ambassador data first loads
+  const ambId = (amb as any)?.id as string | undefined;
+  useEffect(() => {
+    const raw = (amb as any)?.postingSchedule;
+    if (!raw) return;
+    try {
+      const parsed: string[] = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setScheduleSlots(parsed);
+      }
+    } catch {}
+    // Only run when the ambassador record changes (by id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ambId]);
+
   // ── Mutations ────────────────────────────────────────────────────────────────
+
+  const scheduleMutation = useMutation({
+    mutationFn: (times: string[]) =>
+      apiRequest("POST", "/api/ambassador/schedule", { postingTimes: times }).then((r: any) => r.json()),
+    onSuccess: () => {
+      showNotification("Schedule saved!", "success");
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
+    },
+    onError: (e: any) => showNotification(e?.message || "Failed to save schedule", "error"),
+  });
 
   const applyMutation = useMutation({
     mutationFn: (data: { channelLink: string; termsAccepted: boolean }) =>
@@ -404,6 +432,65 @@ export default function Ambassador() {
                 </button>
               </div>
             )}
+          </div>
+
+          {/* Posting Schedule */}
+          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
+            <div className="flex items-center gap-2 mb-1">
+              <Clock className="w-4 h-4 text-[#4cd3ff]" />
+              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Posting Schedule (UTC)</p>
+            </div>
+            <p className="text-[#555] text-xs mb-4 leading-relaxed">
+              Set the UTC times when promos are auto-posted to your channel every day.
+            </p>
+
+            <div className="space-y-2 mb-3">
+              {scheduleSlots.map((time, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(e) =>
+                      setScheduleSlots(prev => prev.map((v, i) => i === idx ? e.target.value : v))
+                    }
+                    className="flex-1 h-10 rounded-xl px-3 text-white text-sm focus:outline-none"
+                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
+                  />
+                  <button
+                    onClick={() => setScheduleSlots(prev => prev.filter((_, i) => i !== idx))}
+                    className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-transform flex-shrink-0"
+                    style={{ background: "rgba(239,68,68,0.10)" }}
+                  >
+                    <Trash2 className="w-4 h-4 text-red-400" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {scheduleSlots.length < 10 && (
+              <button
+                onClick={() => setScheduleSlots(prev => [...prev, "12:00"])}
+                className="w-full h-10 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}
+              >
+                <Plus className="w-4 h-4 text-white/30" />
+                <span className="text-white/30 text-xs">Add Time Slot</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => scheduleMutation.mutate(scheduleSlots)}
+              disabled={scheduleMutation.isPending || scheduleSlots.length === 0}
+              className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
+              style={{ background: "rgba(76,211,255,0.12)", border: "1px solid rgba(76,211,255,0.22)" }}
+            >
+              {scheduleMutation.isPending
+                ? <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
+                : <>
+                    <CheckCircle2 className="w-4 h-4 text-[#4cd3ff]" />
+                    <span className="text-[#4cd3ff] font-semibold text-sm">Save Schedule</span>
+                  </>}
+            </button>
           </div>
 
         </main>
