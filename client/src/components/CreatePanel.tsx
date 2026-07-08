@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   X, Loader2, AlertTriangle, ClipboardList,
-  CheckCircle2, ShieldCheck, ShieldOff,
+  CheckCircle2, ShieldCheck, ShieldOff, Plus, ChevronLeft,
 } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from "@/components/ui/drawer";
+import TopUpPopup from "@/components/TopUpPopup";
 
 // ─── Pricing ───────────────────────────────────────────────────
 const PACKAGES = [
@@ -61,6 +62,14 @@ export default function CreatePanel({ open, onClose }: Props) {
   const [chState,      setChState]      = useState<"idle" | "checking" | "ok" | "err">("idle");
   const [chError,      setChError]      = useState("");
   const [myMissionsOpen, setMyMissionsOpen] = useState(false);
+  const [topUpOpen,    setTopUpOpen]    = useState(false);
+
+  const { data: authUser } = useQuery<any>({
+    queryKey: ["/api/auth/user"],
+    retry: false,
+  });
+  const tonBalance   = parseFloat(authUser?.tonBalance || "0");
+  const tonFormatted = tonBalance >= 1000 ? (tonBalance / 1000).toFixed(1) + "k" : tonBalance.toFixed(2);
 
   const isVerif     = verifyType === "verification";
   const pkgData     = PACKAGES.find(p => p.clicks === selectedPkg);
@@ -71,7 +80,7 @@ export default function CreatePanel({ open, onClose }: Props) {
     setFlow(null); setCategory("channel"); setVerifyType("verification");
     setTaskName(""); setChannelLink(""); setBotUser(""); setBotStart("");
     setSelectedPkg(null); setChState("idle"); setChError("");
-    setMyMissionsOpen(false);
+    setMyMissionsOpen(false); setTopUpOpen(false);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -227,53 +236,44 @@ export default function CreatePanel({ open, onClose }: Props) {
             >
 
               {/* ════ HEADER ════ */}
-              <div style={{
-                flexShrink: 0,
-                background: "#000",
-                borderBottom: "1px solid rgba(255,255,255,0.06)",
-                paddingTop: "env(safe-area-inset-top, 6px)",
-              }}>
-                {/* drag handle */}
-                <div style={{ display: "flex", justifyContent: "center", paddingTop: 8, paddingBottom: 4 }}>
-                  <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.1)" }} />
-                </div>
-
-                {/* title row */}
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "6px 16px 12px" }}>
-                  {flow === "advertise" ? (
-                    <div>
-                      <p style={{ color: "#fff", fontSize: 19, fontWeight: 800, lineHeight: 1.2, letterSpacing: "-0.01em" }}>
-                        Advertise
-                      </p>
-                      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 12.5, marginTop: 3, lineHeight: 1.4 }}>
-                        Promote your Telegram channel or bot and grow your audience.
-                      </p>
-                    </div>
-                  ) : (
-                    <p style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>Giveaway</p>
-                  )}
-                  <button onClick={handleClose} style={closeBtnStyle}>
-                    <X style={{ width: 15, height: 15, color: "rgba(255,255,255,0.55)" }} />
-                  </button>
-                </div>
-
-                {flow === "advertise" && (
-                  <div style={{ padding: "0 16px 12px" }}>
+              {flow === "advertise" ? (
+                <div style={{
+                  flexShrink: 0,
+                  background: "#000",
+                  paddingTop: "env(safe-area-inset-top, 6px)",
+                }}>
+                  <div style={{ padding: "10px 16px 12px" }}>
                     <button
                       onClick={() => setMyMissionsOpen(true)}
-                      className="active:scale-95 transition-transform"
-                      style={{
-                        width: "100%", height: 48, borderRadius: 9999, border: "none",
-                        background: "rgba(255,255,255,0.12)", cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                      }}
+                      className="w-full h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform"
+                      style={{ background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer" }}
                     >
-                      <ClipboardList style={{ width: 17, height: 17, color: "rgba(255,255,255,0.7)" }} />
-                      <span style={{ color: "#fff", fontWeight: 700, fontSize: 14, letterSpacing: "0.02em" }}>My Missions</span>
+                      <ClipboardList className="w-5 h-5 text-white/70" />
+                      <span className="text-white font-bold tracking-widest text-sm">My Tasks</span>
                     </button>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div style={{
+                  flexShrink: 0,
+                  background: "#000",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  paddingTop: "env(safe-area-inset-top, 6px)",
+                }}>
+                  {/* drag handle */}
+                  <div style={{ display: "flex", justifyContent: "center", paddingTop: 8, paddingBottom: 4 }}>
+                    <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.1)" }} />
+                  </div>
+
+                  {/* title row */}
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "6px 16px 12px" }}>
+                    <p style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>Giveaway</p>
+                    <button onClick={handleClose} style={closeBtnStyle}>
+                      <X style={{ width: 15, height: 15, color: "rgba(255,255,255,0.55)" }} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* ════ SCROLLABLE BODY ════ */}
               <div style={{
@@ -389,11 +389,6 @@ export default function CreatePanel({ open, onClose }: Props) {
                           )}
                         </AnimatePresence>
 
-                        {!isVerif && (
-                          <p style={{ color: "rgba(255,255,255,0.22)", fontSize: 11.5, marginTop: 6 }}>
-                            Example: https://t.me/YourChannel
-                          </p>
-                        )}
                       </Field>
                     )}
 
@@ -462,36 +457,66 @@ export default function CreatePanel({ open, onClose }: Props) {
                 )}
               </div>
 
-              {/* ════ STICKY FOOTER ════ */}
+              {/* ════ BOTTOM NAV BAR ════ */}
               {flow === "advertise" && (
                 <div style={{
-                  flexShrink: 0, padding: "12px 16px",
-                  paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 14px)",
+                  flexShrink: 0, padding: "10px 16px",
+                  paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
                   background: "#000",
                   borderTop: "1px solid rgba(255,255,255,0.06)",
+                  display: "flex", alignItems: "center",
                 }}>
-                  <button
-                    onClick={() => createMutation.mutate()}
-                    disabled={!canSubmit}
-                    className="transition-colors"
-                    style={{
-                      width: "100%", height: 50, borderRadius: 14, border: "none",
-                      background: canSubmit ? BLUE : "#1a1a1a",
-                      color: canSubmit ? "#000" : "rgba(255,255,255,0.2)",
-                      fontSize: 15, fontWeight: 700, letterSpacing: "0.01em",
-                      cursor: canSubmit ? "pointer" : "not-allowed",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    }}
-                    onMouseEnter={e => { if (canSubmit) e.currentTarget.style.background = BLUE_HOVER; }}
-                    onMouseLeave={e => { if (canSubmit) e.currentTarget.style.background = BLUE; }}
-                  >
-                    {createMutation.isPending
-                      ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
-                      : <>▽ Pay {cost ? `${cost} TON` : "—"}</>
-                    }
-                  </button>
+                  {/* left — TON balance + top-up */}
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6 }}>
+                    <img src="/images/ton.png" alt="TON" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: "50%" }} />
+                    <span style={{ color: "#fff", fontSize: 13, fontWeight: 800, letterSpacing: "0.01em" }}>{tonFormatted}</span>
+                    <button
+                      onClick={() => setTopUpOpen(true)}
+                      className="active:scale-95 transition-transform"
+                      style={{
+                        width: 22, height: 22, borderRadius: "50%", border: "none", flexShrink: 0,
+                        background: "rgba(255,255,255,0.12)", cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}
+                    >
+                      <Plus style={{ width: 13, height: 13, color: "#fff" }} />
+                    </button>
+                  </div>
+
+                  {/* center — Pay button */}
+                  <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                    <button
+                      onClick={() => createMutation.mutate()}
+                      disabled={!canSubmit}
+                      className="transition-colors"
+                      style={{
+                        height: 44, padding: "0 22px", borderRadius: 22, border: "none",
+                        background: canSubmit ? BLUE : "#1a1a1a",
+                        color: canSubmit ? "#000" : "rgba(255,255,255,0.2)",
+                        fontSize: 14, fontWeight: 700, letterSpacing: "0.01em", whiteSpace: "nowrap",
+                        cursor: canSubmit ? "pointer" : "not-allowed",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      }}
+                      onMouseEnter={e => { if (canSubmit) e.currentTarget.style.background = BLUE_HOVER; }}
+                      onMouseLeave={e => { if (canSubmit) e.currentTarget.style.background = BLUE; }}
+                    >
+                      {createMutation.isPending
+                        ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
+                        : <>Pay {cost ? `${cost} TON` : "—"}</>
+                      }
+                    </button>
+                  </div>
+
+                  {/* right — back icon */}
+                  <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={handleClose} style={closeBtnStyle}>
+                      <ChevronLeft style={{ width: 18, height: 18, color: "rgba(255,255,255,0.7)" }} />
+                    </button>
+                  </div>
                 </div>
               )}
+
+              <TopUpPopup open={topUpOpen} onOpenChange={setTopUpOpen} />
 
             </motion.div>
           </>
