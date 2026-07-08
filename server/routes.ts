@@ -1177,9 +1177,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getBotUsername } = await import('./telegram');
       const username = await getBotUsername();
-      res.json({ username: username || 'Paid_Adzbot' });
+      res.json({ username: username || '' });
     } catch (error) {
-      res.json({ username: process.env.TELEGRAM_BOT_TOKEN ? 'unknown' : 'Paid_Adzbot' });
+      res.json({ username: '' });
     }
   });
 
@@ -11152,14 +11152,14 @@ ${walletAddress}
       if (!check.isAdmin) {
         return res.json({
           success: false, verified: false,
-          message: 'The Paid Adz Bot is not an administrator in your channel. Please add @Paid_Adzbot as administrator with Post Messages permission.',
+          message: `The bot is not an administrator in your channel. Please add @${await (await import('./telegram')).getBotUsername()} as administrator with Post Messages permission.`,
         });
       }
 
       if (!check.hasPostPermission) {
         return res.json({
           success: false, verified: false,
-          message: '⚠️ The Paid Adz Bot is an administrator in your channel, but it does not have permission to post messages. Please enable the "Post Messages" permission and verify again to continue.',
+          message: `⚠️ The bot is an administrator but does not have permission to post messages. Please enable "Post Messages" for @${await (await import('./telegram')).getBotUsername()} and verify again.`,
         });
       }
 
@@ -11191,7 +11191,7 @@ ${walletAddress}
       if (!code) {
         return res.status(500).json({
           success: false,
-          message: 'The bot failed to post to your channel. Check that @Paid_Adzbot is still an administrator with Post Messages permission enabled. Check server logs for the exact Telegram error.',
+          message: `The bot failed to post to your channel. Check that @${await (await import('./telegram')).getBotUsername()} is still an administrator with Post Messages permission enabled. Check server logs for the exact Telegram error.`,
         });
       }
 
@@ -11561,6 +11561,41 @@ ${walletAddress}
     } catch (error) {
       console.error('Admin post-now error:', error);
       res.status(500).json({ success: false, message: 'Internal error posting promo' });
+    }
+  });
+
+  // Admin: Bulk re-verify all active ambassador channels via bot API
+  app.post('/api/admin/ambassadors/reverify-all', authenticateAdmin, async (req: any, res) => {
+    try {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken) return res.status(500).json({ success: false, message: 'Bot token not configured.' });
+
+      const { checkBotCanPostToChannel } = await import('./telegram');
+      const allAmbs = await db.select().from(ambassadors).where(eq(ambassadors.status, 'active'));
+
+      const results: { id: string; channelId: string | null; verified: boolean; error?: string }[] = [];
+
+      for (const amb of allAmbs) {
+        if (!amb.channelId) {
+          results.push({ id: amb.id, channelId: null, verified: false, error: 'No channel ID stored' });
+          continue;
+        }
+        try {
+          const check = await checkBotCanPostToChannel(botToken, amb.channelId);
+          const verified = check.canPost === true;
+          await db.update(ambassadors).set({ channelVerified: verified, updatedAt: new Date() })
+            .where(eq(ambassadors.id, amb.id));
+          results.push({ id: amb.id, channelId: amb.channelId, verified, error: check.error });
+        } catch (err: any) {
+          results.push({ id: amb.id, channelId: amb.channelId, verified: false, error: err?.message });
+        }
+      }
+
+      const verifiedCount = results.filter(r => r.verified).length;
+      res.json({ success: true, total: allAmbs.length, verified: verifiedCount, results });
+    } catch (error) {
+      console.error('Bulk reverify error:', error);
+      res.status(500).json({ success: false, message: 'Internal error during bulk reverification.' });
     }
   });
 

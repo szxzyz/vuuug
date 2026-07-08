@@ -2064,7 +2064,7 @@ ${walletAddress}
 💸 Amount: ${netAmount.toFixed(5)} USD
 🛂 Fee: ${feeAmount.toFixed(5)} (${feePercent}%)
 📅 Date: ${createdAt}
-🤖 Bot: @MoneyAdzbot`;
+🤖 Bot: @${await getBotUsername()}`;
             
             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
               method: 'POST',
@@ -3230,12 +3230,12 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
         dmMessage =
           `<b>⚠️ Posting Paused</b>\n\n` +
           `The bot is no longer an administrator in your channel.\n\n` +
-          `Please re-add <b>@Paid_Adzbot</b> as administrator with <b>Post Messages</b> permission.`;
+          `Please re-add <b>@${await getBotUsername()}</b> as administrator with <b>Post Messages</b> permission.`;
       } else {
         dmMessage =
           `<b>⚠️ Posting Paused</b>\n\n` +
-          `The Paid Adz Bot is an administrator in your channel, but it does not have permission to post messages.\n\n` +
-          `Please enable the <b>"Post Messages"</b> permission for <b>@Paid_Adzbot</b> and verify again to continue.`;
+          `The bot is an administrator in your channel, but it does not have permission to post messages.\n\n` +
+          `Please enable the <b>"Post Messages"</b> permission for <b>@${await getBotUsername()}</b> and verify again to continue.`;
       }
 
       console.warn(`⚠️ [Ambassador ${amb.id}] Cannot post — isAdmin=${permCheck.isAdmin} hasPostPerm=${permCheck.hasPostPermission} error="${permCheck.error}"`);
@@ -3283,7 +3283,7 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
   ]);
 
   // ── Build message in ambassador's language ────────────────────────────────
-  const botUsername = process.env.BOT_USERNAME || 'Paid_Adzbot';
+  const botUsername = await getBotUsername();
   const referralLink = user?.referralCode
     ? `https://t.me/${botUsername}/MyWAdz?startapp=${user.referralCode}`
     : `https://t.me/${botUsername}/MyWAdz`;
@@ -3377,7 +3377,7 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
         `<b>Promo Post Failed</b>\n\n` +
         `The bot was unable to post to your channel (<code>${amb.channelId}</code>).\n\n` +
         `Reason: <code>${postFailureReason}</code>\n\n` +
-        `Please ensure <b>@Paid_Adzbot</b> is an administrator with <b>Post Messages</b> permission enabled.`,
+        `Please ensure <b>@${await getBotUsername()}</b> is an administrator with <b>Post Messages</b> permission enabled.`,
         undefined,
         'HTML'
       ).catch(() => {});
