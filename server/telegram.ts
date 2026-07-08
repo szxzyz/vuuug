@@ -3164,6 +3164,51 @@ function randomSuffix(len = 4): string {
   return result;
 }
 
+/**
+ * Calculate the next UTC posting time from the ambassador's posting schedule.
+ * Falls back to 12 h if no schedule is configured.
+ */
+function getNextScheduledTime(scheduleJson: string | null | undefined): Date {
+  let schedule: string[] = [];
+  if (scheduleJson) {
+    try { schedule = JSON.parse(scheduleJson as string); } catch {}
+  }
+
+  if (!Array.isArray(schedule) || schedule.length === 0) {
+    return new Date(Date.now() + 12 * 60 * 60 * 1000);
+  }
+
+  const now = new Date();
+  const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+  const times = schedule
+    .map((t: string) => {
+      const parts = t.split(':');
+      const h = parseInt(parts[0] ?? '0', 10);
+      const m = parseInt(parts[1] ?? '0', 10);
+      return isNaN(h) || isNaN(m) ? NaN : h * 60 + m;
+    })
+    .filter((m): m is number => !isNaN(m))
+    .sort((a, b) => a - b);
+
+  if (times.length === 0) {
+    return new Date(Date.now() + 12 * 60 * 60 * 1000);
+  }
+
+  const nextMinutes = times.find(t => t > nowMinutes);
+  const next = new Date();
+
+  if (nextMinutes !== undefined) {
+    next.setUTCHours(Math.floor(nextMinutes / 60), nextMinutes % 60, 0, 0);
+  } else {
+    // Wrap to tomorrow — first slot in schedule
+    next.setUTCDate(next.getUTCDate() + 1);
+    next.setUTCHours(Math.floor(times[0] / 60), times[0] % 60, 0, 0);
+  }
+
+  return next;
+}
+
 /** 
  * Generate a unique promo code for an ambassador (prefix + random suffix).
  * Returns the created code string.
@@ -3387,10 +3432,11 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     return null;
   }
 
-  // ── Advance schedule: next post in 12 hours (2 posts per day) ───────────
+  // ── Advance schedule: use posting schedule if set, else default 12 h ────
+  const nextPromoAt = getNextScheduledTime((amb as any).postingSchedule ?? null);
   await dbConn.update(ambassadors).set({
     lastPromoSentAt: new Date(),
-    nextPromoAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+    nextPromoAt,
     updatedAt: new Date(),
   }).where(eq(ambassadors.id, amb.id));
 

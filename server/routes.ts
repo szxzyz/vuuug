@@ -6542,18 +6542,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           task 
         });
       } else {
-        // Regular users: TON-based costs from admin settings
-        console.log('👤 Regular user task creation - using TON balance');
-        
-        // Get TON cost per click from admin settings
-        const channelTonCostSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'channel_task_cost_ton')).limit(1);
-        const botTonCostSetting = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'bot_task_cost_ton')).limit(1);
-        
-        const channelCostPerClickTON = parseFloat(channelTonCostSetting[0]?.settingValue || "0.0003");
-        const botCostPerClickTON = parseFloat(botTonCostSetting[0]?.settingValue || "0.0003");
-        
-        const costPerClickTON = taskType === "channel" ? channelCostPerClickTON : botCostPerClickTON;
-        const totalCostTON = costPerClickTON * parsedClicksRequired;
+        // Regular users: TON-based costs from package pricing table
+        console.log('👤 Regular user task creation - using package pricing (TON)');
+
+        // Package pricing (same as frontend CreatePanel.tsx PACKAGES)
+        const ADVERTISER_PACKAGES = [
+          { clicks: 100,   price: 0.1500, verified: 0.2000 },
+          { clicks: 500,   price: 0.7500, verified: 1.0000 },
+          { clicks: 1000,  price: 1.5000, verified: 2.0000 },
+          { clicks: 2000,  price: 3.0000, verified: 4.0000 },
+          { clicks: 5000,  price: 7.5000, verified: 10.000 },
+          { clicks: 10000, price: 15.000, verified: 20.000 },
+        ];
+
+        const pkg = ADVERTISER_PACKAGES.find(p => p.clicks === parsedClicksRequired);
+        const totalCostTON = pkg
+          ? (verificationRequired === true ? pkg.verified : pkg.price)
+          : (() => {
+              // Fallback per-click rate for non-standard counts
+              const rate = verificationRequired === true ? 0.0002 : 0.00015;
+              return parseFloat((rate * parsedClicksRequired).toFixed(8));
+            })();
+        const costPerClickTON = totalCostTON / parsedClicksRequired;
         
         // Fetch TON balance
         const [userTonData] = await db
@@ -6753,19 +6763,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ success: false, message: "You don't own this task" });
       }
 
-      // ── Cost calculation ─────────────────────────────────────────────────
-      const [taskCostSetting, userRow] = await Promise.all([
-        db.select().from(adminSettings).where(eq(adminSettings.settingKey, 'task_creation_cost')).limit(1),
-        db.select({ tonBalance: users.tonBalance, usdBalance: users.usdBalance, telegram_id: users.telegram_id })
-          .from(users).where(eq(users.id, userId)).limit(1).then(r => r[0]),
-      ]);
+      // ── Cost calculation using package pricing ────────────────────────────────
+      const [userRow] = await db
+        .select({ tonBalance: users.tonBalance, usdBalance: users.usdBalance, telegram_id: users.telegram_id })
+        .from(users).where(eq(users.id, userId)).limit(1);
 
       if (!userRow) {
         return res.status(404).json({ success: false, message: "User not found" });
       }
 
-      const costPerClick  = taskCostSetting[0]?.settingValue || "0.0003";
-      const requiredAmount = parseFloat((parseFloat(costPerClick) * additionalClicks).toFixed(8));
+      // Package pricing — mirrors frontend CreatePanel.tsx PACKAGES
+      const ADD_CLICKS_PACKAGES = [
+        { clicks: 100,   price: 0.1500, verified: 0.2000 },
+        { clicks: 500,   price: 0.7500, verified: 1.0000 },
+        { clicks: 1000,  price: 1.5000, verified: 2.0000 },
+        { clicks: 2000,  price: 3.0000, verified: 4.0000 },
+        { clicks: 5000,  price: 7.5000, verified: 10.000 },
+        { clicks: 10000, price: 15.000, verified: 20.000 },
+      ];
+
+      const isVerifiedTask = task.verificationRequired === true;
+      const addClicksPkg = ADD_CLICKS_PACKAGES.find(p => p.clicks === additionalClicks);
+      const requiredAmount = addClicksPkg
+        ? (isVerifiedTask ? addClicksPkg.verified : addClicksPkg.price)
+        : (() => {
+            const rate = isVerifiedTask ? 0.0002 : 0.00015;
+            return parseFloat((rate * additionalClicks).toFixed(8));
+          })();
       const additionalCost = requiredAmount.toFixed(8);
       const userIsAdminFlag = isAdmin(userRow.telegram_id || '');
 
@@ -11093,16 +11117,38 @@ ${walletAddress}
   app.post('/api/ambassador/schedule', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      const { dailyPromoCount } = req.body;
-      const count = Math.max(1, Math.min(3, parseInt(dailyPromoCount) || 1));
+      const { dailyPromoCount, postingTimes } = req.body;
 
       const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
       if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
 
-      await db.update(ambassadors).set({ dailyPromoCount: count, updatedAt: new Date() })
-        .where(eq(ambassadors.id, ambassador.id));
+      const updates: any = { updatedAt: new Date() };
 
-      res.json({ success: true, dailyPromoCount: count });
+      if (Array.isArray(postingTimes)) {
+        // Validate: strict HH:MM (00-23 hours, 00-59 minutes), max 10 entries, deduplicated + sorted
+        const validTimes = [...new Set(
+          postingTimes
+            .filter((t: any) => {
+              if (typeof t !== 'string') return false;
+              const m = t.match(/^(\d{2}):(\d{2})$/);
+              if (!m) return false;
+              const h = parseInt(m[1], 10);
+              const min = parseInt(m[2], 10);
+              return h >= 0 && h <= 23 && min >= 0 && min <= 59;
+            })
+            .slice(0, 10)
+        )].sort();
+        updates.postingSchedule = JSON.stringify(validTimes);
+        updates.dailyPromoCount = Math.max(1, Math.min(10, validTimes.length || 1));
+      } else if (dailyPromoCount !== undefined) {
+        const count = Math.max(1, Math.min(3, parseInt(dailyPromoCount) || 1));
+        updates.dailyPromoCount = count;
+      }
+
+      await db.update(ambassadors).set(updates).where(eq(ambassadors.id, ambassador.id));
+
+      const schedule = updates.postingSchedule ? JSON.parse(updates.postingSchedule) : null;
+      res.json({ success: true, dailyPromoCount: updates.dailyPromoCount ?? ambassador.dailyPromoCount, postingSchedule: schedule });
     } catch (error) {
       console.error('Error updating ambassador schedule:', error);
       res.status(500).json({ message: 'Failed to update schedule' });
@@ -11611,6 +11657,30 @@ ${walletAddress}
     } catch (error) {
       console.error('Error suspending ambassador:', error);
       res.status(500).json({ message: 'Failed to update ambassador status' });
+    }
+  });
+
+  // Admin: Permanently delete an ambassador
+  // Removes the ambassador profile and settings while leaving the user's normal account intact.
+  // After deletion the user can submit a brand-new application.
+  app.delete('/api/admin/ambassadors/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+
+      const [amb] = await db.select().from(ambassadors).where(eq(ambassadors.id, id)).limit(1);
+      if (!amb) return res.status(404).json({ success: false, message: 'Ambassador not found' });
+
+      // Delete ambassador earnings first (FK dependency)
+      await db.delete(ambassadorEarnings).where(eq(ambassadorEarnings.ambassadorId, id));
+
+      // Delete ambassador record (leaves users + ambassador_applications intact)
+      await db.delete(ambassadors).where(eq(ambassadors.id, id));
+
+      console.log(`🗑️ Ambassador ${id} (userId: ${amb.userId}) permanently deleted by admin`);
+      res.json({ success: true, message: 'Ambassador deleted. The user can re-apply.' });
+    } catch (error) {
+      console.error('Error deleting ambassador:', error);
+      res.status(500).json({ success: false, message: 'Failed to delete ambassador' });
     }
   });
 
