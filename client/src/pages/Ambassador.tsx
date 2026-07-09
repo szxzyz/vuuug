@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
+import { useLanguage } from "@/hooks/useLanguage";
 import {
   CheckCircle2, XCircle, Loader2,
   Scroll, AlertTriangle, Send, Info, UserCheck, ChevronDown, ChevronRight,
@@ -78,6 +79,7 @@ interface DashboardData {
 
 export default function Ambassador() {
   const queryClient = useQueryClient();
+  const { t } = useLanguage();
   const [channelLink, setChannelLink] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [channelAdded, setChannelAdded] = useState(false);
@@ -126,7 +128,7 @@ export default function Ambassador() {
     mutationFn: (times: string[]) =>
       apiRequest("POST", "/api/ambassador/schedule", { postingTimes: times }).then((r: any) => r.json()),
     onSuccess: () => {
-      showNotification("Schedule saved!", "success");
+      showNotification(t("schedule_saved"), "success");
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
     },
@@ -147,7 +149,7 @@ export default function Ambassador() {
     mutationFn: (data: { channelLink: string; termsAccepted: boolean }) =>
       apiRequest("POST", "/api/ambassador/apply", data),
     onSuccess: () => {
-      showNotification("Application submitted! We'll review it soon.", "success");
+      showNotification(t("application_submitted_msg"), "success");
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
     },
     onError: (e: any) => showNotification(e?.message || "Failed to submit application", "error"),
@@ -157,7 +159,7 @@ export default function Ambassador() {
     mutationFn: (promoCodeName: string) =>
       apiRequest("POST", "/api/ambassador/request-promo-name", { promoCodeName }),
     onSuccess: () => {
-      showNotification("Custom name request submitted for review!", "success");
+      showNotification(t("custom_name_submitted_msg"), "success");
       setCustomPromoInput("");
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
     },
@@ -182,19 +184,19 @@ export default function Ambassador() {
     <Drawer open={howItWorksOpen} onOpenChange={setHowItWorksOpen}>
       <DrawerContent className="border-none max-h-[80vh]" style={{ background: SECTION_BG }}>
         <DrawerHeader className="flex items-center justify-between pb-2">
-          <DrawerTitle className="text-white font-bold text-lg">How It Works</DrawerTitle>
+          <DrawerTitle className="text-white font-bold text-lg">{t("how_it_works_title")}</DrawerTitle>
           <DrawerClose asChild>
             <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
-              Close
+              {t("close_label")}
             </button>
           </DrawerClose>
         </DrawerHeader>
         <div className="px-4 pb-6 overflow-y-auto space-y-1">
           {[
-            { n: 1, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Apply with your channel", sub: "Submit your Telegram channel link for review" },
-            { n: 2, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Add bot as admin", sub: "Grant @Paid_Adzbot posting permission in your channel" },
-            { n: 3, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: "Auto-posting begins", sub: "2 promo posts per day, every 12 hours, with 2 unique codes each" },
-            { n: 4, color: "#22c55e", bg: "rgba(34,197,94,0.15)", title: "Earn per claim", sub: "Get $0.0001 for every successful claim" },
+            { n: 1, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: t("hiw_step1_title"), sub: t("hiw_step1_sub") },
+            { n: 2, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: t("hiw_step2_title"), sub: t("hiw_step2_sub") },
+            { n: 3, color: "#3b82f6", bg: "rgba(59,130,246,0.15)", title: t("hiw_step3_title"), sub: t("hiw_step3_sub") },
+            { n: 4, color: "#22c55e", bg: "rgba(34,197,94,0.15)", title: t("hiw_step4_title"), sub: t("hiw_step4_sub") },
           ].map(({ n, color, bg, title, sub }) => (
             <div key={n} className="flex items-start gap-3 py-3 border-b border-white/5 last:border-none">
               <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-black"
@@ -230,28 +232,27 @@ export default function Ambassador() {
         <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
           <div className="mb-6">
             <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-              Under Review
+              {t("under_review_title")}
             </h1>
             <p className="text-[#888] text-sm leading-relaxed">
-              Your application is being reviewed. We'll notify you via{" "}
-              <span className="text-white font-semibold">Telegram</span> once a decision is made.
+              {t("under_review_desc")}
             </p>
           </div>
 
           <div className="rounded-2xl p-4" style={{ background: SECTION_BG }}>
             <div className="flex items-center justify-between py-2 border-b border-white/5">
-              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Channel</p>
+              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">{t("channel_label")}</p>
               <p className="text-white text-sm font-medium">{status.application.channelLink}</p>
             </div>
             {status.application.channelTitle && (
               <div className="flex items-center justify-between py-2 border-b border-white/5">
-                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Title</p>
+                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">{t("title_label")}</p>
                 <p className="text-white text-sm font-medium">{status.application.channelTitle}</p>
               </div>
             )}
             {status.application.subscriberCount && (
               <div className="flex items-center justify-between pt-2">
-                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Subscribers</p>
+                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">{t("subscribers_label")}</p>
                 <p className="text-white text-sm font-medium">{status.application.subscriberCount.toLocaleString()}</p>
               </div>
             )}
@@ -259,7 +260,7 @@ export default function Ambassador() {
 
           <div className="mt-4 rounded-2xl p-4 flex items-center gap-3" style={{ background: "rgba(234,179,8,0.08)" }}>
             <Loader2 className="w-5 h-5 text-yellow-400 animate-spin flex-shrink-0" />
-            <p className="text-yellow-400 text-sm font-medium">Review in progress — typically within 24 hours</p>
+            <p className="text-yellow-400 text-sm font-medium">{t("review_in_progress")}</p>
           </div>
         </main>
       </Layout>
@@ -273,19 +274,19 @@ export default function Ambassador() {
         <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
           <div className="mb-6">
             <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-              Not Approved
+              {t("not_approved_title")}
             </h1>
             <p className="text-[#888] text-sm leading-relaxed">
               {status.application.rejectionReason
-                ? <><span className="text-white font-semibold">Reason: </span>{status.application.rejectionReason}</>
-                : "Your application was not approved at this time. You may reapply."}
+                ? <><span className="text-white font-semibold">{t("reason_label")}: </span>{status.application.rejectionReason}</>
+                : t("application_not_approved_text")}
             </p>
           </div>
 
           <div className="rounded-2xl p-4 mb-4" style={{ background: "rgba(239,68,68,0.08)" }}>
             <div className="flex items-center gap-3">
               <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-              <p className="text-red-400 text-sm font-medium">Application rejected</p>
+              <p className="text-red-400 text-sm font-medium">{t("application_rejected")}</p>
             </div>
           </div>
 
@@ -302,7 +303,7 @@ export default function Ambassador() {
             className="w-full h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-transform"
             style={{ background: "rgba(255,255,255,0.12)" }}
           >
-            <span className="text-white font-semibold text-sm">Apply Again</span>
+            <span className="text-white font-semibold text-sm">{t("apply_again")}</span>
           </button>
         </main>
       </Layout>
@@ -321,12 +322,10 @@ export default function Ambassador() {
           {/* Header */}
           <div className="mb-6">
             <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-              Ambassador Dashboard
+              {t("ambassador_dashboard")}
             </h1>
             <p className="text-[#888] text-sm leading-relaxed">
-              Your code prefix is{" "}
-              <span className="text-white font-semibold">{promoPrefix}</span>.
-              Earn <span className="text-white font-semibold">$0.0001</span> for every claim.
+              {t("ambassador_code_prefix_desc").replace("{prefix}", promoPrefix)}
             </p>
           </div>
 
@@ -338,18 +337,18 @@ export default function Ambassador() {
               style={{ background: "rgba(255,255,255,0.12)" }}
             >
               <Scroll className="w-5 h-5 text-white/70" />
-              <span className="text-white font-bold tracking-widest text-sm">Claim History</span>
+              <span className="text-white font-bold tracking-widest text-sm">{t("claim_history_label")}</span>
             </button>
           </div>
 
           {/* Statistics */}
           <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Statistics</p>
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("statistics_label")}</p>
 
             <div className="flex items-center justify-between py-3 border-b border-white/5">
               <div>
-                <p className="text-white text-sm font-semibold">Total Promo Earnings</p>
-                <p className="text-[#888] text-xs mt-0.5">All-time commissions earned</p>
+                <p className="text-white text-sm font-semibold">{t("total_promo_earnings")}</p>
+                <p className="text-[#888] text-xs mt-0.5">{t("all_time_commissions")}</p>
               </div>
               {dashLoading ? <StatSkeleton /> : (
                 <span className="text-green-400 text-lg font-black">
@@ -360,8 +359,8 @@ export default function Ambassador() {
 
             <div className="flex items-center justify-between py-3 border-b border-white/5">
               <div>
-                <p className="text-white text-sm font-semibold">Total Promo Claims</p>
-                <p className="text-[#888] text-xs mt-0.5">All users who claimed your code</p>
+                <p className="text-white text-sm font-semibold">{t("total_promo_claims")}</p>
+                <p className="text-[#888] text-xs mt-0.5">{t("all_users_claimed")}</p>
               </div>
               {dashLoading ? <StatSkeleton /> : (
                 <span className="text-white text-xl font-black">{stats?.lifetimeClaims ?? 0}</span>
@@ -370,8 +369,8 @@ export default function Ambassador() {
 
             <div className="flex items-center justify-between py-3 border-b border-white/5">
               <div>
-                <p className="text-white text-sm font-semibold">Active Promo Codes</p>
-                <p className="text-[#888] text-xs mt-0.5">Currently valid codes</p>
+                <p className="text-white text-sm font-semibold">{t("active_promo_codes")}</p>
+                <p className="text-[#888] text-xs mt-0.5">{t("currently_valid_codes")}</p>
               </div>
               {dashLoading ? <StatSkeleton /> : (
                 <span className="text-white text-xl font-black">{dashboard?.activePromos?.length ?? 0}</span>
@@ -380,8 +379,8 @@ export default function Ambassador() {
 
             <div className="flex items-center justify-between pt-3">
               <div>
-                <p className="text-white text-sm font-semibold">Today's Claims</p>
-                <p className="text-[#888] text-xs mt-0.5">Claims in the last 24 hours</p>
+                <p className="text-white text-sm font-semibold">{t("todays_claims")}</p>
+                <p className="text-[#888] text-xs mt-0.5">{t("claims_last_24h")}</p>
               </div>
               {dashLoading ? <StatSkeleton /> : (
                 <span className="text-white text-xl font-black">{stats?.todayClaims ?? 0}</span>
@@ -391,12 +390,12 @@ export default function Ambassador() {
 
           {/* Custom Promo Code */}
           <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Custom Promo Name</p>
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("custom_promo_name")}</p>
 
             <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
               <div>
-                <p className="text-white text-sm font-semibold">Current Prefix</p>
-                <p className="text-[#888] text-xs mt-0.5">Used as code prefix</p>
+                <p className="text-white text-sm font-semibold">{t("current_prefix_label")}</p>
+                <p className="text-[#888] text-xs mt-0.5">{t("used_as_code_prefix")}</p>
               </div>
               <span className="text-white font-black tracking-widest">{promoPrefix}</span>
             </div>
@@ -404,7 +403,7 @@ export default function Ambassador() {
             {amb.customPromoRequest && (
               <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
                 <div>
-                  <p className="text-white text-sm font-semibold">Requested Name</p>
+                  <p className="text-white text-sm font-semibold">{t("requested_name_label")}</p>
                   <p className="text-[#888] text-xs mt-0.5">{amb.customPromoRequest}</p>
                 </div>
                 <Badge className={
@@ -414,8 +413,8 @@ export default function Ambassador() {
                     ? "bg-red-600/20 text-red-400 border-red-600/30"
                     : "bg-yellow-600/20 text-yellow-400 border-yellow-600/30"
                 }>
-                  {amb.customPromoRequestStatus === "approved" ? "Approved" :
-                   amb.customPromoRequestStatus === "rejected" ? "Rejected" : "Pending"}
+                  {amb.customPromoRequestStatus === "approved" ? t("status_approved") :
+                   amb.customPromoRequestStatus === "rejected" ? t("status_rejected") : t("status_pending")}
                 </Badge>
               </div>
             )}
@@ -439,7 +438,7 @@ export default function Ambassador() {
                 >
                   {promoNameMutation.isPending
                     ? <Loader2 className="w-4 h-4 text-white animate-spin" />
-                    : <span className="text-white font-semibold text-sm">Request</span>}
+                    : <span className="text-white font-semibold text-sm">{t("request_label")}</span>}
                 </button>
               </div>
             )}
@@ -449,10 +448,10 @@ export default function Ambassador() {
           <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
             <div className="flex items-center gap-2 mb-1">
               <Clock className="w-4 h-4 text-[#4cd3ff]" />
-              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">Posting Schedule (UTC)</p>
+              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">{t("posting_schedule_label")}</p>
             </div>
             <p className="text-[#555] text-xs mb-4 leading-relaxed">
-              Set up to 3 UTC times when promos are auto-posted to your channel every day.
+              {t("posting_schedule_desc")}
             </p>
 
             <div className="space-y-2 mb-3">
@@ -485,7 +484,7 @@ export default function Ambassador() {
                 style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}
               >
                 <Plus className="w-4 h-4 text-white/30" />
-                <span className="text-white/30 text-xs">Add Time Slot</span>
+                <span className="text-white/30 text-xs">{t("add_time_slot")}</span>
               </button>
             )}
 
@@ -499,7 +498,7 @@ export default function Ambassador() {
                 ? <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
                 : <>
                     <CheckCircle2 className="w-4 h-4 text-[#4cd3ff]" />
-                    <span className="text-[#4cd3ff] font-semibold text-sm">Save Schedule</span>
+                    <span className="text-[#4cd3ff] font-semibold text-sm">{t("save_schedule_btn")}</span>
                   </>}
             </button>
           </div>
@@ -510,10 +509,10 @@ export default function Ambassador() {
         <Drawer open={historyOpen} onOpenChange={setHistoryOpen}>
           <DrawerContent className="border-none max-h-[85vh]" style={{ background: SECTION_BG }}>
             <DrawerHeader className="flex items-center justify-between pb-2">
-              <DrawerTitle className="text-white font-bold text-lg">Claim History</DrawerTitle>
+              <DrawerTitle className="text-white font-bold text-lg">{t("claim_history_label")}</DrawerTitle>
               <DrawerClose asChild>
                 <button className="text-white/50 hover:text-white text-sm px-3 py-1 rounded-lg hover:bg-white/10 transition-colors">
-                  Close
+                  {t("close_label")}
                 </button>
               </DrawerClose>
             </DrawerHeader>
@@ -526,8 +525,8 @@ export default function Ambassador() {
               ) : (dashboard?.promoCodeHistory?.length ?? 0) === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">
                   <Scroll className="w-10 h-10 text-white/20" />
-                  <p className="text-white/40 text-sm">No promo codes yet</p>
-                  <p className="text-white/25 text-xs">Your codes will appear here once posted</p>
+                  <p className="text-white/40 text-sm">{t("no_promo_codes_yet")}</p>
+                  <p className="text-white/25 text-xs">{t("codes_appear_once_posted")}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -572,13 +571,13 @@ export default function Ambassador() {
                           <div className="border-t border-white/5 px-3 pb-2">
                             {/* Reward info row */}
                             <div className="py-2 border-b border-white/5 flex items-center justify-between">
-                              <span className="text-[#888] text-[10px]">Reward per claim</span>
+                              <span className="text-[#888] text-[10px]">{t("reward_per_claim")}</span>
                               <span className="text-white text-[10px] font-semibold">
                                 {parseInt(item.rewardAmount || "10000").toLocaleString()} POW
                               </span>
                             </div>
                             {item.claims.length === 0 ? (
-                              <p className="text-white/25 text-xs py-3 text-center">No claims yet</p>
+                              <p className="text-white/25 text-xs py-3 text-center">{t("no_claims_yet")}</p>
                             ) : (
                               <>
                                 <div className="grid grid-cols-3 gap-1 pt-2 pb-1">
@@ -628,12 +627,10 @@ export default function Ambassador() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-            Ambassador Program
+            {t("ambassador_program_title")}
           </h1>
           <p className="text-[#888] text-sm leading-relaxed">
-            Promote Paid Adz on your Telegram channel and earn{" "}
-            <span className="text-white font-semibold">$0.0001</span>{" "}
-            for every user who claims your promo code.
+            {t("ambassador_program_desc")}
           </p>
         </div>
 
@@ -644,17 +641,17 @@ export default function Ambassador() {
           style={{ background: "rgba(255,255,255,0.12)" }}
         >
           <Info className="w-5 h-5 text-white/70" />
-          <span className="text-white font-bold tracking-widest text-sm">How It Works</span>
+          <span className="text-white font-bold tracking-widest text-sm">{t("how_it_works_title")}</span>
         </button>
 
         {/* Apply Now */}
         <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Apply Now</p>
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("apply_now_label")}</p>
 
           {/* Channel link */}
           <div className="mb-4">
             <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
-              Telegram Channel Link
+              {t("telegram_channel_link")}
             </label>
             <input
               type="text"
@@ -675,22 +672,22 @@ export default function Ambassador() {
 
           {/* Channel Setup step */}
           <div className="border-t border-white/5 pt-4 mb-4">
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel Verification</p>
+            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("channel_verification_label")}</p>
 
             {channelAdded ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 py-2 px-3 rounded-xl" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
                   <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
                   <div>
-                    <p className="text-green-400 text-sm font-semibold">Channel Verified</p>
-                    <p className="text-[#888] text-xs mt-0.5">@Paid_Adzbot has Post Messages permission ✓</p>
+                    <p className="text-green-400 text-sm font-semibold">{t("channel_verified_label")}</p>
+                    <p className="text-[#888] text-xs mt-0.5">{t("bot_has_permission")}</p>
                   </div>
                 </div>
                 <button
                   onClick={() => { setChannelAdded(false); setPreVerifyResult(null); }}
                   className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  Use a different channel
+                  {t("use_different_channel")}
                 </button>
               </div>
             ) : (
@@ -699,7 +696,7 @@ export default function Ambassador() {
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-yellow-400 text-sm font-semibold">Required: Add Bot as Admin</p>
+                      <p className="text-yellow-400 text-sm font-semibold">{t("required_add_bot_admin")}</p>
                       <p className="text-[#888] text-xs mt-1 leading-relaxed">
                         In your Telegram channel settings, add{" "}
                         <span className="text-white font-semibold">@Paid_Adzbot</span> as administrator with{" "}
@@ -737,7 +734,7 @@ export default function Ambassador() {
                     <UserCheck className="w-4 h-4 text-blue-400" />
                   )}
                   <span className="text-blue-400 font-semibold text-sm">
-                    {preVerifyMutation.isPending ? "Verifying…" : "Verify Channel"}
+                    {preVerifyMutation.isPending ? t("verifying_ellipsis") : t("verify_channel_btn")}
                   </span>
                 </button>
               </>
@@ -773,19 +770,19 @@ export default function Ambassador() {
             ? <Loader2 className="w-5 h-5 text-white animate-spin" />
             : <Send className="w-5 h-5 text-white/70" />}
           <span className="text-white font-bold tracking-widest text-sm">
-            {applyMutation.isPending ? "Submitting…" : "Submit Application"}
+            {applyMutation.isPending ? t("submitting_ellipsis") : t("submit_application_btn")}
           </span>
         </button>
 
         {/* Requirements */}
         <div className="rounded-2xl p-4" style={{ background: SECTION_BG }}>
-          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-2">Requirements</p>
+          <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-2">{t("requirements_label")}</p>
           <div className="space-y-1.5">
             {[
-              "Active Telegram channel",
-              "Add @Paid_Adzbot as admin",
-              "Permission to post messages",
-              "Genuine followers (no bots)",
+              t("req_active_channel"),
+              t("req_add_bot_admin"),
+              t("req_post_messages"),
+              t("req_genuine_followers"),
             ].map((req, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400/50 flex-shrink-0" />

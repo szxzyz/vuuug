@@ -303,9 +303,9 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
     : task.taskType === 'partner' ? '#ec4899'
     : '#8b5cf6';
 
-  const typeLabel = task.taskType === 'channel' ? 'Channel'
-    : task.taskType === 'partner' ? 'Partner'
-    : 'Bot / Game';
+  const typeLabel = task.taskType === 'channel' ? t("channel_label")
+    : task.taskType === 'partner' ? t("partner_label")
+    : t("type_bot_game");
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px' }}>
@@ -323,7 +323,7 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
         {task.taskType === 'channel' && task.verificationRequired && (
           <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ fontSize: 10 }}>⚠️</span>
-            <span style={{ color: 'rgba(251,191,36,0.72)', fontSize: 10, fontWeight: 600 }}>7-day penalty applies</span>
+            <span style={{ color: 'rgba(251,191,36,0.72)', fontSize: 10, fontWeight: 600 }}>{t("penalty_applies")}</span>
           </div>
         )}
       </div>
@@ -693,8 +693,9 @@ export default function Missions() {
 
   const handleTaskGo = (task: Task) => {
     if (!task.link || claimReadyTasks.has(task.id) || clickedTasks.has(task.id)) return;
-    // Verified bot/channel/partner tasks → open interactive sheet
-    if ((task.taskType === 'bot' || task.taskType === 'channel' || task.taskType === 'partner') && task.verificationRequired) {
+    // Partner tasks always open the interactive sheet
+    // Verified bot/channel tasks also open the sheet
+    if (task.taskType === 'partner' || ((task.taskType === 'bot' || task.taskType === 'channel') && task.verificationRequired)) {
       setActiveTaskSheet(task);
       return;
     }
