@@ -46,10 +46,14 @@ const adAbuseStore      = new Map<string, { score: number; lockedUntil: number; 
 // so the claim endpoint never trusts the client-supplied adType field.
 const adPendingSessions = new Map<string, { adType: string; userId: string; registeredAt: number }>();
 
-const AD_REWARD_COOLDOWN_MS = 5000;   // 5 s between rewards
-const MIN_BACKGROUND_MS     = 1000;   // Anti-fake: user must leave the app (background/minimize) for at least this long
-const AD_ABUSE_LOCK_SCORE   = 5;      // lock after 5 consecutive failures
-const AD_ABUSE_BASE_LOCK_MS = 60_000; // 1 min base lock, doubles per extra level
+const AD_REWARD_COOLDOWN_MS = 15_000;  // 15 s minimum between rewards (was 5 s — increased to prevent rapid replay)
+const MIN_BACKGROUND_MS     = 10_000;  // Anti-fake: user must have left the app for ≥10 s (was 1 s — far too permissive)
+const AD_ABUSE_LOCK_SCORE   = 3;       // lock after 3 consecutive failures (was 5)
+const AD_ABUSE_BASE_LOCK_MS = 120_000; // 2 min base lock, doubles per extra level (was 1 min)
+// Hard cap: reject any per-ad reward that exceeds this — protects against misconfigured admin settings
+// This is double the intended max reward (125 POW) to allow for deliberate admin increases while
+// still blocking runaway values (e.g. 2000–3500 POW that caused the exploit).
+const MAX_REWARD_PER_AD_POW = 300;
 
 // Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
 setInterval(() => {
@@ -1618,6 +1622,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // ── ANOMALY GUARD: server-side hard cap on reward amount ─────────────────
+      // If admin settings have been misconfigured to an absurd value, reject the
+      // reward rather than silently paying out millions of POW.  This is the last
+      // defence against a misconfigured admin panel.
+      if (rewardPerAdPOW > MAX_REWARD_PER_AD_POW) {
+        console.error(`🚨 ANOMALY BLOCKED: ${normalizedAdType} reward ${rewardPerAdPOW} POW exceeds hard cap ${MAX_REWARD_PER_AD_POW} for user ${userId}. Admin setting must be corrected.`);
+        // Log a security event but do NOT reward
+        await db.execute(sql`
+          INSERT INTO transactions (user_id, amount, type, source, description, metadata, created_at)
+          VALUES (${userId}, 0, 'blocked', 'anomaly_detection',
+                  ${'Blocked inflated reward: ' + rewardPerAdPOW + ' POW for ' + normalizedAdType},
+                  ${JSON.stringify({ rewardPerAdPOW, cap: MAX_REWARD_PER_AD_POW, adType: normalizedAdType })}::jsonb,
+                  NOW())
+        `);
+        return res.status(503).json({
+          message: 'Reward system is under maintenance. Please try again later.',
+          errorType: 'system_maintenance',
+        });
+      }
+
       // Per-provider daily count
       const now = new Date();
       let currentTypeWatched: number;
@@ -1803,9 +1827,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       } catch (earningError) {
-        console.error("❌ Critical error adding earning:", earningError);
-        // Even if earning fails, still try to return success to avoid user-facing errors
-        // The ad was watched, so we should acknowledge it
+        // SECURITY FIX: propagate the error so the outer catch returns HTTP 500 with no reward.
+        // Silently swallowing here would acknowledge a reward that was never written to the DB.
+        console.error("❌ Critical error adding earning — reward NOT granted:", earningError);
+        throw earningError;
       }
       
       // Get updated balance (with fallback)
@@ -1848,16 +1873,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("❌ Unexpected error in ad watch endpoint:", error);
       console.error("   Error details:", error instanceof Error ? error.message : String(error));
       console.error("   Stack trace:", error instanceof Error ? error.stack : 'N/A');
-      
-      // Return success anyway to prevent error notification from showing
-      // The user watched the ad, so we should acknowledge it
-      const adRewardPOW = Math.round(parseFloat("0.00010000") * 10000000);
-      res.json({ 
-        success: true, 
-        rewardPOW: adRewardPOW,
-        newBalance: "0",
-        adsWatchedToday: 0,
-        warning: "Reward processing encountered an issue but was acknowledged"
+      // SECURITY FIX: Never silently reward on error. Returning a reward when the
+      // actual DB write failed would credit users without a real earning record.
+      res.status(500).json({ 
+        success: false, 
+        message: "Reward processing failed. Please try again.",
+        errorType: 'server_error',
       });
     }
   });
