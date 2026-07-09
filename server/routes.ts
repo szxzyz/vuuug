@@ -51,9 +51,9 @@ const MIN_BACKGROUND_MS     = 10_000;  // Anti-fake: user must have left the app
 const AD_ABUSE_LOCK_SCORE   = 3;       // lock after 3 consecutive failures (was 5)
 const AD_ABUSE_BASE_LOCK_MS = 120_000; // 2 min base lock, doubles per extra level (was 1 min)
 // Hard cap: reject any per-ad reward that exceeds this — protects against misconfigured admin settings
-// This is double the intended max reward (125 POW) to allow for deliberate admin increases while
-// still blocking runaway values (e.g. 2000–3500 POW that caused the exploit).
-const MAX_REWARD_PER_AD_POW = 300;
+// Set to 5000 to allow admins to configure rewards up to 5000 POW while still blocking
+// runaway values (e.g. accidental 2,000,000 POW settings).
+const MAX_REWARD_PER_AD_POW = 5000;
 
 // Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
 setInterval(() => {
