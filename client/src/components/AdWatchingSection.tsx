@@ -30,16 +30,17 @@ const AD_CARDS = [
   { id: 3, adType: "gigapub", title: "Gigapub", accentColor: "#3b82f6", image: "/gigapub-logo.jpg"  },
 ];
 
-const TABS = [
-  { id: "daily",   label: "Daily Adz"   },
-  { id: "premium", label: "Premium Adz" },
-];
 
 export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
   const { t } = useLanguage();
   const { showMonetagAd, showGigaPubAd } = useAdFlow();
+
+  const TABS = [
+    { id: "daily",   label: t("daily_adz") },
+    { id: "premium", label: t("premium_adz") },
+  ];
 
   const [activeTab,      setActiveTab]      = useState("daily");
   const [activeIndex,    setActiveIndex]    = useState(0);
@@ -87,7 +88,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         else if (adType === "gigapub") updates.gigapubAdsWatchedToday   = (old.gigapubAdsWatchedToday   || 0) + 1;
         return { ...old, ...updates };
       });
-      showNotification(`+${data?.rewardPOW ?? 0} POW earned!`, "success");
+      showNotification(t("pow_earned_notification").replace("{n}", String(data?.rewardPOW ?? 0)), "success");
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
@@ -298,7 +299,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                   {/* "Sponsored by" + brand name */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", lineHeight: 1.3, marginBottom: 2 }}>
-                      Sponsored by
+                      {t("sponsored_by")}
                     </p>
                     <p className="text-white font-bold" style={{ fontSize: 13, lineHeight: 1.2 }}>
                       {card.title}
@@ -308,7 +309,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                   {/* Ad Limit counter (moved into header) */}
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <p style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>
-                      Ad Limit
+                      {t("ad_limit")}
                     </p>
                     <span style={{
                       fontSize: 13, fontWeight: 800,
@@ -325,7 +326,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                   {/* Reward info */}
                   <div style={{ flex: 1 }}>
                     <p style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 3 }}>
-                      Reward
+                      {t("reward")}
                     </p>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#0a0a0a", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -364,7 +365,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                           : <><FiZap    size={11} style={{ animation: "spin 0.8s linear infinite" }} />{t("loading_ad")}</>
                         }
                       </span>
-                    ) : limitReached ? "Limit Reached" : "Get POW"}
+                    ) : limitReached ? t("limit_reached") : t("get_pow")}
                   </button>
                 </div>
               </div>

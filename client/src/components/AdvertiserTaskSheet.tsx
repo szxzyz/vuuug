@@ -4,6 +4,7 @@ import {
   Bot, Megaphone, ArrowUpRight, ClipboardPaste, Link2,
   CheckCircle2, Loader2, AlertCircle, X, ShieldCheck, Zap,
 } from "lucide-react";
+import { useLanguage } from "@/hooks/useLanguage";
 
 const BLUE_ACCENT = "#4cd3ff";
 
@@ -124,6 +125,7 @@ function StepRow({
 }
 
 function ChannelPenaltyWarning() {
+  const { t } = useLanguage();
   return (
     <div style={{
       padding: "12px 14px", borderRadius: "14px",
@@ -132,8 +134,7 @@ function ChannelPenaltyWarning() {
     }}>
       <span style={{ fontSize: "15px", flexShrink: 0, lineHeight: 1.4 }}>⚠️</span>
       <p style={{ color: "rgba(251,191,36,0.8)", fontSize: "12.5px", lineHeight: 1.55, margin: 0 }}>
-        <strong>Important:</strong> Leaving this channel within 7 days will result in a{" "}
-        <strong>50,000 POW penalty</strong> deducted automatically.
+        {t("channel_penalty_text")}
       </p>
     </div>
   );
@@ -175,6 +176,7 @@ function ActionBtn({
 export default function AdvertiserTaskSheet({
   task, open, reward, onClose, onClaim, claiming = false,
 }: AdvertiserTaskSheetProps) {
+  const { t } = useLanguage();
   const [botStep, setBotStep]           = useState(0);
   const [referralPasted, setReferralPasted] = useState("");
   const [opened, setOpened]             = useState(false);
@@ -248,11 +250,11 @@ export default function AdvertiserTaskSheet({
         onClaim(task.id);
         handleClose();
       } else {
-        setVerifyError(data.message || "You haven't joined the channel yet.");
+        setVerifyError(data.message || t("havent_joined_channel"));
         setVerifying(false);
       }
     } catch {
-      setVerifyError("Network error. Please try again.");
+      setVerifyError(t("network_error_retry"));
       setVerifying(false);
     }
   };
@@ -265,7 +267,7 @@ export default function AdvertiserTaskSheet({
 
       <div className="text-center">
         <p style={{ color: TEXT_FAINT, fontSize: "11.5px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-          Step {botStep + 1} of 3
+          {t("step_x_of_3").replace("{n}", String(botStep + 1))}
         </p>
       </div>
 
@@ -277,8 +279,8 @@ export default function AdvertiserTaskSheet({
           >
             <StepRow
               num={1} Icon={Bot} accent={BLUE_ACCENT}
-              title="Open Bot & Start It"
-              body="Open the bot via the referral link and press Start to activate it."
+              title={t("open_bot_title")}
+              body={t("open_bot_start_body")}
             />
           </motion.div>
         )}
@@ -290,8 +292,8 @@ export default function AdvertiserTaskSheet({
           >
             <StepRow
               num={2} Icon={Link2} accent={BLUE_ACCENT}
-              title="Copy Your Referral Link"
-              body="Inside the bot, go to Invite Friends → Copy your unique referral link."
+              title={t("copy_referral_title")}
+              body={t("copy_referral_body")}
             />
           </motion.div>
         )}
@@ -304,12 +306,12 @@ export default function AdvertiserTaskSheet({
           >
             <StepRow
               num={3} Icon={ClipboardPaste} accent={BLUE_ACCENT}
-              title="Paste Your Referral Link"
-              body="Paste the referral link you copied from the bot."
+              title={t("paste_referral_title")}
+              body={t("paste_referral_body")}
             />
             <input
               type="text"
-              placeholder="Paste your referral link here"
+              placeholder={t("paste_referral_placeholder")}
               value={referralPasted}
               onChange={e => { setReferralPasted(e.target.value); setVerifyError(""); }}
               style={{
@@ -335,14 +337,14 @@ export default function AdvertiserTaskSheet({
     if (botStep === 0) {
       return (
         <ActionBtn color="indigo" onClick={() => { handleOpen(); setBotStep(1); }}>
-          <ArrowUpRight style={{ width: "17px", height: "17px" }} /> Open Bot
+          <ArrowUpRight style={{ width: "17px", height: "17px" }} /> {t("open_bot")}
         </ActionBtn>
       );
     }
     if (botStep === 1) {
       return (
         <ActionBtn color="green" onClick={() => setBotStep(2)}>
-          I've Copied the Link →
+          {t("ive_copied_link")}
         </ActionBtn>
       );
     }
@@ -357,7 +359,7 @@ export default function AdvertiserTaskSheet({
             color: TEXT_DIM, fontSize: "14px", fontWeight: 600, cursor: "pointer",
           }}
         >
-          Skip
+          {t("skip")}
         </button>
         {!canClaim ? (
           <motion.button
@@ -375,8 +377,8 @@ export default function AdvertiserTaskSheet({
             }}
           >
             {verifying
-              ? <><Loader2 style={{ width: "15px", height: "15px", animation: "spin 1s linear infinite" }} /> Verifying...</>
-              : "Verify & Claim"}
+              ? <><Loader2 style={{ width: "15px", height: "15px", animation: "spin 1s linear infinite" }} /> {t("verifying_ellipsis")}</>
+              : t("verify_and_claim")}
           </motion.button>
         ) : (
           <motion.button
@@ -405,8 +407,8 @@ export default function AdvertiserTaskSheet({
       <ChannelPenaltyWarning />
       <StepRow
         num={1} Icon={Megaphone} accent={BLUE_ACCENT}
-        title="Join the Channel"
-        body="Open the channel and join. Then tap 'Verify Membership' — the bot checks automatically."
+        title={t("join_the_channel_task")}
+        body={t("join_channel_task_body")}
       />
       {opened && verifyError && (
         <div className="flex items-center gap-2">
@@ -421,22 +423,22 @@ export default function AdvertiserTaskSheet({
   const ChannelVerifiedFooter = () => (
     !opened ? (
       <ActionBtn color="green" onClick={handleOpen}>
-        <ArrowUpRight style={{ width: "17px", height: "17px" }} /> Open Channel
+        <ArrowUpRight style={{ width: "17px", height: "17px" }} /> {t("open_channel")}
       </ActionBtn>
     ) : (
       <ActionBtn color="blue" onClick={handleCheckMembership} disabled={verifying}>
         {verifying
-          ? <><Loader2 style={{ width: "17px", height: "17px", animation: "spin 1s linear infinite" }} /> Checking...</>
-          : <><ShieldCheck style={{ width: "17px", height: "17px" }} /> Verify Membership</>}
+          ? <><Loader2 style={{ width: "17px", height: "17px", animation: "spin 1s linear infinite" }} /> {t("checking_ellipsis")}</>
+          : <><ShieldCheck style={{ width: "17px", height: "17px" }} /> {t("verify_membership")}</>}
       </ActionBtn>
     )
   );
 
   const flowLabel = isPartner
-    ? "Partner · Verified"
+    ? t("flow_partner_verified")
     : isBot
-      ? (withVerif ? "Bot · Verified" : "Bot · Instant")
-      : (withVerif ? "Channel · Verified" : "Channel · Instant");
+      ? (withVerif ? t("flow_bot_verified") : t("flow_bot_instant"))
+      : (withVerif ? t("flow_channel_verified") : t("flow_channel_instant"));
 
   const flowIcon = withVerif
     ? <ShieldCheck style={{ width: "12px", height: "12px", color: BLUE_ACCENT }} />
@@ -499,7 +501,7 @@ export default function AdvertiserTaskSheet({
                       {task.title}
                     </h2>
                     <p style={{ color: TEXT_DIM, fontSize: "12.5px", marginTop: "3px" }}>
-                      {isBot ? "is looking for new users" : "is looking for subscribers"}
+                      {isBot ? t("looking_for_referrals") : t("looking_for_subscribers")}
                     </p>
                   </div>
                 </div>
@@ -528,14 +530,14 @@ export default function AdvertiserTaskSheet({
               {isBot     && withVerif  && <BotVerifiedBody />}
               {isBot     && !withVerif && (
                 <StepRow num={1} Icon={Bot} accent={BLUE_ACCENT}
-                  title="Open the Bot"
-                  body="Press Start inside the bot — your reward is granted instantly." />
+                  title={t("open_the_bot")}
+                  body={t("open_bot_instant_body")} />
               )}
               {isChannel && withVerif  && <ChannelVerifiedBody />}
               {isChannel && !withVerif && (
                 <StepRow num={1} Icon={Megaphone} accent={BLUE_ACCENT}
-                  title="Open the Channel"
-                  body="Join the channel — your reward is granted instantly." />
+                  title={t("open_the_channel")}
+                  body={t("open_channel_instant_body")} />
               )}
             </div>
 
@@ -550,7 +552,7 @@ export default function AdvertiserTaskSheet({
               {isBot     && !withVerif && (
                 !opened ? (
                   <ActionBtn color="indigo" onClick={handleOpen}>
-                    <ArrowUpRight style={{ width: "17px", height: "17px" }} /> Open Bot
+                    <ArrowUpRight style={{ width: "17px", height: "17px" }} /> {t("open_bot")}
                   </ActionBtn>
                 ) : (
                   <ActionBtn color="green" onClick={() => { onClaim(task.id); handleClose(); }} disabled={claiming || !canClaim}>
@@ -564,7 +566,7 @@ export default function AdvertiserTaskSheet({
               {isChannel && !withVerif && (
                 !opened ? (
                   <ActionBtn color="green" onClick={handleOpen}>
-                    <ArrowUpRight style={{ width: "17px", height: "17px" }} /> Open Channel
+                    <ArrowUpRight style={{ width: "17px", height: "17px" }} /> {t("open_channel")}
                   </ActionBtn>
                 ) : (
                   <ActionBtn color="green" onClick={() => { onClaim(task.id); handleClose(); }} disabled={claiming || !canClaim}>

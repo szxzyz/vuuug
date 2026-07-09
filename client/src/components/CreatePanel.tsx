@@ -10,6 +10,7 @@ import {
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
 import TopUpPopup from "@/components/TopUpPopup";
+import { useLanguage } from "@/hooks/useLanguage";
 
 // ─── Pricing ───────────────────────────────────────────────────
 const PACKAGES = [
@@ -48,6 +49,7 @@ const BLUE_HOVER = "#6ddeff";
 export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const { t } = useLanguage();
 
   // ── state
   const [flow,         setFlow]         = useState<Flow>(null);
@@ -130,7 +132,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
       if (!data.success) throw new Error(data.message || "Failed to delete");
       return data;
     },
-    onSuccess: () => { showNotification("Mission deleted", "success"); invalidateMyTasks(); },
+    onSuccess: () => { showNotification(t("mission_deleted_msg"), "success"); invalidateMyTasks(); },
     onError: (e: Error) => showNotification(e.message, "error"),
   });
 
@@ -141,7 +143,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
       if (!data.success) throw new Error(data.message || "Failed");
       return data;
     },
-    onSuccess: (_d, vars) => { showNotification(vars.action === "pause" ? "Mission paused" : "Mission resumed", "success"); invalidateMyTasks(); },
+    onSuccess: (_d, vars) => { showNotification(vars.action === "pause" ? t("mission_paused_msg") : t("mission_resumed_msg"), "success"); invalidateMyTasks(); },
     onError: (e: Error) => showNotification(e.message, "error"),
   });
 
@@ -187,7 +189,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
       return data;
     },
     onSuccess: () => {
-      showNotification("Mission created!", "success");
+      showNotification(t("mission_created_msg"), "success");
       queryClient.invalidateQueries({ queryKey: ["/api/advertiser-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/advertiser-tasks/my-tasks"] });
       handleClose();
@@ -208,8 +210,8 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
   })();
 
   const pills = [
-    { id: "advertise" as Flow, label: "Advertise",  icon: Radio,   nav: undefined },
-    { id: null        as Flow, label: "Ambassador", icon: Rocket,  nav: "/ambassador" },
+    { id: "advertise" as Flow, label: t("advertise_label"),  icon: Radio,  nav: undefined },
+    { id: null        as Flow, label: t("ambassador_label"), icon: Rocket, nav: "/ambassador" },
   ];
 
   return (
@@ -306,7 +308,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                         }}
                       >
                         <Plus className="w-4 h-4" style={{ color: advTab === "add" ? "#fff" : "rgba(255,255,255,0.5)" }} />
-                        <span className="font-semibold text-sm" style={{ color: advTab === "add" ? "#fff" : "rgba(255,255,255,0.5)" }}>Add Missions</span>
+                        <span className="font-semibold text-sm" style={{ color: advTab === "add" ? "#fff" : "rgba(255,255,255,0.5)" }}>{t("add_missions")}</span>
                       </button>
                       <button
                         onClick={() => setAdvTab("mine")}
@@ -317,7 +319,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                         }}
                       >
                         <ClipboardList className="w-4 h-4" style={{ color: advTab === "mine" ? "#fff" : "rgba(255,255,255,0.5)" }} />
-                        <span className="font-semibold text-sm" style={{ color: advTab === "mine" ? "#fff" : "rgba(255,255,255,0.5)" }}>My Missions</span>
+                        <span className="font-semibold text-sm" style={{ color: advTab === "mine" ? "#fff" : "rgba(255,255,255,0.5)" }}>{t("my_missions_label")}</span>
                       </button>
                     </div>
                   </div>
@@ -336,7 +338,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
 
                   {/* title row */}
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "6px 16px 12px" }}>
-                    <p style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>Giveaway</p>
+                    <p style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>{t("giveaway_label")}</p>
                     <button onClick={handleClose} style={closeBtnStyle}>
                       <X style={{ width: 15, height: 15, color: "rgba(255,255,255,0.55)" }} />
                     </button>
@@ -355,9 +357,9 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                 {flow === "giveaway" && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, paddingTop: 80 }}>
                     <span style={{ fontSize: 48 }}>🎁</span>
-                    <p style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>Coming Soon</p>
+                    <p style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>{t("coming_soon_label")}</p>
                     <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14, textAlign: "center" }}>
-                      Giveaway campaigns are in development.
+                      {t("giveaway_coming_soon_text")}
                     </p>
                   </div>
                 )}
@@ -367,7 +369,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                   <MyMissionsList
                     tasks={myTasks}
                     isLoading={isLoadingMyTasks}
-                    onDelete={id => { if (window.confirm("Delete this mission? Remaining balance will be refunded.")) deleteMutation.mutate(id); }}
+                    onDelete={id => { if (window.confirm(t("delete_mission_confirm"))) deleteMutation.mutate(id); }}
                     onToggleStatus={(id, action) => toggleStatusMutation.mutate({ taskId: id, action })}
                     addClicksTaskId={addClicksTaskId}
                     setAddClicksTaskId={setAddClicksTaskId}
@@ -387,7 +389,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                   <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
 
                     {/* TASK NAME */}
-                    <Field label="Task Name" icon={<Type size={13} />}>
+                    <Field label={t("task_name_label")} icon={<Type size={13} />}>
                       <input
                         type="text"
                         placeholder={category === "channel" ? "e.g. Join PaidAdz Channel" : "e.g. Start My Earning Bot"}
@@ -398,11 +400,11 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                     </Field>
 
                     {/* CATEGORY */}
-                    <Field label="Category" icon={<LayoutGrid size={13} />}>
+                    <Field label={t("category_label")} icon={<LayoutGrid size={13} />}>
                       <PillToggle
                         options={[
-                          { id: "channel", label: "Channel / Group" },
-                          { id: "bot",     label: "Website / Bot"   },
+                          { id: "channel", label: t("channel_group") },
+                          { id: "bot",     label: t("website_bot_label") },
                         ]}
                         value={category}
                         onChange={v => {
@@ -413,23 +415,23 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                     </Field>
 
                     {/* TYPE */}
-                    <Field label="Verification Type" icon={<ShieldCheck size={13} />}>
+                    <Field label={t("verification_type_label")} icon={<ShieldCheck size={13} />}>
                       <PillToggle
                         options={[
-                          { id: "verification", label: "With Verification",    icon: <ShieldCheck size={12} /> },
-                          { id: "without",      label: "Without Verification", icon: <ShieldOff   size={12} /> },
+                          { id: "verification", label: t("with_verification"),    icon: <ShieldCheck size={12} /> },
+                          { id: "without",      label: t("without_verification"), icon: <ShieldOff   size={12} /> },
                         ]}
                         value={verifyType}
                         onChange={v => { setVerifyType(v as VerifyType); resetCh(); }}
                       />
                       <p style={{ color: "rgba(255,255,255,0.25)", fontSize: 11.5, marginTop: 8, lineHeight: 1.6, paddingLeft: 2 }}>
-                        {typeHint(category, isVerif)}
+                        {typeHint(category, isVerif, t)}
                       </p>
                     </Field>
 
                     {/* ── CHANNEL fields ── */}
                     {category === "channel" && (
-                      <Field label="Channel Link">
+                      <Field label={t("channel_link_label")}>
                         <div style={{ display: "flex", gap: 8 }}>
                           <input
                             type="text"
@@ -483,7 +485,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
 
                     {/* ── BOT fields ── */}
                     {category === "bot" && (
-                      <Field label={isVerif ? "Referral Start Link" : "Bot Username"}>
+                      <Field label={isVerif ? t("referral_start_link") : t("bot_username_label")}>
                         {isVerif ? (
                           <>
                             <input
@@ -513,7 +515,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                     )}
 
                     {/* COMPLETIONS */}
-                    <Field label="Number of Completions">
+                    <Field label={t("number_of_completions")}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                         {PACKAGES.map(pkg => {
                           const sel   = selectedPkg === pkg.clicks;
@@ -604,7 +606,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                           }}
                         >
                           {createMutation.isPending
-                            ? <><Loader2 size={14} style={{ animation: "spin 0.8s linear infinite" }} /> Creating…</>
+                            ? <><Loader2 size={14} style={{ animation: "spin 0.8s linear infinite" }} /> {t("creating_ellipsis")}</>
                             : <>Pay {cost ? `${cost} TON` : "—"}</>
                           }
                         </motion.button>
@@ -646,12 +648,13 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
 }
 
 function MissionStatusBadge({ status }: { status: string }) {
+  const { t } = useLanguage();
   const map: Record<string, { label: string; color: string; bg: string }> = {
-    running:      { label: "Running",   color: "#4ade80", bg: "rgba(34,197,94,0.14)" },
-    under_review: { label: "Pending",   color: "#facc15", bg: "rgba(234,179,8,0.14)" },
-    paused:       { label: "Paused",    color: "#fb923c", bg: "rgba(251,146,60,0.14)" },
-    completed:    { label: "Completed", color: "#4ade80", bg: "rgba(34,197,94,0.14)" },
-    rejected:     { label: "Rejected",  color: "#f87171", bg: "rgba(248,113,113,0.14)" },
+    running:      { label: t("status_running"),       color: "#4ade80", bg: "rgba(34,197,94,0.14)" },
+    under_review: { label: t("status_under_review"),  color: "#facc15", bg: "rgba(234,179,8,0.14)" },
+    paused:       { label: t("status_paused"),        color: "#fb923c", bg: "rgba(251,146,60,0.14)" },
+    completed:    { label: t("status_completed"),     color: "#4ade80", bg: "rgba(34,197,94,0.14)" },
+    rejected:     { label: t("status_rejected"),      color: "#f87171", bg: "rgba(248,113,113,0.14)" },
   };
   const s = map[status] || { label: status, color: "rgba(255,255,255,0.5)", bg: "rgba(255,255,255,0.08)" };
   return (
@@ -700,6 +703,7 @@ function MyMissionsList({
   onConfirmAddClicks: (id: string) => void;
   isAddingClicks: boolean;
 }) {
+  const { t } = useLanguage();
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -712,8 +716,8 @@ function MyMissionsList({
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
         <ClipboardList className="w-10 h-10 text-white/20" />
-        <p className="text-white/40 text-sm">No missions yet</p>
-        <p className="text-white/25 text-xs">Create one from the Add Missions tab</p>
+        <p className="text-white/40 text-sm">{t("no_missions_yet")}</p>
+        <p className="text-white/25 text-xs">{t("create_from_add_tab")}</p>
       </div>
     );
   }
@@ -748,7 +752,7 @@ function MyMissionsList({
                 <div style={{ height: "100%", width: `${pct}%`, borderRadius: 3, background: BLUE, transition: "width 200ms" }} />
               </div>
               <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, marginTop: 5 }}>
-                {task.currentClicks} / {task.totalClicksRequired} completions ({pct}%)
+                {task.currentClicks} / {task.totalClicksRequired} {t("completions_label")} ({pct}%)
               </p>
             </div>
 
@@ -761,7 +765,7 @@ function MyMissionsList({
                   style={miniActionBtnStyle}
                 >
                   {task.status === "running" ? <Pause size={12} /> : <Play size={12} />}
-                  {task.status === "running" ? "Pause" : "Resume"}
+                  {task.status === "running" ? t("pause_label") : t("resume_label")}
                 </button>
               )}
               <button
@@ -769,7 +773,7 @@ function MyMissionsList({
                 className="active:scale-95 transition-transform"
                 style={miniActionBtnStyle}
               >
-                <Plus size={12} /> Add Clicks
+                <Plus size={12} /> {t("add_clicks_label")}
               </button>
               <button
                 onClick={() => onDelete(task.id)}
@@ -796,7 +800,7 @@ function MyMissionsList({
                       value={addClicksValue}
                       onChange={e => setAddClicksValue(e.target.value)}
                       style={{ ...INPUT, flex: 1, padding: "9px 12px" }}
-                      placeholder="Additional clicks"
+                      placeholder={t("additional_clicks_placeholder")}
                     />
                     <button
                       onClick={() => onConfirmAddClicks(task.id)}
@@ -808,7 +812,7 @@ function MyMissionsList({
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                       }}
                     >
-                      {isAddingClicks ? <Loader2 size={13} style={{ animation: "spin 0.8s linear infinite" }} /> : "Confirm"}
+                      {isAddingClicks ? <Loader2 size={13} style={{ animation: "spin 0.8s linear infinite" }} /> : t("confirm_label")}
                     </button>
                   </div>
                 </motion.div>
@@ -896,14 +900,10 @@ function verifyBtnStyle(state: "idle" | "checking" | "ok" | "err", hasLink: bool
   };
 }
 
-function typeHint(cat: Category, verif: boolean): string {
+function typeHint(cat: Category, verif: boolean, t: (key: string) => string): string {
   if (cat === "channel") {
-    return verif
-      ? "Bot verifies join status. If a user leaves after claiming, a penalty is applied automatically."
-      : "User opens the channel link — reward is granted instantly without a join check.";
+    return verif ? t("channel_verified_hint") : t("channel_instant_hint");
   }
-  return verif
-    ? "User must start your bot via the referral link — verified before reward is given."
-    : "User opens your bot link — reward is granted instantly.";
+  return verif ? t("bot_verified_hint") : t("bot_instant_hint");
 }
 
