@@ -11729,6 +11729,7 @@ ${walletAddress}
 
       await db.update(ambassadors).set({
         promoCodeName: newName,
+        promoPrefix: newName,   // keep promoPrefix in sync so COALESCE picks the new name
         customPromoRequest: null,
         customPromoRequestStatus: 'approved',
         updatedAt: new Date(),

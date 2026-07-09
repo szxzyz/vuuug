@@ -3307,7 +3307,12 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
     }
     console.log(`✅ [Ambassador ${amb.id}] Bot permissions confirmed — posting to channel ${amb.channelId}`);
   } else {
-    console.warn(`⚠️ [Ambassador ${amb.id}] channelId is missing (channelId=${amb.channelId}) — cannot post to channel`);
+    console.warn(`⚠️ [Ambassador ${amb.id}] channelId${!botToken ? ' and botToken' : ''} missing — skipping and backing off 24 h`);
+    // Advance nextPromoAt so the scheduler doesn't hammer this ambassador every minute
+    await dbConn.update(ambassadors).set({
+      nextPromoAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+    }).where(eq(ambassadors.id, amb.id));
     return null;
   }
 
