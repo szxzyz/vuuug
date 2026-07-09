@@ -179,7 +179,14 @@ export default function Affiliates() {
           <div className="flex items-center justify-between pt-3">
             <div>
               <p className="text-white text-sm font-semibold">{t('bonus')}</p>
-              <p className="text-[#888] text-xs mt-0.5">{t('when_friend_watches')}</p>
+              <p className="text-[#888] text-xs mt-0.5">
+                {(() => {
+                  const raw = appSettings?.referralAdsRequired;
+                  const n = Number.isFinite(Number(raw)) && Number(raw) >= 1 ? Number(raw) : 1;
+                  if (n === 1) return t('when_friend_watches');
+                  return t('when_friend_watches_n').replace('{n}', String(n));
+                })()}
+              </p>
             </div>
             {bonusLabel ? (
               <span className="text-green-400 text-sm font-bold">{bonusLabel}</span>
