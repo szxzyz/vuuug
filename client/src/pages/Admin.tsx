@@ -14,7 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2, Award } from "lucide-react";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2, Award, Handshake } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -180,6 +180,7 @@ export default function AdminPage() {
               { value: 'contests', icon: <Crown size={13}/>,         label: 'Contests' },
               ...(can('manage_admins') ? [{ value: 'admins', icon: <Shield size={13}/>, label: 'Admins' }] : []),
               { value: 'ambassadors', icon: <Award size={13}/>, label: 'Ambassadors' },
+              { value: 'partner',     icon: <Handshake size={13}/>, label: 'Partner Tasks' },
             ] as { value: string; icon: React.ReactNode; label: string }[]).map(tab => (
               <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap flex items-center gap-1">
                 {tab.icon}{tab.label}
@@ -309,6 +310,10 @@ export default function AdminPage() {
 
           <TabsContent value="ambassadors" className="mt-0">
             <AmbassadorAdminSection />
+          </TabsContent>
+
+          <TabsContent value="partner" className="mt-0">
+            <PartnerTasksSection />
           </TabsContent>
         </Tabs>
       </main>
@@ -4532,6 +4537,292 @@ function AmbassadorAdminSection() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Partner Tasks Section ─────────────────────────────────────
+function PartnerTasksSection() {
+  const queryClient = useQueryClient();
+  const [taskName,  setTaskName]  = useState("");
+  const [link,      setLink]      = useState("");
+  const [category,  setCategory]  = useState<"channel" | "bot">("channel");
+  const [chState,   setChState]   = useState<"idle" | "checking" | "ok" | "err">("idle");
+  const [chError,   setChError]   = useState("");
+
+  const BLUE = "#4cd3ff";
+  const INPUT_STYLE: React.CSSProperties = {
+    width: "100%", boxSizing: "border-box",
+    background: "#1a1a1a", border: "1px solid #2a2a2a",
+    borderRadius: 12, padding: "13px 14px",
+    color: "#fff", fontSize: 14, outline: "none", fontFamily: "inherit",
+  };
+
+  const { data: allTasksData, isLoading } = useQuery<{ tasks: any[] }>({
+    queryKey: ["/api/admin/tasks/partner"],
+    queryFn: () => apiRequest("GET", "/api/admin/tasks?filter=all").then(r => r.json()),
+  });
+  const partnerTasks: any[] = (allTasksData?.tasks ?? []).filter((t: any) => t.taskType === "partner");
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/admin/tasks/partner"] });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/advertiser-tasks/create", {
+        taskType: "partner",
+        title: taskName.trim(),
+        link: link.trim(),
+        totalClicksRequired: 999999,
+        verificationRequired: true,
+        channelVerified: category === "channel" ? chState === "ok" : false,
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "Failed");
+      return data;
+    },
+    onSuccess: () => {
+      showNotification("Partner task created!", "success");
+      setTaskName(""); setLink(""); setCategory("channel");
+      setChState("idle"); setChError("");
+      invalidate();
+    },
+    onError: (e: Error) => showNotification(e.message, "error"),
+  });
+
+  const verifyChannel = async () => {
+    if (!link.trim()) return;
+    setChState("checking"); setChError("");
+    try {
+      const res  = await apiRequest("POST", "/api/advertiser-tasks/verify-channel", { channelLink: link.trim() });
+      const data = await res.json();
+      if (data.success) setChState("ok");
+      else { setChState("err"); setChError(data.message || "Bot is not admin on this channel."); }
+    } catch { setChState("err"); setChError("Network error. Try again."); }
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const res  = await apiRequest("DELETE", `/api/advertiser-tasks/${taskId}`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+      return data;
+    },
+    onSuccess: () => { showNotification("Task deleted", "success"); invalidate(); },
+    onError:   (e: Error) => showNotification(e.message, "error"),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ taskId, action }: { taskId: string; action: "pause" | "resume" }) => {
+      const res  = await apiRequest("POST", `/api/advertiser-tasks/${taskId}/${action}`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+      return data;
+    },
+    onSuccess: (_d, vars) => {
+      showNotification(vars.action === "pause" ? "Task paused" : "Task resumed", "success");
+      invalidate();
+    },
+    onError: (e: Error) => showNotification(e.message, "error"),
+  });
+
+  const canSubmit =
+    !!taskName.trim() &&
+    !!link.trim() &&
+    !createMutation.isPending &&
+    (category !== "channel" || chState === "ok");
+
+  return (
+    <div className="space-y-4">
+
+      {/* ── Create form ── */}
+      <div className="bg-[#121212] border border-white/10 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+          <Handshake size={14} className="text-[#4cd3ff]" />
+          <p className="text-sm font-semibold text-white">Create Partner Task</p>
+          <span className="ml-auto text-[10px] text-emerald-400 font-semibold bg-emerald-400/10 px-2 py-0.5 rounded-full">
+            Free · Always Verified
+          </span>
+        </div>
+
+        <div className="p-4 space-y-5">
+
+          {/* Task Name */}
+          <div>
+            <p className="text-[9px] font-semibold text-white/40 uppercase tracking-[0.06em] mb-2">Task Name</p>
+            <input
+              type="text"
+              placeholder={category === "channel" ? "e.g. Join PaidAdz Official Channel" : "e.g. Start PaidAdz Bot"}
+              value={taskName}
+              onChange={e => setTaskName(e.target.value)}
+              style={INPUT_STYLE}
+            />
+          </div>
+
+          {/* Category */}
+          <div>
+            <p className="text-[9px] font-semibold text-white/40 uppercase tracking-[0.06em] mb-2">Category</p>
+            <div style={{ display: "flex", background: "#1a1a1a", borderRadius: 12, padding: 3, gap: 3 }}>
+              {([
+                { id: "channel" as const, label: "Channel / Group" },
+                { id: "bot"     as const, label: "Bot / Website"   },
+              ]).map(opt => {
+                const sel = category === opt.id;
+                return (
+                  <button key={opt.id}
+                    onClick={() => { setCategory(opt.id); setLink(""); setChState("idle"); setChError(""); }}
+                    style={{
+                      flex: 1, padding: "9px 6px", borderRadius: 10, border: "none",
+                      background: sel ? "rgba(255,255,255,0.11)" : "transparent",
+                      color: sel ? "#fff" : "rgba(255,255,255,0.32)",
+                      fontSize: 12.5, fontWeight: sel ? 600 : 400,
+                      cursor: "pointer", transition: "background 100ms, color 100ms",
+                    }}>
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Link + channel verify */}
+          <div>
+            <p className="text-[9px] font-semibold text-white/40 uppercase tracking-[0.06em] mb-2">
+              {category === "channel" ? "Channel Link" : "Bot / Referral Link"}
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                placeholder={category === "channel" ? "https://t.me/YourChannel" : "https://t.me/YourBot?start=REF"}
+                value={link}
+                onChange={e => { setLink(e.target.value); if (category === "channel") { setChState("idle"); setChError(""); } }}
+                style={{ ...INPUT_STYLE, flex: 1 }}
+              />
+              {category === "channel" && (
+                <button
+                  onClick={verifyChannel}
+                  disabled={chState === "checking" || chState === "ok" || !link.trim()}
+                  style={{
+                    flexShrink: 0, height: 48, padding: "0 16px", borderRadius: 12, border: "none",
+                    background: chState === "ok" ? "rgba(74,222,128,0.15)" : "rgba(76,211,255,0.12)",
+                    color: chState === "ok" ? "#4ade80" : BLUE,
+                    fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 6,
+                    opacity: !link.trim() ? 0.4 : 1,
+                    transition: "background 150ms, color 150ms",
+                  }}
+                >
+                  {chState === "checking"
+                    ? <><i className="fas fa-spinner fa-spin" /> Checking</>
+                    : chState === "ok"
+                    ? <><CheckCircle2 size={14} /> Done</>
+                    : "Verify"}
+                </button>
+              )}
+            </div>
+            {category === "channel" && chState !== "ok" && (
+              <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.15)", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <i className="fas fa-triangle-exclamation text-amber-400 text-xs mt-0.5 flex-shrink-0" />
+                <p style={{ color: "rgba(253,230,138,0.8)", fontSize: 12, lineHeight: 1.6 }}>
+                  {chState === "err" && chError
+                    ? chError
+                    : <>Add <strong style={{ color: "#fbbf24" }}>@Paid_Adzbot</strong> as <strong>Admin</strong> in your channel, then tap <strong>Verify</strong>.</>}
+                </p>
+              </div>
+            )}
+            {category === "channel" && chState === "ok" && (
+              <p style={{ color: "#4ade80", fontSize: 11.5, marginTop: 6, fontWeight: 600 }}>✓ Channel verified</p>
+            )}
+          </div>
+
+          {/* Create button */}
+          <button
+            onClick={() => canSubmit && createMutation.mutate()}
+            disabled={!canSubmit}
+            style={{
+              width: "100%", height: 52, borderRadius: 14, border: "none",
+              background: canSubmit ? BLUE : "rgba(76,211,255,0.08)",
+              color: canSubmit ? "#000" : "rgba(76,211,255,0.25)",
+              fontSize: 15, fontWeight: 700, cursor: canSubmit ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              transition: "background 150ms, color 150ms",
+            }}
+          >
+            {createMutation.isPending
+              ? <><i className="fas fa-spinner fa-spin" /> Creating…</>
+              : <><Plus size={16} /> Create Partner Task</>}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Existing partner tasks ── */}
+      <div className="bg-[#121212] border border-white/10 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/5">
+          <p className="text-sm font-semibold text-white">Active Partner Tasks</p>
+          <p className="text-[10px] text-gray-500 mt-0.5">All partner tasks shown in the app's Partner section</p>
+        </div>
+
+        {isLoading ? (
+          <div className="py-8 flex justify-center">
+            <i className="fas fa-spinner fa-spin text-white/30 text-lg" />
+          </div>
+        ) : partnerTasks.length === 0 ? (
+          <div className="py-10 text-center space-y-1">
+            <Handshake size={30} className="text-white/10 mx-auto" />
+            <p className="text-white/30 text-sm mt-2">No partner tasks yet</p>
+            <p className="text-white/20 text-xs">Create one above — it appears instantly in the app</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {partnerTasks.map((task: any) => (
+              <div key={task.id} className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{task.title}</p>
+                    <a
+                      href={task.link} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-[#4cd3ff]/60 hover:text-[#4cd3ff] truncate block mt-0.5 transition-colors"
+                    >
+                      {task.link}
+                    </a>
+                    <p className="text-[10px] text-white/20 mt-1 uppercase tracking-wide">
+                      {task.taskType} · verified
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                    task.status === "running" ? "bg-emerald-400/10 text-emerald-400" :
+                    task.status === "paused"  ? "bg-amber-400/10  text-amber-400"   :
+                    "bg-white/5 text-white/30"
+                  }`}>
+                    {task.status === "running" ? "Live" : task.status === "paused" ? "Paused" : task.status}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {(task.status === "running" || task.status === "paused") && (
+                    <Button
+                      size="sm" variant="outline" className="h-7 text-xs"
+                      onClick={() => toggleMutation.mutate({ taskId: task.id, action: task.status === "running" ? "pause" : "resume" })}
+                      disabled={toggleMutation.isPending}
+                    >
+                      {task.status === "running"
+                        ? <><i className="fas fa-pause mr-1.5" />Pause</>
+                        : <><i className="fas fa-play  mr-1.5" />Resume</>}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm" variant="outline"
+                    className="h-7 text-xs text-rose-400 border-rose-400/20 hover:bg-rose-400/10 ml-auto"
+                    onClick={() => { if (window.confirm("Delete this partner task?")) deleteMutation.mutate(task.id); }}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 size={12} className="mr-1" /> Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
