@@ -206,12 +206,25 @@ export default function AdvertiserTaskSheet({
     setVerifying(true);
     setVerifyError("");
     await new Promise(r => setTimeout(r, 1000));
-    if (referralPasted.includes("t.me") || referralPasted.startsWith("https://")) {
+
+    // Extract the expected bot username from the task link
+    const botUsernameMatch = task.link?.match(/t\.me\/([^/?]+)/);
+    const expectedBot = botUsernameMatch ? botUsernameMatch[1].toLowerCase() : null;
+
+    // Extract the bot username from the pasted referral link
+    const pastedMatch = referralPasted.trim().match(/t\.me\/([^/?]+)/);
+    const pastedBot = pastedMatch ? pastedMatch[1].toLowerCase() : null;
+
+    if (expectedBot && pastedBot && pastedBot === expectedBot) {
       setVerifying(false);
       setCanClaim(true);
     } else {
       setVerifying(false);
-      setVerifyError("Invalid referral link. Please paste the correct link from the bot.");
+      setVerifyError(
+        expectedBot
+          ? `Invalid link. Paste your referral link from @${expectedBot} only.`
+          : "Invalid referral link. Please paste the correct link from the bot."
+      );
     }
   };
 
