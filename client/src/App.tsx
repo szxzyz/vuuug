@@ -24,7 +24,6 @@ import Leaderboard from "@/pages/Leaderboard";
 
 // Lazy-load heavy/rare pages only
 const Admin = lazy(() => import("@/pages/Admin"));
-const CreateTask = lazy(() => import("@/pages/CreateTask"));
 const CountryControls = lazy(() => import("@/pages/CountryControls"));
 const AmbassadorPage = lazy(() => import("@/pages/Ambassador"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -134,8 +133,6 @@ function Router() {
     <Suspense fallback={<PageLoader />}>
       <Switch>
         <Route path="/" component={Home} />
-        <Route path="/task/create" component={CreateTask} />
-        <Route path="/create-task" component={CreateTask} />
         <Route path="/affiliates" component={Affiliates} />
         <Route path="/withdraw" component={Withdraw} />
         <Route path="/profile" component={Landing} />
