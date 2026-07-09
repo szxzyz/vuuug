@@ -693,8 +693,8 @@ export default function Missions() {
 
   const handleTaskGo = (task: Task) => {
     if (!task.link || claimReadyTasks.has(task.id) || clickedTasks.has(task.id)) return;
-    // Verified bot/channel tasks → open interactive sheet
-    if ((task.taskType === 'bot' || task.taskType === 'channel') && task.verificationRequired) {
+    // Verified bot/channel/partner tasks → open interactive sheet
+    if ((task.taskType === 'bot' || task.taskType === 'channel' || task.taskType === 'partner') && task.verificationRequired) {
       setActiveTaskSheet(task);
       return;
     }
