@@ -3158,12 +3158,6 @@ function TaskManagementSection() {
             All Tasks ({allTasks.length})
           </Button>
         </div>
-        <Link href="/task/create">
-          <Button size="sm" className="text-xs bg-[#4cd3ff] hover:bg-[#6ddeff] text-black">
-            <i className="fas fa-plus mr-1.5"></i>
-            Create Task
-          </Button>
-        </Link>
       </div>
 
       {(activeTaskFilter === 'pending' ? pendingLoading : allLoading) ? (
