@@ -191,9 +191,13 @@ export default function AdvertiserTaskSheet({
 
   if (!task) return null;
 
-  const isBot     = task.taskType === "bot";
-  const isChannel = task.taskType === "channel";
-  const withVerif = task.verificationRequired === true;
+  const isPartner = task.taskType === "partner";
+  // For partner tasks: channelVerified === true means it's a channel partner task;
+  // otherwise it's a bot/website partner task.
+  const isBot     = task.taskType === "bot" || (isPartner && task.channelVerified !== true);
+  const isChannel = task.taskType === "channel" || (isPartner && task.channelVerified === true);
+  // Partner tasks are always created with verificationRequired: true
+  const withVerif = task.verificationRequired === true || isPartner;
 
   const handleOpen = () => {
     openLink(task.link);
@@ -428,9 +432,11 @@ export default function AdvertiserTaskSheet({
     )
   );
 
-  const flowLabel = isBot
-    ? (withVerif ? "Bot · Verified" : "Bot · Instant")
-    : (withVerif ? "Channel · Verified" : "Channel · Instant");
+  const flowLabel = isPartner
+    ? "Partner · Verified"
+    : isBot
+      ? (withVerif ? "Bot · Verified" : "Bot · Instant")
+      : (withVerif ? "Channel · Verified" : "Channel · Instant");
 
   const flowIcon = withVerif
     ? <ShieldCheck style={{ width: "12px", height: "12px", color: BLUE_ACCENT }} />
