@@ -3321,10 +3321,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, penaltiesApplied: 0 });
       }
 
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const PENALTY = 50000;
 
-      // Find verified channel tasks completed by this user in the last 7 days
+      // Find verified channel tasks completed by this user in the last 24 hours
       const completedChannelTasks = await db
         .select({
           taskId: taskClicks.taskId,
@@ -3339,7 +3339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             eq(taskClicks.publisherId, userId),
             eq(advertiserTasks.taskType, 'channel'),
             eq(advertiserTasks.verificationRequired, true),
-            sql`${taskClicks.clickedAt} > ${sevenDaysAgo}`
+            sql`${taskClicks.clickedAt} > ${twentyFourHoursAgo}`
           )
         );
 
