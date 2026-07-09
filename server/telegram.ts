@@ -226,43 +226,12 @@ export async function checkBotCanPostToChannel(
   }
 }
 
-// Normalize an arbitrary channel link/username input (e.g. "https://t.me/foo",
-// "@foo", "foo") into a "@username" identifier suitable for the Telegram Bot API.
-// Returns null for private invite links (+hash / joinchat) or malformed input —
-// those cannot be verified via getChatMember.
-export function extractChannelUsername(channelLinkOrUsername: string): string | null {
-  let channelId = (channelLinkOrUsername || '').trim();
-  const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
-  if (urlMatch && urlMatch[1]) {
-    const segment = urlMatch[1];
-    if (segment.startsWith('+') || segment.startsWith('joinchat')) {
-      return null;
-    }
-    channelId = `@${segment}`;
-  } else if (!channelId.startsWith('@')) {
-    channelId = `@${channelId}`;
-  }
-
-  if (!/^@[A-Za-z][A-Za-z0-9_]{2,31}$/.test(channelId)) {
-    return null;
-  }
-  return channelId;
-}
-
-// strict: when true, any ambiguous/error outcome (bot not admin, Telegram API
-// error, network/exception) is treated as "not verified" (fail CLOSED) instead
-// of the default "assume verified" (fail OPEN). Reward-crediting call sites
-// (e.g. the click endpoint that pays out a task) must always pass strict=true —
-// a reward must never be granted unless Telegram explicitly confirmed membership.
-export async function verifyChannelMembership(userId: number, channelIdOrUsername: string, botToken: string, strict: boolean = false): Promise<boolean> {
+export async function verifyChannelMembership(userId: number, channelIdOrUsername: string, botToken: string): Promise<boolean> {
   // Normalize channel identifier
   let channelIdentifier = channelIdOrUsername;
   if (!channelIdentifier.startsWith('@') && !channelIdentifier.startsWith('-')) {
     channelIdentifier = `@${channelIdentifier}`;
   }
-
-  const failResult = strict ? false : true;
-  const failLabel = strict ? 'CLOSED' : 'OPEN';
 
   console.log(`🔍 Checking membership for user ${userId} in channel ${channelIdentifier}...`);
 
@@ -270,8 +239,8 @@ export async function verifyChannelMembership(userId: number, channelIdOrUsernam
     // Check bot admin status (cached for 5 min — zero extra latency on hot path)
     const botIsAdmin = await isBotAdminInChannel(botToken, channelIdentifier);
     if (!botIsAdmin) {
-      console.warn(`⚠️ Bot is NOT an admin in ${channelIdentifier} — failing ${failLabel}.`);
-      return failResult;
+      console.warn(`⚠️ Bot is NOT an admin in ${channelIdentifier} — failing OPEN so users aren't blocked.`);
+      return true;
     }
 
     // Single direct getChatMember call — Telegram ALWAYS returns HTTP 200; check data.ok for errors
@@ -281,8 +250,8 @@ export async function verifyChannelMembership(userId: number, channelIdOrUsernam
     const data = await res.json().catch(() => null);
 
     if (!data) {
-      console.warn(`⚠️ getChatMember returned non-JSON for ${channelIdentifier} — failing ${failLabel}.`);
-      return failResult;
+      console.warn(`⚠️ getChatMember returned non-JSON for ${channelIdentifier} — failing OPEN`);
+      return true;
     }
 
     if (!data.ok) {
@@ -298,9 +267,9 @@ export async function verifyChannelMembership(userId: number, channelIdOrUsernam
         console.log(`⚠️ User ${userId} not in ${channelIdentifier}: ${description}`);
         return false;
       }
-      // Any other API error (chat not found, bot kicked, etc.) → fail per mode
-      console.warn(`⚠️ getChatMember error for ${channelIdentifier}: ${description} (code ${errorCode}) — failing ${failLabel}.`);
-      return failResult;
+      // Any other API error (chat not found, bot kicked, etc.) → fail open
+      console.warn(`⚠️ getChatMember error for ${channelIdentifier}: ${description} (code ${errorCode}) — failing OPEN`);
+      return true;
     }
 
     const status: string = data.result?.status ?? '';
@@ -311,7 +280,7 @@ export async function verifyChannelMembership(userId: number, channelIdOrUsernam
     return isValid;
   } catch (error: any) {
     console.error(`❌ Telegram verification error for user ${userId} in ${channelIdOrUsername}:`, error?.message || error);
-    return failResult; // fail per mode on unexpected errors
+    return true; // fail open on unexpected errors
   }
 }
 

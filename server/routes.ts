@@ -28,7 +28,7 @@ import {
 import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
 import crypto from "crypto";
-import { sendTelegramMessage, sendUserTelegramNotification, sendWelcomeMessage, handleTelegramMessage, setupTelegramWebhook, verifyChannelMembership, extractChannelUsername, sendSharePhotoToChat, withdrawalAdminMessages } from "./telegram";
+import { sendTelegramMessage, sendUserTelegramNotification, sendWelcomeMessage, handleTelegramMessage, setupTelegramWebhook, verifyChannelMembership, sendSharePhotoToChat, withdrawalAdminMessages } from "./telegram";
 import { authenticateTelegram, requireAuth } from "./auth";
 import { isAuthenticated } from "./replitAuth";
 import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
@@ -3290,8 +3290,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Extract public channel username from URL; reject private invite links (+hash)
-      const channelId = extractChannelUsername(channelUsername);
-      if (!channelId) {
+      let channelId = channelUsername.trim();
+      const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
+      if (urlMatch && urlMatch[1]) {
+        const segment = urlMatch[1];
+        if (segment.startsWith('+') || segment.startsWith('joinchat')) {
+          return res.status(400).json({ success: false, message: 'Private invite links cannot be verified. Use a public channel username link.' });
+        }
+        channelId = `@${segment}`;
+      } else if (!channelId.startsWith('@')) {
+        channelId = `@${channelId}`;
+      }
+
+      // Validate that the resulting identifier looks like a Telegram username
+      if (!/^@[A-Za-z][A-Za-z0-9_]{2,31}$/.test(channelId)) {
         return res.status(400).json({ success: false, message: 'Invalid channel username format. Provide a public channel link like https://t.me/YourChannel.' });
       }
 
@@ -6525,11 +6537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Partner tasks are free and always reward 5 PAD.
-      // Partner tasks must always require verification: they follow the exact same
-      // verified-channel-membership flow as Advertise "With Verification" campaigns,
-      // so a reward is only credited after the backend confirms via getChatMember
-      // that the user actually joined the channel (see /api/advertiser-tasks/:taskId/click).
+      // Partner tasks are free and always reward 5 PAD
       if (taskType === "partner") {
         const task = await storage.createTask({
           advertiserId: userId,
@@ -6540,8 +6548,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           costPerClick: "0",
           totalCost: "0",
           status: "running",
-          verificationRequired: true,
-          channelVerified: channelVerified === true,
+          verificationRequired: false,
+          channelVerified: false,
         });
 
         console.log('✅ Partner task created:', task);
@@ -6701,48 +6709,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.user.id;
       const { taskId } = req.params;
-
-      // ── Server-side channel-membership re-verification ───────────────────
-      // Never trust the client: any task that requires verification and is a
-      // channel-membership task (this covers Partner Tasks and Advertise "With
-      // Verification" channel campaigns alike — same code path, same function)
-      // must have its membership re-checked against the Telegram Bot API here,
-      // right before the reward is credited, regardless of what the client did.
-      const task = await storage.getTaskById(taskId);
-      if (!task) {
-        return res.status(404).json({ success: false, message: "Task not found" });
-      }
-
-      if (task.verificationRequired === true && task.channelVerified === true) {
-        const botToken = process.env.TELEGRAM_BOT_TOKEN;
-        const telegramUserId = req.user?.telegramUser?.id;
-
-        if (botToken) {
-          if (!telegramUserId) {
-            return res.status(401).json({ success: false, message: "Could not identify Telegram user" });
-          }
-
-          const channelId = extractChannelUsername(task.link);
-          if (!channelId) {
-            return res.status(400).json({ success: false, message: "This task's channel link could not be verified." });
-          }
-
-          const isMember = await verifyChannelMembership(
-            parseInt(String(telegramUserId)),
-            channelId,
-            botToken
-          );
-
-          if (!isMember) {
-            return res.status(400).json({
-              success: false,
-              message: "Please join the channel first to claim your reward."
-            });
-          }
-        }
-        // Dev mode without a bot token: fall through and assume membership,
-        // matching the existing /api/tasks/verify-channel-membership dev behavior.
-      }
 
       const result = await storage.recordTaskClick(taskId, userId);
       
