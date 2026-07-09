@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import PromoCodeInput from "@/components/PromoCodeInput";
 import { useLanguage } from "@/hooks/useLanguage";
 import AdvertiserTaskSheet from "@/components/AdvertiserTaskSheet";
+import { Bot, Megaphone } from "lucide-react";
 
 declare global {
   interface Window {
@@ -250,14 +251,40 @@ function DailyMissionCard({
   );
 }
 
-/* ── Task type image icon ── */
-function TaskTypeIcon({ taskType }: { taskType: string }) {
-  const src = taskType === 'channel' || taskType === 'partner'
-    ? '/icon-channel.png'
-    : '/icon-game.png';
+/* ── Task avatar — same approach as AdvertiserTaskSheet ── */
+function TaskAvatar({ task }: { task: Task }) {
+  const [imgOk, setImgOk] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const isBot = task.taskType === 'bot';
+  const src = `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}`;
+
+  useEffect(() => {
+    setImgOk(true);
+    setLoaded(false);
+  }, [task.link]);
+
   return (
-    <div style={{ width: 34, height: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <img src={src} alt={taskType} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+    <div style={{
+      width: 42, height: 42, borderRadius: 11, flexShrink: 0,
+      overflow: 'hidden',
+      background: 'rgba(76,211,255,0.10)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      {imgOk && (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          onLoad={() => setLoaded(true)}
+          onError={() => setImgOk(false)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: loaded ? 'block' : 'none' }}
+        />
+      )}
+      {(!imgOk || !loaded) && (
+        isBot
+          ? <Bot style={{ width: 20, height: 20, color: '#4cd3ff' }} />
+          : <Megaphone style={{ width: 20, height: 20, color: '#4cd3ff' }} />
+      )}
     </div>
   );
 }
@@ -282,10 +309,8 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px' }}>
-      {/* Icon box */}
-      <div style={{ flexShrink: 0, width: 42, height: 42, borderRadius: 11, background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-        <TaskTypeIcon taskType={task.taskType} />
-      </div>
+      {/* Avatar */}
+      <TaskAvatar task={task} />
 
       {/* Title + reward */}
       <div style={{ flex: 1, minWidth: 0 }}>
