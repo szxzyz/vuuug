@@ -21,6 +21,7 @@ import {
   spinHistory,
   dailyMissions,
   missionAdClaims,
+  adSessions,
   adminRoles,
   ambassadorApplications,
   ambassadors,
@@ -40,17 +41,25 @@ import { config, getChannelConfig } from "./config";
 const connectedUsers = new Map<string, { socket: WebSocket; userId: string }>();
 
 // ── Anti-Fake Ad Session Store ────────────────────────────────────────────────
-const adUsedSessions    = new Map<string, number>();  // sessionId  → usedAt timestamp
+// Session pending/used state now lives in the `ad_sessions` DB table (see
+// shared/schema.ts) instead of an in-memory Map — this is required for the
+// background/resume verification and duplicate-reward protection to work
+// correctly in production, where the server may run as multiple instances
+// or get restarted (e.g. deploys, PM2 respawns). An in-memory Map would lose
+// all pending/used session state on every restart, silently reopening the
+// replay window and rejecting in-flight ad sessions.
+// Cooldown and abuse-score are still in-memory: losing them on a restart
+// only means a brief window with weaker rate-limiting, not a reward/security
+// bypass, so the added complexity of persisting them isn't worth it here.
 const adUserCooldowns   = new Map<string, number>();  // userId     → lastRewardAt (ms)
 const adAbuseStore      = new Map<string, { score: number; lockedUntil: number; failCount: number }>();
-// Server-authoritative pre-registration: adType is recorded here BEFORE the ad plays,
-// so the claim endpoint never trusts the client-supplied adType field.
-const adPendingSessions = new Map<string, { adType: string; userId: string; registeredAt: number }>();
 
 const AD_REWARD_COOLDOWN_MS = 15_000;  // 15 s minimum between rewards (was 5 s — increased to prevent rapid replay)
-const MIN_BACKGROUND_MS     = 10_000;  // Anti-fake: user must have left the app for ≥10 s (was 1 s — far too permissive)
+const MIN_BACKGROUND_MS     = 3_000;   // Anti-fake: user must have left the app for ≥3 s (spec: 2–3 s minimum)
 const AD_ABUSE_LOCK_SCORE   = 3;       // lock after 3 consecutive failures (was 5)
 const AD_ABUSE_BASE_LOCK_MS = 120_000; // 2 min base lock, doubles per extra level (was 1 min)
+// How long a pending ad_sessions row is honored before it's considered stale/abandoned.
+const AD_SESSION_MAX_AGE_MS = 15 * 60_000; // 15 minutes
 // Hard cap: reject any per-ad reward that exceeds this — protects against misconfigured admin settings
 // Set to 5000 to allow admins to configure rewards up to 5000 POW while still blocking
 // runaway values (e.g. accidental 2,000,000 POW settings).
@@ -1383,23 +1392,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/ads/register-session', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      const { sessionId, adType } = req.body as { sessionId?: string; adType?: string };
+      const { sessionId, adType, context } = req.body as { sessionId?: string; adType?: string; context?: string };
 
       if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
         return res.status(400).json({ message: "Invalid session ID", errorType: 'invalid_session' });
       }
 
-      const normalizedAdType = ['adsgram', 'monetag', 'gigapub'].includes(adType ?? '')
-        ? (adType as string) : null;
+      const normalizedContext = context === 'mission_ad' ? 'mission_ad' : 'ads_watch';
+      const allowedAdTypes = normalizedContext === 'mission_ad'
+        ? ['monetag', 'gigapub', 'monetix']
+        : ['adsgram', 'monetag', 'gigapub'];
+      const normalizedAdType = allowedAdTypes.includes(adType ?? '') ? (adType as string) : null;
       if (!normalizedAdType) {
         return res.status(400).json({ message: "Invalid ad type", errorType: 'invalid_ad_type' });
       }
 
-      if (adUsedSessions.has(sessionId) || adPendingSessions.has(sessionId)) {
+      try {
+        await db.insert(adSessions).values({
+          id: sessionId,
+          userId,
+          context: normalizedContext,
+          adType: normalizedAdType,
+          status: 'pending',
+        });
+      } catch (insertErr: any) {
+        // Unique PK violation = sessionId already registered (fresh or previously used)
         return res.status(400).json({ message: "Session already in use", errorType: 'duplicate_session' });
       }
 
-      adPendingSessions.set(sessionId, { adType: normalizedAdType, userId, registeredAt: Date.now() });
       return res.json({ success: true });
     } catch (err) {
       console.error('❌ register-session error:', err);
@@ -1478,32 +1498,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 2. Replay attack — same session used twice
-      if (adUsedSessions.has(sessionId)) {
-        return res.status(400).json({
-          message: "Session already used. Please watch a new ad.",
-          errorType: 'duplicate_session',
-        });
-      }
-
-      // 2b. Verify session was pre-registered server-side with its adType.
-      //     This prevents clients from choosing a different provider at claim time.
-      const pendingReg = adPendingSessions.get(sessionId);
-      if (!pendingReg) {
+      // 2. Look up the DB-backed session row (persists across restarts / multiple
+      //    instances — required for reliable duplicate-reward protection in prod).
+      const [sessionRow] = await db.select().from(adSessions).where(eq(adSessions.id, sessionId)).limit(1);
+      if (!sessionRow) {
         return res.status(400).json({
           message: "Session was not pre-registered. Please start the ad flow again.",
           errorType: 'invalid_session',
         });
       }
-      if (pendingReg.userId !== String(userId)) {
-        adPendingSessions.delete(sessionId);
+      if (sessionRow.userId !== String(userId)) {
         return res.status(403).json({
           message: "Session belongs to a different user.",
           errorType: 'invalid_session',
         });
       }
+      if (sessionRow.status !== 'pending') {
+        return res.status(400).json({
+          message: "Session already used. Please watch a new ad.",
+          errorType: 'duplicate_session',
+        });
+      }
+      const sessionAge = Date.now() - new Date(sessionRow.registeredAt as any).getTime();
+      if (sessionAge > AD_SESSION_MAX_AGE_MS) {
+        return res.status(400).json({
+          message: "Session expired. Please start a new ad session.",
+          errorType: 'invalid_session',
+        });
+      }
       // adType is authoritative from the server — ignore client-supplied value
-      const serverAdType = pendingReg.adType;
+      const serverAdType = sessionRow.adType;
 
       // 3. Abuse lock — too many failures
       if (abuse.lockedUntil > Date.now()) {
@@ -1536,9 +1560,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms (total: ${sessionAgeMs}ms)`);
 
       if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
-        // Mark session as used so it can't be retried/replayed, and bump the abuse score
-        adUsedSessions.set(sessionId, Date.now());
-        adPendingSessions.delete(sessionId);
+        // Mark session as failed so it can't be retried/replayed, and bump the abuse score
+        await db.update(adSessions)
+          .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+          .where(eq(adSessions.id, sessionId));
         const newFailCount = (abuse.failCount || 0) + 1;
         const newScore      = (abuse.score || 0) + 1;
         let lockedUntil = abuse.lockedUntil || 0;
@@ -1593,9 +1618,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // ✅ All checks passed — mark session used, update cooldown, decay abuse score
-      adUsedSessions.set(sessionId, Date.now());
-      adPendingSessions.delete(sessionId); // claim: remove pending registration
+      // ✅ All checks passed — atomically claim the session (only succeeds if it's
+      // still 'pending'), which prevents a duplicate/resumed request racing this
+      // one from also being rewarded for the same session.
+      const [claimed] = await db.update(adSessions)
+        .set({ status: 'used', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+        .where(and(eq(adSessions.id, sessionId), eq(adSessions.status, 'pending')))
+        .returning({ id: adSessions.id });
+      if (!claimed) {
+        return res.status(400).json({
+          message: "Session already used. Please watch a new ad.",
+          errorType: 'duplicate_session',
+        });
+      }
       adUserCooldowns.set(userKey, Date.now());
       if (abuse.score > 0) {
         adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
@@ -4252,15 +4287,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/missions/ads/watch', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      const { platform } = req.body;
+      const { platform, sessionId, backgroundDuration, backgroundEntered } = req.body as {
+        platform?: string; sessionId?: string; backgroundDuration?: number; backgroundEntered?: boolean;
+      };
 
-      if (!['monetag', 'gigapub', 'monetix'].includes(platform)) {
+      if (!['monetag', 'gigapub', 'monetix'].includes(platform ?? '')) {
         return res.status(400).json({ success: false, message: 'Invalid platform' });
       }
 
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ success: false, message: 'User not found' });
       if (user.banned) return res.status(403).json({ success: false, message: 'Account banned' });
+
+      // ── Background/resume verification (same requirement as the home ad-watch
+      //    flow) — the reward may only be granted after a genuine background→
+      //    resume cycle of at least MIN_BACKGROUND_MS, verified against the
+      //    server-side session row registered before the ad was shown.
+      if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
+        return res.status(400).json({ success: false, message: "Invalid session. Please start a new ad session.", errorType: 'invalid_session' });
+      }
+      const [missionSession] = await db.select().from(adSessions).where(eq(adSessions.id, sessionId)).limit(1);
+      if (!missionSession) {
+        return res.status(400).json({ success: false, message: "Session was not pre-registered. Please start the ad flow again.", errorType: 'invalid_session' });
+      }
+      if (missionSession.userId !== String(userId) || missionSession.context !== 'mission_ad' || missionSession.adType !== platform) {
+        return res.status(403).json({ success: false, message: "Session mismatch.", errorType: 'invalid_session' });
+      }
+      if (missionSession.status !== 'pending') {
+        return res.status(400).json({ success: false, message: "Session already used. Please watch a new ad.", errorType: 'duplicate_session' });
+      }
+      const missionSessionAge = Date.now() - new Date(missionSession.registeredAt as any).getTime();
+      if (missionSessionAge > AD_SESSION_MAX_AGE_MS) {
+        return res.status(400).json({ success: false, message: "Session expired. Please start a new ad session.", errorType: 'invalid_session' });
+      }
+      const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
+      const bgEntered = backgroundEntered === true;
+      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
+        await db.update(adSessions)
+          .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+          .where(eq(adSessions.id, sessionId));
+        console.log(`⚠️ Mission ad reward rejected for user ${userId}: not backgrounded long enough (entered=${bgEntered}, duration=${bgDuration}ms)`);
+        return res.status(400).json({ success: false, message: "We couldn't confirm the ad was watched. Please try again.", errorType: 'insufficient_background' });
+      }
 
       // Get per-platform reward from admin settings
       const settings = await db.select().from(adminSettings);
@@ -4289,6 +4357,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         default:
           reward = 1000;
           limit = 25;
+      }
+
+      // Atomically claim the session (only succeeds if still 'pending') before
+      // granting anything — this is what prevents a duplicated/resumed request
+      // for the same session from being rewarded twice.
+      const [claimedMissionSession] = await db.update(adSessions)
+        .set({ status: 'used', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+        .where(and(eq(adSessions.id, sessionId), eq(adSessions.status, 'pending')))
+        .returning({ id: adSessions.id });
+      if (!claimedMissionSession) {
+        return res.status(400).json({ success: false, message: "Session already used. Please watch a new ad.", errorType: 'duplicate_session' });
       }
 
       // Atomically increment today's claim counter for this user/platform and
