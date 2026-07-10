@@ -345,6 +345,22 @@ export const missionAdClaims = pgTable("mission_ad_claims", {
   unique("mission_ad_claims_user_platform_date_unique").on(table.userId, table.platform, table.resetDate),
 ]);
 
+// Persistent ad-watch sessions — replaces the old in-memory Maps so that
+// background/resume verification and duplicate-reward protection survive
+// process restarts and work correctly across multiple app instances in
+// production (a hard requirement, not just a Replit-dev nice-to-have).
+export const adSessions = pgTable("ad_sessions", {
+  id: varchar("id").primaryKey(), // client-generated sessionId
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  context: varchar("context").notNull(), // 'ads_watch' | 'mission_ad'
+  adType: varchar("ad_type").notNull(), // 'adsgram' | 'monetag' | 'gigapub' | 'monetix'
+  status: varchar("status").notNull().default('pending'), // 'pending' | 'used' | 'failed'
+  backgroundEntered: boolean("background_entered").default(false),
+  backgroundDurationMs: integer("background_duration_ms").default(0),
+  registeredAt: timestamp("registered_at").defaultNow(),
+  usedAt: timestamp("used_at"),
+});
+
 // Blocked countries for geo-restriction
 export const blockedCountries = pgTable("blocked_countries", {
   id: serial("id").primaryKey(),
