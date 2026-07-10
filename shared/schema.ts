@@ -333,6 +333,18 @@ export const dailyMissions = pgTable("daily_missions", {
   unique("daily_missions_user_type_date_unique").on(table.userId, table.missionType, table.resetDate),
 ]);
 
+// Per-user/platform/day counters for mission ad rewards (prevents unlimited-claim exploits)
+export const missionAdClaims = pgTable("mission_ad_claims", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  platform: varchar("platform").notNull(), // 'monetag' | 'gigapub' | 'monetix'
+  resetDate: varchar("reset_date").notNull(), // YYYY-MM-DD (UTC)
+  count: integer("count").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("mission_ad_claims_user_platform_date_unique").on(table.userId, table.platform, table.resetDate),
+]);
+
 // Blocked countries for geo-restriction
 export const blockedCountries = pgTable("blocked_countries", {
   id: serial("id").primaryKey(),
