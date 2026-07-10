@@ -7,6 +7,9 @@ import { useLocation } from "wouter";
 import PromoCodeInput from "@/components/PromoCodeInput";
 import { useLanguage } from "@/hooks/useLanguage";
 import AdvertiserTaskSheet from "@/components/AdvertiserTaskSheet";
+import AdFailurePopup from "@/components/AdFailurePopup";
+import { useAdSession } from "@/hooks/useAdSession";
+import { apiRequest } from "@/lib/queryClient";
 import { Bot, Megaphone } from "lucide-react";
 
 declare global {
@@ -413,6 +416,9 @@ export default function Missions() {
 
   /* Ad platform state */
   const [adLoadingPlatform, setAdLoadingPlatform] = useState<string | null>(null);
+  const [adVerifying, setAdVerifying] = useState(false);
+  const [showAdFailurePopup, setShowAdFailurePopup] = useState(false);
+  const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
   const [platformCounts, setPlatformCounts] = useState({
     monetag: getPlatformCount('monetag'),
     gigapub: getPlatformCount('gigapub'),
@@ -611,19 +617,26 @@ export default function Missions() {
     });
 
   const claimMissionAdMutation = useMutation({
-    mutationFn: async (platform: string) => {
-      const response = await fetch('/api/missions/ads/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ platform }) });
+    mutationFn: async (payload: { platform: string; sessionId: string; backgroundDuration: number; backgroundEntered: boolean }) => {
+      const response = await fetch('/api/missions/ads/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) });
       const data = await response.json();
-      if (!data.success) throw new Error(data.message || t('failed'));
+      if (!data.success) {
+        const err: any = new Error(data.message || t('failed'));
+        err.errorType = data.errorType;
+        throw err;
+      }
       return data;
     },
-    onSuccess: (data, platform) => {
-      incPlatformCount(platform);
-      setPlatformCounts(prev => ({ ...prev, [platform]: getPlatformCount(platform) }));
+    onSuccess: (data, payload) => {
+      incPlatformCount(payload.platform);
+      setPlatformCounts(prev => ({ ...prev, [payload.platform]: getPlatformCount(payload.platform) }));
       showNotification(`+${data.reward} POW ${t('claimed')}!`, 'success');
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
     },
-    onError: (error: Error) => showNotification(error.message, 'error'),
+    onError: (error: any) => {
+      if (error.errorType === 'insufficient_background') { setShowAdFailurePopup(true); return; }
+      showNotification(error.message, 'error');
+    },
   });
 
   const handleWatchAd = useCallback(async (platform: 'monetag' | 'gigapub') => {
@@ -632,19 +645,42 @@ export default function Missions() {
     if (getPlatformCount(platform) >= limit) { showNotification(`Daily limit (${limit}/day)`, 'info'); return; }
     if (adLoadingPlatform) return;
     setAdLoadingPlatform(platform);
+
+    const sessionId = startSession();
     try {
+      // Pre-register the session server-side (with its adType) BEFORE the ad
+      // is shown, so the claim endpoint can verify a genuine background/
+      // resume cycle instead of trusting a client-reported "watched" flag.
+      const regRes = await apiRequest('POST', '/api/ads/register-session', {
+        sessionId, adType: platform, context: 'mission_ad',
+      });
+      if (!regRes.ok) { cancelSession(); showNotification(t('something_went_wrong'), 'error'); return; }
+
       let result: { success: boolean; unavailable: boolean };
       if (platform === 'monetag') result = await showMonetagAd();
       else result = await showGigaPubAd();
-      if (result.unavailable) { showNotification(t('no_ad_available'), 'info'); return; }
-      if (!result.success)    { showNotification(t('watch_full_ad'), 'error'); return; }
-      await claimMissionAdMutation.mutateAsync(platform);
+      if (result.unavailable) { endSession(); cancelSession(); showNotification(t('no_ad_available'), 'info'); return; }
+      if (!result.success)    { endSession(); showNotification(t('watch_full_ad'), 'error'); return; }
+
+      // Only claim once the app has genuinely returned to the foreground —
+      // otherwise backgroundDuration would be undercounted / the ad may
+      // still be showing.
+      setAdVerifying(true);
+      await waitForForeground();
+      const session = endSession();
+      await claimMissionAdMutation.mutateAsync({
+        platform,
+        sessionId: session.sessionId,
+        backgroundDuration: session.backgroundDuration,
+        backgroundEntered: session.backgroundEntered,
+      });
     } catch (err: any) {
       showNotification(err?.message || t('something_went_wrong'), 'error');
     } finally {
       setAdLoadingPlatform(null);
+      setAdVerifying(false);
     }
-  }, [monetagLimit, gigaPubLimit, adLoadingPlatform, claimMissionAdMutation, t]);
+  }, [monetagLimit, gigaPubLimit, adLoadingPlatform, claimMissionAdMutation, startSession, endSession, cancelSession, waitForForeground, t]);
 
   /* Feed task handlers */
   const clickTaskMutation = useMutation({
@@ -960,6 +996,10 @@ export default function Missions() {
           clickTaskMutation.mutate(id);
         }}
       />
+
+      {showAdFailurePopup && (
+        <AdFailurePopup reason="ad_not_counted" onClose={() => setShowAdFailurePopup(false)} />
+      )}
     </Layout>
   );
 }
