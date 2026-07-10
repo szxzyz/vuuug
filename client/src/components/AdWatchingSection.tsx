@@ -47,7 +47,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const [isShowingAds,   setIsShowingAds]   = useState(false);
   const [currentAdStep,  setCurrentAdStep]  = useState<"idle" | "loading" | "verifying">("idle");
   const [showFailurePopup, setShowFailurePopup] = useState(false);
-  const [failureReason, setFailureReason] = useState<"instructions">("instructions");
+  const [failureReason, setFailureReason] = useState<"instructions" | "ad_not_counted">("instructions");
   const [pendingAdStart,   setPendingAdStart]   = useState(false);
   const [pendingCardId,    setPendingCardId]    = useState<number>(1);
 
@@ -97,7 +97,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     onError: (error: any) => {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      if      (error.errorType === "insufficient_background") { setFailureReason("instructions"); setShowFailurePopup(true); }
+      if      (error.errorType === "insufficient_background") { setFailureReason("ad_not_counted"); setShowFailurePopup(true); }
       else if (error.errorType === "duplicate_session")       showNotification(t("error") + ": Session already used.", "error");
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
       else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
@@ -139,6 +139,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       const regRes = await apiRequest("POST", "/api/ads/register-session", {
         sessionId,
         adType: card.adType,
+        context: "ads_watch",
       });
       if (!regRes.ok) {
         cancelSession();

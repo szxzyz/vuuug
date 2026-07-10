@@ -4,13 +4,13 @@ import { MdCheckBox, MdCheckBoxOutlineBlank } from "react-icons/md";
 
 interface AdFailurePopupProps {
   onClose: () => void;
-  reason?: "instructions" | "not_backgrounded";
+  reason?: "instructions" | "ad_not_counted";
 }
 
 export default function AdFailurePopup({ onClose, reason = "instructions" }: AdFailurePopupProps) {
   const [checked, setChecked] = useState(false);
 
-  if (reason === "not_backgrounded") {
+  if (reason === "ad_not_counted") {
     return (
       <div style={{
         position: "fixed", inset: 0, zIndex: 9999,
@@ -33,7 +33,7 @@ export default function AdFailurePopup({ onClose, reason = "instructions" }: AdF
           <div style={{ width: 38, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.1)", margin: "0 auto 20px" }} />
 
           <h2 style={{ color: "#fff", fontSize: 18, fontWeight: 900, textAlign: "center", margin: "0 0 16px" }}>
-            Ad view not confirmed
+            Ad not counted
           </h2>
 
           <div style={{
@@ -44,9 +44,8 @@ export default function AdFailurePopup({ onClose, reason = "instructions" }: AdF
           }}>
             <FaHandPointer size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 2 }} />
             <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, lineHeight: 1.6 }}>
-              You need to <strong style={{ color: "#f87171" }}>minimize the app</strong> (or switch to another window/app) while
-              the ad is showing and stay away for at least <strong style={{ color: "#f87171" }}>2–3 seconds</strong> before
-              coming back. This is how we confirm the ad was actually watched.
+              To receive your reward, please open the ad and return to Paid Adz after viewing it.
+              Your reward will only be granted after a valid background/resume verification.
             </span>
           </div>
 
