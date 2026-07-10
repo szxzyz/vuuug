@@ -20,6 +20,7 @@ import {
   spinData,
   spinHistory,
   dailyMissions,
+  missionAdClaims,
   adminRoles,
   ambassadorApplications,
   ambassadors,
@@ -4265,19 +4266,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settings = await db.select().from(adminSettings);
       const getSetting = (key: string, def: string) => settings.find(s => s.settingKey === key)?.settingValue || def;
 
+      const safeInt = (raw: string, fallback: number) => {
+        const n = parseInt(raw, 10);
+        return Number.isFinite(n) && n >= 0 ? n : fallback;
+      };
+
       let reward: number;
+      let limit: number;
       switch (platform) {
         case 'monetag':
-          reward = parseInt(getSetting('monetag_mission_reward', '1000'));
+          reward = safeInt(getSetting('monetag_mission_reward', '1000'), 1000);
+          limit = safeInt(getSetting('monetag_mission_limit', '25'), 25);
           break;
         case 'gigapub':
-          reward = parseInt(getSetting('giga_pub_mission_reward', '1000'));
+          reward = safeInt(getSetting('giga_pub_mission_reward', '1000'), 1000);
+          limit = safeInt(getSetting('giga_pub_mission_limit', '25'), 25);
           break;
         case 'monetix':
-          reward = parseInt(getSetting('monetix_mission_reward', '1000'));
+          reward = safeInt(getSetting('monetix_mission_reward', '1000'), 1000);
+          limit = safeInt(getSetting('monetix_mission_limit', '25'), 25);
           break;
         default:
           reward = 1000;
+          limit = 25;
+      }
+
+      // Atomically increment today's claim counter for this user/platform and
+      // enforce the admin-configured daily limit. This prevents the endpoint
+      // from being called an unlimited number of times to mint POW.
+      const resetDate = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
+      const [counter] = await db
+        .insert(missionAdClaims)
+        .values({ userId, platform, resetDate, count: 1 })
+        .onConflictDoUpdate({
+          target: [missionAdClaims.userId, missionAdClaims.platform, missionAdClaims.resetDate],
+          set: { count: sql`${missionAdClaims.count} + 1`, updatedAt: new Date() },
+        })
+        .returning({ count: missionAdClaims.count });
+
+      if (counter.count > limit) {
+        return res.status(429).json({
+          success: false,
+          message: `Daily limit reached for ${platform} (${limit}/day). Try again tomorrow.`,
+        });
       }
 
       await storage.addEarning({
@@ -4287,7 +4318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: `Mission ad reward (${platform})`,
       });
 
-      return res.json({ success: true, reward });
+      return res.json({ success: true, reward, claimsToday: counter.count, dailyLimit: limit });
     } catch (error) {
       console.error('Error in mission ad watch:', error);
       return res.status(500).json({ success: false, message: 'Internal error' });
