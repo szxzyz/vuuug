@@ -7,9 +7,24 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Round a balance to a clean, user-friendly value for display.
+ * Internal precision is preserved; only the displayed value is simplified.
+ * Examples: 19371 → 19000, 467191 → 467000, 18739101 → 18740000
+ */
+export function roundBalanceForDisplay(n: number): number {
+  if (n <= 0) return 0;
+  if (n >= 1_000_000) return Math.round(n / 10_000) * 10_000;
+  if (n >= 10_000)    return Math.round(n / 1_000)  * 1_000;
+  if (n >= 1_000)     return Math.round(n / 100)    * 100;
+  if (n >= 100)       return Math.round(n / 10)     * 10;
+  return Math.round(n);
+}
+
+/**
  * Format currency values - displays PAD amount in pure numeric format
  * No TON-style formatting - PAD is always an integer value
- * Examples: 1000 → "1,000 PAD", 500000 → "500,000 PAD"
+ * Values are rounded to clean display numbers (e.g. 19371 → 19,000)
+ * Examples: 1000 → "1,000 POW", 500000 → "500,000 POW"
  */
 export function formatCurrency(value: string | number, includeSymbol: boolean = true): string {
   const numValue = parseFloat(typeof value === 'string' ? value : value.toString());
@@ -18,7 +33,7 @@ export function formatCurrency(value: string | number, includeSymbol: boolean = 
     return includeSymbol ? '0 POW' : '0';
   }
   
-  const powValue = Math.round(numValue);
+  const powValue = roundBalanceForDisplay(Math.round(numValue));
   
   const symbol = includeSymbol ? ' POW' : '';
   return `${powValue.toLocaleString()}${symbol}`;
