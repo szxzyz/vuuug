@@ -7,7 +7,7 @@ import { useLanguage } from "@/hooks/useLanguage";
 import {
   CheckCircle2, XCircle, Loader2,
   Scroll, AlertTriangle, Send, Info, UserCheck, ChevronDown, ChevronRight,
-  Clock, Plus, Trash2,
+  Clock, Plus, Trash2, Zap, Timer,
 } from "lucide-react";
 import {
   Drawer,
@@ -88,6 +88,9 @@ export default function Ambassador() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [scheduleSlots, setScheduleSlots] = useState<string[]>(["06:30", "18:30"]);
+  const [postingMode, setPostingMode] = useState<"automatic" | "manual">("automatic");
+  const [requireChannelJoin, setRequireChannelJoin] = useState(false);
+  const [postNowCountdown, setPostNowCountdown] = useState<number | null>(null); // ms remaining
 
   const { data: status, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
     queryKey: ["/api/ambassador/status"],
@@ -107,32 +110,74 @@ export default function Ambassador() {
   const amb = dashboard?.ambassador ?? status?.ambassador;
   const stats = dashboard?.stats;
 
-  // Sync schedule slots from server data once when ambassador data first loads
+  // Sync schedule slots and settings from server data once when ambassador data first loads
   const ambId = (amb as any)?.id as string | undefined;
   useEffect(() => {
+    if (!amb) return;
     const raw = (amb as any)?.postingSchedule;
-    if (!raw) return;
-    try {
-      const parsed: string[] = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setScheduleSlots(parsed);
-      }
-    } catch {}
-    // Only run when the ambassador record changes (by id)
+    if (raw) {
+      try {
+        const parsed: string[] = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) setScheduleSlots(parsed);
+      } catch {}
+    }
+    const mode = (amb as any)?.postingMode;
+    if (mode === 'automatic' || mode === 'manual') setPostingMode(mode);
+    const rcj = (amb as any)?.requireChannelJoin;
+    if (typeof rcj === 'boolean') setRequireChannelJoin(rcj);
+
+    // Compute initial post-now countdown if in manual mode
+    const lastAt = (amb as any)?.manualPostLastAt;
+    if (lastAt && mode === 'manual') {
+      const ms = Date.now() - new Date(lastAt).getTime();
+      const remaining = 24 * 60 * 60 * 1000 - ms;
+      setPostNowCountdown(remaining > 0 ? remaining : null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ambId]);
+
+  // Countdown tick for manual post rate limit
+  useEffect(() => {
+    if (postNowCountdown === null) return;
+    const tick = setInterval(() => {
+      setPostNowCountdown(prev => {
+        if (prev === null || prev <= 1000) { clearInterval(tick); return null; }
+        return prev - 1000;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [postNowCountdown]);
 
   // ── Mutations ────────────────────────────────────────────────────────────────
 
   const scheduleMutation = useMutation({
-    mutationFn: (times: string[]) =>
-      apiRequest("POST", "/api/ambassador/schedule", { postingTimes: times }).then((r: any) => r.json()),
+    mutationFn: () =>
+      apiRequest("POST", "/api/ambassador/schedule", {
+        postingTimes: scheduleSlots,
+        postingMode,
+        requireChannelJoin,
+      }).then((r: any) => r.json()),
     onSuccess: () => {
       showNotification(t("schedule_saved"), "success");
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
     },
-    onError: (e: any) => showNotification(e?.message || "Failed to save schedule", "error"),
+    onError: (e: any) => showNotification(e?.message || "Failed to save settings", "error"),
+  });
+
+  const postNowMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/ambassador/post-now").then(async (r: any) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.message || "Failed to post");
+        return data;
+      }),
+    onSuccess: () => {
+      showNotification("✅ Promo posted to your channel!", "success");
+      setPostNowCountdown(24 * 60 * 60 * 1000); // reset 24h countdown
+      queryClient.invalidateQueries({ queryKey: ["/api/ambassador/dashboard"] });
+    },
+    onError: (e: any) => showNotification(e?.message || "Failed to post promo", "error"),
   });
 
   const preVerifyMutation = useMutation({
@@ -444,53 +489,138 @@ export default function Ambassador() {
             )}
           </div>
 
-          {/* Posting Schedule */}
+          {/* Posting Mode + Schedule */}
           <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-3">
               <Clock className="w-4 h-4 text-[#4cd3ff]" />
               <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">{t("posting_schedule_label")}</p>
             </div>
-            <p className="text-[#555] text-xs mb-4 leading-relaxed">
-              {t("posting_schedule_desc")}
-            </p>
 
-            <div className="space-y-2 mb-3">
-              {scheduleSlots.map((time, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={(e) =>
-                      setScheduleSlots(prev => prev.map((v, i) => i === idx ? e.target.value : v))
-                    }
-                    className="flex-1 h-10 rounded-xl px-3 text-white text-sm focus:outline-none"
-                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
-                  />
-                  <button
-                    onClick={() => setScheduleSlots(prev => prev.filter((_, i) => i !== idx))}
-                    className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-transform flex-shrink-0"
-                    style={{ background: "rgba(239,68,68,0.10)" }}
-                  >
-                    <Trash2 className="w-4 h-4 text-red-400" />
-                  </button>
-                </div>
+            {/* Mode toggle */}
+            <div className="flex rounded-xl overflow-hidden mb-4" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+              {(["automatic", "manual"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setPostingMode(m)}
+                  className="flex-1 h-10 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all"
+                  style={{
+                    background: postingMode === m ? "rgba(76,211,255,0.18)" : "transparent",
+                    color: postingMode === m ? "#4cd3ff" : "#555",
+                  }}
+                >
+                  {m === "automatic" ? <Clock className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
+                  {m.charAt(0).toUpperCase() + m.slice(1)}
+                </button>
               ))}
             </div>
 
-            {scheduleSlots.length < 3 && (
-              <button
-                onClick={() => setScheduleSlots(prev => [...prev, "12:00"])}
-                className="w-full h-10 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}
-              >
-                <Plus className="w-4 h-4 text-white/30" />
-                <span className="text-white/30 text-xs">{t("add_time_slot")}</span>
-              </button>
+            {postingMode === "automatic" ? (
+              <>
+                <p className="text-[#555] text-xs mb-4 leading-relaxed">
+                  {t("posting_schedule_desc")}
+                </p>
+
+                <div className="space-y-2 mb-3">
+                  {scheduleSlots.map((time, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input
+                        type="time"
+                        value={time}
+                        onChange={(e) =>
+                          setScheduleSlots(prev => prev.map((v, i) => i === idx ? e.target.value : v))
+                        }
+                        className="flex-1 h-10 rounded-xl px-3 text-white text-sm focus:outline-none"
+                        style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
+                      />
+                      <button
+                        onClick={() => setScheduleSlots(prev => prev.filter((_, i) => i !== idx))}
+                        className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-transform flex-shrink-0"
+                        style={{ background: "rgba(239,68,68,0.10)" }}
+                      >
+                        <Trash2 className="w-4 h-4 text-red-400" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {scheduleSlots.length < 3 && (
+                  <button
+                    onClick={() => setScheduleSlots(prev => [...prev, "12:00"])}
+                    className="w-full h-10 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}
+                  >
+                    <Plus className="w-4 h-4 text-white/30" />
+                    <span className="text-white/30 text-xs">{t("add_time_slot")}</span>
+                  </button>
+                )}
+              </>
+            ) : (
+              /* Manual mode — Post Now button with 24 h rate limit */
+              <div className="mb-4">
+                <p className="text-[#555] text-xs mb-4 leading-relaxed">
+                  Post promo codes to your channel on demand. You can post once every 24 hours.
+                </p>
+                {postNowCountdown !== null ? (
+                  <div
+                    className="w-full h-12 rounded-xl flex items-center justify-center gap-2"
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+                  >
+                    <Timer className="w-4 h-4 text-[#888]" />
+                    <span className="text-[#888] text-sm font-semibold">
+                      Next post in{" "}
+                      {String(Math.floor(postNowCountdown / 3600000)).padStart(2, "0")}:
+                      {String(Math.floor((postNowCountdown % 3600000) / 60000)).padStart(2, "0")}:
+                      {String(Math.floor((postNowCountdown % 60000) / 1000)).padStart(2, "0")}
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => postNowMutation.mutate()}
+                    disabled={postNowMutation.isPending}
+                    className="w-full h-12 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
+                    style={{ background: "rgba(76,211,255,0.14)", border: "1px solid rgba(76,211,255,0.28)" }}
+                  >
+                    {postNowMutation.isPending
+                      ? <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
+                      : <>
+                          <Zap className="w-4 h-4 text-[#4cd3ff]" />
+                          <span className="text-[#4cd3ff] font-semibold text-sm">Post Now</span>
+                        </>}
+                  </button>
+                )}
+              </div>
             )}
 
+            {/* Require channel join toggle */}
+            <div
+              className="flex items-center justify-between py-3 mb-4"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+            >
+              <div>
+                <p className="text-white text-sm font-semibold">Require Channel Join</p>
+                <p className="text-[#555] text-xs mt-0.5">Users must join your channel to claim promo codes</p>
+              </div>
+              <button
+                onClick={() => setRequireChannelJoin(prev => !prev)}
+                className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+                style={{
+                  background: requireChannelJoin ? "rgba(76,211,255,0.35)" : "rgba(255,255,255,0.1)",
+                  border: requireChannelJoin ? "1.5px solid rgba(76,211,255,0.5)" : "1.5px solid rgba(255,255,255,0.12)",
+                }}
+              >
+                <span
+                  className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                  style={{
+                    background: requireChannelJoin ? "#4cd3ff" : "rgba(255,255,255,0.3)",
+                    left: requireChannelJoin ? "calc(100% - 18px)" : "2px",
+                  }}
+                />
+              </button>
+            </div>
+
             <button
-              onClick={() => scheduleMutation.mutate(scheduleSlots)}
-              disabled={scheduleMutation.isPending || scheduleSlots.length === 0}
+              onClick={() => scheduleMutation.mutate()}
+              disabled={scheduleMutation.isPending || (postingMode === "automatic" && scheduleSlots.length === 0)}
               className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
               style={{ background: "rgba(76,211,255,0.12)", border: "1px solid rgba(76,211,255,0.22)" }}
             >

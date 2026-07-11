@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/Layout";
 import IncomeStatistics from "@/components/IncomeStatistics";
@@ -11,6 +11,7 @@ import { useLocation } from "wouter";
 import { Award, Wallet, RefreshCw, Flame, Ticket, Clock, Loader2, Gift, Rocket, X, Send, Users, Check, ExternalLink, Plus, CalendarCheck, Bell, Star, Play, Sparkles, Zap, ListChecks, ArrowUpFromLine, ArrowLeftRight } from "lucide-react";
 import { FaTrophy, FaMedal } from "react-icons/fa";
 import { DiamondIcon } from "@/components/DiamondIcon";
+import SwapSheet from "@/components/SwapSheet";
 import { Button } from "@/components/ui/button";
 import { showNotification } from "@/components/AppNotification";
 import { apiRequest, getTelegramInitData } from "@/lib/queryClient";
@@ -65,6 +66,7 @@ export default function Home() {
   const [hasClaimed, setHasClaimed] = useState(false);
   const [timeUntilNextClaim, setTimeUntilNextClaim] = useState<string>("");
   
+  const [swapSheetOpen, setSwapSheetOpen] = useState(false);
   const [promoPopupOpen, setPromoPopupOpen] = useState(false);
   const [boosterPopupOpen, setBoosterPopupOpen] = useState(false);
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
@@ -409,16 +411,18 @@ export default function Home() {
 
   const handleConvertClick = () => {
     if (convertMutation.isPending) return;
-    const minimumConvertPAD = appSettings?.minimumConvertPAD || 10000;
-    if (balancePAD <= 0) {
-      showNotification("No POW balance to swap.", "error");
-      return;
-    }
-    if (balancePAD < minimumConvertPAD) {
-      showNotification(`Minimum ${minimumConvertPAD.toLocaleString()} POW required to swap.`, "error");
-      return;
-    }
-    convertMutation.mutate({ amount: balancePAD, convertTo: 'USD' });
+    setSwapSheetOpen(true);
+  };
+
+  const handleSwapConfirm = (convertTo: "USD" | "TON") => {
+    convertMutation.mutate(
+      { amount: balancePAD, convertTo },
+      {
+        onSuccess: () => {
+          setSwapSheetOpen(false);
+        },
+      }
+    );
   };
 
   const handleClaimStreak = async () => {
@@ -699,10 +703,19 @@ export default function Home() {
     checkForUpdatesMutation.mutate();
   }, [checkForUpdatesMutation]);
 
+  const roundForDisplay = (n: number): number => {
+    if (n >= 1_000_000) return Math.round(n / 10_000) * 10_000;
+    if (n >= 10_000)    return Math.round(n / 1_000)  * 1_000;
+    if (n >= 1_000)     return Math.round(n / 100)    * 100;
+    if (n >= 100)       return Math.round(n / 10)     * 10;
+    return Math.round(n);
+  };
+
   const formatBalance = (n: number) => {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-    return Math.round(n).toLocaleString();
+    const r = roundForDisplay(n);
+    if (r >= 1_000_000) return (r / 1_000_000).toFixed(1) + 'M';
+    if (r >= 1_000)     return (r / 1_000).toFixed(0) + 'k';
+    return r.toLocaleString();
   };
 
   const isFirstLoad = isFetching && dataUpdatedAt === 0;
@@ -981,6 +994,15 @@ export default function Home() {
       )}
 
     </Layout>
+
+      <SwapSheet
+        open={swapSheetOpen}
+        minimumPOW={appSettings?.minimumConvertPOW ?? 100}
+        onClose={() => setSwapSheetOpen(false)}
+        balancePAD={balancePAD}
+        onSwap={handleSwapConfirm}
+        isPending={convertMutation.isPending}
+      />
     </>
   );
 }
