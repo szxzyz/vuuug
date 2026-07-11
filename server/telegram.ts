@@ -3171,6 +3171,11 @@ function randomSuffix(len = 4): string {
  * Calculate the next UTC posting time from the ambassador's posting schedule.
  * Falls back to 12 h if no schedule is configured.
  */
+// Exported alias so routes.ts can import without duplicating logic
+export function getNextScheduledTimeExport(scheduleJson: string | null | undefined): Date {
+  return getNextScheduledTime(scheduleJson);
+}
+
 function getNextScheduledTime(scheduleJson: string | null | undefined): Date {
   let schedule: string[] = [];
   if (scheduleJson) {
@@ -3473,9 +3478,29 @@ export async function runAmbassadorDailyPromos(): Promise<void> {
         const [full] = await dbConn.select().from(ambassadors).where(eq(ambassadors.id, amb.id)).limit(1);
         if (!full) continue;
 
+        // Skip ambassadors in manual posting mode — they post on demand only
+        if ((full as any).postingMode === 'manual') continue;
+
         // Check if nextPromoAt is due
-        const due = !full.nextPromoAt || new Date(full.nextPromoAt) <= now;
-        if (!due) continue;
+        if (!full.nextPromoAt) {
+          // Never scheduled — set initial nextPromoAt from schedule
+          const next = getNextScheduledTime(full.postingSchedule ?? null);
+          await dbConn.update(ambassadors).set({ nextPromoAt: next, updatedAt: new Date() }).where(eq(ambassadors.id, amb.id));
+          continue;
+        }
+
+        const dueAt = new Date(full.nextPromoAt);
+        // Guard: if nextPromoAt is stale by more than 2 hours (e.g. server was down),
+        // reschedule to next valid slot instead of firing immediately for old missed posts.
+        const staleCutoff = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+        if (dueAt < staleCutoff) {
+          const next = getNextScheduledTime(full.postingSchedule ?? null);
+          await dbConn.update(ambassadors).set({ nextPromoAt: next, updatedAt: new Date() }).where(eq(ambassadors.id, amb.id));
+          console.log(`⏩ [Ambassador ${amb.id}] Stale nextPromoAt rescheduled to ${next.toISOString()}`);
+          continue;
+        }
+
+        if (dueAt > now) continue;
 
         await sendAmbassadorPromo(full.id);
       } catch (err) {

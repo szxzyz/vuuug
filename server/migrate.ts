@@ -732,6 +732,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
           ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS channel_id VARCHAR;
           ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS next_promo_at TIMESTAMP;
           ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS posting_schedule TEXT;
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS posting_mode VARCHAR DEFAULT 'automatic';
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS manual_post_last_at TIMESTAMP;
+          ALTER TABLE ambassadors ADD COLUMN IF NOT EXISTS require_channel_join BOOLEAN DEFAULT false;
         END $$
       `);
     } catch { /* columns may already exist */ }

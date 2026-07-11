@@ -66,13 +66,10 @@ const AD_SESSION_MAX_AGE_MS = 15 * 60_000; // 15 minutes
 const MAX_REWARD_PER_AD_POW = 5000;
 
 // Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
+// Note: adUsedSessions and adPendingSessions were migrated to the DB (ad_sessions table);
+// only the in-memory cooldown and abuse-score maps need periodic pruning here.
 setInterval(() => {
-  const cutoff15m = Date.now() - 15 * 60 * 1000;
   const cutoff1h  = Date.now() - 60 * 60 * 1000;
-  // Remove sessions older than 15 min
-  for (const [sid, ts] of adUsedSessions) if (ts < cutoff15m) adUsedSessions.delete(sid);
-  // Remove pending registrations older than 10 min (ad was never watched)
-  for (const [sid, d] of adPendingSessions) if (d.registeredAt < cutoff15m) adPendingSessions.delete(sid);
   // Remove cooldown entries older than 1 hour (user hasn't watched an ad in a while)
   for (const [uid, ts] of adUserCooldowns) if (ts < cutoff1h) adUserCooldowns.delete(uid);
   // Remove abuse entries where lock has expired and score is 0
@@ -3027,9 +3024,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(users.id, userId));
 
       // Get reward settings for advertiser task types from admin settings
-      const channelTaskReward = await storage.getAppSetting('channelTaskReward', '1000');
-      const botTaskReward = await storage.getAppSetting('botTaskReward', '1000');
-      const partnerTaskReward = await storage.getAppSetting('partnerTaskReward', '1000');
+      // Use snake_case keys — the PUT handler stores both camelCase and snake_case;
+      // snake_case is the canonical form used everywhere else in the codebase.
+      const channelTaskReward = await storage.getAppSetting('channel_task_reward', '1000');
+      const botTaskReward = await storage.getAppSetting('bot_task_reward', '1000');
+      const partnerTaskReward = await storage.getAppSetting('partner_task_reward', '1000');
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
       const advertiserTasks = await storage.getActiveTasksForUser(userId);
@@ -6027,6 +6026,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
 
+  // ── Live TON price endpoint ──────────────────────────────────────────────────
+  // Returns current TON/USD market price fetched from CoinGecko → Binance → OKX
+  // with a 60-second server-side cache.  The client should call this rather than
+  // hitting exchanges directly so rate limits are shared across all users.
+  app.get('/api/ton-price', async (_req, res) => {
+    try {
+      const { getLiveTonPriceUSD, POW_PER_USD, powPerTon } = await import('./tonPriceService');
+      const result = await getLiveTonPriceUSD();
+      res.json({
+        price: result.price,
+        source: result.source,
+        cached: result.cached,
+        fetchedAt: result.fetchedAt,
+        // Helpful display info
+        powPerUsd: POW_PER_USD,
+        powPerTon: Math.round(powPerTon(result.price)),
+      });
+    } catch (err) {
+      console.error('[GET /api/ton-price] Failed:', err);
+      res.status(503).json({
+        error: 'TON price temporarily unavailable',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
+  });
+
   // PAD conversion endpoint (supports USD, TON, BUG)
   app.post('/api/convert-to-usd', async (req: any, res) => {
     try {
@@ -6089,12 +6114,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updateData.usdBalance = (currentUsdBalance + convertedAmount).toFixed(10);
           console.log(`✅ POW to USD: ${convertAmount} POW → $${convertedAmount.toFixed(4)} USD`);
         } else if (convertTo === 'TON') {
-          const padToTonRateSetting = await storage.getAppSetting('pad_to_ton_rate', '10000000');
-          const POW_TO_TON_RATE = parseFloat(padToTonRateSetting);
-          convertedAmount = convertAmount / POW_TO_TON_RATE;
+          // Use live market price: POW → USD → TON
+          // Formula: tonAmount = powAmount / (10,000,000 × liveTonUsdPrice)
+          const { getLiveTonPriceUSD, convertPowToTon } = await import('./tonPriceService');
+          const priceResult = await getLiveTonPriceUSD();
+          const tonUsdPrice = priceResult.price;
+          convertedAmount = convertPowToTon(convertAmount, tonUsdPrice);
           const currentTonBalance = parseFloat(user.tonBalance || '0');
           updateData.tonBalance = (currentTonBalance + convertedAmount).toFixed(10);
-          console.log(`✅ POW to TON: ${convertAmount} POW → ${convertedAmount.toFixed(6)} TON`);
+          console.log(`✅ POW to TON: ${convertAmount} POW → ${convertedAmount.toFixed(6)} TON (1 TON = ${tonUsdPrice.toFixed(4)}, source: ${priceResult.source})`);
         }
         
         await tx.update(users).set(updateData).where(eq(users.id, userId));
@@ -6185,12 +6213,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Get conversion rate from admin settings (default: 10,000,000 PAD = 1 TON)
-      const conversionRateSetting = await storage.getAppSetting('pad_to_ton_rate', '10000000');
-      const POW_TO_TON_RATE = parseFloat(conversionRateSetting);
-      const tonAmount = convertAmount / POW_TO_TON_RATE;
-      
-      console.log(`📊 Using conversion rate: ${POW_TO_TON_RATE} POW = 1 TON`);
+      // Use live market price — POW → USD → TON
+      // Formula: tonAmount = powAmount / (10,000,000 × liveTonUsdPrice)
+      const { getLiveTonPriceUSD, convertPowToTon, powPerTon } = await import('./tonPriceService');
+      const priceResult = await getLiveTonPriceUSD();
+      const tonUsdPrice = priceResult.price;
+      const tonAmount = convertPowToTon(convertAmount, tonUsdPrice);
+
+      console.log(`📊 [/api/convert-to-ton] Live rate: 1 TON = ${tonUsdPrice.toFixed(4)} | ${Math.round(powPerTon(tonUsdPrice)).toLocaleString()} POW = 1 TON | source: ${priceResult.source}`);
       
       // Use transaction to ensure atomicity
       const result = await db.transaction(async (tx) => {
@@ -7796,6 +7826,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
 
+        // ✅ Require at least 1 active (completed) referral before withdrawing
+        const activeReferralCount = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(referrals)
+          .where(and(
+            eq(referrals.referrerId, userId),
+            eq(referrals.status, 'completed')
+          ));
+        if (Number(activeReferralCount[0]?.count ?? 0) < 1) {
+          throw new Error('You need at least 1 active referral to withdraw. Invite a friend and have them watch 10 ads to activate your referral.');
+        }
+
         // ✅ Check if user has invited enough friends (based on admin settings)
         // First, get admin settings for invite requirement
         const [inviteRequirementEnabledSetting] = await tx
@@ -9009,6 +9051,39 @@ ${walletAddress}
       }
 
       const cleanCode = code.trim().toUpperCase();
+
+      // STEP 0: Check if this code belongs to an ambassador who requires channel membership
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (botToken) {
+        const [promoRow] = await db.select({ id: promoCodes.id, code: promoCodes.code })
+          .from(promoCodes).where(eq(promoCodes.code, cleanCode)).limit(1);
+        if (promoRow) {
+          // Find the ambassador who owns this code (via ambassador_earnings pattern — match prefix)
+          const [ambRow] = await db.select({
+            channelId: ambassadors.channelId,
+            requireChannelJoin: ambassadors.requireChannelJoin,
+          })
+            .from(ambassadors)
+            .where(sql`${ambassadors.requireChannelJoin} = true AND ${ambassadors.channelId} IS NOT NULL AND ${cleanCode} LIKE UPPER(COALESCE(${ambassadors.promoPrefix}, ${ambassadors.promoCodeName})) || '%'`)
+            .limit(1);
+
+          if (ambRow?.requireChannelJoin && ambRow.channelId) {
+            const [userRow] = await db.select({ telegram_id: users.telegram_id }).from(users).where(eq(users.id, userId)).limit(1);
+            const telegramId = userRow?.telegram_id ? parseInt(userRow.telegram_id) : null;
+            if (telegramId) {
+              const { verifyChannelMembership } = await import('./telegram');
+              const isMember = await verifyChannelMembership(telegramId, ambRow.channelId, botToken);
+              if (!isMember) {
+                return res.status(403).json({
+                  success: false,
+                  message: 'You must join the ambassador\'s Telegram channel before claiming this promo code.',
+                  errorType: 'channel_required',
+                });
+              }
+            }
+          }
+        }
+      }
 
       // STEP 1: Validate only — does NOT record usage yet
       const result = await storage.usePromoCode(cleanCode, userId);
@@ -11368,7 +11443,7 @@ ${walletAddress}
   app.post('/api/ambassador/schedule', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      const { dailyPromoCount, postingTimes } = req.body;
+      const { dailyPromoCount, postingTimes, postingMode, requireChannelJoin } = req.body;
 
       const [ambassador] = await db.select().from(ambassadors).where(eq(ambassadors.userId, userId)).limit(1);
       if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
@@ -11418,10 +11493,33 @@ ${walletAddress}
         updates.dailyPromoCount = count;
       }
 
+      // Posting mode (automatic / manual) — when switching to manual, clear nextPromoAt
+      if (postingMode === 'automatic' || postingMode === 'manual') {
+        updates.postingMode = postingMode;
+        if (postingMode === 'manual') {
+          updates.nextPromoAt = null; // stop scheduler from auto-posting
+        } else if (postingMode === 'automatic' && !updates.nextPromoAt) {
+          // Re-enable scheduler: set next time from schedule
+          const { getNextScheduledTimeExport } = await import('./telegram');
+          updates.nextPromoAt = getNextScheduledTimeExport(ambassador.postingSchedule ?? null);
+        }
+      }
+
+      // Require channel join for promo code claims
+      if (typeof requireChannelJoin === 'boolean') {
+        updates.requireChannelJoin = requireChannelJoin;
+      }
+
       await db.update(ambassadors).set(updates).where(eq(ambassadors.id, ambassador.id));
 
       const schedule = updates.postingSchedule ? JSON.parse(updates.postingSchedule) : null;
-      res.json({ success: true, dailyPromoCount: updates.dailyPromoCount ?? ambassador.dailyPromoCount, postingSchedule: schedule });
+      res.json({
+        success: true,
+        dailyPromoCount: updates.dailyPromoCount ?? ambassador.dailyPromoCount,
+        postingSchedule: schedule,
+        postingMode: updates.postingMode ?? (ambassador as any).postingMode ?? 'automatic',
+        requireChannelJoin: updates.requireChannelJoin ?? (ambassador as any).requireChannelJoin ?? false,
+      });
     } catch (error) {
       console.error('Error updating ambassador schedule:', error);
       res.status(500).json({ message: 'Failed to update schedule' });
@@ -11534,7 +11632,7 @@ ${walletAddress}
     }
   });
 
-  // Post Now — immediately generate and post a promo
+  // Post Now — immediately generate and post a promo (manual mode: 24 h rate limit)
   app.post('/api/ambassador/post-now', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
@@ -11542,13 +11640,40 @@ ${walletAddress}
       if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
       if (ambassador.status !== 'active') return res.status(403).json({ message: 'Ambassador account is not active' });
 
+      // 24-hour rate limit for manual mode
+      const mode = (ambassador as any).postingMode ?? 'automatic';
+      if (mode === 'manual') {
+        const lastAt: Date | null = (ambassador as any).manualPostLastAt;
+        if (lastAt) {
+          const msSinceLast = Date.now() - new Date(lastAt).getTime();
+          const msIn24h = 24 * 60 * 60 * 1000;
+          if (msSinceLast < msIn24h) {
+            const msRemaining = msIn24h - msSinceLast;
+            const hLeft = Math.floor(msRemaining / 3600000);
+            const mLeft = Math.floor((msRemaining % 3600000) / 60000);
+            return res.status(429).json({
+              success: false,
+              message: `Manual post limit: 1 post per 24 hours. Next post available in ${hLeft}h ${mLeft}m.`,
+              nextAvailableAt: new Date(new Date(lastAt).getTime() + msIn24h).toISOString(),
+            });
+          }
+        }
+      }
+
       const { sendAmbassadorPromo } = await import('./telegram');
       const code = await sendAmbassadorPromo(ambassador.id);
       if (!code) {
         return res.status(500).json({
           success: false,
-          message: `The bot failed to post to your channel. Check that @${await (await import('./telegram')).getBotUsername()} is still an administrator with Post Messages permission enabled. Check server logs for the exact Telegram error.`,
+          message: `The bot failed to post to your channel. Check that @${await (await import('./telegram')).getBotUsername()} is still an administrator with Post Messages permission enabled.`,
         });
+      }
+
+      // Record manual post timestamp
+      if (mode === 'manual') {
+        await db.update(ambassadors)
+          .set({ manualPostLastAt: new Date(), updatedAt: new Date() } as any)
+          .where(eq(ambassadors.id, ambassador.id));
       }
 
       res.json({ success: true, code, message: `✅ Promo posted to your channel! Code: ${code}` });
