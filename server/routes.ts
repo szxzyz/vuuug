@@ -65,20 +65,25 @@ const AD_SESSION_MAX_AGE_MS = 15 * 60_000; // 15 minutes
 // runaway values (e.g. accidental 2,000,000 POW settings).
 const MAX_REWARD_PER_AD_POW = 5000;
 
-// Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
+// Prune stale anti-fraud state every 15 minutes to prevent unbounded growth.
+// Session pending/used/failed rows now live in the `ad_sessions` DB table
+// (not an in-memory Map), so they're pruned there too — otherwise the table
+// would grow forever in production.
 setInterval(() => {
-  const cutoff15m = Date.now() - 15 * 60 * 1000;
   const cutoff1h  = Date.now() - 60 * 60 * 1000;
-  // Remove sessions older than 15 min
-  for (const [sid, ts] of adUsedSessions) if (ts < cutoff15m) adUsedSessions.delete(sid);
-  // Remove pending registrations older than 10 min (ad was never watched)
-  for (const [sid, d] of adPendingSessions) if (d.registeredAt < cutoff15m) adPendingSessions.delete(sid);
   // Remove cooldown entries older than 1 hour (user hasn't watched an ad in a while)
   for (const [uid, ts] of adUserCooldowns) if (ts < cutoff1h) adUserCooldowns.delete(uid);
   // Remove abuse entries where lock has expired and score is 0
   for (const [uid, abuse] of adAbuseStore) {
     if (abuse.lockedUntil < Date.now() && abuse.score === 0) adAbuseStore.delete(uid);
   }
+  // Prune old ad_sessions rows: used/failed rows older than 1 day (kept briefly
+  // for debugging/replay-detection), and abandoned pending rows older than the
+  // session max-age (ad was registered but never watched/claimed).
+  db.delete(adSessions).where(
+    sql`(status IN ('used','failed') AND registered_at < NOW() - INTERVAL '1 day')
+        OR (status = 'pending' AND registered_at < NOW() - INTERVAL '1 hour')`
+  ).catch((err) => console.error('⚠️ ad_sessions cleanup failed (non-critical):', err));
 }, 15 * 60 * 1000);
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1510,6 +1515,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (sessionRow.userId !== String(userId)) {
         return res.status(403).json({
           message: "Session belongs to a different user.",
+          errorType: 'invalid_session',
+        });
+      }
+      if (sessionRow.context !== 'ads_watch') {
+        // Prevent a session registered for a different flow (e.g. mission ads)
+        // from being redeemed here — each flow has its own reward/limit rules.
+        return res.status(400).json({
+          message: "Session was not registered for this ad flow.",
           errorType: 'invalid_session',
         });
       }
