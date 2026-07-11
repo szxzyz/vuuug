@@ -6041,6 +6041,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
 
   // PAD conversion endpoint (supports USD, TON, BUG)
+  // Reconciliation guard shared by convert-to-usd / convert-to-ton.
+  // Computes the ledger-verified ceiling for how much POW this user is allowed to
+  // convert: total legitimately-earned (additions) minus anti-fraud corrections
+  // minus what's already been converted. If a request would exceed that ceiling
+  // (beyond a tiny rounding tolerance), it's rejected even if users.balance says
+  // there's enough — closing the gap that let corrected/inflated balances still
+  // get cashed out as real currency.
+  async function assertConversionWithinLedger(tx: any, userId: string, convertAmount: number): Promise<void> {
+    const ledger = await tx.execute(sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN type = 'addition' THEN amount::numeric ELSE 0 END), 0) AS total_earned,
+        COALESCE(SUM(CASE WHEN source = 'balance_correction' THEN -amount::numeric ELSE 0 END), 0) AS total_corrected,
+        COALESCE(SUM(CASE WHEN source = 'convert' THEN -amount::numeric ELSE 0 END), 0) AS total_converted
+      FROM transactions WHERE user_id = ${userId}
+    `);
+    const row = ledger.rows[0] as { total_earned: string; total_corrected: string; total_converted: string } | undefined;
+    const totalEarned = parseFloat(row?.total_earned || '0');
+    const totalCorrected = parseFloat(row?.total_corrected || '0');
+    const totalConverted = parseFloat(row?.total_converted || '0');
+    const maxConvertible = totalEarned - totalCorrected - totalConverted;
+
+    const TOLERANCE = 1; // 1 POW rounding tolerance
+    if (convertAmount > maxConvertible + TOLERANCE) {
+      console.warn(
+        `🚫 Blocked conversion beyond ledger ceiling for user ${userId}: requested=${convertAmount}, ` +
+        `maxConvertible=${maxConvertible} (earned=${totalEarned}, corrected=${totalCorrected}, converted=${totalConverted})`
+      );
+      throw new Error('Conversion could not be verified against your earnings history. Please contact support.');
+    }
+  }
+
   app.post('/api/convert-to-usd', async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -6084,6 +6115,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (currentPowBalance < convertAmount) {
           throw new Error('Insufficient POW balance');
         }
+
+        // Reconciliation guard: verify against the earnings ledger (source of truth),
+        // not just the mutable users.balance field. Prevents a drifted/inflated balance
+        // (e.g. from a not-yet-corrected exploit) from being cashed out as real currency.
+        await assertConversionWithinLedger(tx, userId, convertAmount);
         
         const newPowBalance = currentPowBalance - convertAmount;
         let updateData: any = {
@@ -6226,6 +6262,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (currentPowBalance < convertAmount) {
           throw new Error('Insufficient POW balance');
         }
+
+        // Reconciliation guard — see assertConversionWithinLedger for rationale.
+        await assertConversionWithinLedger(tx, userId, convertAmount);
         
         const newPowBalance = currentPowBalance - convertAmount;
         const newTonBalance = currentTonBalance + tonAmount;
