@@ -445,6 +445,9 @@ export const ambassadors = pgTable("ambassadors", {
   channelId: varchar("channel_id"), // telegram chat_id for auto-posting
   nextPromoAt: timestamp("next_promo_at"), // when to send the next scheduled promo
   postingSchedule: text("posting_schedule"), // JSON array of "HH:MM" UTC time strings e.g. '["06:30","19:30"]'
+  postingMode: varchar("posting_mode").default("automatic"), // "automatic" | "manual"
+  manualPostLastAt: timestamp("manual_post_last_at"), // last time a manual post was triggered
+  requireChannelJoin: boolean("require_channel_join").default(false), // require users to join channel before claiming promo codes
   totalClaims: integer("total_claims").default(0),
   todayClaims: integer("today_claims").default(0),
   weekClaims: integer("week_claims").default(0),
