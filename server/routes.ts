@@ -6051,7 +6051,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function assertConversionWithinLedger(tx: any, userId: string, convertAmount: number): Promise<void> {
     const ledger = await tx.execute(sql`
       SELECT
-        COALESCE(SUM(CASE WHEN type = 'addition' THEN amount::numeric ELSE 0 END), 0) AS total_earned,
+        -- Count both 'addition' and POW-scale 'credit' entries as legitimately earned.
+        -- 'credit' entries with amount > 1 are POW rewards (promo codes, repairs, referral POW).
+        -- Tiny 'credit' entries (amount < 1) are USD-scale ambassador/referral USD credits and
+        -- must NOT be included in the POW ceiling — they are direct USD additions, not POW.
+        COALESCE(SUM(CASE
+          WHEN type = 'addition' THEN amount::numeric
+          WHEN type = 'credit' AND amount::numeric > 1 THEN amount::numeric
+          ELSE 0
+        END), 0) AS total_earned,
         COALESCE(SUM(CASE WHEN source = 'balance_correction' THEN -amount::numeric ELSE 0 END), 0) AS total_corrected,
         COALESCE(SUM(CASE WHEN source = 'convert' THEN -amount::numeric ELSE 0 END), 0) AS total_converted
       FROM transactions WHERE user_id = ${userId}
@@ -9181,14 +9189,23 @@ ${walletAddress}
         .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_commission_usd')).limit(1);
       const commissionUsd = commSetting?.settingValue || '0.0001';
 
-      // Insert ambassador earning (unique constraint prevents duplicates)
-      await db.insert(ambassadorEarnings).values({
+      // Insert ambassador earning — unique constraint (ambassador_id, claim_user_id, promo_code_id)
+      // prevents duplicates. We MUST check whether the row was actually inserted before crediting
+      // the ambassador's USD balance; onConflictDoNothing() is a silent no-op and the subsequent
+      // addUSDBalance call would double-credit if we don't guard here.
+      const [insertedEarning] = await db.insert(ambassadorEarnings).values({
         ambassadorId: ambassador.id,
         promoCodeId,
         claimUserId,
         promoCode: code,
         commissionUsd,
-      }).onConflictDoNothing();
+      }).onConflictDoNothing().returning({ id: ambassadorEarnings.id });
+
+      // Bail out here if this was a duplicate — stats and USD credit already applied on first claim.
+      if (!insertedEarning) {
+        console.log(`⚠️ Ambassador commission skipped (duplicate): ${code} → ambassador ${ambassador.id} already earned for user ${claimUserId}`);
+        return;
+      }
 
       // Update ambassador stats
       const today = new Date().toISOString().split('T')[0];
