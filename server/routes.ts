@@ -65,25 +65,20 @@ const AD_SESSION_MAX_AGE_MS = 15 * 60_000; // 15 minutes
 // runaway values (e.g. accidental 2,000,000 POW settings).
 const MAX_REWARD_PER_AD_POW = 5000;
 
-// Prune stale anti-fraud state every 15 minutes to prevent unbounded growth.
-// Session pending/used/failed rows now live in the `ad_sessions` DB table
-// (not an in-memory Map), so they're pruned there too — otherwise the table
-// would grow forever in production.
+// Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
 setInterval(() => {
+  const cutoff15m = Date.now() - 15 * 60 * 1000;
   const cutoff1h  = Date.now() - 60 * 60 * 1000;
+  // Remove sessions older than 15 min
+  for (const [sid, ts] of adUsedSessions) if (ts < cutoff15m) adUsedSessions.delete(sid);
+  // Remove pending registrations older than 10 min (ad was never watched)
+  for (const [sid, d] of adPendingSessions) if (d.registeredAt < cutoff15m) adPendingSessions.delete(sid);
   // Remove cooldown entries older than 1 hour (user hasn't watched an ad in a while)
   for (const [uid, ts] of adUserCooldowns) if (ts < cutoff1h) adUserCooldowns.delete(uid);
   // Remove abuse entries where lock has expired and score is 0
   for (const [uid, abuse] of adAbuseStore) {
     if (abuse.lockedUntil < Date.now() && abuse.score === 0) adAbuseStore.delete(uid);
   }
-  // Prune old ad_sessions rows: used/failed rows older than 1 day (kept briefly
-  // for debugging/replay-detection), and abandoned pending rows older than the
-  // session max-age (ad was registered but never watched/claimed).
-  db.delete(adSessions).where(
-    sql`(status IN ('used','failed') AND registered_at < NOW() - INTERVAL '1 day')
-        OR (status = 'pending' AND registered_at < NOW() - INTERVAL '1 hour')`
-  ).catch((err) => console.error('⚠️ ad_sessions cleanup failed (non-critical):', err));
 }, 15 * 60 * 1000);
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1515,14 +1510,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (sessionRow.userId !== String(userId)) {
         return res.status(403).json({
           message: "Session belongs to a different user.",
-          errorType: 'invalid_session',
-        });
-      }
-      if (sessionRow.context !== 'ads_watch') {
-        // Prevent a session registered for a different flow (e.g. mission ads)
-        // from being redeemed here — each flow has its own reward/limit rules.
-        return res.status(400).json({
-          message: "Session was not registered for this ad flow.",
           errorType: 'invalid_session',
         });
       }
@@ -6041,45 +6028,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
 
   // PAD conversion endpoint (supports USD, TON, BUG)
-  // Reconciliation guard shared by convert-to-usd / convert-to-ton.
-  // Computes the ledger-verified ceiling for how much POW this user is allowed to
-  // convert: total legitimately-earned (additions) minus anti-fraud corrections
-  // minus what's already been converted. If a request would exceed that ceiling
-  // (beyond a tiny rounding tolerance), it's rejected even if users.balance says
-  // there's enough — closing the gap that let corrected/inflated balances still
-  // get cashed out as real currency.
-  async function assertConversionWithinLedger(tx: any, userId: string, convertAmount: number): Promise<void> {
-    const ledger = await tx.execute(sql`
-      SELECT
-        -- Count both 'addition' and POW-scale 'credit' entries as legitimately earned.
-        -- 'credit' entries with amount > 1 are POW rewards (promo codes, repairs, referral POW).
-        -- Tiny 'credit' entries (amount < 1) are USD-scale ambassador/referral USD credits and
-        -- must NOT be included in the POW ceiling — they are direct USD additions, not POW.
-        COALESCE(SUM(CASE
-          WHEN type = 'addition' THEN amount::numeric
-          WHEN type = 'credit' AND amount::numeric > 1 THEN amount::numeric
-          ELSE 0
-        END), 0) AS total_earned,
-        COALESCE(SUM(CASE WHEN source = 'balance_correction' THEN -amount::numeric ELSE 0 END), 0) AS total_corrected,
-        COALESCE(SUM(CASE WHEN source = 'convert' THEN -amount::numeric ELSE 0 END), 0) AS total_converted
-      FROM transactions WHERE user_id = ${userId}
-    `);
-    const row = ledger.rows[0] as { total_earned: string; total_corrected: string; total_converted: string } | undefined;
-    const totalEarned = parseFloat(row?.total_earned || '0');
-    const totalCorrected = parseFloat(row?.total_corrected || '0');
-    const totalConverted = parseFloat(row?.total_converted || '0');
-    const maxConvertible = totalEarned - totalCorrected - totalConverted;
-
-    const TOLERANCE = 1; // 1 POW rounding tolerance
-    if (convertAmount > maxConvertible + TOLERANCE) {
-      console.warn(
-        `🚫 Blocked conversion beyond ledger ceiling for user ${userId}: requested=${convertAmount}, ` +
-        `maxConvertible=${maxConvertible} (earned=${totalEarned}, corrected=${totalCorrected}, converted=${totalConverted})`
-      );
-      throw new Error('Conversion could not be verified against your earnings history. Please contact support.');
-    }
-  }
-
   app.post('/api/convert-to-usd', async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -6123,11 +6071,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (currentPowBalance < convertAmount) {
           throw new Error('Insufficient POW balance');
         }
-
-        // Reconciliation guard: verify against the earnings ledger (source of truth),
-        // not just the mutable users.balance field. Prevents a drifted/inflated balance
-        // (e.g. from a not-yet-corrected exploit) from being cashed out as real currency.
-        await assertConversionWithinLedger(tx, userId, convertAmount);
         
         const newPowBalance = currentPowBalance - convertAmount;
         let updateData: any = {
@@ -6270,9 +6213,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (currentPowBalance < convertAmount) {
           throw new Error('Insufficient POW balance');
         }
-
-        // Reconciliation guard — see assertConversionWithinLedger for rationale.
-        await assertConversionWithinLedger(tx, userId, convertAmount);
         
         const newPowBalance = currentPowBalance - convertAmount;
         const newTonBalance = currentTonBalance + tonAmount;
@@ -9189,23 +9129,14 @@ ${walletAddress}
         .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_commission_usd')).limit(1);
       const commissionUsd = commSetting?.settingValue || '0.0001';
 
-      // Insert ambassador earning — unique constraint (ambassador_id, claim_user_id, promo_code_id)
-      // prevents duplicates. We MUST check whether the row was actually inserted before crediting
-      // the ambassador's USD balance; onConflictDoNothing() is a silent no-op and the subsequent
-      // addUSDBalance call would double-credit if we don't guard here.
-      const [insertedEarning] = await db.insert(ambassadorEarnings).values({
+      // Insert ambassador earning (unique constraint prevents duplicates)
+      await db.insert(ambassadorEarnings).values({
         ambassadorId: ambassador.id,
         promoCodeId,
         claimUserId,
         promoCode: code,
         commissionUsd,
-      }).onConflictDoNothing().returning({ id: ambassadorEarnings.id });
-
-      // Bail out here if this was a duplicate — stats and USD credit already applied on first claim.
-      if (!insertedEarning) {
-        console.log(`⚠️ Ambassador commission skipped (duplicate): ${code} → ambassador ${ambassador.id} already earned for user ${claimUserId}`);
-        return;
-      }
+      }).onConflictDoNothing();
 
       // Update ambassador stats
       const today = new Date().toISOString().split('T')[0];
