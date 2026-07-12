@@ -398,7 +398,15 @@ export default function Withdraw() {
                       <span>{feePercent}% {t('fee_label')}</span>
                     </div>
 
-                    {withdrawalInviteRequirementEnabled && (
+                    {/* Active friends requirement label — always shown */}
+                    <div className={`flex items-center gap-2 text-xs ${validReferralCount >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                      <UserPlus className="w-4 h-4" />
+                      <span>Active Friends Required: <strong>1</strong></span>
+                      <span className="text-gray-500">({validReferralCount}/1 active)</span>
+                      {validReferralCount >= 1 && <Check className="w-3 h-3" />}
+                    </div>
+
+                    {withdrawalInviteRequirementEnabled && MINIMUM_VALID_REFERRALS_REQUIRED > 1 && (
                       <div className={`flex items-center gap-2 text-xs ${hasEnoughReferrals ? 'text-green-400' : 'text-red-400'}`}>
                         <UserPlus className="w-4 h-4" />
                         <span>{t('to_withdraw_need')} {MINIMUM_VALID_REFERRALS_REQUIRED} {MINIMUM_VALID_REFERRALS_REQUIRED !== 1 ? t('friends') : t('friend')}</span>

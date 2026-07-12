@@ -414,9 +414,9 @@ export default function Home() {
     setSwapSheetOpen(true);
   };
 
-  const handleSwapConfirm = (convertTo: "USD" | "TON") => {
+  const handleSwapConfirm = (convertTo: "USD" | "TON", amount: number) => {
     convertMutation.mutate(
-      { amount: balancePAD, convertTo },
+      { amount, convertTo },
       {
         onSuccess: () => {
           setSwapSheetOpen(false);
