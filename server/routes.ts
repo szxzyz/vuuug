@@ -1675,21 +1675,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Per-provider daily count
+      // Per-provider daily count — period-aware (resets at 12:00 AM IST and 12:00 PM IST)
       const now = new Date();
+      const currentPeriod  = storage.getResetPeriod(now);
+      const lastAdPeriod   = user.lastAdDate ? storage.getResetPeriod(new Date(user.lastAdDate as any)) : null;
+      const isNewAdPeriod  = currentPeriod !== lastAdPeriod;
+
       let currentTypeWatched: number;
       if (normalizedAdType === 'adsgram') {
-        currentTypeWatched = user.adsWatchedToday || 0;
+        // storage.incrementAdsWatched handles its own period reset; mirror that here for limit check
+        currentTypeWatched = isNewAdPeriod ? 0 : (user.adsWatchedToday || 0);
       } else if (normalizedAdType === 'monetag') {
-        currentTypeWatched = (user as any).monetagAdsWatchedToday || 0;
+        currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).monetagAdsWatchedToday || 0);
       } else {
-        currentTypeWatched = (user as any).gigapubAdsWatchedToday || 0;
+        currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).gigapubAdsWatchedToday || 0);
       }
 
       // Check per-provider daily limit
       if (currentTypeWatched >= DAILY_AD_LIMIT) {
         return res.status(429).json({ 
-          message: `Daily limit reached (${DAILY_AD_LIMIT} ads/day for ${normalizedAdType}). Come back tomorrow.`,
+          message: `Daily limit reached (${DAILY_AD_LIMIT} ads/period for ${normalizedAdType}). Resets at 12:00 AM or 12:00 PM IST.`,
           limit: DAILY_AD_LIMIT,
           watched: currentTypeWatched,
           limitType: 'daily',
@@ -1710,14 +1715,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: 'Watched advertisement',
         });
         
-        // Increment per-provider daily ads watched count
+        // Increment per-provider daily ads watched count (period-reset aware)
         if (normalizedAdType === 'adsgram') {
-          await storage.incrementAdsWatched(userId);
+          await storage.incrementAdsWatched(userId); // handles period reset internally
         } else {
           const col = normalizedAdType === 'monetag' ? 'monetag_ads_watched_today' : 'gigapub_ads_watched_today';
+          // If this is a new reset period, start counter at 1; otherwise increment
+          const newProviderCount = isNewAdPeriod ? 1 : (currentTypeWatched + 1);
           await db.execute(sql`
             UPDATE users SET
-              ${sql.raw(col)} = COALESCE(${sql.raw(col)}, 0) + 1,
+              ${sql.raw(col)} = ${newProviderCount},
               ads_watched     = COALESCE(ads_watched, 0) + 1,
               last_ad_date    = NOW(),
               updated_at      = NOW()
@@ -12258,6 +12265,55 @@ ${walletAddress}
       res.status(500).json({ message: 'Failed to reset stars' });
     }
   });
+
+  // ── Twice-daily ad counter reset scheduler ───────────────────────────────────
+  // Resets ads_watched_today, monetag_ads_watched_today, gigapub_ads_watched_today
+  // for ALL users at 12:00 AM IST (18:30 UTC) and 12:00 PM IST (06:30 UTC).
+  // Per-request reset logic above handles edge cases; this is the authoritative bulk reset.
+  (function scheduleAdReset() {
+    function nextResetTime(): Date {
+      const now = new Date();
+      // Candidate times today (UTC)
+      const candidates = [
+        new Date(now.getFullYear(), now.getMonth(), now.getDate()), // placeholder, set below
+        new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+      ];
+      candidates[0].setUTCHours(6, 30, 0, 0);
+      candidates[1].setUTCHours(18, 30, 0, 0);
+      const future = candidates.filter(d => d.getTime() > now.getTime()).sort((a, b) => a.getTime() - b.getTime());
+      if (future.length > 0) return future[0];
+      // Both already passed today — schedule for 06:30 UTC tomorrow
+      const tomorrow = new Date(now);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      tomorrow.setUTCHours(6, 30, 0, 0);
+      return tomorrow;
+    }
+
+    async function runReset() {
+      try {
+        await db.execute(sql`
+          UPDATE users SET
+            ads_watched_today         = 0,
+            monetag_ads_watched_today = 0,
+            gigapub_ads_watched_today = 0,
+            updated_at                = NOW()
+        `);
+        console.log(`✅ [Ad Reset] Twice-daily ad counters reset at ${new Date().toISOString()} (12AM/12PM IST)`);
+      } catch (err) {
+        console.error('❌ [Ad Reset] Failed to reset ad counters:', err);
+      }
+      // Schedule the next one
+      const next = nextResetTime();
+      const delay = next.getTime() - Date.now();
+      console.log(`⏰ [Ad Reset] Next reset scheduled at ${next.toISOString()} (in ${Math.round(delay / 60000)}m)`);
+      setTimeout(runReset, delay);
+    }
+
+    const first = nextResetTime();
+    const delay = first.getTime() - Date.now();
+    console.log(`⏰ [Ad Reset] Twice-daily reset scheduler started. First reset at ${first.toISOString()} (in ${Math.round(delay / 60000)}m)`);
+    setTimeout(runReset, delay);
+  })();
 
   return httpServer;
 }

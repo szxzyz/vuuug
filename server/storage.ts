@@ -699,14 +699,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Helper function for consistent 18:30 UTC (12:00 AM IST) reset date calculation
-  private getResetDate(date = new Date()): string {
-    // If current time is before 18:30 UTC, consider it still "yesterday" for tasks
-    if (date.getUTCHours() < 18 || (date.getUTCHours() === 18 && date.getUTCMinutes() < 30)) {
-      const yesterday = new Date(date);
-      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-      return yesterday.toISOString().split('T')[0];
+  /**
+   * Returns a unique string identifying the current ad-reset period.
+   * Ads reset TWICE daily at 12:00 AM IST and 12:00 PM IST:
+   *   12:00 AM IST = 18:30 UTC  → start of "am" half of that IST date
+   *   12:00 PM IST = 06:30 UTC  → start of "pm" half of that IST date
+   *
+   * Period identifiers:
+   *   "YYYY-MM-DD-am" → IST midnight (18:30 UTC) to IST noon  (06:29 UTC next)
+   *   "YYYY-MM-DD-pm" → IST noon    (06:30 UTC)  to IST midnight (18:29 UTC)
+   *
+   * YYYY-MM-DD is the IST calendar date (not UTC date) for both periods.
+   */
+  getResetPeriod(date = new Date()): string {
+    const m = date.getUTCHours() * 60 + date.getUTCMinutes();
+    // 06:30 UTC = 390 min  (IST noon — start of "pm" period)
+    // 18:30 UTC = 1110 min (IST midnight — start of next "am" period)
+    if (m >= 390 && m < 1110) {
+      // Between IST noon and IST midnight → "pm" period, same UTC date
+      return date.toISOString().split('T')[0] + '-pm';
+    } else if (m >= 1110) {
+      // After IST midnight (18:30 UTC) but still same UTC day → "am" of NEXT UTC date
+      const next = new Date(date);
+      next.setUTCDate(next.getUTCDate() + 1);
+      return next.toISOString().split('T')[0] + '-am';
+    } else {
+      // Before IST noon (00:00–06:29 UTC) → "am" period of current UTC date
+      return date.toISOString().split('T')[0] + '-am';
     }
-    return date.toISOString().split('T')[0];
+  }
+
+  /** @deprecated Use getResetPeriod — kept for any callsites that relied on the old name */
+  private getResetDate(date = new Date()): string {
+    return this.getResetPeriod(date);
   }
 
   async incrementAdsWatched(userId: string): Promise<void> {
