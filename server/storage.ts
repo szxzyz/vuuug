@@ -34,7 +34,7 @@ import {
   type InsertDailyTask,
 } from "../shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lt, sql, inArray } from "drizzle-orm";
 import crypto from "crypto";
 
 function getISOWeek(): string {
@@ -1275,19 +1275,44 @@ export class DatabaseStorage implements IStorage {
 
   // Promo code operations
   async createPromoCode(promoCodeData: InsertPromoCode): Promise<PromoCode> {
+    // Business rule: every promo code auto-expires and is purged 24h after creation.
+    // Admins may set an earlier expiry, but nothing may outlive the 24h ceiling.
+    const maxExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const requested = promoCodeData.expiresAt ? new Date(promoCodeData.expiresAt) : null;
+    const expiresAt = requested && requested < maxExpiry ? requested : maxExpiry;
+
     const [promoCode] = await db
       .insert(promoCodes)
-      .values(promoCodeData)
+      .values({ ...promoCodeData, expiresAt })
       .returning();
     
     return promoCode;
   }
 
   async getAllPromoCodes(): Promise<PromoCode[]> {
+    // Exclude expired codes so the admin panel never shows stale entries even if the
+    // background cleanup job hasn't swept them yet (see deleteExpiredPromoCodes).
     return db
       .select()
       .from(promoCodes)
+      .where(sql`${promoCodes.expiresAt} IS NULL OR ${promoCodes.expiresAt} > NOW()`)
       .orderBy(desc(promoCodes.createdAt));
+  }
+
+  async deleteExpiredPromoCodes(): Promise<number> {
+    return db.transaction(async (tx) => {
+      const expired = await tx
+        .select({ id: promoCodes.id })
+        .from(promoCodes)
+        .where(sql`${promoCodes.expiresAt} IS NOT NULL AND ${promoCodes.expiresAt} <= NOW()`);
+
+      if (expired.length === 0) return 0;
+
+      const ids = expired.map(row => row.id);
+      await tx.delete(promoCodeUsage).where(inArray(promoCodeUsage.promoCodeId, ids));
+      await tx.delete(promoCodes).where(inArray(promoCodes.id, ids));
+      return ids.length;
+    });
   }
 
   async getPromoCode(code: string): Promise<PromoCode | undefined> {

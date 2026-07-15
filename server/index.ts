@@ -198,6 +198,28 @@ app.use((req, res, next) => {
       }
     }, 5 * 60 * 1000);
 
+    // Expired promo code cleanup — every promo code auto-expires 24h after creation;
+    // this sweeps expired codes (and their usage rows) out of the database so the
+    // table doesn't grow unbounded. Runs immediately on boot, then every 10 minutes.
+    (async () => {
+      try {
+        const { storage } = await import('./storage');
+        const deleted = await storage.deleteExpiredPromoCodes();
+        if (deleted > 0) console.log(`🗑️ [Promo Cleanup] Removed ${deleted} expired promo code(s) on startup`);
+      } catch (error) {
+        console.error('❌ Error in startup promo code cleanup:', error);
+      }
+    })();
+    setInterval(async () => {
+      try {
+        const { storage } = await import('./storage');
+        const deleted = await storage.deleteExpiredPromoCodes();
+        if (deleted > 0) console.log(`🗑️ [Promo Cleanup] Removed ${deleted} expired promo code(s)`);
+      } catch (error) {
+        console.error('❌ Error in promo code cleanup:', error);
+      }
+    }, 10 * 60 * 1000);
+
     // Contest snapshot check — runs every 5 minutes, auto-sends results when period ends
     setInterval(async () => {
       try {

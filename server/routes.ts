@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { WebSocketServer, WebSocket } from 'ws';
+import { alias } from "drizzle-orm/pg-core";
 import { 
   insertEarningSchema, 
   users, 
@@ -10905,8 +10906,47 @@ ${walletAddress}
       const allReferrals = await db.query.referrals.findMany({ where: eq(referrals.referrerId, id) });
       const activeReferralsCount = allReferrals.filter((r: any) => r.status === 'active').length;
 
-      // Count completed tasks
-      const completedTasksCount = await db.query.taskClicks.findMany({ where: eq(taskClicks.userId, id) });
+      // Completed tasks (advertiser task clicks) + POW earned from them
+      const taskStats = await db
+        .select({
+          count: sql<number>`count(*)`,
+          totalReward: sql<string>`COALESCE(SUM(${taskClicks.rewardAmount}), 0)`,
+        })
+        .from(taskClicks)
+        .where(eq(taskClicks.publisherId, id));
+
+      // Total withdrawn (only successful/paid/approved withdrawals count)
+      const withdrawnStats = await db
+        .select({ total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)` })
+        .from(withdrawals)
+        .where(and(
+          eq(withdrawals.userId, id),
+          sql`${withdrawals.status} IN ('completed', 'success', 'paid', 'Approved')`
+        ));
+
+      // POW earned from watched ads
+      const adsEarnedStats = await db
+        .select({ total: sql<string>`COALESCE(SUM(${earnings.amount}), 0)` })
+        .from(earnings)
+        .where(and(
+          eq(earnings.userId, id),
+          sql`${earnings.source} IN ('ad_watch', 'mission_ad')`
+        ));
+
+      // Promo codes claimed + POW earned from promo codes (PAD/POW reward type only)
+      const promoClaimStats = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(promoCodeUsage)
+        .where(eq(promoCodeUsage.userId, id));
+
+      const promoPowStats = await db
+        .select({ total: sql<string>`COALESCE(SUM(${promoCodeUsage.rewardAmount}), 0)` })
+        .from(promoCodeUsage)
+        .innerJoin(promoCodes, eq(promoCodeUsage.promoCodeId, promoCodes.id))
+        .where(and(
+          eq(promoCodeUsage.userId, id),
+          sql`UPPER(${promoCodes.rewardType}) IN ('PAD', 'POW')`
+        ));
 
       // Recent transactions
       const recentTx = await db.select().from(transactions)
@@ -10926,7 +10966,12 @@ ${walletAddress}
           totalFriends: allReferrals.length,
           activeFriends: activeReferralsCount,
           adsWatched: user.adsWatched || 0,
-          tasksCompleted: completedTasksCount.length,
+          tasksCompleted: taskStats[0]?.count || 0,
+          powFromTasks: taskStats[0]?.totalReward || '0',
+          powFromAds: adsEarnedStats[0]?.total || '0',
+          totalWithdrawn: withdrawnStats[0]?.total || '0',
+          promoCodesClaimed: promoClaimStats[0]?.count || 0,
+          powFromPromoCodes: promoPowStats[0]?.total || '0',
           totalEarned: user.totalEarned?.toString() || '0',
           balance: user.balance?.toString() || '0',
           usdBalance: user.usdBalance?.toString() || '0',
@@ -10937,6 +10982,65 @@ ${walletAddress}
     } catch (error) {
       console.error('❌ Error fetching user analytics:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+  });
+
+  // Complete deposit history for a user (TON deposits)
+  app.get('/api/admin/user-deposits/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { tonDeposits } = await import('../shared/schema');
+      const deposits = await db
+        .select()
+        .from(tonDeposits)
+        .where(eq(tonDeposits.userId, id))
+        .orderBy(desc(tonDeposits.createdAt));
+      res.json({ success: true, deposits });
+    } catch (error) {
+      console.error('❌ Error fetching user deposit history:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch deposit history' });
+    }
+  });
+
+  // Complete task creation history for a user (tasks they created as an advertiser)
+  app.get('/api/admin/user-created-tasks/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const createdTasks = await db
+        .select()
+        .from(advertiserTasks)
+        .where(eq(advertiserTasks.advertiserId, id))
+        .orderBy(desc(advertiserTasks.createdAt));
+      res.json({ success: true, tasks: createdTasks });
+    } catch (error) {
+      console.error('❌ Error fetching user task creation history:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch task creation history' });
+    }
+  });
+
+  // Complete referral list for a user
+  app.get('/api/admin/user-referrals/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const refereeUser = alias(users, 'refereeUser');
+      const userReferrals = await db
+        .select({
+          id: referrals.id,
+          refereeId: referrals.refereeId,
+          refereeCode: refereeUser.referralCode,
+          refereeName: refereeUser.firstName,
+          rewardAmount: referrals.rewardAmount,
+          status: referrals.status,
+          createdAt: referrals.createdAt,
+        })
+        .from(referrals)
+        .leftJoin(refereeUser, eq(referrals.refereeId, refereeUser.id))
+        .where(eq(referrals.referrerId, id))
+        .orderBy(desc(referrals.createdAt));
+      res.json({ success: true, referrals: userReferrals });
+    } catch (error) {
+      console.error('❌ Error fetching user referrals:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch referrals' });
     }
   });
 
