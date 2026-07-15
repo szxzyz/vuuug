@@ -516,7 +516,7 @@ function BanUserButton({ user, onSuccess }: { user: any; onSuccess: () => void }
   );
 }
 
-type UserProfileTab = 'overview' | 'tasks' | 'ads' | 'referrals' | 'withdrawals' | 'bans' | 'balance';
+type UserProfileTab = 'overview' | 'tasks' | 'ads' | 'referrals' | 'withdrawals' | 'bans' | 'balance' | 'deposits' | 'createdTasks';
 
 function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -554,6 +554,21 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
     queryFn: () => apiRequest("GET", `/api/admin/users/${user.id}/balance-log`).then(res => res.json()),
     enabled: activeTab === 'balance',
   });
+  const { data: analyticsData } = useQuery({
+    queryKey: ["/api/admin/user-analytics-overview", user.id],
+    queryFn: () => apiRequest("GET", `/api/admin/users/${user.id}/analytics`).then(res => res.json()),
+    enabled: activeTab === 'overview',
+  });
+  const { data: userDeposits } = useQuery({
+    queryKey: ["/api/admin/user-deposits", user.id],
+    queryFn: () => apiRequest("GET", `/api/admin/user-deposits/${user.id}`).then(res => res.json()),
+    enabled: activeTab === 'deposits',
+  });
+  const { data: userCreatedTasks } = useQuery({
+    queryKey: ["/api/admin/user-created-tasks", user.id],
+    queryFn: () => apiRequest("GET", `/api/admin/user-created-tasks/${user.id}`).then(res => res.json()),
+    enabled: activeTab === 'createdTasks',
+  });
 
   const handleAdjustBalance = async () => {
     const amt = parseFloat(balanceForm.amount);
@@ -584,6 +599,8 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
     { id: 'ads' as const, label: 'Ads' },
     { id: 'referrals' as const, label: 'Referrals' },
     { id: 'withdrawals' as const, label: 'Withdrawals' },
+    { id: 'deposits' as const, label: 'Deposits' },
+    { id: 'createdTasks' as const, label: 'Created Tasks' },
     { id: 'bans' as const, label: 'Bans' },
   ];
 
@@ -643,7 +660,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             <p className="text-xs text-muted-foreground mb-2">Earnings</p>
             <div className="grid grid-cols-2 gap-2">
               <div><p className="text-xs text-muted-foreground">Total Earned</p><p className="font-bold text-emerald-400">{formatPOW(user.totalEarned)} POW</p></div>
-              <div><p className="text-xs text-muted-foreground">Total Withdrawn</p><p className="font-bold text-amber-400">${parseFloat(user.totalWithdrawn || '0').toFixed(2)} USD</p></div>
+              <div><p className="text-xs text-muted-foreground">Total Withdrawn</p><p className="font-bold text-amber-400">{formatPOW(analyticsData?.analytics?.totalWithdrawn)} POW</p></div>
             </div>
           </div>
 
@@ -652,7 +669,23 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             <div className="grid grid-cols-3 gap-2 text-center">
               <div><p className="text-xs text-muted-foreground">Friends</p><p className="font-bold">{user.friendsInvited || 0}</p></div>
               <div><p className="text-xs text-muted-foreground">Ads Watched</p><p className="font-bold">{user.adsWatched || 0}</p></div>
-              <div><p className="text-xs text-muted-foreground">Tasks Done</p><p className="font-bold">{user.tasksCompleted || 0}</p></div>
+              <div><p className="text-xs text-muted-foreground">Tasks Done</p><p className="font-bold">{analyticsData?.analytics?.tasksCompleted ?? (user.tasksCompleted || 0)}</p></div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 p-3 rounded">
+            <p className="text-xs text-muted-foreground mb-2">POW Earned By Source</p>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div><p className="text-xs text-muted-foreground">From Tasks</p><p className="font-bold text-blue-400">{formatPOW(analyticsData?.analytics?.powFromTasks)} POW</p></div>
+              <div><p className="text-xs text-muted-foreground">From Ads</p><p className="font-bold text-green-400">{formatPOW(analyticsData?.analytics?.powFromAds)} POW</p></div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 p-3 rounded">
+            <p className="text-xs text-muted-foreground mb-2">Promo Codes</p>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div><p className="text-xs text-muted-foreground">Claimed</p><p className="font-bold">{analyticsData?.analytics?.promoCodesClaimed ?? 0}</p></div>
+              <div><p className="text-xs text-muted-foreground">POW From Promo Codes</p><p className="font-bold text-purple-400">{formatPOW(analyticsData?.analytics?.powFromPromoCodes)} POW</p></div>
             </div>
           </div>
 
@@ -765,6 +798,53 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             </div>
           ) : (
             <p className="text-center text-muted-foreground py-4">No withdrawals</p>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'deposits' && (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground mb-2">Total Deposits: {userDeposits?.deposits?.length || 0}</div>
+          {userDeposits?.deposits?.length > 0 ? (
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {userDeposits.deposits.map((d: any) => (
+                <div key={d.id} className="bg-white/5 p-2 rounded border border-white/10">
+                  <div className="flex justify-between items-center">
+                    <p className="font-bold text-purple-400">{parseFloat(d.amount || '0').toFixed(4)} TON</p>
+                    <Badge className={d.status === 'confirmed' ? 'bg-green-600' : d.status === 'failed' ? 'bg-red-600' : 'bg-yellow-600'}>
+                      {d.status}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Date: {d.createdAt ? new Date(d.createdAt).toLocaleString() : 'N/A'}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-muted-foreground py-4">No deposits</p>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'createdTasks' && (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground mb-2">Total Tasks Created: {userCreatedTasks?.tasks?.length || 0}</div>
+          {userCreatedTasks?.tasks?.length > 0 ? (
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {userCreatedTasks.tasks.map((t: any) => (
+                <div key={t.id} className="bg-white/5 p-2 rounded border border-white/10">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium">{t.title || 'Task'}</p>
+                    <Badge className={t.status === 'completed' ? 'bg-green-600' : t.status === 'rejected' ? 'bg-red-600' : t.status === 'running' ? 'bg-blue-600' : 'bg-yellow-600'}>
+                      {t.status}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Type: {t.taskType} · {t.currentClicks || 0}/{t.totalClicksRequired} clicks</p>
+                  <p className="text-xs text-muted-foreground">Created: {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : 'N/A'}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-muted-foreground py-4">No tasks created</p>
           )}
         </div>
       )}

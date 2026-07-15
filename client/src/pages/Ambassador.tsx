@@ -470,7 +470,7 @@ export default function Ambassador() {
                   type="text"
                   value={customPromoInput}
                   onChange={(e) => setCustomPromoInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-                  placeholder="E.g. MYCHAIN"
+                  placeholder={t("placeholder_eg_mychain")}
                   maxLength={20}
                   className="flex-1 h-11 rounded-xl px-3 text-white text-sm font-mono focus:outline-none"
                   style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
@@ -558,7 +558,7 @@ export default function Ambassador() {
               /* Manual mode — Post Now button with 24 h rate limit */
               <div className="mb-4">
                 <p className="text-[#555] text-xs mb-4 leading-relaxed">
-                  Post promo codes to your channel on demand. You can post once every 24 hours.
+                  {t("post_promo_desc")}
                 </p>
                 {postNowCountdown !== null ? (
                   <div
@@ -567,7 +567,7 @@ export default function Ambassador() {
                   >
                     <Timer className="w-4 h-4 text-[#888]" />
                     <span className="text-[#888] text-sm font-semibold">
-                      Next post in{" "}
+                      {t("next_post_in")}{" "}
                       {String(Math.floor(postNowCountdown / 3600000)).padStart(2, "0")}:
                       {String(Math.floor((postNowCountdown % 3600000) / 60000)).padStart(2, "0")}:
                       {String(Math.floor((postNowCountdown % 60000) / 1000)).padStart(2, "0")}
@@ -584,7 +584,7 @@ export default function Ambassador() {
                       ? <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
                       : <>
                           <Zap className="w-4 h-4 text-[#4cd3ff]" />
-                          <span className="text-[#4cd3ff] font-semibold text-sm">Post Now</span>
+                          <span className="text-[#4cd3ff] font-semibold text-sm">{t("post_now")}</span>
                         </>}
                   </button>
                 )}
@@ -597,8 +597,8 @@ export default function Ambassador() {
               style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
             >
               <div>
-                <p className="text-white text-sm font-semibold">Require Channel Join</p>
-                <p className="text-[#555] text-xs mt-0.5">Users must join your channel to claim promo codes</p>
+                <p className="text-white text-sm font-semibold">{t("require_channel_join")}</p>
+                <p className="text-[#555] text-xs mt-0.5">{t("require_channel_join_desc")}</p>
               </div>
               <button
                 onClick={() => setRequireChannelJoin(prev => !prev)}
@@ -711,9 +711,9 @@ export default function Ambassador() {
                             ) : (
                               <>
                                 <div className="grid grid-cols-3 gap-1 pt-2 pb-1">
-                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider">User</span>
-                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider text-center">Date &amp; Time</span>
-                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider text-right">Reward</span>
+                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider">{t("table_user")}</span>
+                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider text-center">{t("table_date_time")}</span>
+                                  <span className="text-[#555] text-[9px] font-semibold uppercase tracking-wider text-right">{t("table_reward")}</span>
                                 </div>
                                 <div className="space-y-0">
                                   {item.claims.map((claim) => (
@@ -828,10 +828,9 @@ export default function Ambassador() {
                     <div>
                       <p className="text-yellow-400 text-sm font-semibold">{t("required_add_bot_admin")}</p>
                       <p className="text-[#888] text-xs mt-1 leading-relaxed">
-                        In your Telegram channel settings, add{" "}
-                        <span className="text-white font-semibold">@Paid_Adzbot</span> as administrator with{" "}
-                        <span className="text-white font-semibold">Post Messages</span> permission enabled.
-                        Then click Verify below.
+                        {t("bot_admin_instructions_pre")}{" "}
+                        <span className="text-white font-semibold">@Paid_Adzbot</span> {t("bot_admin_instructions_mid")}{" "}
+                        <span className="text-white font-semibold">{t("post_messages_permission_label")}</span> {t("bot_admin_instructions_post")}
                       </p>
                     </div>
                   </div>
