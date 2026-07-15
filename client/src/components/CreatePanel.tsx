@@ -110,8 +110,8 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
       });
       const data = await res.json();
       if (data.success) setChState("ok");
-      else { setChState("err"); setChError(data.message || "Bot is not admin on this channel."); }
-    } catch { setChState("err"); setChError("Network error. Try again."); }
+      else { setChState("err"); setChError(data.message || t("bot_not_admin_error")); }
+    } catch { setChState("err"); setChError(t("network_error_retry")); }
   };
 
   const { data: myTasksData, isLoading: isLoadingMyTasks } = useQuery<{ success: boolean; tasks: MyTask[] }>({
