@@ -1228,9 +1228,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channelTaskCostTON = parseFloat(getSetting('channel_task_cost_ton', '0.0003')); // Default 0.0003 TON per click
       const botTaskCostTON = parseFloat(getSetting('bot_task_cost_ton', '0.0003')); // Default 0.0003 TON per click
       
-      // Separate channel and bot task rewards (in PAD)
-      const channelTaskRewardPOW = parseInt(getSetting('channel_task_reward', '1000')); // Default 1000 POW per click
-      const botTaskRewardPOW = parseInt(getSetting('bot_task_reward', '1000')); // Default 1000 POW per click
+      // Separate channel and bot task rewards (in PAD) — tiered by verification
+      const channelTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '2000')); // Default 2000 POW (no verify)
+      const botTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '2000')); // Default 2000 POW (no verify)
+      const taskRewardWithVerify = parseInt(getSetting('task_reward_with_verify', '3000')); // Default 3000 POW (with verify)
       
       // Currency conversion: 10,000,000 POW = 1 USD
       const padPerUsd = parseInt(getSetting('pad_per_usd', '10000000')); // Default 10M POW = 1 USD
@@ -1257,8 +1258,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const shareTaskReward = parseInt(getSetting('share_task_reward', '1000')); // Share with friends reward in PAD
       const communityTaskReward = parseInt(getSetting('community_task_reward', '1000')); // Join community reward in PAD
       
-      // Partner task reward
-      const partnerTaskReward = parseInt(getSetting('partner_task_reward', '1000')); // Partner task reward in PAD
+      // Partner task reward (highest tier, always verified)
+      const partnerTaskReward = parseInt(getSetting('partner_task_reward', '5000')); // Partner task reward in PAD
       
       // Withdrawal requirement settings
       const withdrawalAdRequirementEnabled = getSetting('withdrawal_ad_requirement_enabled', 'true') === 'true';
@@ -4250,9 +4251,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCost: parseFloat(getSetting('bot_task_cost_usd', '0.003')), // NEW: Bot cost in USD (admin only)
         channelTaskCostTON: parseFloat(getSetting('channel_task_cost_ton', '0.0003')), // TON cost for regular users
         botTaskCostTON: parseFloat(getSetting('bot_task_cost_ton', '0.0003')), // TON cost for regular users
-        channelTaskReward: parseInt(getSetting('channel_task_reward', '1000')), // NEW: Channel reward in PAD
-        botTaskReward: parseInt(getSetting('bot_task_reward', '1000')), // NEW: Bot reward in PAD
-        partnerTaskReward: parseInt(getSetting('partner_task_reward', '1000')), // NEW: Partner reward in PAD
+        channelTaskReward: parseInt(getSetting('channel_task_reward', '2000')), // Channel reward (legacy)
+        botTaskReward: parseInt(getSetting('bot_task_reward', '2000')), // Bot reward (legacy)
+        partnerTaskReward: parseInt(getSetting('partner_task_reward', '5000')), // Partner task reward in PAD
+        taskRewardNoVerify: parseInt(getSetting('task_reward_no_verify', '2000')), // Task without verification
+        taskRewardWithVerify: parseInt(getSetting('task_reward_with_verify', '3000')), // Task with verification
         minimumConvertPOW: parseInt(getSetting('minimum_convert_pad', '100')), // NEW: Min convert in PAD (100 PAD = $0.01)
         minimumConvertUSD: parseInt(getSetting('minimum_convert_pad', '100')) / 10000, // Convert to USD
         minimumClicks: parseInt(getSetting('minimum_clicks', '500')), // NEW: Min clicks for task creation
@@ -4580,6 +4583,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Send task notification to all users who have at least one incomplete running task
+  app.post('/api/admin/notify-incomplete-tasks', authenticateAdmin, async (req: any, res) => {
+    try {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const botUsername = process.env.BOT_USERNAME || process.env.VITE_BOT_USERNAME || 'Paid_Adzbot';
+
+      if (!botToken) {
+        return res.status(400).json({ success: false, message: 'Bot token not configured' });
+      }
+
+      // Check if there are any running tasks at all
+      const runningTasks = await db.select({ id: advertiserTasks.id })
+        .from(advertiserTasks)
+        .where(eq(advertiserTasks.status, 'running'));
+
+      if (runningTasks.length === 0) {
+        return res.json({ success: true, message: 'No running tasks found', details: { sent: 0, failed: 0 } });
+      }
+
+      // Find users who have NOT clicked at least one of the running tasks
+      // i.e. users with telegram_id where at least one running task has no click from them
+      const allUsersWithTg = await db.select({ 
+        telegramId: users.telegram_id, 
+        id: users.id 
+      }).from(users).where(sql`${users.telegram_id} IS NOT NULL`);
+
+      // Get all (taskId, userId) pairs that have been clicked
+      const clickedPairs = await db.select({ taskId: taskClicks.taskId, userId: taskClicks.publisherId })
+        .from(taskClicks)
+        .where(sql`${taskClicks.taskId} IN (${sql.join(runningTasks.map(t => sql`${t.id}`), sql`, `)})`);
+
+      const clickedSet = new Set(clickedPairs.map(c => `${c.taskId}:${c.userId}`));
+      const runningTaskIds = runningTasks.map(t => t.id);
+
+      // Keep only users who have at least one running task they haven't clicked
+      const eligibleUsers = allUsersWithTg.filter(user => {
+        return runningTaskIds.some(taskId => !clickedSet.has(`${taskId}:${user.id}`));
+      });
+
+      const message = `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New tasks available!</b>\n\n<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete them now and claim your rewards!`;
+
+      const replyMarkup = {
+        inline_keyboard: [[
+          {
+            text: '👉 Complete Tasks 👈',
+            url: `https://t.me/${botUsername}?start=tasks`,
+          }
+        ]]
+      };
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const user of eligibleUsers) {
+        if (user.telegramId) {
+          const sent = await sendUserTelegramNotification(user.telegramId, message, replyMarkup, 'HTML');
+          if (sent) successCount++;
+          else failCount++;
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Task notifications sent to eligible users`,
+        details: {
+          eligible: eligibleUsers.length,
+          sent: successCount,
+          failed: failCount,
+        }
+      });
+    } catch (error) {
+      console.error('Error sending task notifications:', error);
+      res.status(500).json({ success: false, message: 'Failed to send task notifications' });
+    }
+  });
+
   // Broadcast message to all users (for admin use)
   app.post('/api/admin/broadcast', authenticateAdmin, async (req: any, res) => {
     try {
@@ -6713,8 +6792,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Partner tasks are free and always reward 5 PAD
+      // Partner tasks are free and always use Telegram verification
       if (taskType === "partner") {
+        // Partner tasks always require verification via Telegram Bot API
+        const useVerification = verificationRequired !== false; // default true for partner tasks
         const task = await storage.createTask({
           advertiserId: userId,
           taskType,
@@ -6724,8 +6805,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           costPerClick: "0",
           totalCost: "0",
           status: "running",
-          verificationRequired: false,
-          channelVerified: false,
+          verificationRequired: true, // Partner tasks always require Telegram verification
+          channelVerified: channelVerified || false,
         });
 
         console.log('✅ Partner task created:', task);
@@ -6884,7 +6965,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/advertiser-tasks/:taskId/click', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
+      const telegramUserId = req.user?.telegramUser?.id || req.session?.user?.telegramUser?.id;
       const { taskId } = req.params;
+
+      // For partner tasks or tasks with verificationRequired, enforce server-side Telegram verification (fail-closed)
+      const task = await storage.getTaskById(taskId);
+      if (task && (task.taskType === 'partner' || task.verificationRequired)) {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        
+        // Fail-closed: if we can't verify, block the claim
+        if (!botToken) {
+          return res.status(403).json({
+            success: false,
+            message: "Verification service is unavailable — please try again later",
+            requiresVerification: true,
+          });
+        }
+        if (!telegramUserId) {
+          return res.status(403).json({
+            success: false,
+            message: "Could not identify your Telegram account — please re-open the app via Telegram",
+            requiresVerification: true,
+          });
+        }
+        if (!task.link) {
+          return res.status(403).json({
+            success: false,
+            message: "Task has no verifiable link — contact support",
+            requiresVerification: true,
+          });
+        }
+
+        let channelId = task.link.trim();
+        const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
+        if (urlMatch && urlMatch[1]) {
+          const segment = urlMatch[1];
+          if (!segment.startsWith('+') && !segment.startsWith('joinchat')) {
+            channelId = `@${segment}`;
+          } else {
+            // Private invite link — cannot verify server-side, block claim
+            return res.status(403).json({
+              success: false,
+              message: "Please join the channel via the invite link and then verify",
+              requiresVerification: true,
+            });
+          }
+        } else if (!channelId.startsWith('@') && !channelId.startsWith('-')) {
+          channelId = `@${channelId}`;
+        }
+
+        // Verify membership for public channel usernames
+        if (/^@[A-Za-z][A-Za-z0-9_]{2,31}$/.test(channelId)) {
+          const isMember = await verifyChannelMembership(
+            parseInt(String(telegramUserId)),
+            channelId,
+            botToken
+          );
+          if (!isMember) {
+            return res.status(403).json({
+              success: false,
+              message: "Please join the channel/bot first and then verify before claiming this reward",
+              requiresVerification: true,
+            });
+          }
+        } else {
+          // Unrecognized link format — fail-closed
+          return res.status(403).json({
+            success: false,
+            message: "Cannot verify channel membership for this task — contact support",
+            requiresVerification: true,
+          });
+        }
+      }
 
       const result = await storage.recordTaskClick(taskId, userId);
       
@@ -9120,8 +9272,11 @@ ${walletAddress}
           const [ambRow] = await db.select({
             channelId: ambassadors.channelId,
             requireChannelJoin: ambassadors.requireChannelJoin,
+            channelUsername: ambassadorApplications.channelUsername,
+            channelTitle: ambassadorApplications.channelTitle,
           })
             .from(ambassadors)
+            .leftJoin(ambassadorApplications, eq(ambassadors.applicationId, ambassadorApplications.id))
             .where(sql`${ambassadors.requireChannelJoin} = true AND ${ambassadors.channelId} IS NOT NULL AND ${cleanCode} LIKE UPPER(COALESCE(${ambassadors.promoPrefix}, ${ambassadors.promoCodeName})) || '%'`)
             .limit(1);
 
@@ -9132,10 +9287,13 @@ ${walletAddress}
               const { verifyChannelMembership } = await import('./telegram');
               const isMember = await verifyChannelMembership(telegramId, ambRow.channelId, botToken);
               if (!isMember) {
+                const channelLink = ambRow.channelUsername ? `https://t.me/${ambRow.channelUsername}` : null;
                 return res.status(403).json({
                   success: false,
-                  message: 'You must join the ambassador\'s Telegram channel before claiming this promo code.',
+                  message: `You must join the ambassador's Telegram channel before claiming this promo code.`,
                   errorType: 'channel_required',
+                  channelLink,
+                  channelName: ambRow.channelTitle || ambRow.channelUsername || 'Channel',
                 });
               }
             }
@@ -12323,6 +12481,43 @@ ${walletAddress}
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: 'Failed to update settings' });
+    }
+  });
+
+  // Public ambassador directory — shows all active ambassadors
+  app.get('/api/ambassadors/directory', async (req: any, res) => {
+    try {
+      const programEnabled = await storage.getAppSetting('ambassador_program_enabled', 'true');
+      if (programEnabled === 'false') {
+        return res.json({ success: true, ambassadors: [] });
+      }
+
+      const activeAmbassadors = await db
+        .select({
+          id: ambassadors.id,
+          promoCodeName: ambassadors.promoCodeName,
+          channelId: ambassadors.channelId,
+          channelTitle: ambassadorApplications.channelTitle,
+          channelUsername: ambassadorApplications.channelUsername,
+          subscriberCount: ambassadorApplications.subscriberCount,
+          totalClaims: ambassadors.totalClaims,
+          createdAt: ambassadors.createdAt,
+        })
+        .from(ambassadors)
+        .leftJoin(ambassadorApplications, eq(ambassadors.applicationId, ambassadorApplications.id))
+        .where(eq(ambassadors.status, 'active'))
+        .orderBy(desc(ambassadors.totalClaims));
+
+      res.json({
+        success: true,
+        ambassadors: activeAmbassadors.map(a => ({
+          ...a,
+          channelLink: a.channelUsername ? `https://t.me/${a.channelUsername}` : null,
+        }))
+      });
+    } catch (error) {
+      console.error('Error fetching ambassador directory:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch ambassadors' });
     }
   });
 

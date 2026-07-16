@@ -3409,26 +3409,24 @@ export class DatabaseStorage implements IStorage {
         return { success: false, message: "Task has reached its click limit" };
       }
 
-      // Get reward amount from admin settings based on task type
-      const rewardSettingKey = task.taskType === 'bot' ? 'bot_task_reward' : 
-                               task.taskType === 'partner' ? 'partner_task_reward' : 
-                               'channel_task_reward';
-      const rewardSetting = await db
-        .select()
-        .from(adminSettings)
-        .where(eq(adminSettings.settingKey, rewardSettingKey))
-        .limit(1);
-      
-      // Get partner task reward from settings if partner task, otherwise use regular rewards
-      const partnerRewardSetting = await db
-        .select()
-        .from(adminSettings)
-        .where(eq(adminSettings.settingKey, 'partner_task_reward'))
-        .limit(1);
-      const partnerReward = parseInt(partnerRewardSetting[0]?.settingValue || '5');
-      
-      const rewardPOW = task.taskType === 'partner' ? partnerReward : 
-                        parseInt(rewardSetting[0]?.settingValue || (task.taskType === 'bot' ? '20' : '30'));
+      // Get reward amount from admin settings based on task type and verification tier
+      let rewardPOW: number;
+      if (task.taskType === 'partner') {
+        // Partner tasks: always use partner_task_reward setting (default 5000 POW)
+        const partnerSetting = await db.select().from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'partner_task_reward')).limit(1);
+        rewardPOW = parseInt(partnerSetting[0]?.settingValue || '5000');
+      } else if (task.verificationRequired) {
+        // Tasks with verification: use task_reward_with_verify setting (default 3000 POW)
+        const verifySetting = await db.select().from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'task_reward_with_verify')).limit(1);
+        rewardPOW = parseInt(verifySetting[0]?.settingValue || '3000');
+      } else {
+        // Tasks without verification: use task_reward_no_verify setting (default 2000 POW)
+        const noVerifySetting = await db.select().from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'task_reward_no_verify')).limit(1);
+        rewardPOW = parseInt(noVerifySetting[0]?.settingValue || '2000');
+      }
 
       // Insert click record
       await db.insert(taskClicks).values({
