@@ -277,6 +277,24 @@ export const taskClicks = pgTable("task_clicks", {
   unique("task_clicks_unique").on(table.taskId, table.publisherId),
 ]);
 
+// Channel penalty cases — tracks users who leave verified channels before 24 h
+export const channelPenaltyCases = pgTable("channel_penalty_cases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  telegramId: text("telegram_id"),
+  taskId: varchar("task_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  channelLink: text("channel_link").notNull(),
+  originalReward: integer("original_reward").notNull(),       // POW rewarded
+  penaltyDeducted: integer("penalty_deducted").default(0).notNull(), // 2× original reward
+  claimedAt: timestamp("claimed_at").notNull(),
+  leftAt: timestamp("left_at"),
+  deadlineAt: timestamp("deadline_at"),                       // 24 h after leftAt
+  resolvedAt: timestamp("resolved_at"),
+  status: varchar("status").default("watching").notNull(),    // watching | penalized | resolved | permanent
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Ban logs table - stores all ban records for admin panel
 export const banLogs = pgTable("ban_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
