@@ -7503,64 +7503,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // ── Atomic claim: only ONE process (verify or poller) can credit this deposit ─
+      // ── Atomic claim + credit — all inside ONE transaction so confirm & balance update never split ─
       // Strategy:
       //   1. Try UPDATE existing pending record → confirmed (WHERE status='pending')
-      //   2. If no pending row exists, try INSERT as confirmed (first-time, blockchain was instant)
-      //   3. If both fail → already confirmed by poller; return 409 (no double credit)
+      //   2. If no pending row, check txHash duplicate, then INSERT as confirmed
+      //   3. If both fail → already confirmed; return 409 (no double credit)
+      //   Balance update & transaction log happen inside the same DB transaction as the claim.
 
       const actualAmount = actualNano ? Number(actualNano) / 1_000_000_000 : depositAmount;
 
-      // Step 1: claim by updating existing pending record (original BOC key)
-      const claimed = await db.update(tonDeposits)
-        .set({ status: 'confirmed', confirmedAt: new Date() } as any)
-        .where(and(eq(tonDeposits.boc, boc), eq(tonDeposits.status as any, 'pending')))
-        .returning({ id: tonDeposits.id });
+      let newTonBalance: string;
 
-      if (claimed.length === 0) {
-        // Step 2: no pending row with this BOC — check if txHash was already confirmed
-        if (txHash) {
-          const hashExists = await db.select({ status: tonDeposits.status }).from(tonDeposits).where(eq(tonDeposits.boc, txHash)).limit(1);
-          if (hashExists.length > 0 && hashExists[0].status === 'confirmed') {
-            return res.status(409).json({ success: false, message: 'This transaction has already been credited.' });
+      try {
+        newTonBalance = await db.transaction(async (tx) => {
+          // Step 1: claim by updating existing pending record (original BOC key)
+          const claimed = await tx.update(tonDeposits)
+            .set({ status: 'confirmed', confirmedAt: new Date() } as any)
+            .where(and(eq(tonDeposits.boc, boc), eq(tonDeposits.status as any, 'pending')))
+            .returning({ id: tonDeposits.id });
+
+          if (claimed.length === 0) {
+            // Step 2: no pending row with this BOC — check if txHash was already confirmed
+            if (txHash) {
+              const hashExists = await tx.select({ status: tonDeposits.status }).from(tonDeposits).where(eq(tonDeposits.boc, txHash)).limit(1);
+              if (hashExists.length > 0 && hashExists[0].status === 'confirmed') {
+                throw Object.assign(new Error('already_credited'), { statusCode: 409 });
+              }
+            }
+            // Try inserting as a fresh confirmed record (BOC = original boc, txHash in metadata)
+            const inserted = await tx.insert(tonDeposits).values({
+              userId,
+              amount: actualAmount.toString(),
+              boc,   // always use original BOC — prevents poller picking it up again
+              status: 'confirmed',
+              confirmedAt: new Date(),
+            }).onConflictDoNothing().returning({ id: tonDeposits.id });
+
+            if (inserted.length === 0) {
+              throw Object.assign(new Error('already_processed'), { statusCode: 409 });
+            }
           }
-        }
-        // Try inserting as a fresh confirmed record (BOC = original boc, txHash in metadata)
-        const inserted = await db.insert(tonDeposits).values({
-          userId,
-          amount: actualAmount.toString(),
-          boc,   // always use original BOC — prevents poller picking it up again
-          status: 'confirmed',
-          confirmedAt: new Date(),
-        }).onConflictDoNothing().returning({ id: tonDeposits.id });
 
-        if (inserted.length === 0) {
-          // Another process already inserted/confirmed this BOC — abort to prevent double credit
+          // Credit balance inside the same transaction — atomic with the claim above
+          const [currentUser] = await tx.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId)).limit(1);
+          if (!currentUser) throw Object.assign(new Error('user_not_found'), { statusCode: 404 });
+
+          const bal = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
+
+          await tx.update(users)
+            .set({ tonBalance: bal, updatedAt: new Date() })
+            .where(eq(users.id, userId));
+
+          await tx.insert(transactions).values({
+            userId,
+            amount: actualAmount.toString(),
+            type: 'addition',
+            source: 'ton_deposit',
+            description: `TON deposit verified on-chain: ${actualAmount} TON`,
+            metadata: { boc: boc.slice(0, 64), txHash },
+          });
+
+          return bal;
+        });
+      } catch (txErr: any) {
+        if (txErr?.statusCode === 409 && txErr?.message === 'already_credited') {
+          return res.status(409).json({ success: false, message: 'This transaction has already been credited.' });
+        }
+        if (txErr?.statusCode === 409 && txErr?.message === 'already_processed') {
           return res.status(409).json({ success: false, message: 'This transaction has already been processed.' });
         }
+        if (txErr?.statusCode === 404) {
+          return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        throw txErr; // re-throw to outer catch
       }
-      // ─────────────────────────────────────────────────────────────────────────────
-
-      // Safe to credit — we atomically claimed the deposit above
-      const [currentUser] = await db.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId)).limit(1);
-      if (!currentUser) {
-        return res.status(404).json({ success: false, message: 'User not found' });
-      }
-
-      const newTonBalance = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
-
-      await db.update(users)
-        .set({ tonBalance: newTonBalance, updatedAt: new Date() })
-        .where(eq(users.id, userId));
-
-      await db.insert(transactions).values({
-        userId,
-        amount: actualAmount.toString(),
-        type: 'addition',
-        source: 'ton_deposit',
-        description: `TON deposit verified on-chain: ${actualAmount} TON`,
-        metadata: { boc: boc.slice(0, 64), txHash },
-      });
 
       console.log(`✅ TON deposit credited: userId=${userId} amount=${actualAmount} TON newBalance=${newTonBalance} txHash=${txHash}`);
 
@@ -8275,7 +8291,13 @@ ${walletAddress}
   });
 
   // Alternative withdrawal endpoint for compatibility - /api/withdraw
+  // TON balance is ONLY for task creation (advertising). Withdrawal is blocked.
   app.post('/api/withdraw', async (req: any, res) => {
+    return res.status(403).json({
+      success: false,
+      message: 'TON balance can only be used to create advertising tasks. Withdrawal is not available.'
+    });
+
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;

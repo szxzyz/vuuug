@@ -3605,49 +3605,60 @@ export async function retryPendingTonDeposits(): Promise<void> {
       const actualAmount = Number(actualNano) / 1_000_000_000;
       usedHashes.add(txHash);
 
-      // Atomic claim: UPDATE WHERE status='pending' — if 0 rows affected,
-      // the verify endpoint already claimed this deposit; skip to prevent double-credit
-      const claimed = await dbConn.update(tonDeposits)
-        .set({ status: 'confirmed', confirmedAt: new Date() } as any)
-        .where(and(eq(tonDeposits.id, dep.id), eq(tonDeposits.status as any, 'pending')))
-        .returning({ id: tonDeposits.id });
+      // Atomic claim + credit — all inside ONE transaction so confirm & balance update never split
+      let newBalance: string;
+      let telegramIdForNotify: string | null = null;
 
-      if (claimed.length === 0) {
-        console.log(`💎 [TON Poller] Deposit ${dep.id} already claimed by verify endpoint — skipping`);
+      const credited = await dbConn.transaction(async (tx) => {
+        const claimed = await tx.update(tonDeposits)
+          .set({ status: 'confirmed', confirmedAt: new Date() } as any)
+          .where(and(eq(tonDeposits.id, dep.id), eq(tonDeposits.status as any, 'pending')))
+          .returning({ id: tonDeposits.id });
+
+        if (claimed.length === 0) {
+          return false; // already claimed by verify endpoint
+        }
+
+        const [currentUser] = await tx
+          .select({ tonBalance: users.tonBalance, telegramId: users.telegram_id })
+          .from(users)
+          .where(eq(users.id, dep.userId))
+          .limit(1);
+        if (!currentUser) return false;
+
+        newBalance = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
+        telegramIdForNotify = currentUser.telegramId ?? null;
+
+        await tx.update(users)
+          .set({ tonBalance: newBalance, updatedAt: new Date() } as any)
+          .where(eq(users.id, dep.userId));
+
+        await tx.insert(transactions).values({
+          userId: dep.userId,
+          amount: actualAmount.toString(),
+          type: 'addition',
+          source: 'ton_deposit',
+          description: `TON deposit confirmed (auto-retry): ${actualAmount} TON`,
+          metadata: { depositId: dep.id, txHash, autoRetry: true },
+        } as any);
+
+        return true;
+      });
+
+      if (!credited) {
+        console.log(`💎 [TON Poller] Deposit ${dep.id} already claimed or user missing — skipping`);
         continue;
       }
 
-      const [currentUser] = await dbConn
-        .select({ tonBalance: users.tonBalance, telegramId: users.telegram_id })
-        .from(users)
-        .where(eq(users.id, dep.userId))
-        .limit(1);
-      if (!currentUser) continue;
-
-      const newBalance = (parseFloat(currentUser.tonBalance || '0') + actualAmount).toFixed(10);
-
-      await dbConn.update(users)
-        .set({ tonBalance: newBalance, updatedAt: new Date() } as any)
-        .where(eq(users.id, dep.userId));
-
-      await dbConn.insert(transactions).values({
-        userId: dep.userId,
-        amount: actualAmount.toString(),
-        type: 'addition',
-        source: 'ton_deposit',
-        description: `TON deposit confirmed (auto-retry): ${actualAmount} TON`,
-        metadata: { depositId: dep.id, txHash, autoRetry: true },
-      } as any);
-
-      console.log(`✅ [TON Poller] Credited deposit ${dep.id}: userId=${dep.userId} amount=${actualAmount} TON newBalance=${newBalance}`);
+      console.log(`✅ [TON Poller] Credited deposit ${dep.id}: userId=${dep.userId} amount=${actualAmount} TON newBalance=${newBalance!}`);
 
       // Notify user via Telegram DM
-      if (currentUser.telegramId) {
+      if (telegramIdForNotify) {
         await sendUserTelegramNotification(
-          currentUser.telegramId,
+          telegramIdForNotify,
           `<b>💎 TON Deposit Confirmed!</b>\n\n` +
           `<b>${actualAmount.toFixed(4)} TON</b> has been credited to your account.\n\n` +
-          `Your new TON balance: <b>${newBalance} TON</b>`,
+          `Your new TON balance: <b>${newBalance!} TON</b>`,
           undefined,
           'HTML',
         ).catch(() => {});
