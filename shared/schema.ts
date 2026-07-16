@@ -112,6 +112,8 @@ export const users = pgTable("users", {
   platform: varchar("platform", { length: 20 }),        // android/ios/tdesktop/web/unknown/script
   // Welcome message tracking — only send first-time welcome once
   welcomeMessageSent: boolean("welcome_message_sent").default(false),
+  // Automatic task reminder — tracks the last date a reminder was sent (YYYY-MM-DD UTC)
+  lastTaskReminderDate: text("last_task_reminder_date"),
   // Monthly contest stars — earned by watching ads when contest is active
   weeklyStars: integer("weekly_stars").default(0),
   createdAt: timestamp("created_at").defaultNow(),
