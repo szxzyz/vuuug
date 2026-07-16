@@ -2184,47 +2184,8 @@ ${walletAddress}
         return true;
       }
       
-      // ── Task Notification: show list of active tasks ──────────────────────────
+      // ── Task Notification: one-click global notify for users with unfinished tasks ──
       if (data === 'admin_task_notify' && await isAdminAsync(chatId)) {
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callback_query_id: callbackQuery.id })
-        });
-        try {
-          const { db: dbConn } = await import('./db');
-          const { eq } = await import('drizzle-orm');
-          const { advertiserTasks: adTasks } = await import('../shared/schema');
-          const activeTasks = await dbConn
-            .select({ id: adTasks.id, title: adTasks.title, taskType: adTasks.taskType })
-            .from(adTasks).where(eq(adTasks.status, 'running')).limit(10);
-          if (activeTasks.length === 0) {
-            await sendUserTelegramNotification(chatId, '📋 No active tasks found.');
-            return true;
-          }
-          const buttons = activeTasks.map(t => [{
-            text: `${t.taskType === 'bot' ? '🤖' : '📢'} ${t.title.substring(0, 45)}`,
-            callback_data: `task_notify_${t.id}`
-          }]);
-          buttons.push([{ text: '❌ Cancel', callback_data: 'cancel_broadcast' }]);
-          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: '📣 <b>Task Notification</b>\n\nSelect a task to notify all users who haven\'t completed it:',
-              parse_mode: 'HTML',
-              reply_markup: { inline_keyboard: buttons }
-            })
-          });
-        } catch (err) {
-          console.error('❌ admin_task_notify error:', err);
-          await sendUserTelegramNotification(chatId, '❌ Error loading tasks.');
-        }
-        return true;
-      }
-
-      // ── task_notify_TASKID — async notify non-completers ──────────────────────
-      if (data && data.startsWith('task_notify_') && await isAdminAsync(chatId)) {
-        const taskId = data.replace('task_notify_', '');
         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ callback_query_id: callbackQuery.id, text: 'Preparing notifications...' })
@@ -2235,20 +2196,57 @@ ${walletAddress}
             const { db: dbConn } = await import('./db');
             const { eq, sql: sqlFn } = await import('drizzle-orm');
             const { advertiserTasks: adTasks, users: usersT, taskClicks: tcT } = await import('../shared/schema');
-            const [task] = await dbConn.select().from(adTasks).where(eq(adTasks.id, taskId)).limit(1);
-            if (!task) { await sendUserTelegramNotification(chatId, '❌ Task not found.'); return; }
-            const completedRows = await dbConn.select({ pid: tcT.publisherId }).from(tcT).where(eq(tcT.taskId, taskId));
-            const completedSet = new Set(completedRows.map(r => r.pid));
-            const allWithTg = await dbConn.select({ id: usersT.id, tgId: usersT.telegram_id }).from(usersT).where(sqlFn`${usersT.telegram_id} IS NOT NULL`);
-            const targets = allWithTg.filter(u => u.tgId && !completedSet.has(u.id) && u.tgId !== chatId);
+
+            // Get all running task IDs
+            const activeTasks = await dbConn
+              .select({ id: adTasks.id })
+              .from(adTasks)
+              .where(eq(adTasks.status, 'running'));
+
+            if (activeTasks.length === 0) {
+              await sendUserTelegramNotification(chatId, '📋 No active tasks found. No notifications sent.');
+              return;
+            }
+
+            const activeTaskIds = new Set(activeTasks.map(t => t.id));
+
+            // Get all users with a Telegram ID
+            const allWithTg = await dbConn
+              .select({ id: usersT.id, tgId: usersT.telegram_id })
+              .from(usersT)
+              .where(sqlFn`${usersT.telegram_id} IS NOT NULL`);
+
+            // Get all task completions for running tasks
+            const completionRows = await dbConn
+              .select({ pid: tcT.publisherId, taskId: tcT.taskId })
+              .from(tcT);
+
+            // Build a map: userId -> set of completed running task IDs
+            const completedByUser = new Map<string, Set<string>>();
+            for (const row of completionRows) {
+              if (!activeTaskIds.has(row.taskId)) continue;
+              if (!completedByUser.has(row.pid)) completedByUser.set(row.pid, new Set());
+              completedByUser.get(row.pid)!.add(row.taskId);
+            }
+
+            // Eligible: has at least one unfinished running task
+            const targets = allWithTg.filter(u => {
+              if (!u.tgId || u.tgId === chatId) return false;
+              const done = completedByUser.get(u.id);
+              // Include if they haven't completed ALL active tasks
+              return !done || done.size < activeTaskIds.size;
+            });
+
             await sendUserTelegramNotification(chatId,
-              `📣 Sending task notification to <b>${targets.length}</b> users who haven't completed:\n<b>${task.title}</b>\n\nPlease wait...`);
+              `📣 Sending task notification to <b>${targets.length}</b> users with unfinished tasks...\n\nPlease wait...`);
+
             const botUsername = await getBotUsername();
             const miniAppUrl = `https://t.me/${botUsername}/MyWAdz`;
             const notifMsg =
-              `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New task added!</b>\n\n` +
-              `<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete it now to claim your reward!`;
-            const notifButtons = { inline_keyboard: [[{ text: '👉 Complete the Task', web_app: { url: miniAppUrl } }]] };
+              `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New tasks available!</b>\n\n` +
+              `<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete them now and claim your rewards!`;
+            const notifButtons = { inline_keyboard: [[{ text: '👉 Complete Tasks 👈', web_app: { url: miniAppUrl } }]] };
+
             let successCount = 0; let failCount = 0;
             for (let i = 0; i < targets.length; i++) {
               const u = targets[i];
@@ -2261,7 +2259,10 @@ ${walletAddress}
             }
             await sendUserTelegramNotification(chatId,
               `✅ <b>Task notifications sent!</b>\n\n✅ Delivered: ${successCount}\n❌ Failed: ${failCount}\n👥 Total: ${targets.length}`);
-          } catch (err) { console.error('❌ task_notify send error:', err); }
+          } catch (err) {
+            console.error('❌ admin_task_notify error:', err);
+            await sendUserTelegramNotification(chatId, '❌ Error sending task notifications.');
+          }
         })();
         return true;
       }
