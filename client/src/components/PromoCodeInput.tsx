@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
-import { FiCheck } from "react-icons/fi";
+import { FiCheck, FiExternalLink } from "react-icons/fi";
 
 declare global {
   interface Window {
@@ -35,13 +35,20 @@ export default function PromoCodeInput() {
   const [promoCode, setPromoCode] = useState("");
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [channelRequired, setChannelRequired] = useState<{ channelLink: string | null; channelName: string } | null>(null);
   const queryClient = useQueryClient();
 
   const redeemPromoMutation = useMutation({
     mutationFn: async (code: string) => {
       const response = await apiRequest("POST", "/api/promo-codes/redeem", { code });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Invalid promo code");
+      if (!response.ok) {
+        const err: any = new Error(data.message || "Invalid promo code");
+        err.errorType = data.errorType;
+        err.channelLink = data.channelLink;
+        err.channelName = data.channelName;
+        throw err;
+      }
       return data;
     },
     onSuccess: (data) => {
@@ -50,10 +57,20 @@ export default function PromoCodeInput() {
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       setPromoCode("");
       setInlineError(null);
+      setChannelRequired(null);
       showNotification(data.message || "Promo applied successfully!", "success");
     },
     onError: (error: any) => {
-      setInlineError(error.message || "Invalid Code");
+      if (error.errorType === 'channel_required') {
+        setChannelRequired({
+          channelLink: error.channelLink || null,
+          channelName: error.channelName || 'Channel',
+        });
+        setInlineError(null);
+      } else {
+        setChannelRequired(null);
+        setInlineError(error.message || "Invalid Code");
+      }
     },
   });
 
@@ -64,6 +81,7 @@ export default function PromoCodeInput() {
       return;
     }
     setInlineError(null);
+    setChannelRequired(null);
     setBusy(true);
 
     try {
@@ -81,6 +99,19 @@ export default function PromoCodeInput() {
     }
   };
 
+  const handleJoinChannel = () => {
+    if (!channelRequired?.channelLink) return;
+    const link = channelRequired.channelLink;
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg) {
+      if (link.includes("t.me/") && tg.openTelegramLink) tg.openTelegramLink(link);
+      else if (tg.openLink) tg.openLink(link);
+      else window.open(link, "_blank");
+    } else {
+      window.open(link, "_blank");
+    }
+  };
+
   const isDisabled = busy || redeemPromoMutation.isPending || !promoCode.trim();
   const isLoading  = busy || redeemPromoMutation.isPending;
 
@@ -89,10 +120,66 @@ export default function PromoCodeInput() {
       {inlineError && (
         <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171', letterSpacing: '0.04em' }}>{inlineError}</span>
       )}
+
+      {/* Channel required message */}
+      {channelRequired && (
+        <div style={{
+          background: "rgba(251,113,133,0.10)",
+          border: "1px solid rgba(251,113,133,0.25)",
+          borderRadius: 10,
+          padding: "10px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171' }}>
+            You must join <strong>{channelRequired.channelName}</strong> before claiming this promo code.
+          </span>
+          {channelRequired.channelLink && (
+            <button
+              onClick={handleJoinChannel}
+              style={{
+                height: 34,
+                borderRadius: 8,
+                border: "none",
+                background: "rgba(251,113,133,0.20)",
+                color: "#f87171",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <FiExternalLink size={12} />
+              Join {channelRequired.channelName}
+            </button>
+          )}
+          <button
+            onClick={() => redeemPromoMutation.mutate(promoCode.trim().toUpperCase())}
+            disabled={isLoading}
+            style={{
+              height: 34,
+              borderRadius: 8,
+              border: "none",
+              background: isLoading ? "rgba(255,255,255,0.04)" : "rgba(34,197,94,0.15)",
+              color: isLoading ? "rgba(255,255,255,0.2)" : "#22c55e",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: isLoading ? "not-allowed" : "pointer",
+            }}
+          >
+            {isLoading ? "Verifying…" : "✓ I've Joined — Verify & Claim"}
+          </button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <input
           value={promoCode}
-          onChange={e => { setPromoCode(e.target.value.toUpperCase()); setInlineError(null); }}
+          onChange={e => { setPromoCode(e.target.value.toUpperCase()); setInlineError(null); setChannelRequired(null); }}
           onKeyDown={e => e.key === "Enter" && !isDisabled && handleSubmit()}
           placeholder="Enter promo code"
           disabled={isLoading}
