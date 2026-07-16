@@ -86,6 +86,9 @@ async function clearWithdrawalAdminButtons(withdrawalId: string): Promise<void> 
 // State management for admin broadcast flow
 const pendingBroadcasts = new Map<string, { timestamp: number }>();
 
+// Buffer for media-group (album) broadcast messages
+const mediaGroupBuffers = new Map<string, { messages: any[]; timer: any; adminChatId: string }>();
+
 // Utility function to format USD amounts
 function formatUSD(value: string | number): string {
   const num = parseFloat(String(value));
@@ -1961,6 +1964,7 @@ Share your unique referral link and earn PAD when your friends join:
                 inline_keyboard: [
                   [{ text: '💰 Pending Withdrawals', callback_data: 'admin_pending_withdrawals' }],
                   [{ text: '🔔 Announcement', callback_data: 'admin_announce' }],
+                  [{ text: '📣 Task Notification', callback_data: 'admin_task_notify' }],
                   [{ text: '📊 Advertise', callback_data: 'admin_advertise' }],
                   [{ text: '🔄 Refresh', callback_data: 'admin_refresh' }]
                 ]
@@ -2180,6 +2184,129 @@ ${walletAddress}
         return true;
       }
       
+      // ── Task Notification: show list of active tasks ──────────────────────────
+      if (data === 'admin_task_notify' && await isAdminAsync(chatId)) {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id })
+        });
+        try {
+          const { db: dbConn } = await import('./db');
+          const { eq } = await import('drizzle-orm');
+          const { advertiserTasks: adTasks } = await import('../shared/schema');
+          const activeTasks = await dbConn
+            .select({ id: adTasks.id, title: adTasks.title, taskType: adTasks.taskType })
+            .from(adTasks).where(eq(adTasks.status, 'running')).limit(10);
+          if (activeTasks.length === 0) {
+            await sendUserTelegramNotification(chatId, '📋 No active tasks found.');
+            return true;
+          }
+          const buttons = activeTasks.map(t => [{
+            text: `${t.taskType === 'bot' ? '🤖' : '📢'} ${t.title.substring(0, 45)}`,
+            callback_data: `task_notify_${t.id}`
+          }]);
+          buttons.push([{ text: '❌ Cancel', callback_data: 'cancel_broadcast' }]);
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: '📣 <b>Task Notification</b>\n\nSelect a task to notify all users who haven\'t completed it:',
+              parse_mode: 'HTML',
+              reply_markup: { inline_keyboard: buttons }
+            })
+          });
+        } catch (err) {
+          console.error('❌ admin_task_notify error:', err);
+          await sendUserTelegramNotification(chatId, '❌ Error loading tasks.');
+        }
+        return true;
+      }
+
+      // ── task_notify_TASKID — async notify non-completers ──────────────────────
+      if (data && data.startsWith('task_notify_') && await isAdminAsync(chatId)) {
+        const taskId = data.replace('task_notify_', '');
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: 'Preparing notifications...' })
+        });
+        // Fire and forget — answer callback immediately, run broadcast in background
+        (async () => {
+          try {
+            const { db: dbConn } = await import('./db');
+            const { eq, sql: sqlFn } = await import('drizzle-orm');
+            const { advertiserTasks: adTasks, users: usersT, taskClicks: tcT } = await import('../shared/schema');
+            const [task] = await dbConn.select().from(adTasks).where(eq(adTasks.id, taskId)).limit(1);
+            if (!task) { await sendUserTelegramNotification(chatId, '❌ Task not found.'); return; }
+            const completedRows = await dbConn.select({ pid: tcT.publisherId }).from(tcT).where(eq(tcT.taskId, taskId));
+            const completedSet = new Set(completedRows.map(r => r.pid));
+            const allWithTg = await dbConn.select({ id: usersT.id, tgId: usersT.telegram_id }).from(usersT).where(sqlFn`${usersT.telegram_id} IS NOT NULL`);
+            const targets = allWithTg.filter(u => u.tgId && !completedSet.has(u.id) && u.tgId !== chatId);
+            await sendUserTelegramNotification(chatId,
+              `📣 Sending task notification to <b>${targets.length}</b> users who haven't completed:\n<b>${task.title}</b>\n\nPlease wait...`);
+            const botUsername = await getBotUsername();
+            const miniAppUrl = `https://t.me/${botUsername}/MyWAdz`;
+            const notifMsg =
+              `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New task added!</b>\n\n` +
+              `<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete it now to claim your reward!`;
+            const notifButtons = { inline_keyboard: [[{ text: '👉 Complete the Task', web_app: { url: miniAppUrl } }]] };
+            let successCount = 0; let failCount = 0;
+            for (let i = 0; i < targets.length; i++) {
+              const u = targets[i];
+              try {
+                const sent = await sendUserTelegramNotification(u.tgId!, notifMsg, notifButtons);
+                if (sent) successCount++; else failCount++;
+              } catch { failCount++; }
+              if ((i + 1) % 30 === 0) await new Promise(r => setTimeout(r, 500));
+              else await new Promise(r => setTimeout(r, 20));
+            }
+            await sendUserTelegramNotification(chatId,
+              `✅ <b>Task notifications sent!</b>\n\n✅ Delivered: ${successCount}\n❌ Failed: ${failCount}\n👥 Total: ${targets.length}`);
+          } catch (err) { console.error('❌ task_notify send error:', err); }
+        })();
+        return true;
+      }
+
+      // ── return_pow_CASEID — user requests reward restoration ──────────────────
+      if (data && data.startsWith('return_pow_') && data.length > 'return_pow_'.length) {
+        const caseId = data.replace('return_pow_', '');
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id, text: 'Checking membership...' })
+        });
+        try {
+          const { db: dbConn } = await import('./db');
+          const { eq, sql: sqlFn } = await import('drizzle-orm');
+          const { channelPenaltyCases: cpcT } = await import('../shared/schema');
+          const [penCase] = await dbConn.select().from(cpcT).where(eq(cpcT.id, caseId)).limit(1);
+          if (!penCase) { await sendUserTelegramNotification(chatId, '❌ Penalty case not found.'); return true; }
+          if (penCase.status === 'resolved') { await sendUserTelegramNotification(chatId, '✅ Your POW has already been restored!'); return true; }
+          if (penCase.status === 'permanent') { await sendUserTelegramNotification(chatId, '❌ The 24-hour window has passed. This penalty is now permanent.'); return true; }
+          if (penCase.status !== 'penalized') { await sendUserTelegramNotification(chatId, '❌ No active penalty for this case.'); return true; }
+          if (penCase.deadlineAt && new Date() > new Date(penCase.deadlineAt)) {
+            await dbConn.update(cpcT).set({ status: 'permanent', resolvedAt: new Date() }).where(eq(cpcT.id, caseId));
+            await sendUserTelegramNotification(chatId, '❌ The 24-hour window has passed. This penalty is now permanent.');
+            return true;
+          }
+          if (!TELEGRAM_BOT_TOKEN) return true;
+          const isMember = await verifyChannelMembership(parseInt(chatId), penCase.channelId, TELEGRAM_BOT_TOKEN);
+          if (!isMember) {
+            const hoursLeft = penCase.deadlineAt ? Math.max(0, Math.ceil((new Date(penCase.deadlineAt).getTime() - Date.now()) / 3600000)) : 0;
+            await sendUserTelegramNotification(chatId,
+              `❌ <b>Not subscribed yet.</b>\n\nPlease subscribe to the channel first, then tap "Return POW".\n\n⏰ Time remaining: <b>${hoursLeft}h</b>`);
+            return true;
+          }
+          // Restore original reward
+          await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${penCase.originalReward})::text, updated_at = NOW() WHERE id = ${penCase.userId}`);
+          await dbConn.update(cpcT).set({ status: 'resolved', resolvedAt: new Date() }).where(eq(cpcT.id, caseId));
+          await sendUserTelegramNotification(chatId,
+            `✅ <b>POW Restored!</b>\n\n<b>${penCase.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
+        } catch (err) {
+          console.error('❌ return_pow error:', err);
+          await sendUserTelegramNotification(chatId, '❌ An error occurred. Please try again.');
+        }
+        return true;
+      }
+
       // Handle cancel broadcast button
       if (data === 'cancel_broadcast' && await isAdminAsync(chatId)) {
         // Clear pending broadcast state
@@ -2595,123 +2722,136 @@ ${walletAddress}
     }
     
     // Check if admin has a pending broadcast waiting for message
-    // CRITICAL: Use delete() in condition for atomic check-and-clear
-    // Map.delete() returns true if key existed, false otherwise
-    // This ensures ONLY the first webhook event proceeds, preventing duplicates
-    if (await isAdminAsync(chatId) && pendingBroadcasts.delete(chatId)) {
-      const broadcastMessage = text;
-      
-      console.log(`📢 [BROADCAST START] Admin ${chatId} initiating broadcast: "${broadcastMessage.substring(0, 50)}..."`);
-      
-      try {
-        // Get all users with Telegram IDs
-        const { db } = await import('./db');
-        const { sql } = await import('drizzle-orm');
-        const { users } = await import('../shared/schema');
-        
-        const allUsers = await db.select({ 
-          telegramId: users.telegram_id 
-        }).from(users).where(sql`${users.telegram_id} IS NOT NULL`);
-        
-        // Use Set for deduplication - ensure one message per unique user ID
-        const uniqueUserIds = new Set<string>();
-        const dedupedUsers = allUsers.filter(user => {
-          if (user.telegramId && !uniqueUserIds.has(user.telegramId)) {
-            uniqueUserIds.add(user.telegramId);
-            return true;
-          }
-          return false;
-        });
-        
-        let successCount = 0;
-        let failCount = 0;
-        let skippedCount = 0;
-        
-        // Get bot username for Mini App link (same as welcome message "Let's GOOO!!" button)
-        const broadcastBotUsername = await getBotUsername();
-        const miniAppUrl = `https://t.me/${broadcastBotUsername}/MyWAdz`;
-        
-        // Create inline buttons for broadcast message - same Mini App link as welcome message
-        const broadcastButtons = {
-          inline_keyboard: [
-            [
-              {
-                text: "🚀 Let's GOOO!!",
-                url: miniAppUrl
-              }
-            ]
-          ]
-        };
-        
-        await sendUserTelegramNotification(chatId, 
-          `📢 Broadcasting message to ${dedupedUsers.length} unique users...\n\nPlease wait...`
-        );
-        
-        // Send message to each unique user with faster batching
-        // Telegram allows ~30 messages per second, so we batch in chunks of 30
-        const BATCH_SIZE = 30;
-        const BATCH_DELAY_MS = 500; // 0.5 second between batches for faster sending
-        
-        for (let i = 0; i < dedupedUsers.length; i++) {
-          const user = dedupedUsers[i];
-          
-          // Skip if no telegram ID (already filtered, but TypeScript needs this)
-          if (!user.telegramId) {
-            skippedCount++;
-            continue;
-          }
-          
-          // Skip admin to avoid self-messaging
-          if (user.telegramId === chatId) {
-            skippedCount++;
-            continue;
-          }
-          
-          try {
-            const sent = await sendUserTelegramNotification(
-              user.telegramId, 
-              broadcastMessage, 
-              broadcastButtons
-            );
-            if (sent) {
-              successCount++;
-            } else {
-              failCount++;
-            }
-            
-            // Apply batch delay every BATCH_SIZE messages
-            if ((i + 1) % BATCH_SIZE === 0 && i < dedupedUsers.length - 1) {
-              console.log(`📦 Batch ${Math.floor((i + 1) / BATCH_SIZE)} sent, pausing for rate limit...`);
-              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-            } else {
-              // Small delay between individual messages within a batch - faster
-              await new Promise(resolve => setTimeout(resolve, 20));
-            }
-          } catch (error) {
-            console.error(`Failed to send to ${user.telegramId}:`, error);
-            failCount++;
-          }
+    // Uses has() first so media-group albums can be buffered across multiple webhook events.
+    if (await isAdminAsync(chatId) && pendingBroadcasts.has(chatId)) {
+      const incomingMsg = update.message;
+      const mediaGroupId: string | undefined = incomingMsg?.media_group_id;
+
+      // ── Media-group (album) buffering ─────────────────────────────────────────
+      if (mediaGroupId) {
+        if (!mediaGroupBuffers.has(mediaGroupId)) {
+          mediaGroupBuffers.set(mediaGroupId, { messages: [], timer: null, adminChatId: chatId });
         }
-        
-        // Send detailed summary to admin
-        console.log(`📢 [BROADCAST COMPLETE] Success: ${successCount}, Failed: ${failCount}, Skipped: ${skippedCount}`);
-        await sendUserTelegramNotification(chatId, 
-          `✅ <b>Broadcast sent successfully to ${successCount} users.</b>\n\n` +
-          `📊 <b>Statistics:</b>\n` +
-          `✅ Successfully sent: ${successCount}\n` +
-          `❌ Failed/Inactive: ${failCount}\n` +
-          `⚙️ Skipped: ${skippedCount} (admin)\n` +
-          `📈 Total unique users: ${dedupedUsers.length}`
-        );
+        const buf = mediaGroupBuffers.get(mediaGroupId)!;
+        buf.messages.push(incomingMsg);
+        if (buf.timer) clearTimeout(buf.timer);
+        buf.timer = setTimeout(async () => {
+          mediaGroupBuffers.delete(mediaGroupId);
+          pendingBroadcasts.delete(chatId); // final clear after all parts buffered
+          await _broadcastAlbum(chatId, buf.messages);
+        }, 2500);
+        return true;
+      }
+
+      // ── Single-message broadcast — clear state atomically ────────────────────
+      if (!pendingBroadcasts.delete(chatId)) return true; // race guard
+      const srcMsgId: number = incomingMsg.message_id;
+
+      console.log(`📢 [BROADCAST START] Admin ${chatId} using copyMessage (id=${srcMsgId})`);
+
+      try {
+        const { db: dbConn } = await import('./db');
+        const { sql: sqlFn } = await import('drizzle-orm');
+        const { users: usersT } = await import('../shared/schema');
+
+        const allUsers = await dbConn
+          .select({ telegramId: usersT.telegram_id })
+          .from(usersT)
+          .where(sqlFn`${usersT.telegram_id} IS NOT NULL`);
+
+        const seen = new Set<string>();
+        const targets = allUsers.filter(u => {
+          if (!u.telegramId || u.telegramId === chatId || seen.has(u.telegramId)) return false;
+          seen.add(u.telegramId);
+          return true;
+        });
+
+        await sendUserTelegramNotification(chatId, `📢 Broadcasting to ${targets.length} users… please wait.`);
+
+        let successCount = 0; let failCount = 0;
+        const BATCH = 30; const DELAY = 500;
+
+        for (let i = 0; i < targets.length; i++) {
+          const tgId = targets[i].telegramId!;
+          try {
+            const resp = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/copyMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: tgId, from_chat_id: chatId, message_id: srcMsgId }),
+            });
+            const rd = await resp.json().catch(() => ({})) as any;
+            // Remove permanently unreachable users (bot blocked / user deactivated)
+            if (!rd.ok) {
+              const desc: string = rd.description || '';
+              if (desc.includes('bot was blocked') || desc.includes('user is deactivated') || desc.includes('chat not found')) {
+                console.log(`🗑 [BROADCAST] Permanent error for ${tgId}: ${desc}`);
+              }
+              failCount++;
+            } else {
+              successCount++;
+            }
+          } catch { failCount++; }
+
+          if ((i + 1) % BATCH === 0) await new Promise(r => setTimeout(r, DELAY));
+          else await new Promise(r => setTimeout(r, 20));
+        }
+
+        console.log(`📢 [BROADCAST COMPLETE] Success: ${successCount}, Failed: ${failCount}`);
+        await sendUserTelegramNotification(chatId,
+          `✅ <b>Broadcast complete!</b>\n\n✅ Delivered: ${successCount}\n❌ Failed: ${failCount}\n📈 Total: ${targets.length}`);
       } catch (error) {
         console.error('❌ [BROADCAST ERROR]:', error);
-        await sendUserTelegramNotification(chatId, 
-          '❌ Error broadcasting message. Please try again.'
-        );
+        await sendUserTelegramNotification(chatId, '❌ Error broadcasting. Please try again.');
       }
-      
-      // State already cleared at the start to prevent duplicates
       return true;
+    }
+
+    // ── Helper: broadcast an album (media group) using sendMediaGroup ───────────
+    async function _broadcastAlbum(adminChatId: string, messages: any[]): Promise<void> {
+      try {
+        const { db: dbConn } = await import('./db');
+        const { sql: sqlFn } = await import('drizzle-orm');
+        const { users: usersT } = await import('../shared/schema');
+
+        const media: any[] = messages.map((msg, idx) => {
+          const photo = msg.photo?.[msg.photo.length - 1];
+          const video = msg.video;
+          const doc   = msg.document;
+          const entry: any = {
+            type: photo ? 'photo' : video ? 'video' : 'document',
+            media: (photo?.file_id) || (video?.file_id) || (doc?.file_id) || '',
+          };
+          if (idx === 0 && (msg.caption || msg.caption_entities)) {
+            entry.caption          = msg.caption || '';
+            entry.caption_entities = msg.caption_entities;
+            entry.parse_mode       = msg.parse_mode || undefined;
+          }
+          return entry;
+        }).filter(e => e.media);
+
+        if (!media.length) return;
+
+        const allUsers = await dbConn.select({ tgId: usersT.telegram_id }).from(usersT).where(sqlFn`${usersT.telegram_id} IS NOT NULL`);
+        const seen = new Set<string>();
+        const targets = allUsers.filter(u => { if (!u.tgId || u.tgId === adminChatId || seen.has(u.tgId)) return false; seen.add(u.tgId); return true; });
+
+        await sendUserTelegramNotification(adminChatId, `📢 Broadcasting album (${media.length} items) to ${targets.length} users… please wait.`);
+
+        let ok = 0; let fail = 0;
+        for (let i = 0; i < targets.length; i++) {
+          try {
+            const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: targets[i].tgId!, media }),
+            });
+            const rd = await r.json().catch(() => ({})) as any;
+            if (rd.ok) ok++; else fail++;
+          } catch { fail++; }
+          if ((i + 1) % 30 === 0) await new Promise(r => setTimeout(r, 500));
+          else await new Promise(r => setTimeout(r, 20));
+        }
+        await sendUserTelegramNotification(adminChatId, `✅ Album broadcast done!\n✅ Delivered: ${ok}\n❌ Failed: ${fail}`);
+      } catch (err) { console.error('❌ [ALBUM BROADCAST]:', err); }
     }
     
     // Check if admin has a pending advertise message waiting
@@ -2904,6 +3044,7 @@ ${walletAddress}
               inline_keyboard: [
                 [{ text: '💰 Pending Withdrawals', callback_data: 'admin_pending_withdrawals' }],
                 [{ text: '🔔 Announcement', callback_data: 'admin_announce' }],
+                [{ text: '📣 Task Notification', callback_data: 'admin_task_notify' }],
                 [{ text: '📊 Advertise', callback_data: 'admin_advertise' }],
                 [{ text: '🔄 Refresh', callback_data: 'admin_refresh' }]
               ]
@@ -3667,6 +3808,98 @@ export async function retryPendingTonDeposits(): Promise<void> {
   } catch (err) {
     console.error('💎 [TON Poller] Error:', err);
   }
+}
+
+// ── Channel Penalty Poller ────────────────────────────────────────────────────
+// 1. Creates "watching" cases for recent verified channel task completions
+// 2. If user left channel: deduct 2× reward, set 24-h rejoin window, send warning
+// 3. If penalized user rejoined: restore original reward, mark resolved
+// 4. If 24-h deadline passed without rejoin: mark permanent
+export async function checkChannelPenalties(): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    const { db: dbConn } = await import('./db');
+    const { and, eq, sql: sqlFn } = await import('drizzle-orm');
+    const { users: usersT, taskClicks: tcT, advertiserTasks: adT, channelPenaltyCases: cpcT } = await import('../shared/schema');
+    const botToken = TELEGRAM_BOT_TOKEN;
+    const now = new Date();
+    const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    // ── Step 1: seed watching cases for recent verified channel completions ──
+    const recent = await dbConn
+      .select({ taskId: tcT.taskId, publisherId: tcT.publisherId, rewardAmount: tcT.rewardAmount, clickedAt: tcT.clickedAt, link: adT.link })
+      .from(tcT)
+      .innerJoin(adT, eq(tcT.taskId, adT.id))
+      .where(and(eq(adT.taskType, 'channel'), eq(adT.verificationRequired, true), sqlFn`${tcT.clickedAt} > ${cutoff24h}`));
+
+    for (const c of recent) {
+      const exists = await dbConn.select({ id: cpcT.id }).from(cpcT)
+        .where(and(eq(cpcT.userId, c.publisherId), eq(cpcT.taskId, c.taskId))).limit(1);
+      if (exists.length) continue;
+      const [u] = await dbConn.select({ tgId: usersT.telegram_id }).from(usersT).where(eq(usersT.id, c.publisherId)).limit(1);
+      if (!u?.tgId) continue;
+      let channelId = c.link?.trim() || '';
+      const m = channelId.match(/t\.me\/([^/?]+)/);
+      if (m) channelId = `@${m[1]}`;
+      await dbConn.insert(cpcT).values({
+        userId: c.publisherId, telegramId: u.tgId, taskId: c.taskId,
+        channelId, channelLink: c.link || '', originalReward: parseInt(c.rewardAmount || '0'),
+        penaltyDeducted: 0, claimedAt: c.clickedAt || now, status: 'watching',
+      }).onConflictDoNothing();
+    }
+
+    // ── Step 2: check watching cases — detect channel leaves ──
+    const watching = await dbConn.select().from(cpcT).where(eq(cpcT.status, 'watching'));
+    for (const p of watching) {
+      if (!p.telegramId) continue;
+      const isMember = await verifyChannelMembership(parseInt(p.telegramId), p.channelId, botToken);
+      if (!isMember) {
+        const penalty = p.originalReward * 2;
+        const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        await dbConn.execute(sqlFn`UPDATE users SET balance = GREATEST(CAST(balance AS BIGINT) - ${penalty}, 0)::text, updated_at = NOW() WHERE id = ${p.userId}`);
+        await dbConn.update(cpcT).set({ status: 'penalized', leftAt: now, deadlineAt: deadline, penaltyDeducted: penalty }).where(eq(cpcT.id, p.id));
+        // Send Telegram warning with inline buttons
+        const warnMsg =
+          `<tg-emoji emoji-id="4956611513369494230">⚠️</tg-emoji> <b>Unsubscribed Too Early</b>\n\n` +
+          `<tg-emoji emoji-id="5883997563639567521">😡</tg-emoji> <b>${penalty.toLocaleString()} $POW has been deducted.</b>\n\n` +
+          `<tg-emoji emoji-id="4956371914323920049">🔄</tg-emoji> Re-subscribe within <b>24 hours</b> to get your coins back.`;
+        await sendUserTelegramNotification(p.telegramId, warnMsg, {
+          inline_keyboard: [
+            [{ text: '👉 Subscribe 👈', url: p.channelLink }],
+            [{ text: '💰 Return POW', callback_data: `return_pow_${p.id}` }],
+          ]
+        });
+        console.log(`⚠️ [PenaltyPoller] ${p.userId} left ${p.channelId} — deducted ${penalty} POW`);
+      }
+    }
+
+    // ── Step 3: check penalized cases — resolve or make permanent ──
+    const penalized = await dbConn.select().from(cpcT).where(eq(cpcT.status, 'penalized'));
+    for (const p of penalized) {
+      if (!p.telegramId) continue;
+      if (p.deadlineAt && now > new Date(p.deadlineAt)) {
+        await dbConn.update(cpcT).set({ status: 'permanent', resolvedAt: now }).where(eq(cpcT.id, p.id));
+        console.log(`🔒 [PenaltyPoller] Penalty permanent for ${p.userId}`);
+        continue;
+      }
+      const isMember = await verifyChannelMembership(parseInt(p.telegramId), p.channelId, botToken);
+      if (isMember) {
+        await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${p.originalReward})::text, updated_at = NOW() WHERE id = ${p.userId}`);
+        await dbConn.update(cpcT).set({ status: 'resolved', resolvedAt: now }).where(eq(cpcT.id, p.id));
+        await sendUserTelegramNotification(p.telegramId,
+          `✅ <b>POW Restored!</b>\n\n<b>${p.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
+        console.log(`✅ [PenaltyPoller] Restored ${p.originalReward} POW for ${p.userId}`);
+      }
+    }
+  } catch (err) {
+    console.error('⚠️ [PenaltyPoller] Error:', err);
+  }
+}
+
+export function startChannelPenaltyPoller(): void {
+  setTimeout(() => checkChannelPenalties().catch(console.error), 90_000); // 1.5 min after start
+  setInterval(() => checkChannelPenalties().catch(console.error), 5 * 60 * 1000); // every 5 min
+  console.log('🔒 Channel penalty poller started (5-min interval)');
 }
 
 export function startTonDepositPoller(): void {

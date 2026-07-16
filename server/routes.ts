@@ -18,6 +18,7 @@ import {
   adminSettings,
   advertiserTasks,
   taskClicks,
+  channelPenaltyCases,
   spinData,
   spinHistory,
   dailyMissions,
@@ -3375,62 +3376,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user?.user?.id || req.session?.user?.user?.id;
       const telegramUserId = req.user?.telegramUser?.id || req.session?.user?.telegramUser?.id;
-
-      if (!userId || !telegramUserId) {
-        return res.json({ success: true, penaltiesApplied: 0 });
-      }
-
+      if (!userId || !telegramUserId) return res.json({ success: true, penaltiesApplied: 0 });
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (!botToken) {
-        return res.json({ success: true, penaltiesApplied: 0 });
-      }
+      if (!botToken) return res.json({ success: true, penaltiesApplied: 0 });
 
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const PENALTY = 50000;
+      const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-      // Find verified channel tasks completed by this user in the last 24 hours
-      const completedChannelTasks = await db
-        .select({
-          taskId: taskClicks.taskId,
-          clickedAt: taskClicks.clickedAt,
-          link: advertiserTasks.link,
-          title: advertiserTasks.title,
-        })
+      // Find verified channel tasks completed by this user in last 24 h
+      const completedTasks = await db
+        .select({ taskId: taskClicks.taskId, rewardAmount: taskClicks.rewardAmount,
+                  clickedAt: taskClicks.clickedAt, link: advertiserTasks.link })
         .from(taskClicks)
         .innerJoin(advertiserTasks, eq(taskClicks.taskId, advertiserTasks.id))
-        .where(
-          and(
-            eq(taskClicks.publisherId, userId),
-            eq(advertiserTasks.taskType, 'channel'),
-            eq(advertiserTasks.verificationRequired, true),
-            sql`${taskClicks.clickedAt} > ${twentyFourHoursAgo}`
-          )
-        );
+        .where(and(
+          eq(taskClicks.publisherId, userId),
+          eq(advertiserTasks.taskType, 'channel'),
+          eq(advertiserTasks.verificationRequired, true),
+          sql`${taskClicks.clickedAt} > ${cutoff24h}`
+        ));
 
       let penaltiesApplied = 0;
 
-      for (const task of completedChannelTasks) {
+      for (const task of completedTasks) {
         let channelId = task.link?.trim() || '';
-        const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
-        if (urlMatch) channelId = `@${urlMatch[1]}`;
+        const m = channelId.match(/t\.me\/([^/?]+)/);
+        if (m) channelId = `@${m[1]}`;
 
         try {
-          const isMember = await verifyChannelMembership(
-            parseInt(String(telegramUserId)),
-            channelId,
-            botToken
-          );
-
+          const isMember = await verifyChannelMembership(parseInt(String(telegramUserId)), channelId, botToken);
           if (!isMember) {
-            // User left — deduct penalty and remove the taskClick record
+            const originalReward = parseInt(task.rewardAmount || '0');
+            const penaltyAmount  = originalReward * 2;
+            const deadline       = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+            // Check if a penalty case already exists (avoid double-penalizing)
+            const existing = await db.select({ id: channelPenaltyCases.id, status: channelPenaltyCases.status })
+              .from(channelPenaltyCases)
+              .where(and(eq(channelPenaltyCases.userId, userId), eq(channelPenaltyCases.taskId, task.taskId)))
+              .limit(1);
+
+            if (existing.length && existing[0].status !== 'watching') {
+              // Already penalized / resolved / permanent — skip
+              continue;
+            }
+
             await db.transaction(async (tx) => {
-              await tx.execute(
-                sql`UPDATE users SET balance = GREATEST(balance - ${PENALTY}::numeric, 0), updated_at = NOW() WHERE id = ${userId}`
-              );
-              await tx.delete(taskClicks).where(
-                and(eq(taskClicks.taskId, task.taskId), eq(taskClicks.publisherId, userId))
-              );
+              // Deduct 2× reward from balance
+              await tx.execute(sql`UPDATE users SET balance = GREATEST(CAST(balance AS BIGINT) - ${penaltyAmount}, 0)::text, updated_at = NOW() WHERE id = ${userId}`);
+
+              if (existing.length) {
+                // Update existing watching case
+                await tx.update(channelPenaltyCases)
+                  .set({ status: 'penalized', leftAt: new Date(), deadlineAt: deadline, penaltyDeducted: penaltyAmount })
+                  .where(eq(channelPenaltyCases.id, existing[0].id));
+              } else {
+                // Create new penalty case
+                const [u] = await tx.select({ tgId: users.telegram_id }).from(users).where(eq(users.id, userId)).limit(1);
+                await tx.insert(channelPenaltyCases).values({
+                  userId, telegramId: u?.tgId || String(telegramUserId),
+                  taskId: task.taskId, channelId, channelLink: task.link || '',
+                  originalReward, penaltyDeducted: penaltyAmount,
+                  claimedAt: task.clickedAt || new Date(),
+                  leftAt: new Date(), deadlineAt: deadline, status: 'penalized',
+                }).onConflictDoNothing();
+              }
             });
+
+            // Send warning via Telegram
+            const tgId = String(telegramUserId);
+            const [caseRow] = await db.select({ id: channelPenaltyCases.id }).from(channelPenaltyCases)
+              .where(and(eq(channelPenaltyCases.userId, userId), eq(channelPenaltyCases.taskId, task.taskId))).limit(1);
+            if (caseRow && botToken) {
+              const { sendUserTelegramNotification: sendTgNotif } = await import('./telegram');
+              const warnMsg =
+                `<tg-emoji emoji-id="4956611513369494230">⚠️</tg-emoji> <b>Unsubscribed Too Early</b>\n\n` +
+                `<tg-emoji emoji-id="5883997563639567521">😡</tg-emoji> <b>${penaltyAmount.toLocaleString()} $POW has been deducted.</b>\n\n` +
+                `<tg-emoji emoji-id="4956371914323920049">🔄</tg-emoji> Re-subscribe within <b>24 hours</b> to get your coins back.`;
+              await sendTgNotif(tgId, warnMsg, {
+                inline_keyboard: [
+                  [{ text: '👉 Subscribe 👈', url: task.link || '' }],
+                  [{ text: '💰 Return POW', callback_data: `return_pow_${caseRow.id}` }],
+                ]
+              }).catch(() => {});
+            }
             penaltiesApplied++;
           }
         } catch (e) {

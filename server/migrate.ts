@@ -754,6 +754,30 @@ export async function ensureDatabaseSchema(): Promise<void> {
 
     console.log('✅ [MIGRATION] Ambassador tables created successfully');
 
+    // Channel penalty cases table
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS channel_penalty_cases (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        telegram_id TEXT,
+        task_id VARCHAR NOT NULL,
+        channel_id TEXT NOT NULL,
+        channel_link TEXT NOT NULL,
+        original_reward INTEGER NOT NULL,
+        penalty_deducted INTEGER NOT NULL DEFAULT 0,
+        claimed_at TIMESTAMP NOT NULL,
+        left_at TIMESTAMP,
+        deadline_at TIMESTAMP,
+        resolved_at TIMESTAMP,
+        status VARCHAR NOT NULL DEFAULT 'watching',
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(user_id, task_id)
+      )
+    `);
+    try {
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_channel_penalty_status ON channel_penalty_cases(status)`);
+    } catch { /* already exists */ }
+
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
     
   } catch (error) {

@@ -246,6 +246,14 @@ app.use((req, res, next) => {
       console.error('❌ Error starting TON deposit poller:', error);
     }
 
+    // Channel penalty poller — checks membership every 5 minutes
+    try {
+      const { startChannelPenaltyPoller } = await import('./telegram');
+      startChannelPenaltyPoller();
+    } catch (error) {
+      console.error('❌ Error starting channel penalty poller:', error);
+    }
+
     // Auto-setup Telegram webhook
     if (process.env.TELEGRAM_BOT_TOKEN) {
       try {
