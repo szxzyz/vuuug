@@ -1949,9 +1949,11 @@ function SettingsSection() {
     withdrawalGroupChatId: '-1002480439556',
     channelTaskCost: '0.003',
     botTaskCost: '0.003',
-    channelTaskReward: '30',
-    botTaskReward: '20',
-    partnerTaskReward: '5',
+    channelTaskReward: '2000',
+    botTaskReward: '2000',
+    partnerTaskReward: '5000',
+    taskRewardNoVerify: '2000',
+    taskRewardWithVerify: '3000',
     minimumClicks: '500',
     seasonBroadcastActive: false,
     referralRewardEnabled: false,
@@ -2005,9 +2007,11 @@ function SettingsSection() {
         withdrawalGroupChatId: settingsData.withdrawalGroupChatId?.toString() || '-1002480439556',
         channelTaskCost: settingsData.channelTaskCost?.toString() || '0.003',
         botTaskCost: settingsData.botTaskCost?.toString() || '0.003',
-        channelTaskReward: settingsData.channelTaskReward?.toString() || '30',
-        botTaskReward: settingsData.botTaskReward?.toString() || '20',
-        partnerTaskReward: settingsData.partnerTaskReward?.toString() || '5',
+        channelTaskReward: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.channelTaskReward?.toString() || '2000',
+        botTaskReward: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.botTaskReward?.toString() || '2000',
+        partnerTaskReward: settingsData.partnerTaskReward?.toString() || '5000',
+        taskRewardNoVerify: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.channelTaskReward?.toString() || '2000',
+        taskRewardWithVerify: (settingsData as any).taskRewardWithVerify?.toString() || '3000',
         minimumClicks: settingsData.minimumClicks?.toString() || '500',
         seasonBroadcastActive: settingsData.seasonBroadcastActive || false,
         referralRewardEnabled: settingsData.referralRewardEnabled || false,
@@ -2131,6 +2135,8 @@ function SettingsSection() {
         channelTaskReward: channelReward,
         botTaskReward: botReward,
         partnerTaskReward: partnerReward,
+        taskRewardNoVerify: parseInt((settings as any).taskRewardNoVerify) || channelReward,
+        taskRewardWithVerify: parseInt((settings as any).taskRewardWithVerify) || 3000,
         minimumClicks: minClicks,
         seasonBroadcastActive: settings.seasonBroadcastActive,
         referralRewardEnabled: settings.referralRewardPOWEnabled || settings.referralRewardUSDEnabled,
@@ -2682,10 +2688,67 @@ function SettingsSection() {
 
         {activeCategory === 'tasks' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Reward tiers info */}
+            <div className="md:col-span-2 p-3 border rounded-lg bg-blue-500/5 border-blue-500/20">
+              <p className="text-xs text-blue-400 font-semibold mb-1">🎯 Task Reward Tiers</p>
+              <p className="text-xs text-muted-foreground">Configure independent POW rewards for each task type. Partner tasks always pay more than user tasks.</p>
+            </div>
+
+            <div className="space-y-2 p-3 border rounded-lg border-gray-500/20">
+              <Label className="text-xs font-semibold text-gray-300">
+                <i className="fas fa-bullhorn mr-2 text-cyan-400"></i>
+                Without Verification (Channel / Bot)
+              </Label>
+              <Input
+                type="number"
+                value={(settings as any).taskRewardNoVerify || settings.channelTaskReward}
+                onChange={(e) => setSettings({ ...settings, taskRewardNoVerify: e.target.value } as any)}
+                placeholder="2000"
+                min="1"
+                className="h-8"
+              />
+              <p className="text-xs text-muted-foreground">Current: {(settingsData as any)?.taskRewardNoVerify || settingsData?.channelTaskReward || 2000} POW</p>
+            </div>
+
+            <div className="space-y-2 p-3 border rounded-lg border-yellow-500/20 bg-yellow-500/5">
+              <Label className="text-xs font-semibold text-yellow-400">
+                <i className="fas fa-shield-alt mr-2"></i>
+                With Verification (Channel / Bot)
+              </Label>
+              <Input
+                type="number"
+                value={(settings as any).taskRewardWithVerify || 3000}
+                onChange={(e) => setSettings({ ...settings, taskRewardWithVerify: e.target.value } as any)}
+                placeholder="3000"
+                min="1"
+                className="h-8"
+              />
+              <p className="text-xs text-muted-foreground">Current: {(settingsData as any)?.taskRewardWithVerify || 3000} POW · Requires channel join verification</p>
+            </div>
+
+            <div className="space-y-2 p-3 border rounded-lg border-pink-500/20 bg-pink-500/5">
+              <Label htmlFor="partner-task-reward" className="text-xs font-semibold text-pink-400">
+                <i className="fas fa-handshake mr-2"></i>
+                Partner Task Reward (always highest)
+              </Label>
+              <Input
+                id="partner-task-reward"
+                type="number"
+                value={settings.partnerTaskReward}
+                onChange={(e) => setSettings({ ...settings, partnerTaskReward: e.target.value })}
+                placeholder="5000"
+                min="1"
+                className="h-8"
+              />
+              <p className="text-xs text-muted-foreground">
+                Current: {settingsData?.partnerTaskReward || 5000} POW · Admin-created verified tasks
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
                 <i className="fas fa-bullhorn mr-2 text-cyan-600"></i>
-                Channel Task
+                Channel Task Pricing
               </Label>
               <div>
                 <Label className="text-xs">Cost (USD) — admin billing only</Label>
@@ -2698,23 +2761,13 @@ function SettingsSection() {
                   className="h-8"
                 />
               </div>
-              <div>
-                <Label className="text-xs">Reward (POW)</Label>
-                <Input
-                  type="number"
-                  value={settings.channelTaskReward}
-                  onChange={(e) => setSettings({ ...settings, channelTaskReward: e.target.value })}
-                  placeholder="30"
-                  className="h-8"
-                />
-              </div>
               <p className="text-xs text-muted-foreground">User TON pricing is determined by the package system (100/500/1K/2K/5K/10K clicks).</p>
             </div>
 
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
                 <i className="fas fa-robot mr-2 text-purple-600"></i>
-                Bot Task
+                Bot Task Pricing
               </Label>
               <div>
                 <Label className="text-xs">Cost (USD) — admin billing only</Label>
@@ -2727,34 +2780,7 @@ function SettingsSection() {
                   className="h-8"
                 />
               </div>
-              <div>
-                <Label className="text-xs">Reward (POW)</Label>
-                <Input
-                  type="number"
-                  value={settings.botTaskReward}
-                  onChange={(e) => setSettings({ ...settings, botTaskReward: e.target.value })}
-                  placeholder="20"
-                  className="h-8"
-                />
-              </div>
               <p className="text-xs text-muted-foreground">User TON pricing is determined by the package system (100/500/1K/2K/5K/10K clicks).</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="partner-task-reward" className="text-sm font-semibold">
-                <i className="fas fa-handshake mr-2 text-green-600"></i>
-                Partner Task Reward (POW)
-              </Label>
-              <Input
-                id="partner-task-reward"
-                type="number"
-                value={settings.partnerTaskReward}
-                onChange={(e) => setSettings({ ...settings, partnerTaskReward: e.target.value })}
-                placeholder="5"
-              />
-              <p className="text-xs text-muted-foreground">
-                Current: {settingsData?.partnerTaskReward || 5} POW
-              </p>
             </div>
 
             <div className="space-y-2">
@@ -3073,6 +3099,29 @@ function TaskManagementSection() {
   const [editingTask, setEditingTask] = useState<any>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', totalClicksRequired: '', costPerClick: '', status: '' });
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [notifySending, setNotifySending] = useState(false);
+  const [notifyResult, setNotifyResult] = useState<string | null>(null);
+
+  const handleNotifyIncompleteTasks = async () => {
+    setNotifySending(true);
+    setNotifyResult(null);
+    try {
+      const res = await apiRequest('POST', '/api/admin/notify-incomplete-tasks', {});
+      const data = await res.json();
+      if (data.success) {
+        setNotifyResult(`✅ Sent to ${data.details?.sent ?? 0} users (${data.details?.failed ?? 0} failed, ${data.details?.eligible ?? 0} eligible)`);
+        showNotification(`Task notifications sent to ${data.details?.sent ?? 0} users`, 'success');
+      } else {
+        setNotifyResult(`❌ ${data.message}`);
+        showNotification(data.message || 'Failed to send notifications', 'error');
+      }
+    } catch (e: any) {
+      setNotifyResult(`❌ ${e.message || 'Network error'}`);
+      showNotification(e.message || 'Error', 'error');
+    } finally {
+      setNotifySending(false);
+    }
+  };
 
   const openEdit = (task: any) => {
     setEditForm({
@@ -3224,8 +3273,21 @@ function TaskManagementSection() {
 
   return (
     <div className="space-y-4">
+      {notifyResult && (
+        <div className="text-xs p-2 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-300">
+          {notifyResult}
+        </div>
+      )}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            size="sm"
+            onClick={handleNotifyIncompleteTasks}
+            disabled={notifySending}
+            className="text-xs bg-pink-600 hover:bg-pink-700 text-white border-none"
+          >
+            {notifySending ? '⏳ Sending…' : '📣 Task Notification'}
+          </Button>
           <Button
             size="sm"
             variant={activeTaskFilter === 'pending' ? 'default' : 'outline'}

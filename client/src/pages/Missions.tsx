@@ -49,6 +49,8 @@ interface AppSettings {
   channelTaskReward?: number;
   botTaskReward?: number;
   partnerTaskReward?: number;
+  taskRewardNoVerify?: number;
+  taskRewardWithVerify?: number;
   monetagMissionReward?: number;
   monetagMissionLimit?: number;
   gigaPubMissionReward?: number;
@@ -444,9 +446,12 @@ export default function Missions() {
   const monetagLimit  = appSettings?.monetagMissionLimit  ?? 10;
   const gigaPubReward = appSettings?.gigaPubMissionReward ?? 50;
   const gigaPubLimit  = appSettings?.gigaPubMissionLimit  ?? 10;
-  const channelReward = appSettings?.channelTaskReward || 30;
-  const botReward     = appSettings?.botTaskReward     || 20;
-  const partnerReward = appSettings?.partnerTaskReward  || 5;
+  // Separate reward tiers based on verification and task type
+  const taskRewardNoVerify   = appSettings?.taskRewardNoVerify  || appSettings?.channelTaskReward || 2000;
+  const taskRewardWithVerify = appSettings?.taskRewardWithVerify || 3000;
+  const channelReward = taskRewardNoVerify;
+  const botReward     = taskRewardNoVerify;
+  const partnerReward = appSettings?.partnerTaskReward  || 5000;
 
   const botUsername = botInfo?.username || (import.meta as any).env?.VITE_BOT_USERNAME || 'Paid_Adzbot';
   const referralLink = (user as any)?.referralCode
@@ -755,13 +760,14 @@ export default function Missions() {
   const allTasks     = (tasksData?.tasks || []).filter(t => !completedTaskIds.has(t.id));
   const partnerTasks = allTasks.filter(t => t.taskType === 'partner');
 
-  const getReward = (task: Task) =>
-    task.taskType === 'partner' ? partnerReward : task.taskType === 'channel' ? channelReward : botReward;
+  const getReward = (task: Task) => {
+    if (task.taskType === 'partner') return partnerReward;
+    if (task.verificationRequired) return taskRewardWithVerify;
+    return task.taskType === 'channel' ? channelReward : botReward;
+  };
 
-  const adPlatforms = [
-    { id: 'monetag' as const, name: 'Monetag', reward: monetagReward, limit: monetagLimit, count: platformCounts.monetag },
-    { id: 'gigapub' as const, name: 'GiGaPub', reward: gigaPubReward, limit: gigaPubLimit, count: platformCounts.gigapub },
-  ];
+  // Monetag and GiGaPub missions removed — no ad platforms on Missions page
+  const adPlatforms: Array<{ id: 'monetag' | 'gigapub'; name: string; reward: number; limit: number; count: number }> = [];
 
   const cardStyle = { background: CARD, borderRadius: 18, overflow: 'hidden' as const, marginBottom: 8 };
 
@@ -857,17 +863,21 @@ export default function Missions() {
         {/* ── ALL TAB ── */}
         {activeTab === 'all' && (
           <>
-            <SectionLabel title={t('earn_with_ads')} />
-            <div style={cardStyle}>
-              {adPlatforms.map((p, i) => (
-                <AdRow
-                  key={p.id} platform={p.id} name={p.name} reward={p.reward} limit={p.limit} count={p.count}
-                  loading={adLoadingPlatform === p.id} disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
-                  onWatch={() => handleWatchAd(p.id)} isLast={i === adPlatforms.length - 1}
-                  doneLabel={t('done_label')} watchLabel={t('watch_label')} loadingLabel={t('loading_ellipsis')} perDayLabel={t('per_day')}
-                />
-              ))}
-            </div>
+            {adPlatforms.length > 0 && (
+              <>
+                <SectionLabel title={t('earn_with_ads')} />
+                <div style={cardStyle}>
+                  {adPlatforms.map((p, i) => (
+                    <AdRow
+                      key={p.id} platform={p.id} name={p.name} reward={p.reward} limit={p.limit} count={p.count}
+                      loading={adLoadingPlatform === p.id} disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
+                      onWatch={() => handleWatchAd(p.id)} isLast={i === adPlatforms.length - 1}
+                      doneLabel={t('done_label')} watchLabel={t('watch_label')} loadingLabel={t('loading_ellipsis')} perDayLabel={t('per_day')}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
 
             <SectionLabel title="Daily Tasks" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
@@ -916,17 +926,21 @@ export default function Missions() {
         {/* ── DAILY TAB ── */}
         {activeTab === 'daily' && (
           <>
-            <SectionLabel title={t('earn_with_ads')} />
-            <div style={cardStyle}>
-              {adPlatforms.map((p, i) => (
-                <AdRow
-                  key={p.id} platform={p.id} name={p.name} reward={p.reward} limit={p.limit} count={p.count}
-                  loading={adLoadingPlatform === p.id} disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
-                  onWatch={() => handleWatchAd(p.id)} isLast={i === adPlatforms.length - 1}
-                  doneLabel={t('done_label')} watchLabel={t('watch_label')} loadingLabel={t('loading_ellipsis')} perDayLabel={t('per_day')}
-                />
-              ))}
-            </div>
+            {adPlatforms.length > 0 && (
+              <>
+                <SectionLabel title={t('earn_with_ads')} />
+                <div style={cardStyle}>
+                  {adPlatforms.map((p, i) => (
+                    <AdRow
+                      key={p.id} platform={p.id} name={p.name} reward={p.reward} limit={p.limit} count={p.count}
+                      loading={adLoadingPlatform === p.id} disabled={!!adLoadingPlatform && adLoadingPlatform !== p.id}
+                      onWatch={() => handleWatchAd(p.id)} isLast={i === adPlatforms.length - 1}
+                      doneLabel={t('done_label')} watchLabel={t('watch_label')} loadingLabel={t('loading_ellipsis')} perDayLabel={t('per_day')}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
 
             <SectionLabel title="Daily Tasks" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -956,6 +970,27 @@ export default function Missions() {
         {/* ── PARTNER TAB ── */}
         {activeTab === 'partner' && (
           <>
+            {/* Ambassador Directory Link */}
+            <div style={{
+              background: 'rgba(236,72,153,0.08)',
+              border: '1px solid rgba(236,72,153,0.22)',
+              borderRadius: 14,
+              padding: '12px 16px',
+              marginBottom: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
+              onClick={() => setLocation('/ambassador-directory')}
+            >
+              <div>
+                <div style={{ color: '#ec4899', fontSize: 13, fontWeight: 700 }}>📣 Ambassador Directory</div>
+                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 2 }}>Join ambassador channels · Earn 2,000 POW each</div>
+              </div>
+              <span style={{ color: '#ec4899', fontSize: 16 }}>›</span>
+            </div>
+
             <SectionLabel title={t('partner_tab')} />
             {tasksLoading ? (
               <div style={cardStyle}><LoadingRow /></div>
