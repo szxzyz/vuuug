@@ -3911,6 +3911,97 @@ export function startTonDepositPoller(): void {
   console.log('💎 TON deposit retry poller started (2-min interval)');
 }
 
+// ── Automatic task reminder scheduler ─────────────────────────────────────────
+// Runs every hour. For each user that has at least one unfinished running task
+// and has NOT already been notified today, sends one Telegram notification and
+// records today's date so no second notification is sent until the next day.
+async function runTaskReminderPass(): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    const { db: dbConn } = await import('./db');
+    const { eq, sql: sqlFn } = await import('drizzle-orm');
+    const { advertiserTasks: adTasks, users: usersT, taskClicks: tcT } = await import('../shared/schema');
+
+    // Today's date in UTC (YYYY-MM-DD) — the deduplication key
+    const todayUTC = new Date().toISOString().slice(0, 10);
+
+    // Get all running task IDs
+    const activeTasks = await dbConn
+      .select({ id: adTasks.id })
+      .from(adTasks)
+      .where(eq(adTasks.status, 'running'));
+
+    if (activeTasks.length === 0) return; // Nothing to notify about
+
+    const activeTaskIds = new Set(activeTasks.map(t => t.id));
+
+    // Get all users with a Telegram ID who haven't been reminded today
+    const candidates = await dbConn
+      .select({ id: usersT.id, tgId: usersT.telegram_id, lastReminderDate: usersT.lastTaskReminderDate })
+      .from(usersT)
+      .where(sqlFn`${usersT.telegram_id} IS NOT NULL`);
+
+    const eligibleCandidates = candidates.filter(u => u.lastReminderDate !== todayUTC);
+    if (eligibleCandidates.length === 0) return;
+
+    // Get all task completions for running tasks, grouped by user
+    const completionRows = await dbConn
+      .select({ pid: tcT.publisherId, taskId: tcT.taskId })
+      .from(tcT);
+
+    const completedByUser = new Map<string, Set<string>>();
+    for (const row of completionRows) {
+      if (!activeTaskIds.has(row.taskId)) continue;
+      if (!completedByUser.has(row.pid)) completedByUser.set(row.pid, new Set());
+      completedByUser.get(row.pid)!.add(row.taskId);
+    }
+
+    // Eligible: has at least one unfinished running task
+    const targets = eligibleCandidates.filter(u => {
+      const done = completedByUser.get(u.id);
+      return !done || done.size < activeTaskIds.size;
+    });
+
+    if (targets.length === 0) return;
+
+    const botUsername = await getBotUsername();
+    const miniAppUrl = `https://t.me/${botUsername}/MyWAdz`;
+    const notifMsg =
+      `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New tasks available!</b>\n\n` +
+      `<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete them now and claim your rewards!`;
+    const notifButtons = { inline_keyboard: [[{ text: '👉 Complete Tasks 👈', web_app: { url: miniAppUrl } }]] };
+
+    let sent = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const u = targets[i];
+      try {
+        // Mark as reminded BEFORE sending so a crash doesn't re-spam
+        await dbConn
+          .update(usersT)
+          .set({ lastTaskReminderDate: todayUTC })
+          .where(eq(usersT.id, u.id));
+
+        const ok = await sendUserTelegramNotification(u.tgId!, notifMsg, notifButtons);
+        if (ok) sent++;
+      } catch { /* non-fatal */ }
+      // Rate-limit: ~30 msg/s Telegram allows; keep well under with 35ms gaps
+      if ((i + 1) % 25 === 0) await new Promise(r => setTimeout(r, 1_000));
+      else await new Promise(r => setTimeout(r, 35));
+    }
+    console.log(`📣 [TaskReminder] Sent daily task reminders to ${sent}/${targets.length} users`);
+  } catch (err) {
+    console.error('❌ [TaskReminder] Error in reminder pass:', err);
+  }
+}
+
+export function startTaskReminderScheduler(): void {
+  // First pass 5 minutes after startup (avoids collision with other heavy boot tasks)
+  setTimeout(() => runTaskReminderPass().catch(console.error), 5 * 60 * 1000);
+  // Then every hour
+  setInterval(() => runTaskReminderPass().catch(console.error), 60 * 60 * 1000);
+  console.log('📣 Task reminder scheduler started (hourly interval)');
+}
+
 export async function getWebhookInfo(): Promise<any> {
   if (!TELEGRAM_BOT_TOKEN) {
     return { ok: false, error: 'Bot token not configured' };

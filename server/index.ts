@@ -254,6 +254,14 @@ app.use((req, res, next) => {
       console.error('❌ Error starting channel penalty poller:', error);
     }
 
+    // Automatic task reminder — notifies users with unfinished tasks once per day
+    try {
+      const { startTaskReminderScheduler } = await import('./telegram');
+      startTaskReminderScheduler();
+    } catch (error) {
+      console.error('❌ Error starting task reminder scheduler:', error);
+    }
+
     // Auto-setup Telegram webhook
     if (process.env.TELEGRAM_BOT_TOKEN) {
       try {
