@@ -7,15 +7,31 @@ import { db } from './db';
 import { earnings } from '../shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
 
+/** Parse all admin Telegram IDs from environment variables.
+ *  Supports: ADMIN_IDS, TELEGRAM_ADMIN_IDS, SUPER_ADMIN_ID, TELEGRAM_ADMIN_ID
+ *  No hardcoded fallback IDs — env vars are the sole source of truth.
+ */
+function getAdminIds(): Set<string> {
+  const ids = new Set<string>();
+  const sources = [
+    process.env.ADMIN_IDS,
+    process.env.TELEGRAM_ADMIN_IDS,
+    process.env.SUPER_ADMIN_ID,
+    process.env.TELEGRAM_ADMIN_ID,
+  ];
+  for (const src of sources) {
+    if (!src) continue;
+    for (const id of src.split(',')) {
+      const trimmed = id.trim();
+      if (trimmed) ids.add(trimmed);
+    }
+  }
+  return ids;
+}
+
 const isAdmin = (telegramId: string): boolean => {
-  const tid = telegramId.toString();
-  // Check SUPER_ADMIN_ID / TELEGRAM_ADMIN_ID (master admin)
-  const superAdmin = (process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_ID || '').trim();
-  if (superAdmin && tid === superAdmin) return true;
-  // Check comma-separated sub-admins
-  const adminIdsEnv = (process.env.TELEGRAM_ADMIN_IDS || '').trim();
-  if (!adminIdsEnv) return false;
-  return adminIdsEnv.split(',').map(id => id.trim()).filter(Boolean).includes(tid);
+  const tid = telegramId.toString().trim();
+  return getAdminIds().has(tid);
 };
 
 // Async version — also checks DB-added admins (added via the admin panel)
@@ -358,63 +374,106 @@ export async function sendTelegramMessage(message: string): Promise<boolean> {
 }
 
 
+// Permanent Telegram error codes — no retry, just count as skipped/failed
+const TELEGRAM_PERMANENT_ERRORS = new Set([
+  'bot was blocked by the user',
+  'user is deactivated',
+  'chat not found',
+  'have no rights to send a message',
+  'bot was kicked from the group chat',
+  'bot was kicked from the supergroup chat',
+  'the group chat was deleted',
+  'chat_id is empty',
+  'PEER_ID_INVALID',
+]);
+
+function isTelegramPermanentError(description: string): boolean {
+  const lower = description.toLowerCase();
+  for (const msg of TELEGRAM_PERMANENT_ERRORS) {
+    if (lower.includes(msg)) return true;
+  }
+  return false;
+}
+
 export async function sendUserTelegramNotification(userId: string, message: string, replyMarkup?: any, parseMode: 'HTML' | 'Markdown' | 'MarkdownV2' = 'HTML'): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN) {
     console.error('❌ Telegram bot token not configured');
     return false;
   }
 
-  try {
-    console.log(`📞 Sending message to Telegram API for user ${userId}...`);
-    
-    const telegramMessage: TelegramMessage = {
-      chat_id: userId,
-      text: message,
-      parse_mode: parseMode,
-      protect_content: false
-    };
+  const telegramMessage: TelegramMessage = {
+    chat_id: userId,
+    text: message,
+    parse_mode: parseMode,
+    protect_content: false
+  };
 
-    if (replyMarkup) {
-      // Handle ReplyKeyboardMarkup properly
-      if (replyMarkup.keyboard) {
-        // This is a reply keyboard - format correctly
-        telegramMessage.reply_markup = {
-          keyboard: replyMarkup.keyboard,
-          resize_keyboard: replyMarkup.resize_keyboard || true,
-          one_time_keyboard: replyMarkup.one_time_keyboard || false
-        } as any;
-      } else {
-        // This is an inline keyboard or other markup
-        telegramMessage.reply_markup = replyMarkup;
-      }
-    }
-
-    console.log('📡 Request payload:', JSON.stringify(telegramMessage, null, 2));
-    console.log(`🔒 Forward protection: DISABLED for user ${userId} (all users can forward messages)`);
-
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(telegramMessage),
-    });
-
-    console.log('📊 Telegram API response status:', response.status);
-
-    if (response.ok) {
-      const responseData = await response.json();
-      console.log('✅ User notification sent successfully to', userId, responseData);
-      return true;
+  if (replyMarkup) {
+    if (replyMarkup.keyboard) {
+      telegramMessage.reply_markup = {
+        keyboard: replyMarkup.keyboard,
+        resize_keyboard: replyMarkup.resize_keyboard ?? true,
+        one_time_keyboard: replyMarkup.one_time_keyboard ?? false
+      } as any;
     } else {
-      const errorData = await response.text();
-      console.error('❌ Failed to send user notification:', errorData);
+      telegramMessage.reply_markup = replyMarkup;
+    }
+  }
+
+  const body = JSON.stringify(telegramMessage);
+
+  // Retry up to 3 times for rate-limit (429) and transient server errors (5xx)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+
+      if (response.ok) return true;
+
+      const errorText = await response.text();
+      let errorDescription = errorText;
+      try {
+        const errJson = JSON.parse(errorText);
+        errorDescription = errJson.description || errorText;
+      } catch { /* raw text fallback */ }
+
+      if (response.status === 429) {
+        // Rate limited — parse retry_after if present
+        let retryAfter = 2;
+        try { retryAfter = JSON.parse(errorText)?.parameters?.retry_after ?? 2; } catch { /* ignore */ }
+        console.warn(`⏳ Telegram rate limit for ${userId}, retrying in ${retryAfter}s (attempt ${attempt})`);
+        await new Promise(r => setTimeout(r, retryAfter * 1000));
+        continue;
+      }
+
+      if (response.status >= 500) {
+        // Transient server error — short backoff
+        await new Promise(r => setTimeout(r, attempt * 1000));
+        continue;
+      }
+
+      // 4xx that isn't 429 — permanent error, no retry
+      if (isTelegramPermanentError(errorDescription)) {
+        // Silently skip — user blocked bot, deactivated, etc.
+        return false;
+      }
+
+      console.error(`❌ Telegram sendMessage failed for ${userId}: [${response.status}] ${errorDescription}`);
+      return false;
+    } catch (error) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 500));
+        continue;
+      }
+      console.error(`❌ Network error sending to ${userId}:`, error instanceof Error ? error.message : error);
       return false;
     }
-  } catch (error) {
-    console.error('❌ Error sending user notification:', error);
-    return false;
   }
+
+  return false;
 }
 
 // Escape HTML special characters to prevent Telegram parsing errors
@@ -1551,10 +1610,7 @@ export async function checkAndSendContestSnapshots(): Promise<void> {
       } catch { /* ignore */ }
     };
 
-    const adminIds = [
-      (process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_ID || '').trim(),
-      ...(process.env.TELEGRAM_ADMIN_IDS || '').split(',').map((id: string) => id.trim()),
-    ].filter(Boolean);
+    const adminIds = [...getAdminIds()];
 
     const nowDate = new Date();
 
@@ -2245,20 +2301,22 @@ ${walletAddress}
             const notifMsg =
               `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New tasks available!</b>\n\n` +
               `<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete them now and claim your rewards!`;
-            const notifButtons = { inline_keyboard: [[{ text: '👉 Complete Tasks 👈', web_app: { url: miniAppUrl } }]] };
+            // Use url button (same as welcome message) — web_app requires a direct HTTPS webapp URL, not a t.me link
+            const notifButtons = { inline_keyboard: [[{ text: '👉 Complete Tasks 👈', url: miniAppUrl }]] };
 
-            let successCount = 0; let failCount = 0;
+            let successCount = 0; let failCount = 0; let skippedCount = 0;
             for (let i = 0; i < targets.length; i++) {
               const u = targets[i];
               try {
                 const sent = await sendUserTelegramNotification(u.tgId!, notifMsg, notifButtons);
-                if (sent) successCount++; else failCount++;
+                if (sent) successCount++; else skippedCount++;
               } catch { failCount++; }
-              if ((i + 1) % 30 === 0) await new Promise(r => setTimeout(r, 500));
-              else await new Promise(r => setTimeout(r, 20));
+              // ~25 msg/s — well within Telegram's 30 msg/s private chat limit
+              if ((i + 1) % 25 === 0) await new Promise(r => setTimeout(r, 1_000));
+              else await new Promise(r => setTimeout(r, 40));
             }
             await sendUserTelegramNotification(chatId,
-              `✅ <b>Task notifications sent!</b>\n\n✅ Delivered: ${successCount}\n❌ Failed: ${failCount}\n👥 Total: ${targets.length}`);
+              `✅ <b>Task notifications sent!</b>\n\n✅ Delivered: ${successCount}\n⚠️ Skipped (blocked/inactive): ${skippedCount}\n❌ Errors: ${failCount}\n👥 Total: ${targets.length}`);
           } catch (err) {
             console.error('❌ admin_task_notify error:', err);
             await sendUserTelegramNotification(chatId, '❌ Error sending task notifications.');
@@ -3969,7 +4027,8 @@ async function runTaskReminderPass(): Promise<void> {
     const notifMsg =
       `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New tasks available!</b>\n\n` +
       `<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete them now and claim your rewards!`;
-    const notifButtons = { inline_keyboard: [[{ text: '👉 Complete Tasks 👈', web_app: { url: miniAppUrl } }]] };
+    // Use url button (same as welcome message) — web_app requires a direct HTTPS webapp URL, not a t.me link
+    const notifButtons = { inline_keyboard: [[{ text: '👉 Complete Tasks 👈', url: miniAppUrl }]] };
 
     let sent = 0;
     for (let i = 0; i < targets.length; i++) {
