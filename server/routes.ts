@@ -42,6 +42,28 @@ import { config, getChannelConfig } from "./config";
 // Map: sessionId -> { socket: WebSocket, userId: string }
 const connectedUsers = new Map<string, { socket: WebSocket; userId: string }>();
 
+// ── Bot username cache ────────────────────────────────────────────────────────
+// getBotUsername() makes a live Telegram Bot API call. Cache it for 5 minutes
+// so the /api/auth/user endpoint (called every 30 s by every active user)
+// doesn't hammer the Telegram API.
+let _cachedBotUsername: string | null = null;
+let _botUsernameFetchedAt = 0;
+async function getCachedBotUsername(): Promise<string> {
+  const now = Date.now();
+  if (_cachedBotUsername !== null && now - _botUsernameFetchedAt < 5 * 60 * 1000) {
+    return _cachedBotUsername;
+  }
+  try {
+    const { getBotUsername } = await import('./telegram');
+    const username = await getBotUsername();
+    _cachedBotUsername = username || '';
+    _botUsernameFetchedAt = now;
+    return _cachedBotUsername;
+  } catch {
+    return _cachedBotUsername ?? '';
+  }
+}
+
 // ── Anti-Fake Ad Session Store ────────────────────────────────────────────────
 // Session pending/used state now lives in the `ad_sessions` DB table (see
 // shared/schema.ts) instead of an in-memory Map — this is required for the
@@ -1133,9 +1155,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(users.id, userId));
       }
       
-      // Add referral link - bot username fetched live from Telegram Bot API
-      const { getBotUsername } = await import('./telegram');
-      const botUsername = await getBotUsername();
+      // Add referral link - bot username cached to avoid hitting Telegram API on every request
+      const botUsername = await getCachedBotUsername();
       const referralLink = `https://t.me/${botUsername}?start=${user.referralCode}`;
       
       res.json({
@@ -1288,6 +1309,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const taskRewardPerClick = channelTaskRewardPOW / 10000000; // Legacy TON format for compatibility
       const minimumWithdrawal = minimumWithdrawalTON; // Legacy field
       
+      // Cache app-settings for 15 s so every page navigation doesn't hit the DB
+      res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
       res.json({
         dailyAdLimit,
         hourlyAdLimit,
@@ -4196,7 +4219,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dailyActiveCount = await db.select({ count: sql<number>`count(distinct ${earnings.userId})` }).from(earnings).where(sql`DATE(${earnings.createdAt}) = CURRENT_DATE`);
       
       const totalAdsSum = await db.select({ total: sql<number>`COALESCE(SUM(${users.adsWatched}), 0)` }).from(users);
-      const todayAdsSum = await db.select({ total: sql<number>`COALESCE(SUM(${users.adsWatchedToday}), 0)` }).from(users);
+      // Count from earnings table for today so the metric is accurate across the full UTC day
+      // (adsWatchedToday resets every 12 h and would always show 0 right after a reset)
+      const todayAdsSum = await db.select({ total: sql<number>`COUNT(*)` }).from(earnings)
+        .where(sql`DATE(${earnings.createdAt}) = CURRENT_DATE AND ${earnings.source} = 'ad_watch'`);
       const tonWithdrawnSum = await db.select({ total: sql<string>`COALESCE(SUM(${withdrawals.amount}), '0')` }).from(withdrawals).where(sql`${withdrawals.status} IN ('completed', 'success', 'paid', 'Approved')`);
 
       const stats = {
