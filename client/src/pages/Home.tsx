@@ -75,6 +75,7 @@ export default function Home() {
   const [dailyCheckinStep, setDailyCheckinStep] = useState<'idle' | 'ads' | 'countdown' | 'ready' | 'claiming'>('idle');
   const [checkForUpdatesStep, setCheckForUpdatesStep] = useState<'idle' | 'opened' | 'countdown' | 'ready' | 'claiming'>('idle');
   const [checkForUpdatesCountdown, setCheckForUpdatesCountdown] = useState(3);
+  const [resetCountdown, setResetCountdown] = useState('');
 
   const { runAdFlow } = useAdFlow();
 
@@ -173,6 +174,27 @@ export default function Home() {
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [(user as User)?.lastStreakDate, (user as User)?.id]);
+
+  // Live countdown to next 18:30 UTC daily reset (= 12:00 AM IST)
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      const next = new Date(Date.UTC(
+        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 18, 30, 0, 0
+      ));
+      if (now >= next) next.setUTCDate(next.getUTCDate() + 1);
+      const total = Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      setResetCountdown(
+        `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
+      );
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const convertMutation = useMutation({
     mutationFn: async ({ amount, convertTo }: { amount: number; convertTo: string }) => {
@@ -743,6 +765,39 @@ export default function Home() {
         borderBottom: '1px solid rgba(255,255,255,0.07)',
         paddingBottom: 8,
       }}>
+        {/* ── Next Reset Banner ───────────────────────────────────────────── */}
+        <div style={{
+          background: 'linear-gradient(90deg, #0d0d1a 0%, #1a0d3d 35%, #3d1580 65%, #6b21a8 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          padding: '8px 90px 8px 16px',
+          borderBottom: '1px solid rgba(107,33,168,0.35)',
+        }}>
+          <Clock size={13} color="rgba(216,180,254,0.85)" strokeWidth={2.5} />
+          <span style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: 'rgba(216,180,254,0.7)',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+          }}>
+            Next Reset
+          </span>
+          <div style={{ width: 1, height: 11, background: 'rgba(216,180,254,0.25)', borderRadius: 1 }} />
+          <span style={{
+            fontSize: 13,
+            fontWeight: 800,
+            color: '#e9d5ff',
+            fontVariantNumeric: 'tabular-nums',
+            letterSpacing: '0.03em',
+            fontFamily: "'Space Grotesk', monospace",
+          }}>
+            {resetCountdown || '––h ––m ––s'}
+          </span>
+        </div>
+
         <div style={{ maxWidth: 448, margin: '0 auto', paddingLeft: 16, paddingRight: 16, paddingTop: 10 }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
             {t('balance')}
@@ -808,7 +863,8 @@ export default function Home() {
       </div>
 
       <Layout>
-        <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 172 }}>
+        <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 204 }}>
+
           {/* Weekly Contest Banner */}
         <div
           className="mt-1 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
