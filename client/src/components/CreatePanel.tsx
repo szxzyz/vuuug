@@ -72,13 +72,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
     retry: false,
   });
   const tonBalance   = parseFloat(authUser?.tonBalance || "0");
-  const tonFormatted = tonBalance >= 1000
-    ? (tonBalance / 1000).toFixed(1) + "k"
-    : tonBalance >= 0.01
-    ? tonBalance.toFixed(2)
-    : tonBalance > 0
-    ? tonBalance.toFixed(4)
-    : "0";
+  const tonFormatted = tonBalance >= 1000 ? (tonBalance / 1000).toFixed(1) + "k" : tonBalance.toFixed(2);
 
   const isVerif     = verifyType === "verification";
   const pkgData     = PACKAGES.find(p => p.clicks === selectedPkg);
