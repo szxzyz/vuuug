@@ -49,6 +49,22 @@ const isAdminAsync = async (telegramId: string): Promise<boolean> => {
 // Cached bot username fetched from Telegram API on startup
 let cachedBotUsername: string | null = null;
 
+/**
+ * Returns the live HTTPS URL of the webapp (used for web_app buttons).
+ * Priority: RENDER_EXTERNAL_URL → REPLIT_DOMAINS → REPL_SLUG → REPLIT_DEV_DOMAIN → WEBAPP_URL env.
+ * The web_app button type requires a direct HTTPS domain, NOT a t.me link.
+ */
+export function getWebappUrl(): string {
+  return (
+    process.env.RENDER_EXTERNAL_URL ||
+    (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0].trim()}` : '') ||
+    (process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.replit.app` : '') ||
+    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : '') ||
+    process.env.WEBAPP_URL ||
+    ''
+  );
+}
+
 export async function getBotUsername(): Promise<string> {
   if (cachedBotUsername) return cachedBotUsername;
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -4023,31 +4039,61 @@ async function runTaskReminderPass(): Promise<void> {
     if (targets.length === 0) return;
 
     const botUsername = await getBotUsername();
+    // Same URL format as the welcome message button
     const miniAppUrl = `https://t.me/${botUsername}/MyWAdz`;
-    const notifMsg =
+    const notifText =
       `<tg-emoji emoji-id="5472239203590888751">💌</tg-emoji> <b>New tasks available!</b>\n\n` +
       `<tg-emoji emoji-id="5361813743279821319">🤑</tg-emoji> Complete them now and claim your rewards!`;
-    // Use url button (same as welcome message) — web_app requires a direct HTTPS webapp URL, not a t.me link
-    const notifButtons = { inline_keyboard: [[{ text: '👉 Complete Tasks 👈', url: miniAppUrl }]] };
+    // Build button exactly like sendWelcomeMessage — url button pointing to the Mini App t.me link
+    const replyMarkup = {
+      inline_keyboard: [[{ text: '👉 Complete Tasks 👈', url: miniAppUrl }]]
+    };
 
-    let sent = 0;
+    let sent = 0; let skipped = 0;
     for (let i = 0; i < targets.length; i++) {
       const u = targets[i];
       try {
-        // Mark as reminded BEFORE sending so a crash doesn't re-spam
+        // Mark as reminded BEFORE sending so a crash mid-batch doesn't re-spam
         await dbConn
           .update(usersT)
           .set({ lastTaskReminderDate: todayUTC })
           .where(eq(usersT.id, u.id));
 
-        const ok = await sendUserTelegramNotification(u.tgId!, notifMsg, notifButtons);
-        if (ok) sent++;
-      } catch { /* non-fatal */ }
-      // Rate-limit: ~30 msg/s Telegram allows; keep well under with 35ms gaps
+        // Send directly — same raw fetch pattern as sendWelcomeMessage so the
+        // button is serialised and delivered identically to the working welcome button
+        const payload = {
+          chat_id: u.tgId,
+          text: notifText,
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup,
+        };
+
+        let ok = false;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const resp = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (resp.ok) { ok = true; break; }
+          const errText = await resp.text();
+          if (resp.status === 429) {
+            let wait = 2;
+            try { wait = JSON.parse(errText)?.parameters?.retry_after ?? 2; } catch { /* ignore */ }
+            await new Promise(r => setTimeout(r, wait * 1000));
+            continue;
+          }
+          // Permanent user-side error (blocked, deactivated, etc.) — skip silently
+          break;
+        }
+        if (ok) sent++; else skipped++;
+      } catch { skipped++; }
+
+      // Stay well under Telegram's 30 msg/s private chat limit
       if ((i + 1) % 25 === 0) await new Promise(r => setTimeout(r, 1_000));
-      else await new Promise(r => setTimeout(r, 35));
+      else await new Promise(r => setTimeout(r, 40));
     }
-    console.log(`📣 [TaskReminder] Sent daily task reminders to ${sent}/${targets.length} users`);
+    console.log(`📣 [TaskReminder] Daily reminders — sent: ${sent}, skipped: ${skipped}, total: ${targets.length}`);
   } catch (err) {
     console.error('❌ [TaskReminder] Error in reminder pass:', err);
   }
