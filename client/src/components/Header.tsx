@@ -149,8 +149,8 @@ export default function Header() {
     return (
       <>
         {langPicker}
-        {/* Floating language button — top-right, no layout impact */}
-        <div style={{ position: 'fixed', top: 14, right: 14, zIndex: 40 }}>
+        {/* Floating language button — sits inside the reset banner at top-right */}
+        <div style={{ position: 'fixed', top: 4, right: 10, zIndex: 40 }}>
           <button
             onClick={() => setLangPickerOpen(true)}
             className="active:scale-90 transition-transform"
