@@ -1,6 +1,6 @@
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import AppNotification from "@/components/AppNotification";
@@ -188,26 +188,25 @@ function AppContent() {
     return () => clearTimeout(t);
   }, [isDevMode]);
 
-  useEffect(() => {
-    const checkSeasonStatus = () => {
-      fetch("/api/app-settings")
-        .then(res => res.json())
-        .then(settings => {
-          if (settings.seasonBroadcastActive) {
-            setSeasonLockActive(true);
-            setShowSeasonEnd(true);
-          } else {
-            setSeasonLockActive(false);
-            localStorage.removeItem("season_end_seen");
-          }
-        })
-        .catch(() => {});
-    };
+  // Use React Query so app-settings is deduplicated with every other component
+  // fetching the same key, and the 10 s interval is replaced by a 30 s refetch
+  // that doesn't cause top-level re-renders unless the data actually changes.
+  const { data: appSettingsData } = useQuery<any>({
+    queryKey: ['/api/app-settings'],
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
 
-    checkSeasonStatus();
-    const interval = setInterval(checkSeasonStatus, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => {
+    if (appSettingsData === undefined) return;
+    if (appSettingsData?.seasonBroadcastActive) {
+      setSeasonLockActive(true);
+      setShowSeasonEnd(true);
+    } else {
+      setSeasonLockActive(false);
+      localStorage.removeItem("season_end_seen");
+    }
+  }, [appSettingsData?.seasonBroadcastActive]);
 
   const handleCloseSeasonEnd = () => {
     if (!seasonLockActive) {
