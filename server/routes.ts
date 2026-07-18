@@ -42,6 +42,13 @@ import { config, getChannelConfig } from "./config";
 // Map: sessionId -> { socket: WebSocket, userId: string }
 const connectedUsers = new Map<string, { socket: WebSocket; userId: string }>();
 
+// ── Avatar proxy in-memory cache ─────────────────────────────────────────────
+// Each un-cached request hits Telegram API twice (getChat → getFile → download).
+// Cache the image bytes server-side for 1 hour so every subsequent request for
+// the same channel avatar is served instantly without touching Telegram at all.
+const _avatarCache = new Map<string, { buf: Buffer; contentType: string; at: number }>();
+const AVATAR_TTL = 60 * 60 * 1000; // 1 hour
+
 // ── Bot username cache ────────────────────────────────────────────────────────
 // getBotUsername() makes a live Telegram Bot API call. Cache it for 5 minutes
 // so the /api/auth/user endpoint (called every 30 s by every active user)
@@ -4222,7 +4229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Count from earnings table for today so the metric is accurate across the full UTC day
       // (adsWatchedToday resets every 12 h and would always show 0 right after a reset)
       const todayAdsSum = await db.select({ total: sql<number>`COUNT(*)` }).from(earnings)
-        .where(sql`DATE(${earnings.createdAt}) = CURRENT_DATE AND ${earnings.source} = 'ad_watch'`);
+        .where(sql`DATE(${earnings.createdAt}) = CURRENT_DATE AND ${earnings.source} IN ('ad_watch', 'mission_ad')`);
       const tonWithdrawnSum = await db.select({ total: sql<string>`COALESCE(SUM(${withdrawals.amount}), '0')` }).from(withdrawals).where(sql`${withdrawals.status} IN ('completed', 'success', 'paid', 'Approved')`);
 
       const stats = {
@@ -7592,6 +7599,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       if (!username || !botToken) return res.status(404).end();
 
+      // ── Serve from in-memory cache if fresh (avoids 2 Telegram API round-trips) ─
+      const cached = _avatarCache.get(username);
+      if (cached && Date.now() - cached.at < AVATAR_TTL) {
+        res.setHeader('Content-Type', cached.contentType);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.end(cached.buf);
+      }
+
+      // ── Cache miss — fetch from Telegram ─────────────────────────────────────
       const chatRes = await fetch(
         `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent('@' + username)}`
       );
@@ -7607,9 +7623,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const imgRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`);
       if (!imgRes.ok || !imgRes.body) return res.status(404).end();
 
-      res.setHeader('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
       const buf = Buffer.from(await imgRes.arrayBuffer());
+      _avatarCache.set(username, { buf, contentType, at: Date.now() });
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
       res.end(buf);
     } catch {
       // Never log the raw error here — it may embed the bot token via the
