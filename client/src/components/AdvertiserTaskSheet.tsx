@@ -32,6 +32,8 @@ function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
           key={src}
           src={src}
           alt=""
+          loading="lazy"
+          decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => setImgOk(false)}
           style={{ width: "100%", height: "100%", objectFit: "cover", display: loaded ? "block" : "none" }}

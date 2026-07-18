@@ -56,7 +56,11 @@ export default function Header() {
   const tonBalance = parseFloat(user?.tonBalance || "0");
   const tonFormatted = tonBalance >= 1000
     ? (tonBalance / 1000).toFixed(1) + 'k'
-    : tonBalance.toFixed(2);
+    : tonBalance >= 0.01
+    ? tonBalance.toFixed(2)
+    : tonBalance > 0
+    ? tonBalance.toFixed(4)
+    : '0';
 
   const currentLangMeta = LANG_META.find(l => l.code === language) || LANG_META[0];
 
