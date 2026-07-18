@@ -28,6 +28,24 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
+    // Chunk splitting keeps the initial JS bundle small so the first paint is faster
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'query-vendor': ['@tanstack/react-query'],
+          'ton-vendor': ['@tonconnect/ui-react'],
+          'ui-vendor': ['lucide-react', 'framer-motion'],
+          'radix-vendor': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-select',
+            '@radix-ui/react-toast',
+          ],
+        },
+      },
+    },
   },
   server: {
     host: "0.0.0.0",
