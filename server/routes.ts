@@ -4204,10 +4204,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Admin-day helpers ────────────────────────────────────────────────────
+  // Admin statistics use a daily period that starts at 06:30 UTC (= 12:00 PM IST)
+  // and runs for 24 hours — i.e. one reset per day, not two like the user ad counter.
+  function getAdminPeriodStart(): Date {
+    const now = new Date();
+    const boundary = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 6, 30, 0, 0));
+    if (now >= boundary) return boundary;
+    // Before 06:30 UTC → admin day started yesterday at 06:30 UTC
+    boundary.setUTCDate(boundary.getUTCDate() - 1);
+    return boundary;
+  }
+  // Returns a stable YYYY-MM-DD key for the current admin day (changes at 06:30 UTC)
+  function getAdminDayKey(): string {
+    return getAdminPeriodStart().toISOString().slice(0, 10);
+  }
+
   // Admin stats endpoint
   app.get('/api/admin/stats', authenticateAdmin, async (req: any, res) => {
     try {
       console.log('📊 Admin stats requested by:', req.user?.telegramUser?.id);
+
+      // Admin "today" starts at 06:30 UTC (once-daily reset, = 12:00 PM IST)
+      const adminPeriodStart = getAdminPeriodStart().toISOString();
       
       // Get various statistics for admin dashboard using drizzle
       const totalUsersCount = await db.select({ count: sql<number>`count(*)` }).from(users);
@@ -4222,14 +4241,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const activePromosCount = await db.select({ count: sql<number>`count(*)` }).from(promoCodes).where(eq(promoCodes.isActive, true));
       
-      // Fixed daily active count logic
-      const dailyActiveCount = await db.select({ count: sql<number>`count(distinct ${earnings.userId})` }).from(earnings).where(sql`DATE(${earnings.createdAt}) = CURRENT_DATE`);
+      // Daily active users — counted from 06:30 UTC (admin day start)
+      const dailyActiveCount = await db.select({ count: sql<number>`count(distinct ${earnings.userId})` })
+        .from(earnings)
+        .where(sql`${earnings.createdAt} >= ${adminPeriodStart}::timestamptz`);
       
       const totalAdsSum = await db.select({ total: sql<number>`COALESCE(SUM(${users.adsWatched}), 0)` }).from(users);
-      // Count from earnings table for today so the metric is accurate across the full UTC day
-      // (adsWatchedToday resets every 12 h and would always show 0 right after a reset)
+      // Ads watched since 06:30 UTC today (admin day boundary, once-daily reset)
       const todayAdsSum = await db.select({ total: sql<number>`COUNT(*)` }).from(earnings)
-        .where(sql`DATE(${earnings.createdAt}) = CURRENT_DATE AND ${earnings.source} IN ('ad_watch', 'mission_ad')`);
+        .where(sql`${earnings.createdAt} >= ${adminPeriodStart}::timestamptz AND ${earnings.source} IN ('ad_watch', 'mission_ad')`);
       const tonWithdrawnSum = await db.select({ total: sql<string>`COALESCE(SUM(${withdrawals.amount}), '0')` }).from(withdrawals).where(sql`${withdrawals.status} IN ('completed', 'success', 'paid', 'Approved')`);
 
       const stats = {
