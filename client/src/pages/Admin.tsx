@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,73 @@ interface AdminStats {
   totalAdsWatched: number;
   todayAdsWatched: number;
   activePromos: number;
+}
+
+// Reset Schedule component for Admin summary tab
+function AdminResetSchedule() {
+  const [countdown, setCountdown] = useState('');
+  const [nextLabel, setNextLabel] = useState('');
+
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      const y = now.getUTCFullYear();
+      const mo = now.getUTCMonth();
+      const d = now.getUTCDate();
+
+      const reset0630 = new Date(Date.UTC(y, mo, d, 6, 30, 0, 0));
+      const reset1830 = new Date(Date.UTC(y, mo, d, 18, 30, 0, 0));
+
+      let next: Date;
+      let label: string;
+      if (now < reset0630) {
+        next = reset0630;
+        label = '06:30 UTC';
+      } else if (now < reset1830) {
+        next = reset1830;
+        label = '18:30 UTC';
+      } else {
+        next = new Date(Date.UTC(y, mo, d + 1, 6, 30, 0, 0));
+        label = '06:30 UTC';
+      }
+
+      const total = Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      setNextLabel(label);
+      setCountdown(`${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`);
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="bg-[#121212] border border-white/10 rounded-xl p-4">
+      <p className="text-sm font-medium text-white mb-3">Reset Schedule</p>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="bg-[#1a1a1a] rounded-lg p-3 text-center">
+          <p className="text-base font-bold text-[#4cd3ff]">06:30 UTC</p>
+          <p className="text-xs text-gray-500 mt-1">12:00 PM IST</p>
+          <p className="text-xs text-gray-600 mt-0.5">User reset only</p>
+        </div>
+        <div className="bg-[#1a1a1a] rounded-lg p-3 text-center border border-purple-500/30">
+          <p className="text-base font-bold text-purple-400">18:30 UTC</p>
+          <p className="text-xs text-gray-500 mt-1">12:00 AM IST</p>
+          <p className="text-xs text-purple-400/60 mt-0.5">User + Admin reset</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-4 py-2.5">
+        <span className="text-xs text-gray-500 uppercase tracking-wide">Next reset</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-300">{nextLabel || '––:–– UTC'}</span>
+          <span className="text-xs text-gray-600">|</span>
+          <span className="text-sm font-bold text-white tabular-nums">{countdown || '––h ––m ––s'}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Clean Minimal Stat Card Component
@@ -257,6 +324,9 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Reset Schedule Card */}
+                <AdminResetSchedule />
 
               </>
             )}

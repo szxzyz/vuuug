@@ -76,6 +76,7 @@ export default function Home() {
   const [checkForUpdatesStep, setCheckForUpdatesStep] = useState<'idle' | 'opened' | 'countdown' | 'ready' | 'claiming'>('idle');
   const [checkForUpdatesCountdown, setCheckForUpdatesCountdown] = useState(3);
   const [resetCountdown, setResetCountdown] = useState('');
+  const [nextResetLabel, setNextResetLabel] = useState('');
 
   const { runAdFlow } = useAdFlow();
 
@@ -175,18 +176,40 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [(user as User)?.lastStreakDate, (user as User)?.id]);
 
-  // Live countdown to next 18:30 UTC daily reset (= 12:00 AM IST)
+  // Live countdown to next reset — alternates between 06:30 UTC and 18:30 UTC
   useEffect(() => {
     function tick() {
       const now = new Date();
-      const next = new Date(Date.UTC(
-        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 18, 30, 0, 0
-      ));
-      if (now >= next) next.setUTCDate(next.getUTCDate() + 1);
+      const y = now.getUTCFullYear();
+      const mo = now.getUTCMonth();
+      const d = now.getUTCDate();
+
+      // Build today's two reset candidates
+      const reset0630 = new Date(Date.UTC(y, mo, d, 6, 30, 0, 0));
+      const reset1830 = new Date(Date.UTC(y, mo, d, 18, 30, 0, 0));
+
+      let next: Date;
+      let label: string;
+
+      if (now < reset0630) {
+        // Before 06:30 → next is 06:30 today
+        next = reset0630;
+        label = '06:30 UTC';
+      } else if (now < reset1830) {
+        // Between 06:30 and 18:30 → next is 18:30 today
+        next = reset1830;
+        label = '18:30 UTC';
+      } else {
+        // After 18:30 → next is 06:30 tomorrow
+        next = new Date(Date.UTC(y, mo, d + 1, 6, 30, 0, 0));
+        label = '06:30 UTC';
+      }
+
       const total = Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));
       const h = Math.floor(total / 3600);
       const m = Math.floor((total % 3600) / 60);
       const s = total % 60;
+      setNextResetLabel(label);
       setResetCountdown(
         `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
       );
@@ -784,6 +807,16 @@ export default function Home() {
             textTransform: 'uppercase',
           }}>
             Next Reset
+          </span>
+          <div style={{ width: 1, height: 11, background: 'rgba(216,180,254,0.25)', borderRadius: 1 }} />
+          <span style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: 'rgba(216,180,254,0.9)',
+            letterSpacing: '0.04em',
+            fontFamily: "'Space Grotesk', monospace",
+          }}>
+            {nextResetLabel || '––:–– UTC'}
           </span>
           <div style={{ width: 1, height: 11, background: 'rgba(216,180,254,0.25)', borderRadius: 1 }} />
           <span style={{
