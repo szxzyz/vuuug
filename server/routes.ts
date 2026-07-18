@@ -4205,17 +4205,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── Admin-day helpers ────────────────────────────────────────────────────
-  // Admin statistics use a daily period that starts at 06:30 UTC (= 12:00 PM IST)
-  // and runs for 24 hours — i.e. one reset per day, not two like the user ad counter.
+  // Admin statistics use a daily period that starts at 18:30 UTC (= 12:00 AM IST)
+  // and runs for 24 hours — one reset per day, matching the midnight IST boundary.
   function getAdminPeriodStart(): Date {
     const now = new Date();
-    const boundary = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 6, 30, 0, 0));
+    const boundary = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 18, 30, 0, 0));
     if (now >= boundary) return boundary;
-    // Before 06:30 UTC → admin day started yesterday at 06:30 UTC
+    // Before 18:30 UTC today → admin day started yesterday at 18:30 UTC
     boundary.setUTCDate(boundary.getUTCDate() - 1);
     return boundary;
   }
-  // Returns a stable YYYY-MM-DD key for the current admin day (changes at 06:30 UTC)
+  // Returns a stable YYYY-MM-DD key for the current admin day (changes at 18:30 UTC)
   function getAdminDayKey(): string {
     return getAdminPeriodStart().toISOString().slice(0, 10);
   }
