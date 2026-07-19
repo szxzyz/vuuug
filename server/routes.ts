@@ -94,7 +94,7 @@ const AD_SESSION_MAX_AGE_MS = 15 * 60_000; // 15 minutes
 // Hard cap: reject any per-ad reward that exceeds this — protects against misconfigured admin settings
 // Set to 5000 to allow admins to configure rewards up to 5000 POW while still blocking
 // runaway values (e.g. accidental 2,000,000 POW settings).
-const MAX_REWARD_PER_AD_POW = 5000;
+const MAX_REWARD_PER_AD_POW = 10000;
 
 // Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
 // Note: adUsedSessions and adPendingSessions were migrated to the DB (ad_sessions table);
