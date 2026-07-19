@@ -1428,15 +1428,14 @@ export async function sendWeeklyReferralContest(chatId: string, messageId?: numb
     console.log(`   Top N           : ${topN}`);
     console.log(`   Week Label      : ${weekLabel}`);
 
-    // Get top referrers within contest period
-    // NOTE: Referrals in this system go from 'pending' → 'completed'.
-    //       'active' is never set, so querying only 'active' always returns 0 rows.
-    //       We count both 'pending' (friend joined) and 'completed' (friend watched ads).
+    // Get top referrers within contest period.
+    // Only count VERIFIED (completed) referrals — a referral is verified when the
+    // referee watches the required number of ads and the status becomes 'completed'.
     const topQuery = await dbConn.execute(sqlFn`
       SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
       FROM users u
       INNER JOIN referrals r ON r.referrer_id = u.id
-      WHERE r.status IN ('pending', 'completed')
+      WHERE r.status = 'completed'
         AND u.banned = false
         ${startDate ? sqlFn`AND r.created_at >= ${new Date(startDate)}` : sqlFn``}
         ${endDate ? sqlFn`AND r.created_at <= ${new Date(endDate)}` : sqlFn``}
@@ -1649,7 +1648,7 @@ export async function checkAndSendContestSnapshots(): Promise<void> {
           SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
           FROM users u
           INNER JOIN referrals r ON r.referrer_id = u.id
-          WHERE r.status IN ('pending', 'completed')
+          WHERE r.status = 'completed'
             AND u.banned = false
             ${startDate ? sqlFn`AND r.created_at >= ${new Date(startDate)}` : sqlFn``}
             AND r.created_at <= ${endDate}
@@ -3153,7 +3152,11 @@ ${walletAddress}
       const referralCode = text.split(' ')[1]?.trim();
 
       // Process referral for BOTH new users AND existing users without a referrer
-      if (referralCode && referralCode !== chatId) {
+      // Only process referral if this user does not already have a referrer
+      const userAlreadyReferred =
+        (dbUser as any).referredBy || (dbUser as any).referred_by;
+
+      if (referralCode && referralCode !== chatId && !userAlreadyReferred) {
         console.log(`🔄 Processing referral: referralCode=${referralCode}, user=${chatId}`);
         try {
           const referrer = await storage.getUserByReferralCode(referralCode);
@@ -3185,7 +3188,7 @@ ${walletAddress}
                   SELECT COUNT(r.id) AS referral_count
                   FROM referrals r
                   WHERE r.referrer_id = ${referrer.id}
-                    AND r.status IN ('pending', 'completed')
+                    AND r.status = 'completed'
                     ${contestStart ? sqlFn`AND r.created_at >= ${new Date(contestStart)}` : sqlFn``}
                     ${contestEnd   ? sqlFn`AND r.created_at <= ${new Date(contestEnd)}`   : sqlFn``}
                 `);

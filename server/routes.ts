@@ -11411,14 +11411,14 @@ ${walletAddress}
         return res.json({ leaderboard: [], userRank: null, contestActive: false, topN, endDate: endDate || null, startDate: startDate || null, prizes });
       }
 
-      // Count referrals per user within contest period.
-      // Referrals go from 'pending' (friend joined) → 'completed' (reward given).
-      // 'active' is never set in this codebase, so we count both 'pending' and 'completed'.
+      // Count ONLY verified (completed) referrals per user within contest period.
+      // A referral is verified when the referee watches the required number of ads
+      // and its status is updated to 'completed'. Pending referrals do not count.
       const topReferrers = await db.execute(sql`
         SELECT u.id, u.username, u.first_name, COUNT(r.id) AS referral_count
         FROM users u
         INNER JOIN referrals r ON r.referrer_id = u.id
-        WHERE r.status IN ('pending', 'completed')
+        WHERE r.status = 'completed'
           AND u.banned = false
           ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
           ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
@@ -11445,7 +11445,7 @@ ${walletAddress}
             SELECT COUNT(r.id) AS referral_count
             FROM referrals r
             WHERE r.referrer_id = ${userId}
-              AND r.status IN ('pending', 'completed')
+              AND r.status = 'completed'
               ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
               ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
           `);
@@ -11458,7 +11458,7 @@ ${walletAddress}
                 SELECT r.referrer_id, COUNT(r.id) AS rc
                 FROM referrals r
                 INNER JOIN users u ON u.id = r.referrer_id
-                WHERE r.status IN ('pending', 'completed') AND u.banned = false
+                WHERE r.status = 'completed' AND u.banned = false
                   ${startDate ? sql`AND r.created_at >= ${new Date(startDate)}` : sql``}
                   ${endDate ? sql`AND r.created_at <= ${new Date(endDate)}` : sql``}
                 GROUP BY r.referrer_id

@@ -825,7 +825,7 @@ export class DatabaseStorage implements IStorage {
       throw new Error(`Referred user not found: ${referredId}`);
     }
     
-    // Check if referral already exists
+    // Check if referral already exists (same pair)
     const existingReferral = await db
       .select()
       .from(referrals)
@@ -837,6 +837,23 @@ export class DatabaseStorage implements IStorage {
     
     if (existingReferral.length > 0) {
       throw new Error('Referral relationship already exists');
+    }
+
+    // Prevent re-referral: if the referee already has ANY referrer (different person),
+    // do not allow a second referrer to claim them.
+    const anyExistingReferral = await db
+      .select({ id: referrals.id })
+      .from(referrals)
+      .where(eq(referrals.refereeId, referredId))
+      .limit(1);
+
+    if (anyExistingReferral.length > 0) {
+      throw new Error('User already has a referrer — cannot be referred by a different user');
+    }
+
+    // Also check the referred_by field on the user as a secondary guard
+    if (referred.referredBy && referred.referredBy !== '') {
+      throw new Error('User already has a referral code set — re-referral not allowed');
     }
     
     // Create the referral relationship (initially pending)
