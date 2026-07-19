@@ -194,15 +194,15 @@ export default function Home() {
       if (now < reset0630) {
         // Before 06:30 → next is 06:30 today
         next = reset0630;
-        label = '06:30 UTC';
+        label = '6:30 AM UTC';
       } else if (now < reset1830) {
         // Between 06:30 and 18:30 → next is 18:30 today
         next = reset1830;
-        label = '18:30 UTC';
+        label = '6:30 PM UTC';
       } else {
         // After 18:30 → next is 06:30 tomorrow
         next = new Date(Date.UTC(y, mo, d + 1, 6, 30, 0, 0));
-        label = '06:30 UTC';
+        label = '6:30 AM UTC';
       }
 
       const total = Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));

@@ -338,19 +338,19 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
         <button onClick={() => onGo(task)} style={{ ...BTN_BASE, flexShrink: 0, background: `linear-gradient(135deg,${BLUE_D},${BLUE})`, color: '#fff', boxShadow: '0 2px 10px rgba(37,99,235,0.35)' }} className="active:scale-95 transition-transform">
           Go
         </button>
-      ) : countdown !== undefined ? (
-        <div style={{ ...BTN_BASE, flexShrink: 0, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default' }}>
-          {countdown}s
-        </div>
       ) : isClaimReady ? (
         <button onClick={e => { e.stopPropagation(); onClaim(task.id); }} disabled={loading} style={{ ...BTN_BASE, flexShrink: 0, background: loading ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#16a34a,#22c55e)', color: loading ? TEXT_DIM : '#fff', boxShadow: loading ? 'none' : '0 2px 12px rgba(34,197,94,0.35)', cursor: loading ? 'not-allowed' : 'pointer' }} className="active:scale-95 transition-transform">
           {loading ? '…' : 'Claim'}
         </button>
+      ) : countdown !== undefined ? (
+        <div style={{ ...BTN_BASE, flexShrink: 0, background: 'rgba(255,255,255,0.06)', color: TEXT_DIM, cursor: 'default' }}>
+          {countdown}s
+        </div>
       ) : (
-        <div style={{ flexShrink: 0, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
+        /* Waiting for user to return from the task link — show a pulsing return indicator */
+        <div style={{ flexShrink: 0, width: 52, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', borderRadius: 8, gap: 4 }}>
+          <span style={{ fontSize: 12, color: TEXT_DIM, animation: 'pulse 1.5s ease-in-out infinite' }}>↩</span>
+          <span style={{ fontSize: 10, color: TEXT_DIM, animation: 'pulse 1.5s ease-in-out infinite' }}>Back</span>
         </div>
       )}
     </div>
@@ -720,16 +720,41 @@ export default function Missions() {
       window.open(link, '_blank');
     }
     setClickedTasks(prev => new Set(prev).add(task.id));
-    setCountdownTasks(prev => new Map(prev).set(task.id, 3));
-    const interval = setInterval(() => {
-      setCountdownTasks(prev => {
-        const m = new Map(prev);
-        const c = m.get(task.id) || 0;
-        if (c <= 1) { clearInterval(interval); m.delete(task.id); setClaimReadyTasks(p => new Set(p).add(task.id)); }
-        else m.set(task.id, c - 1);
-        return m;
-      });
-    }, 1000);
+
+    // Claim is ONLY enabled after a confirmed hidden → visible cycle.
+    // There is NO time-based fallback that enables claim — that would allow
+    // users to claim without ever opening the task link.
+    let hasGoneHidden = false;
+    let claimed = false;
+
+    const enableClaim = () => {
+      if (claimed) return;
+      claimed = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      tg?.offEvent?.('deactivated', onTgDeactivated);
+      tg?.offEvent?.('activated', onTgActivated);
+      setCountdownTasks(prev => { const m = new Map(prev); m.delete(task.id); return m; });
+      setClaimReadyTasks(p => new Set(p).add(task.id));
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        // App went to background — user navigated to the link
+        hasGoneHidden = true;
+      } else if (hasGoneHidden) {
+        // App came back to foreground after being hidden — user returned
+        enableClaim();
+      }
+    };
+
+    // Telegram WebApp lifecycle events (fire in Telegram clients where
+    // visibilitychange may not fire when an external link is opened)
+    const onTgDeactivated = () => { hasGoneHidden = true; };
+    const onTgActivated   = () => { if (hasGoneHidden) enableClaim(); };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    tg?.onEvent?.('deactivated', onTgDeactivated);
+    tg?.onEvent?.('activated',   onTgActivated);
   };
 
   const handleTaskGo = (task: Task) => {
