@@ -586,7 +586,7 @@ function BanUserButton({ user, onSuccess }: { user: any; onSuccess: () => void }
   );
 }
 
-type UserProfileTab = 'overview' | 'tasks' | 'ads' | 'referrals' | 'withdrawals' | 'bans' | 'balance' | 'deposits' | 'createdTasks';
+type UserProfileTab = 'overview' | 'tasks' | 'ads' | 'referrals' | 'withdrawals' | 'bans' | 'balance' | 'deposits' | 'createdTasks' | 'swaps';
 
 function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -640,6 +640,19 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
     enabled: activeTab === 'createdTasks',
   });
 
+  const { data: userSwaps } = useQuery({
+    queryKey: ["/api/admin/user-swaps", user.id],
+    queryFn: () => apiRequest("GET", `/api/admin/user-swaps/${user.id}`).then(res => res.json()),
+    enabled: activeTab === 'swaps',
+  });
+
+  const { data: userAmbassador } = useQuery({
+    queryKey: ["/api/admin/user-ambassador", user.id],
+    queryFn: () => apiRequest("GET", `/api/admin/user-ambassador/${user.id}`).then(res => res.json()),
+    enabled: activeTab === 'overview',
+    retry: false,
+  });
+
   const handleAdjustBalance = async () => {
     const amt = parseFloat(balanceForm.amount);
     if (isNaN(amt) || amt < 0) { showNotification('Enter valid amount', 'error'); return; }
@@ -669,6 +682,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
     { id: 'ads' as const, label: 'Ads' },
     { id: 'referrals' as const, label: 'Referrals' },
     { id: 'withdrawals' as const, label: 'Withdrawals' },
+    { id: 'swaps' as const, label: 'Swaps' },
     { id: 'deposits' as const, label: 'Deposits' },
     { id: 'createdTasks' as const, label: 'Created Tasks' },
     { id: 'bans' as const, label: 'Bans' },
@@ -730,7 +744,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             <p className="text-xs text-muted-foreground mb-2">Earnings</p>
             <div className="grid grid-cols-2 gap-2">
               <div><p className="text-xs text-muted-foreground">Total Earned</p><p className="font-bold text-emerald-400">{formatPOW(user.totalEarned)} POW</p></div>
-              <div><p className="text-xs text-muted-foreground">Total Withdrawn</p><p className="font-bold text-amber-400">{formatPOW(analyticsData?.analytics?.totalWithdrawn)} POW</p></div>
+              <div><p className="text-xs text-muted-foreground">Total Withdrawn</p><p className="font-bold text-amber-400">${parseFloat(analyticsData?.analytics?.totalWithdrawn || '0').toFixed(2)}</p></div>
             </div>
           </div>
 
@@ -763,6 +777,24 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             <div className="bg-white/5 border border-white/10 p-2 rounded">
               <p className="text-xs text-muted-foreground mb-1">Referred By</p>
               <p className="font-mono text-xs text-orange-400">{user.referrerUid}</p>
+            </div>
+          )}
+
+          {userAmbassador?.ambassador && (
+            <div className="bg-purple-900/20 border border-purple-500/20 p-3 rounded">
+              <p className="text-xs text-purple-400 font-semibold mb-2">👑 Ambassador</p>
+              <div className="grid grid-cols-2 gap-2 text-center mb-2">
+                <div><p className="text-xs text-muted-foreground">Promo Code</p><p className="font-bold text-purple-300 font-mono">{userAmbassador.ambassador.promoCodeName}</p></div>
+                <div><p className="text-xs text-muted-foreground">Status</p><p className={`font-bold text-xs ${userAmbassador.ambassador.status === 'active' ? 'text-green-400' : 'text-yellow-400'}`}>{userAmbassador.ambassador.status}</p></div>
+                <div><p className="text-xs text-muted-foreground">Total Claims</p><p className="font-bold">{userAmbassador.ambassador.totalClaims || 0}</p></div>
+                <div><p className="text-xs text-muted-foreground">Total Earnings</p><p className="font-bold text-green-400">${parseFloat(userAmbassador.ambassador.totalEarningsUsd || '0').toFixed(4)}</p></div>
+              </div>
+              {userAmbassador.ambassador.channelTitle && (
+                <p className="text-xs text-muted-foreground">Channel: <span className="text-white">{userAmbassador.ambassador.channelTitle}</span>{userAmbassador.ambassador.channelUsername && <span className="text-[#4cd3ff]"> @{userAmbassador.ambassador.channelUsername}</span>}</p>
+              )}
+              {userAmbassador.ambassador.subscriberCount != null && (
+                <p className="text-xs text-muted-foreground">Subscribers: <span className="text-white font-semibold">{userAmbassador.ambassador.subscriberCount.toLocaleString()}</span></p>
+              )}
             </div>
           )}
 
@@ -872,6 +904,33 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
         </div>
       )}
 
+      {activeTab === 'swaps' && (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground mb-2">Total Swaps: {userSwaps?.swaps?.length || 0}</div>
+          {userSwaps?.swaps?.length > 0 ? (
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {userSwaps.swaps.map((s: any) => {
+                const desc: string = s.description || '';
+                const isTon = desc.toLowerCase().includes('ton');
+                const amount = Math.abs(parseFloat(s.amount || '0'));
+                return (
+                  <div key={s.id} className="bg-white/5 p-2 rounded border border-white/10">
+                    <div className="flex justify-between items-center">
+                      <p className="font-bold text-red-400">-{Math.round(amount).toLocaleString()} POW</p>
+                      <Badge className={isTon ? 'bg-purple-600' : 'bg-green-600'}>{isTon ? 'TON' : 'USD'}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{desc}</p>
+                    <p className="text-xs text-muted-foreground">Date: {s.createdAt ? new Date(s.createdAt).toLocaleString() : 'N/A'}</p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-center text-muted-foreground py-4">No swap history</p>
+          )}
+        </div>
+      )}
+
       {activeTab === 'deposits' && (
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground mb-2">Total Deposits: {userDeposits?.deposits?.length || 0}</div>
@@ -949,9 +1008,10 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
         <div className="space-y-3">
           <div className="bg-white/5 border border-white/10 p-3 rounded">
             <p className="text-xs text-muted-foreground mb-2 font-semibold">Current Balances</p>
-            <div className="grid grid-cols-2 gap-2 text-center">
+            <div className="grid grid-cols-3 gap-2 text-center">
               <div><p className="text-xs text-muted-foreground">POW</p><p className="font-bold text-[#4cd3ff]">{Math.round(parseFloat(user.balance || '0')).toLocaleString()}</p></div>
               <div><p className="text-xs text-muted-foreground">USD</p><p className="font-bold text-green-400">${parseFloat(user.usdBalance || '0').toFixed(2)}</p></div>
+              <div><p className="text-xs text-muted-foreground">TON</p><p className="font-bold text-purple-400">{parseFloat(user.tonBalance || '0').toFixed(4)}</p></div>
             </div>
           </div>
 

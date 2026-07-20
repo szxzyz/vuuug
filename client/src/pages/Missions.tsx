@@ -10,7 +10,7 @@ import AdvertiserTaskSheet from "@/components/AdvertiserTaskSheet";
 import AdFailurePopup from "@/components/AdFailurePopup";
 import { useAdSession } from "@/hooks/useAdSession";
 import { apiRequest } from "@/lib/queryClient";
-import { Bot, Megaphone } from "lucide-react";
+import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle } from "lucide-react";
 
 declare global {
   interface Window {
@@ -43,6 +43,16 @@ interface Task {
   completedAt?: string;
   verificationRequired?: boolean;
   channelVerified?: boolean;
+}
+
+interface AmbassadorEntry {
+  id: string;
+  promoCodeName: string;
+  channelTitle: string | null;
+  channelUsername: string | null;
+  subscriberCount: number | null;
+  totalClaims: number;
+  channelLink: string | null;
 }
 
 interface AppSettings {
@@ -440,6 +450,13 @@ export default function Missions() {
   const { data: missionsStatus, refetch: refetchMissions } = useQuery<any>({ queryKey: ['/api/missions/status'], retry: false, staleTime: 30000 });
   const { data: tasksData, isLoading: tasksLoading } = useQuery<{ success: boolean; tasks: Task[] }>({ queryKey: ["/api/advertiser-tasks"], retry: false, refetchOnMount: true, staleTime: 10000 });
   const { data: botInfo } = useQuery<{ username: string }>({ queryKey: ['/api/bot-info'], retry: false, staleTime: 300000 });
+  const { data: ambassadorData, isLoading: ambLoading, isError: ambError, refetch: refetchAmb } = useQuery<{ success: boolean; ambassadors: AmbassadorEntry[] }>({
+    queryKey: ['/api/ambassadors/directory'],
+    queryFn: () => apiRequest('GET', '/api/ambassadors/directory').then(r => r.json()),
+    retry: 2,
+    staleTime: 60000,
+    enabled: activeTab === 'partner',
+  });
 
   /* Derived values */
   const monetagReward = appSettings?.monetagMissionReward ?? 50;
@@ -759,12 +776,14 @@ export default function Missions() {
 
   const handleTaskGo = (task: Task) => {
     if (!task.link || claimReadyTasks.has(task.id) || clickedTasks.has(task.id)) return;
-    // Verified bot/channel/partner tasks → open interactive sheet
-    if ((task.taskType === 'bot' || task.taskType === 'channel' || task.taskType === 'partner') && task.verificationRequired) {
+    // All bot/channel/partner tasks → task sheet
+    // The sheet handles both verified (server-side membership check) and
+    // non-verified (canClaim set immediately after opening the link) flows.
+    if (task.taskType === 'bot' || task.taskType === 'channel' || task.taskType === 'partner') {
       setActiveTaskSheet(task);
       return;
     }
-    // All other tasks (including non-verified bot/channel) → direct open + countdown
+    // Any other task type → direct open
     openTaskLink(task);
   };
 
@@ -883,7 +902,7 @@ export default function Missions() {
         </div>
 
         {/* Tabs */}
-        <MainTabs active={activeTab} onChange={setActiveTab} allLabel={t('all_tab')} dailyLabel={t('daily_tab')} partnerLabel={t('partner_tab')} />
+        <MainTabs active={activeTab} onChange={setActiveTab} allLabel={t('all_tab')} dailyLabel={t('daily_tab')} partnerLabel="Ambassadors" />
 
         {/* ── ALL TAB ── */}
         {activeTab === 'all' && (
@@ -992,46 +1011,126 @@ export default function Missions() {
           </>
         )}
 
-        {/* ── PARTNER TAB ── */}
+        {/* ── AMBASSADORS TAB ── */}
         {activeTab === 'partner' && (
           <>
-            {/* Ambassador Directory Link */}
-            <div style={{
-              background: 'rgba(236,72,153,0.08)',
-              border: '1px solid rgba(236,72,153,0.22)',
-              borderRadius: 14,
-              padding: '12px 16px',
-              marginBottom: 10,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
-              onClick={() => setLocation('/ambassador-directory')}
-            >
-              <div>
-                <div style={{ color: '#ec4899', fontSize: 13, fontWeight: 700 }}>📣 Ambassador Directory</div>
-                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 2 }}>Join ambassador channels · Earn 2,000 POW each</div>
-              </div>
-              <span style={{ color: '#ec4899', fontSize: 16 }}>›</span>
-            </div>
+            <SectionLabel title="Ambassador Channels" />
 
-            <SectionLabel title={t('partner_tab')} />
-            {tasksLoading ? (
-              <div style={cardStyle}><LoadingRow /></div>
-            ) : partnerTasks.length === 0 ? (
-              <div style={cardStyle}><EmptyRow label={t('no_tasks_available')} /></div>
-            ) : (
+            {ambLoading ? (
+              /* Loading skeleton */
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {partnerTasks.map(task => (
-                  <div key={task.id} style={cardStyle}>
-                    <TaskRow
-                      task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
-                      clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
-                      onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
-                    />
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ background: CARD, borderRadius: 18, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ width: 50, height: 50, borderRadius: 14, background: 'rgba(255,255,255,0.06)' }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ height: 13, width: '55%', background: 'rgba(255,255,255,0.07)', borderRadius: 6, marginBottom: 8 }} />
+                      <div style={{ height: 11, width: '35%', background: 'rgba(255,255,255,0.05)', borderRadius: 6 }} />
+                    </div>
+                    <div style={{ width: 60, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.06)' }} />
                   </div>
                 ))}
+              </div>
+            ) : ambError ? (
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 16, padding: '24px 20px', textAlign: 'center' }}>
+                <AlertCircle style={{ width: 28, height: 28, color: '#f87171', margin: '0 auto 10px' }} />
+                <div style={{ color: '#f87171', fontSize: 13, fontWeight: 600 }}>Failed to load channels</div>
+                <button
+                  onClick={() => refetchAmb()}
+                  style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  <RefreshCw style={{ width: 12, height: 12 }} /> Retry
+                </button>
+              </div>
+            ) : !ambassadorData?.ambassadors?.length ? (
+              <div style={{ background: CARD, borderRadius: 16, padding: '32px 20px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <Megaphone style={{ width: 34, height: 34, color: TEXT_DIM, margin: '0 auto 10px' }} />
+                <div style={{ color: TEXT_DIM, fontSize: 13, fontWeight: 600 }}>No ambassador channels yet</div>
+                <div style={{ color: TEXT_DIM, fontSize: 11, marginTop: 4 }}>Check back soon!</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {ambassadorData.ambassadors.map((amb) => {
+                  const channelName = amb.channelTitle || amb.channelUsername || amb.promoCodeName;
+                  const joinLink = amb.channelLink || (amb.channelUsername ? `https://t.me/${amb.channelUsername}` : null);
+                  const handleJoinChannel = () => {
+                    if (!joinLink) return;
+                    const tg = (window as any).Telegram?.WebApp;
+                    if (tg) {
+                      if (joinLink.includes('t.me/') && tg.openTelegramLink) tg.openTelegramLink(joinLink);
+                      else if (tg.openLink) tg.openLink(joinLink);
+                      else window.open(joinLink, '_blank');
+                    } else {
+                      window.open(joinLink, '_blank');
+                    }
+                  };
+                  return (
+                    <div key={amb.id} style={{
+                      background: CARD,
+                      borderRadius: 18,
+                      overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px' }}>
+                        {/* Avatar */}
+                        <div style={{
+                          width: 50, height: 50, borderRadius: 14, flexShrink: 0,
+                          background: `linear-gradient(135deg, ${BLUE}22, ${BLUE_D}33)`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: `1.5px solid ${BLUE}40`,
+                        }}>
+                          <Megaphone style={{ width: 22, height: 22, color: BLUE }} />
+                        </div>
+
+                        {/* Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: TEXT, fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {channelName}
+                          </div>
+                          {amb.channelUsername && (
+                            <div style={{ color: TEXT_DIM, fontSize: 11, marginTop: 2 }}>
+                              @{amb.channelUsername}
+                            </div>
+                          )}
+                          {amb.subscriberCount != null && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                              <Users style={{ width: 11, height: 11, color: BLUE }} />
+                              <span style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 600 }}>
+                                {amb.subscriberCount.toLocaleString()} subscribers
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Join button */}
+                        {joinLink && (
+                          <button
+                            onClick={handleJoinChannel}
+                            style={{
+                              flexShrink: 0,
+                              height: 36,
+                              padding: '0 14px',
+                              borderRadius: 10,
+                              border: 'none',
+                              background: `linear-gradient(135deg, ${BLUE}, ${BLUE_D})`,
+                              color: '#fff',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              boxShadow: `0 2px 10px ${BLUE}40`,
+                            }}
+                            className="active:scale-95 transition-transform"
+                          >
+                            <ExternalLink style={{ width: 12, height: 12 }} />
+                            Join
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
