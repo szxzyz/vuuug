@@ -278,9 +278,22 @@ export default function SwapSheet({
                   <p style={{ fontSize: 13, color: textMuted, textAlign: "center", marginBottom: 3, lineHeight: 1.5 }}>
                     Swap your POW to {receiveCurrency}?
                   </p>
-                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", textAlign: "center", marginBottom: 16 }}>
-                    This action cannot be undone.
-                  </p>
+
+                  {/* TON-specific warning */}
+                  {receiveCurrency === "TON" && (
+                    <div style={{ background: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.25)", borderRadius: 10, padding: "10px 12px", marginBottom: 14, textAlign: "left" }}>
+                      <p style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 4 }}>⚠️ Important Notice</p>
+                      <p style={{ fontSize: 11.5, color: "rgba(251,191,36,0.85)", lineHeight: 1.55, margin: 0 }}>
+                        TON received through swapping can only be used for creating advertisements within Paid Adz. This swap is permanent and cannot be reversed. Are you sure you want to continue?
+                      </p>
+                    </div>
+                  )}
+
+                  {receiveCurrency !== "TON" && (
+                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", textAlign: "center", marginBottom: 16 }}>
+                      This action cannot be undone.
+                    </p>
+                  )}
 
                   {/* Summary */}
                   <div style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
