@@ -26,7 +26,6 @@ import Leaderboard from "@/pages/Leaderboard";
 const Admin = lazy(() => import("@/pages/Admin"));
 const CountryControls = lazy(() => import("@/pages/CountryControls"));
 const AmbassadorPage = lazy(() => import("@/pages/Ambassador"));
-const AmbassadorDirectory = lazy(() => import("@/pages/AmbassadorDirectory"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 declare global {
@@ -142,7 +141,6 @@ function Router() {
         <Route path="/missions" component={Missions} />
         <Route path="/leaderboard" component={Leaderboard} />
         <Route path="/ambassador" component={AmbassadorPage} />
-        <Route path="/ambassador-directory" component={AmbassadorDirectory} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
