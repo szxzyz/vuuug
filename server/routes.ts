@@ -4927,8 +4927,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pageResult = await db.execute(sql`
         SELECT
           u.id, u.telegram_id, u.username, u.first_name, u.last_name,
-          u.balance, u.usd_balance, u.total_earned, u.friends_invited,
-          u.referral_code, u.personal_code, u.cwallet_id,
+          u.balance, u.usd_balance, u.ton_balance, u.total_earned, u.friends_invited,
+          u.referral_code, u.personal_code, u.cwallet_id, u.usdt_wallet_address,
+          u.telegram_stars_username, u.referred_by, u.tasks_completed,
           u.banned, u.ads_watched, u.created_at
         FROM users u
         ${whereClause}
@@ -4945,11 +4946,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastName: u.last_name,
         balance: u.balance?.toString() || '0',
         usdBalance: u.usd_balance?.toString() || '0',
+        tonBalance: u.ton_balance?.toString() || '0',
         totalEarned: u.total_earned?.toString() || '0',
         friendsInvited: u.friends_invited || 0,
         referralCode: u.referral_code,
         personalCode: u.personal_code,
         cwalletId: u.cwallet_id,
+        usdtWalletAddress: u.usdt_wallet_address,
+        telegramStarsUsername: u.telegram_stars_username,
+        referrerUid: u.referred_by,
+        tasksCompleted: u.tasks_completed || 0,
         banned: u.banned || false,
         adsWatched: u.ads_watched || 0,
         createdAt: u.created_at,
@@ -11317,6 +11323,79 @@ ${walletAddress}
     }
   });
 
+  // Completed tasks for a user (tasks they clicked/did as a publisher)
+  app.get('/api/admin/user-tasks/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const completedTasks = await db
+        .select({
+          id: taskClicks.id,
+          title: advertiserTasks.title,
+          taskType: advertiserTasks.taskType,
+          completedAt: taskClicks.completedAt,
+          reward: taskClicks.rewardAmount,
+        })
+        .from(taskClicks)
+        .leftJoin(advertiserTasks, eq(taskClicks.taskId, advertiserTasks.id))
+        .where(eq(taskClicks.publisherId, id))
+        .orderBy(desc(taskClicks.completedAt))
+        .limit(200);
+      res.json({ success: true, tasks: completedTasks });
+    } catch (error) {
+      console.error('❌ Error fetching user completed tasks:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch completed tasks' });
+    }
+  });
+
+  // Ambassador info for a user (admin)
+  app.get('/api/admin/user-ambassador/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [ambassador] = await db
+        .select({
+          id: ambassadors.id,
+          promoCodeName: ambassadors.promoCodeName,
+          promoPrefix: ambassadors.promoPrefix,
+          totalClaims: ambassadors.totalClaims,
+          totalEarningsUsd: ambassadors.totalEarningsUsd,
+          status: ambassadors.status,
+          channelVerified: ambassadors.channelVerified,
+          createdAt: ambassadors.createdAt,
+          channelTitle: ambassadorApplications.channelTitle,
+          channelUsername: ambassadorApplications.channelUsername,
+          subscriberCount: ambassadorApplications.subscriberCount,
+        })
+        .from(ambassadors)
+        .leftJoin(ambassadorApplications, eq(ambassadors.applicationId, ambassadorApplications.id))
+        .where(eq(ambassadors.userId, id))
+        .limit(1);
+      res.json({ success: true, ambassador: ambassador || null });
+    } catch (error) {
+      console.error('❌ Error fetching user ambassador info:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch ambassador info' });
+    }
+  });
+
+  // Swap/conversion history for a user
+  app.get('/api/admin/user-swaps/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const swapHistory = await db
+        .select()
+        .from(transactions)
+        .where(and(
+          eq(transactions.userId, id),
+          eq(transactions.source, 'convert')
+        ))
+        .orderBy(desc(transactions.createdAt))
+        .limit(100);
+      res.json({ success: true, swaps: swapHistory });
+    } catch (error) {
+      console.error('❌ Error fetching user swap history:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch swap history' });
+    }
+  });
+
   // Prizes settings may be stored either as JSON (e.g. '["$20","$10"]') or as
   // plain newline-separated text (e.g. "🤴🏻 $20\n💎 $10\n..."). Parse safely.
   const parsePrizesSetting = (raw: string): string[] => {
@@ -11675,6 +11754,33 @@ ${walletAddress}
           if (countData.ok) subscriberCount = countData.result;
         }
       } catch (_) {}
+
+      // ── Minimum subscriber requirement ───────────────────────────────────────
+      if (subscriberCount !== null && subscriberCount < 1000) {
+        return res.status(400).json({
+          success: false,
+          message: `Your channel needs at least 1,000 subscribers to apply. Current count: ${subscriberCount.toLocaleString()}. Please grow your channel and try again.`,
+        });
+      }
+
+      // ── Duplicate channel protection ─────────────────────────────────────────
+      // Reject if this channel username is already linked to another ambassador or pending application
+      if (channelUsername) {
+        const [existingAppByChannel] = await db
+          .select({ id: ambassadorApplications.id, userId: ambassadorApplications.userId })
+          .from(ambassadorApplications)
+          .where(and(
+            eq(ambassadorApplications.channelUsername, channelUsername),
+            sql`${ambassadorApplications.status} IN ('pending', 'approved')`
+          ))
+          .limit(1);
+        if (existingAppByChannel && existingAppByChannel.userId !== userId) {
+          return res.status(400).json({
+            success: false,
+            message: 'This channel is already registered with another ambassador account.',
+          });
+        }
+      }
 
       const [application] = await db.insert(ambassadorApplications).values({
         userId,
