@@ -4929,7 +4929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           u.id, u.telegram_id, u.username, u.first_name, u.last_name,
           u.balance, u.usd_balance, u.ton_balance, u.total_earned, u.friends_invited,
           u.referral_code, u.personal_code, u.cwallet_id, u.usdt_wallet_address,
-          u.telegram_stars_username, u.referred_by, u.tasks_completed,
+          u.telegram_stars_username, u.referred_by,
           u.banned, u.ads_watched, u.created_at, u.last_login_at
         FROM users u
         ${whereClause}
@@ -4955,7 +4955,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         usdtWalletAddress: u.usdt_wallet_address,
         telegramStarsUsername: u.telegram_stars_username,
         referrerUid: u.referred_by,
-        tasksCompleted: u.tasks_completed || 0,
         banned: u.banned || false,
         adsWatched: u.ads_watched || 0,
         createdAt: u.created_at,
@@ -12646,12 +12645,22 @@ ${walletAddress}
   // Admin: Get ambassador program settings
   app.get('/api/admin/ambassadors/settings', authenticateAdmin, async (req: any, res) => {
     try {
-      const keys = ['ambassador_program_enabled', 'ambassador_commission_usd'];
+      const defaults: Record<string, string> = {
+        'ambassador_program_enabled': 'true',
+        'ambassador_commission_usd': '0.0001',
+        'ambassador_default_reward': '10000',
+        'ambassador_max_claim_limit': '0',
+        'ambassador_promo_expiry_days': '0',
+        'ambassador_posting_cooldown_hours': '24',
+        'ambassador_daily_posting_limit_enabled': 'false',
+        'ambassador_daily_posting_limit': '3',
+      };
+      const keys = Object.keys(defaults);
       const settings: Record<string, string> = {};
       for (const key of keys) {
         const [row] = await db.select({ v: adminSettings.settingValue }).from(adminSettings)
           .where(eq(adminSettings.settingKey, key)).limit(1);
-        settings[key] = row?.v ?? (key === 'ambassador_commission_usd' ? '0.0001' : 'true');
+        settings[key] = row?.v ?? defaults[key];
       }
       res.json(settings);
     } catch (error) {
@@ -12662,10 +12671,25 @@ ${walletAddress}
   // Admin: Update ambassador program settings
   app.post('/api/admin/ambassadors/settings', authenticateAdmin, async (req: any, res) => {
     try {
-      const { ambassadorProgramEnabled, ambassadorCommissionUsd } = req.body;
+      const {
+        ambassadorProgramEnabled,
+        ambassadorCommissionUsd,
+        ambassadorDefaultReward,
+        ambassadorMaxClaimLimit,
+        ambassadorPromoExpiryDays,
+        ambassadorPostingCooldownHours,
+        ambassadorDailyPostingLimitEnabled,
+        ambassadorDailyPostingLimit,
+      } = req.body;
       const updates: Record<string, string> = {};
       if (ambassadorProgramEnabled !== undefined) updates['ambassador_program_enabled'] = ambassadorProgramEnabled ? 'true' : 'false';
       if (ambassadorCommissionUsd !== undefined) updates['ambassador_commission_usd'] = String(parseFloat(ambassadorCommissionUsd) || 0.0001);
+      if (ambassadorDefaultReward !== undefined) updates['ambassador_default_reward'] = String(parseInt(ambassadorDefaultReward) || 10000);
+      if (ambassadorMaxClaimLimit !== undefined) updates['ambassador_max_claim_limit'] = String(parseInt(ambassadorMaxClaimLimit) || 0);
+      if (ambassadorPromoExpiryDays !== undefined) updates['ambassador_promo_expiry_days'] = String(parseInt(ambassadorPromoExpiryDays) || 0);
+      if (ambassadorPostingCooldownHours !== undefined) updates['ambassador_posting_cooldown_hours'] = String(parseInt(ambassadorPostingCooldownHours) || 24);
+      if (ambassadorDailyPostingLimitEnabled !== undefined) updates['ambassador_daily_posting_limit_enabled'] = ambassadorDailyPostingLimitEnabled ? 'true' : 'false';
+      if (ambassadorDailyPostingLimit !== undefined) updates['ambassador_daily_posting_limit'] = String(parseInt(ambassadorDailyPostingLimit) || 3);
 
       for (const [key, value] of Object.entries(updates)) {
         await db.insert(adminSettings).values({ settingKey: key, settingValue: value, description: 'Ambassador setting' })
