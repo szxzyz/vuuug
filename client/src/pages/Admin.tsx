@@ -1153,32 +1153,61 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
             Loading users…
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[320px] overflow-y-auto border border-white/10 rounded-lg">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background">
+          <div className="overflow-x-auto max-h-[380px] overflow-y-auto border border-white/10 rounded-lg">
+            <Table className="text-xs min-w-[820px]">
+              <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
-                  <TableHead className="text-xs">UID</TableHead>
-                  <TableHead className="text-xs">Name</TableHead>
-                  <TableHead className="text-xs">Friends</TableHead>
-                  <TableHead className="text-xs text-right">Earned</TableHead>
-                  <TableHead className="text-xs">Action</TableHead>
+                  <TableHead className="text-xs w-16">Status</TableHead>
+                  <TableHead className="text-xs">User ID / Telegram ID</TableHead>
+                  <TableHead className="text-xs">Name / Username</TableHead>
+                  <TableHead className="text-xs text-right">Balance</TableHead>
+                  <TableHead className="text-xs text-center">Refs</TableHead>
+                  <TableHead className="text-xs text-center">Ads</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Registered</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Last Active</TableHead>
+                  <TableHead className="text-xs"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-4 text-sm">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-4 text-sm">
                       {searchTerm ? `No users matching "${searchTerm}"` : 'No users'}
                     </TableCell>
                   </TableRow>
                 ) : (
                   users.map((user: any) => (
                     <TableRow key={user.id} className="hover:bg-muted/50">
-                      <TableCell className="font-mono text-xs text-[#4cd3ff] py-2">{user.referralCode || user.personalCode || 'N/A'}{user.banned && <Badge className="ml-1 bg-red-600 text-[10px] px-1">Ban</Badge>}</TableCell>
-                      <TableCell className="text-xs py-2">{user.firstName || 'User'}</TableCell>
-                      <TableCell className="py-2"><Badge variant="outline" className="text-[10px]">{user.friendsInvited || 0}</Badge></TableCell>
-                      <TableCell className="text-right text-xs font-semibold py-2">{formatCurrency(user.totalEarned || '0')}</TableCell>
-                      <TableCell className="py-2"><Button size="sm" variant="ghost" onClick={() => setSelectedUser(user)} className="h-6 text-xs px-2"><i className="fas fa-eye"></i></Button></TableCell>
+                      <TableCell className="py-2">
+                        <Badge className={`text-[9px] px-1.5 py-0 ${user.banned ? 'bg-red-600' : 'bg-green-700'}`}>
+                          {user.banned ? 'Banned' : 'Active'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <div className="font-mono text-[10px] text-[#4cd3ff]">{user.referralCode || user.personalCode || user.id?.slice(0,8) || 'N/A'}</div>
+                        <div className="font-mono text-[10px] text-muted-foreground">{user.telegramId || '—'}</div>
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <div className="text-xs font-medium">{[user.firstName, user.lastName].filter(Boolean).join(' ') || 'User'}</div>
+                        {user.username && <div className="text-[10px] text-muted-foreground">@{user.username}</div>}
+                      </TableCell>
+                      <TableCell className="text-right py-2">
+                        <div className="text-xs font-semibold">{parseInt(user.balance || '0').toLocaleString()} POW</div>
+                        {parseFloat(user.usdBalance || '0') > 0 && (
+                          <div className="text-[10px] text-green-400">${parseFloat(user.usdBalance).toFixed(4)}</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2 text-center">{user.friendsInvited || 0}</TableCell>
+                      <TableCell className="py-2 text-center">{user.adsWatched || 0}</TableCell>
+                      <TableCell className="py-2 text-[10px] text-muted-foreground whitespace-nowrap">
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                      </TableCell>
+                      <TableCell className="py-2 text-[10px] text-muted-foreground whitespace-nowrap">
+                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <Button size="sm" variant="ghost" onClick={() => setSelectedUser(user)} className="h-6 text-xs px-2"><i className="fas fa-eye"></i></Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -1277,12 +1306,15 @@ function PromoCreatorSection() {
   const [formData, setFormData] = useState({
     code: '',
     rewardAmount: '',
-    rewardType: 'TON' as 'POW' | 'TON' | 'USD',
+    rewardType: 'POW' as 'POW' | 'TON' | 'USD',
     usageLimit: '',
     perUserLimit: '1',
     expiresAt: ''
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [editingPromo, setEditingPromo] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ rewardAmount: '', usageLimit: '', expiresAt: '', isActive: true });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const handleGenerateCode = () => {
     const randomCode = 'PROMO' + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -1319,8 +1351,8 @@ function PromoCreatorSection() {
       });
       const result = await response.json();
       if (result.success) {
-        showNotification(`${rewardAmount} ${formData.rewardType}`);
-        setFormData({ code: '', rewardAmount: '', rewardType: 'TON', usageLimit: '', perUserLimit: '1', expiresAt: '' });
+        showNotification(`${rewardAmount} ${formData.rewardType} code created`);
+        setFormData({ code: '', rewardAmount: '', rewardType: 'POW', usageLimit: '', perUserLimit: '1', expiresAt: '' });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/promo-codes"] });
         setActiveTab('manage');
       } else {
@@ -1330,6 +1362,42 @@ function PromoCreatorSection() {
       showNotification(error.message, "error");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const openEdit = (promo: any) => {
+    setEditingPromo(promo);
+    setEditForm({
+      rewardAmount: promo.rewardAmount ? Math.round(parseFloat(promo.rewardAmount)).toString() : '',
+      usageLimit: promo.usageLimit ? String(promo.usageLimit) : '',
+      expiresAt: promo.expiresAt ? new Date(promo.expiresAt).toISOString().slice(0, 10) : '',
+      isActive: promo.isActive ?? true,
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingPromo) return;
+    setIsSavingEdit(true);
+    try {
+      const body: any = {
+        isActive: editForm.isActive,
+        rewardAmount: editForm.rewardAmount ? parseFloat(editForm.rewardAmount) : undefined,
+        usageLimit: editForm.usageLimit === '' ? null : parseInt(editForm.usageLimit),
+        expiresAt: editForm.expiresAt || null,
+      };
+      const res = await apiRequest('PUT', `/api/admin/promo-codes/${editingPromo.id}`, body);
+      const d = await res.json();
+      if (d.success) {
+        showNotification('Promo code updated', 'success');
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/promo-codes"] });
+        setEditingPromo(null);
+      } else {
+        showNotification(d.error || 'Failed to update', 'error');
+      }
+    } catch {
+      showNotification('Failed to update', 'error');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -1380,47 +1448,128 @@ function PromoCreatorSection() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-2 max-h-[350px] overflow-y-auto border border-white/10 rounded-lg p-2">
+        <>
+        {/* Edit Promo Code Dialog */}
+        <Dialog open={!!editingPromo} onOpenChange={(o) => !o && setEditingPromo(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-sm">
+                <i className="fas fa-edit text-[#4cd3ff]"></i>
+                Edit: <code className="text-[#4cd3ff]">{editingPromo?.code}</code>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Reward Amount ({editingPromo?.rewardType || 'POW'})</label>
+                <Input
+                  type="number"
+                  value={editForm.rewardAmount}
+                  onChange={(e) => setEditForm({ ...editForm, rewardAmount: e.target.value })}
+                  placeholder="e.g. 2000"
+                  min="0"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Maximum Claims (leave blank for unlimited)</label>
+                <Input
+                  type="number"
+                  value={editForm.usageLimit}
+                  onChange={(e) => setEditForm({ ...editForm, usageLimit: e.target.value })}
+                  placeholder="Unlimited"
+                  min="1"
+                  className="h-8 text-sm"
+                />
+                {editingPromo && (
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Currently used: {editingPromo.usageCount || 0} / {editingPromo.usageLimit || '∞'}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Expiry Date (optional)</label>
+                <Input
+                  type="date"
+                  value={editForm.expiresAt}
+                  onChange={(e) => setEditForm({ ...editForm, expiresAt: e.target.value })}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="flex items-center justify-between border border-white/10 rounded p-2">
+                <span className="text-xs">Status</span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={editForm.isActive ? 'default' : 'outline'}
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setEditForm({ ...editForm, isActive: true })}
+                  >Active</Button>
+                  <Button
+                    size="sm"
+                    variant={!editForm.isActive ? 'destructive' : 'outline'}
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setEditForm({ ...editForm, isActive: false })}
+                  >Disabled</Button>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1 h-8 text-xs" onClick={() => setEditingPromo(null)}>Cancel</Button>
+                <Button className="flex-1 h-8 text-xs" onClick={handleSaveEdit} disabled={isSavingEdit}>
+                  {isSavingEdit ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>}Save
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <div className="space-y-2 max-h-[400px] overflow-y-auto border border-white/10 rounded-lg p-2">
           {promoCodes.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground text-sm"><i className="fas fa-gift text-2xl mb-2"></i><p>No codes</p></div>
           ) : (
             promoCodes.map((promo: any) => {
               const status = getPromoStatus(promo);
+              const rewardDisplay = promo.rewardType === 'USD'
+                ? `${parseFloat(promo.rewardAmount).toFixed(2)}`
+                : `${Math.round(parseFloat(promo.rewardAmount)).toLocaleString()} ${promo.rewardType || 'POW'}`;
+              const totalDistributed = parseFloat(promo.rewardAmount || '0') * (promo.usageCount || 0);
               return (
                 <div key={promo.id} className="border border-white/10 rounded p-2 hover:bg-white/5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <code className="font-bold text-sm bg-white/10 px-1.5 py-0.5 rounded text-[#4cd3ff]">{promo.code}</code>
-                      <Button size="sm" variant="ghost" onClick={() => copyToClipboard(promo.code)} className="h-5 w-5 p-0"><i className="fas fa-copy text-[10px]"></i></Button>
+                    <div className="flex items-center gap-1 min-w-0">
+                      <code className="font-bold text-sm bg-white/10 px-1.5 py-0.5 rounded text-[#4cd3ff] truncate">{promo.code}</code>
+                      <Button size="sm" variant="ghost" onClick={() => copyToClipboard(promo.code)} className="h-5 w-5 p-0 flex-shrink-0"><i className="fas fa-copy text-[10px]"></i></Button>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <Badge className={`${status.color} text-[10px]`}>{status.label}</Badge>
                       <Button
                         size="sm"
-                        variant="outline"
-                        className={`h-6 text-[10px] px-2 ${promo.isActive ? 'border-red-500/50 text-red-400 hover:bg-red-500/10' : 'border-green-500/50 text-green-400 hover:bg-green-500/10'}`}
-                        onClick={async () => {
-                          try {
-                            const res = await apiRequest('PUT', `/api/admin/promo-codes/${promo.id}`, { isActive: !promo.isActive });
-                            const d = await res.json();
-                            if (d.success) {
-                              showNotification(promo.isActive ? 'Code disabled' : 'Code enabled', 'success');
-                              queryClient.invalidateQueries({ queryKey: ["/api/admin/promo-codes"] });
-                            }
-                          } catch (e) { showNotification('Failed', 'error'); }
-                        }}
+                        variant="ghost"
+                        className="h-6 w-6 p-0 text-blue-400/60 hover:text-blue-400 hover:bg-blue-500/10"
+                        onClick={() => openEdit(promo)}
+                        title="Edit promo code"
                       >
-                        {promo.isActive ? 'Disable' : 'Enable'}
+                        <i className="fas fa-edit text-[10px]"></i>
                       </Button>
                       <DeletePromoButton promoId={promo.id} promoCode={promo.code} onDeleted={() => queryClient.invalidateQueries({ queryKey: ["/api/admin/promo-codes"] })} />
                     </div>
                   </div>
-                  <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>{promo.rewardType === 'USD' ? `${parseFloat(promo.rewardAmount).toFixed(2)}` : `${Math.round(parseFloat(promo.rewardAmount))} ${promo.rewardType || 'POW'}`}</span><span>{promo.usageCount || 0}/{promo.usageLimit || '∞'}</span></div>
+                  {/* Stats row */}
+                  <div className="grid grid-cols-3 gap-1 mt-2 text-[10px] text-muted-foreground">
+                    <div><span className="block text-white/40">Reward</span><span className="font-semibold text-white">{rewardDisplay}</span></div>
+                    <div><span className="block text-white/40">Claims</span><span className="font-semibold text-white">{promo.usageCount || 0} / {promo.usageLimit || '∞'}</span></div>
+                    <div><span className="block text-white/40">Distributed</span><span className="font-semibold text-white">{Math.round(totalDistributed).toLocaleString()}</span></div>
+                  </div>
+                  {promo.expiresAt && (
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      Expires: {new Date(promo.expiresAt).toLocaleDateString()}
+                    </div>
+                  )}
                 </div>
               );
             })
           )}
         </div>
+        </>
       )}
     </div>
   );

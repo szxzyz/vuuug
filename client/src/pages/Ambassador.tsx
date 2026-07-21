@@ -50,6 +50,10 @@ interface PromoCodeHistoryRecord {
   createdAt: string;
   expiresAt: string | null;
   rewardAmount: string;
+  usageLimit: number | null;
+  usageCount: number;
+  remainingClaims: number | null;
+  totalRewardsDistributed: string;
   status: "active" | "expired";
   claims: ClaimRecord[];
 }
@@ -433,6 +437,69 @@ export default function Ambassador() {
             </div>
           </div>
 
+          {/* Active Promo Codes */}
+          {(dashboard?.promoCodeHistory?.length ?? 0) > 0 && (
+            <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
+              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Active Promo Codes</p>
+              <div className="space-y-2">
+                {dashboard!.promoCodeHistory.map((pc) => {
+                  const rewardPow = parseInt(pc.rewardAmount || "0");
+                  const maxClaims = pc.usageLimit;
+                  const claimsUsed = pc.usageCount ?? 0;
+                  const remaining = pc.remainingClaims;
+                  const totalRewarded = Math.round(parseFloat(pc.totalRewardsDistributed || "0"));
+                  return (
+                    <div key={pc.promoCode} className="rounded-xl p-3"
+                      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      {/* Code + status */}
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono text-white text-sm font-bold">{pc.promoCode}</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                          pc.status === "active"
+                            ? "bg-green-500/15 text-green-400"
+                            : "bg-white/10 text-white/40"
+                        }`}>{pc.status}</span>
+                      </div>
+                      {/* Stats grid */}
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#666]">Reward / Claim</span>
+                          <span className="text-white font-semibold">{rewardPow.toLocaleString()} POW</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#666]">Max Claims</span>
+                          <span className="text-white font-semibold">{maxClaims !== null ? maxClaims.toLocaleString() : "∞"}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#666]">Claims Used</span>
+                          <span className="text-white font-semibold">{claimsUsed.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#666]">Remaining</span>
+                          <span className={`font-semibold ${remaining !== null && remaining === 0 ? "text-red-400" : "text-white"}`}>
+                            {remaining !== null ? remaining.toLocaleString() : "∞"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between col-span-2">
+                          <span className="text-[#666]">Total Distributed</span>
+                          <span className="text-purple-400 font-semibold">{totalRewarded.toLocaleString()} POW</span>
+                        </div>
+                        {pc.expiresAt && (
+                          <div className="flex items-center justify-between col-span-2">
+                            <span className="text-[#666]">Expires</span>
+                            <span className="text-white/60 font-semibold">
+                              {new Date(pc.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Custom Promo Code */}
           <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
             <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("custom_promo_name")}</p>
@@ -699,12 +766,30 @@ export default function Ambassador() {
                         {/* Expanded: per-user claims */}
                         {isExpanded && (
                           <div className="border-t border-white/5 px-3 pb-2">
-                            {/* Reward info row */}
-                            <div className="py-2 border-b border-white/5 flex items-center justify-between">
-                              <span className="text-[#888] text-[10px]">{t("reward_per_claim")}</span>
-                              <span className="text-white text-[10px] font-semibold">
-                                {parseInt(item.rewardAmount || "10000").toLocaleString()} POW
-                              </span>
+                            {/* Stats rows */}
+                            <div className="py-2 border-b border-white/5 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[#888]">{t("reward_per_claim")}</span>
+                                <span className="text-white font-semibold">{parseInt(item.rewardAmount || "0").toLocaleString()} POW</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[#888]">Max Claims</span>
+                                <span className="text-white font-semibold">{item.usageLimit !== null ? item.usageLimit?.toLocaleString() : "∞"}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[#888]">Claims Used</span>
+                                <span className="text-white font-semibold">{(item.usageCount ?? 0).toLocaleString()}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[#888]">Remaining</span>
+                                <span className={`font-semibold ${item.remainingClaims === 0 ? "text-red-400" : "text-white"}`}>
+                                  {item.remainingClaims !== null ? item.remainingClaims?.toLocaleString() : "∞"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between col-span-2">
+                                <span className="text-[#888]">Total Distributed</span>
+                                <span className="text-purple-400 font-semibold">{Math.round(parseFloat(item.totalRewardsDistributed || "0")).toLocaleString()} POW</span>
+                              </div>
                             </div>
                             {item.claims.length === 0 ? (
                               <p className="text-white/25 text-xs py-3 text-center">{t("no_claims_yet")}</p>
