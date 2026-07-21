@@ -794,33 +794,33 @@ export default function Home() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 8,
-          padding: '8px 90px 8px 16px',
+          gap: 6,
+          padding: '5px 16px',
           borderBottom: '1px solid rgba(107,33,168,0.35)',
         }}>
-          <Clock size={13} color="rgba(216,180,254,0.85)" strokeWidth={2.5} />
+          <Clock size={11} color="rgba(216,180,254,0.75)" strokeWidth={2.5} />
           <span style={{
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 700,
-            color: 'rgba(216,180,254,0.7)',
+            color: 'rgba(216,180,254,0.6)',
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
           }}>
-            Next Reset
+            Reset
           </span>
-          <div style={{ width: 1, height: 11, background: 'rgba(216,180,254,0.25)', borderRadius: 1 }} />
+          <div style={{ width: 1, height: 10, background: 'rgba(216,180,254,0.2)', borderRadius: 1 }} />
           <span style={{
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: 700,
-            color: 'rgba(216,180,254,0.9)',
+            color: 'rgba(216,180,254,0.85)',
             letterSpacing: '0.04em',
             fontFamily: "'Space Grotesk', monospace",
           }}>
             {nextResetLabel || '––:–– UTC'}
           </span>
-          <div style={{ width: 1, height: 11, background: 'rgba(216,180,254,0.25)', borderRadius: 1 }} />
+          <div style={{ width: 1, height: 10, background: 'rgba(216,180,254,0.2)', borderRadius: 1 }} />
           <span style={{
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 800,
             color: '#e9d5ff',
             fontVariantNumeric: 'tabular-nums',
@@ -896,11 +896,11 @@ export default function Home() {
       </div>
 
       <Layout>
-        <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 204 }}>
+        <main className="max-w-md mx-auto px-4 bg-black text-white" style={{ paddingTop: 196 }}>
 
           {/* Weekly Contest Banner */}
         <div
-          className="mt-1 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
+          className="mt-3 mb-2 rounded-2xl overflow-hidden relative cursor-pointer"
           style={{ height: 96 }}
           onClick={() => setLocation('/leaderboard')}
         >

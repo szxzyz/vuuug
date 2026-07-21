@@ -95,6 +95,7 @@ export default function Ambassador() {
   const [postingMode, setPostingMode] = useState<"automatic" | "manual">("automatic");
   const [requireChannelJoin, setRequireChannelJoin] = useState(false);
   const [postNowCountdown, setPostNowCountdown] = useState<number | null>(null); // ms remaining
+  const [ambActiveTab, setAmbActiveTab] = useState<'management' | 'promos'>('management');
 
   const { data: status, isLoading: statusLoading } = useQuery<AmbassadorStatus>({
     queryKey: ["/api/ambassador/status"],
@@ -369,336 +370,378 @@ export default function Ambassador() {
         <main className="max-w-md mx-auto px-4 pt-4 pb-8 bg-black">
 
           {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-black text-white tracking-tight mb-2">
+          <div className="mb-4">
+            <h1 className="text-2xl font-black text-white tracking-tight mb-1">
               {t("ambassador_dashboard")}
             </h1>
-            <p className="text-[#888] text-sm leading-relaxed">
-              {t("ambassador_code_prefix_desc").replace("{prefix}", promoPrefix)}
+            <p className="text-[#888] text-xs leading-relaxed">
+              Code prefix: <span className="text-white font-bold tracking-widest">{promoPrefix}</span>
             </p>
           </div>
 
-          {/* Claim History button */}
-          <div className="mb-4">
-            <button
-              onClick={() => setHistoryOpen(true)}
-              className="w-full h-14 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform"
-              style={{ background: "rgba(255,255,255,0.12)" }}
-            >
-              <Scroll className="w-5 h-5 text-white/70" />
-              <span className="text-white font-bold tracking-widest text-sm">{t("claim_history_label")}</span>
-            </button>
+          {/* Two-Tab Navigation */}
+          <div className="flex rounded-2xl overflow-hidden mb-4" style={{ background: "#111", border: "1px solid rgba(255,255,255,0.08)" }}>
+            {([
+              { key: 'management' as const, label: 'Ambassador Management' },
+              { key: 'promos' as const, label: 'Promo Codes' },
+            ]).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setAmbActiveTab(tab.key)}
+                className="flex-1 py-3 text-xs font-semibold transition-all"
+                style={{
+                  background: ambActiveTab === tab.key ? "#3b82f6" : "transparent",
+                  color: ambActiveTab === tab.key ? "#fff" : "rgba(255,255,255,0.4)",
+                  borderRadius: ambActiveTab === tab.key ? 14 : 0,
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          {/* Statistics */}
-          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("statistics_label")}</p>
-
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
-              <div>
-                <p className="text-white text-sm font-semibold">{t("total_promo_earnings")}</p>
-                <p className="text-[#888] text-xs mt-0.5">{t("all_time_commissions")}</p>
+          {/* ── Tab 1: Ambassador Management ── */}
+          {ambActiveTab === 'management' && (
+            <>
+              {/* Stats Cards */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {[
+                  { label: t("todays_claims"), value: stats?.todayClaims ?? 0, color: "#3b82f6" },
+                  { label: t("total_promo_claims"), value: stats?.lifetimeClaims ?? 0, color: "#fff" },
+                  { label: "Active Codes", value: dashboard?.activePromos?.length ?? 0, color: "#fff" },
+                  { label: t("total_promo_earnings"), value: `${totalEarnings > 0 ? totalEarnings.toFixed(4) : "0.0000"}`, color: "#22c55e" },
+                ].map((stat, i) => (
+                  <div key={i} className="rounded-xl p-3" style={{ background: SECTION_BG }}>
+                    <p className="text-[#666] text-[10px] font-semibold uppercase tracking-wider mb-1">{stat.label}</p>
+                    {dashLoading ? <StatSkeleton /> : (
+                      <p className="font-black text-lg" style={{ color: stat.color }}>{stat.value}</p>
+                    )}
+                  </div>
+                ))}
               </div>
-              {dashLoading ? <StatSkeleton /> : (
-                <span className="text-green-400 text-lg font-black">
-                  ${totalEarnings > 0 ? totalEarnings.toFixed(4) : "0.0000"}
-                </span>
-              )}
-            </div>
 
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
-              <div>
-                <p className="text-white text-sm font-semibold">{t("total_promo_claims")}</p>
-                <p className="text-[#888] text-xs mt-0.5">{t("all_users_claimed")}</p>
-              </div>
-              {dashLoading ? <StatSkeleton /> : (
-                <span className="text-white text-xl font-black">{stats?.lifetimeClaims ?? 0}</span>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
-              <div>
-                <p className="text-white text-sm font-semibold">{t("active_promo_codes")}</p>
-                <p className="text-[#888] text-xs mt-0.5">{t("currently_valid_codes")}</p>
-              </div>
-              {dashLoading ? <StatSkeleton /> : (
-                <span className="text-white text-xl font-black">{dashboard?.activePromos?.length ?? 0}</span>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between pt-3">
-              <div>
-                <p className="text-white text-sm font-semibold">{t("todays_claims")}</p>
-                <p className="text-[#888] text-xs mt-0.5">{t("claims_last_24h")}</p>
-              </div>
-              {dashLoading ? <StatSkeleton /> : (
-                <span className="text-white text-xl font-black">{stats?.todayClaims ?? 0}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Active Promo Codes */}
-          {(dashboard?.promoCodeHistory?.length ?? 0) > 0 && (
-            <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Active Promo Codes</p>
-              <div className="space-y-2">
-                {dashboard!.promoCodeHistory.map((pc) => {
-                  const rewardPow = parseInt(pc.rewardAmount || "0");
-                  const maxClaims = pc.usageLimit;
-                  const claimsUsed = pc.usageCount ?? 0;
-                  const remaining = pc.remainingClaims;
-                  const totalRewarded = Math.round(parseFloat(pc.totalRewardsDistributed || "0"));
-                  return (
-                    <div key={pc.promoCode} className="rounded-xl p-3"
-                      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                      {/* Code + status */}
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-mono text-white text-sm font-bold">{pc.promoCode}</span>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                          pc.status === "active"
-                            ? "bg-green-500/15 text-green-400"
-                            : "bg-white/10 text-white/40"
-                        }`}>{pc.status}</span>
-                      </div>
-                      {/* Stats grid */}
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[#666]">Reward / Claim</span>
-                          <span className="text-white font-semibold">{rewardPow.toLocaleString()} POW</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[#666]">Max Claims</span>
-                          <span className="text-white font-semibold">{maxClaims !== null ? maxClaims.toLocaleString() : "∞"}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[#666]">Claims Used</span>
-                          <span className="text-white font-semibold">{claimsUsed.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[#666]">Remaining</span>
-                          <span className={`font-semibold ${remaining !== null && remaining === 0 ? "text-red-400" : "text-white"}`}>
-                            {remaining !== null ? remaining.toLocaleString() : "∞"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between col-span-2">
-                          <span className="text-[#666]">Total Distributed</span>
-                          <span className="text-purple-400 font-semibold">{totalRewarded.toLocaleString()} POW</span>
-                        </div>
-                        {pc.expiresAt && (
-                          <div className="flex items-center justify-between col-span-2">
-                            <span className="text-[#666]">Expires</span>
-                            <span className="text-white/60 font-semibold">
-                              {new Date(pc.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+              {/* Channel Info */}
+              {(amb as any).channelId && (
+                <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
+                  <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">Channel</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white text-sm font-semibold">{(amb as any).channelTitle || (amb as any).channelId}</p>
+                      {(amb as any).channelUsername && <p className="text-[#888] text-xs mt-0.5">@{(amb as any).channelUsername}</p>}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Custom Promo Code */}
-          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-            <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("custom_promo_name")}</p>
-
-            <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
-              <div>
-                <p className="text-white text-sm font-semibold">{t("current_prefix_label")}</p>
-                <p className="text-[#888] text-xs mt-0.5">{t("used_as_code_prefix")}</p>
-              </div>
-              <span className="text-white font-black tracking-widest">{promoPrefix}</span>
-            </div>
-
-            {amb.customPromoRequest && (
-              <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
-                <div>
-                  <p className="text-white text-sm font-semibold">{t("requested_name_label")}</p>
-                  <p className="text-[#888] text-xs mt-0.5">{amb.customPromoRequest}</p>
+                    <span className={`text-[9px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${
+                      (amb as any).channelVerified ? "bg-green-500/15 text-green-400" : "bg-yellow-500/15 text-yellow-400"
+                    }`}>
+                      {(amb as any).channelVerified ? "Verified" : "Unverified"}
+                    </span>
+                  </div>
+                  {!(amb as any).channelVerified && (
+                    <button
+                      onClick={() => verifyChannelMutation.mutate()}
+                      disabled={verifyChannelMutation.isPending}
+                      className="w-full h-10 mt-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
+                      style={{ background: "#3b82f6" }}
+                    >
+                      {verifyChannelMutation.isPending
+                        ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                        : <span className="text-white font-semibold text-sm">Verify Channel</span>}
+                    </button>
+                  )}
+                  {verifyMsg && (
+                    <p className={`text-xs mt-2 font-medium ${verifyMsg.ok ? "text-green-400" : "text-red-400"}`}>{verifyMsg.text}</p>
+                  )}
                 </div>
-                <Badge className={
-                  amb.customPromoRequestStatus === "approved"
-                    ? "bg-green-600/20 text-green-400 border-green-600/30"
-                    : amb.customPromoRequestStatus === "rejected"
-                    ? "bg-red-600/20 text-red-400 border-red-600/30"
-                    : "bg-yellow-600/20 text-yellow-400 border-yellow-600/30"
-                }>
-                  {amb.customPromoRequestStatus === "approved" ? t("status_approved") :
-                   amb.customPromoRequestStatus === "rejected" ? t("status_rejected") : t("status_pending")}
-                </Badge>
-              </div>
-            )}
+              )}
 
-            {(!amb.customPromoRequest || amb.customPromoRequestStatus === "rejected") && (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={customPromoInput}
-                  onChange={(e) => setCustomPromoInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-                  placeholder={t("placeholder_eg_mychain")}
-                  maxLength={20}
-                  className="flex-1 h-11 rounded-xl px-3 text-white text-sm font-mono focus:outline-none"
-                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
-                />
-                <button
-                  onClick={() => promoNameMutation.mutate(customPromoInput)}
-                  disabled={customPromoInput.length < 3 || promoNameMutation.isPending}
-                  className="h-11 px-4 rounded-xl flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
-                  style={{ background: "rgba(255,255,255,0.12)" }}
-                >
-                  {promoNameMutation.isPending
-                    ? <Loader2 className="w-4 h-4 text-white animate-spin" />
-                    : <span className="text-white font-semibold text-sm">{t("request_label")}</span>}
-                </button>
-              </div>
-            )}
-          </div>
+              {/* Custom Promo Code Name */}
+              <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
+                <p className="text-[#888] text-xs font-semibold uppercase tracking-wider mb-3">{t("custom_promo_name")}</p>
 
-          {/* Posting Mode + Schedule */}
-          <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="w-4 h-4 text-[#4cd3ff]" />
-              <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">{t("posting_schedule_label")}</p>
-            </div>
+                <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
+                  <div>
+                    <p className="text-white text-sm font-semibold">{t("current_prefix_label")}</p>
+                    <p className="text-[#888] text-xs mt-0.5">{t("used_as_code_prefix")}</p>
+                  </div>
+                  <span className="text-white font-black tracking-widest">{promoPrefix}</span>
+                </div>
 
-            {/* Mode toggle */}
-            <div className="flex rounded-xl overflow-hidden mb-4" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
-              {(["automatic", "manual"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setPostingMode(m)}
-                  className="flex-1 h-10 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all"
-                  style={{
-                    background: postingMode === m ? "rgba(76,211,255,0.18)" : "transparent",
-                    color: postingMode === m ? "#4cd3ff" : "#555",
-                  }}
-                >
-                  {m === "automatic" ? <Clock className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
-                  {m.charAt(0).toUpperCase() + m.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            {postingMode === "automatic" ? (
-              <>
-                <p className="text-[#555] text-xs mb-4 leading-relaxed">
-                  {t("posting_schedule_desc")}
-                </p>
-
-                <div className="space-y-2 mb-3">
-                  {scheduleSlots.map((time, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <input
-                        type="time"
-                        value={time}
-                        onChange={(e) =>
-                          setScheduleSlots(prev => prev.map((v, i) => i === idx ? e.target.value : v))
-                        }
-                        className="flex-1 h-10 rounded-xl px-3 text-white text-sm focus:outline-none"
-                        style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
-                      />
-                      <button
-                        onClick={() => setScheduleSlots(prev => prev.filter((_, i) => i !== idx))}
-                        className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-transform flex-shrink-0"
-                        style={{ background: "rgba(239,68,68,0.10)" }}
-                      >
-                        <Trash2 className="w-4 h-4 text-red-400" />
-                      </button>
+                {amb.customPromoRequest && (
+                  <div className="flex items-center justify-between py-2 border-b border-white/5 mb-3">
+                    <div>
+                      <p className="text-white text-sm font-semibold">{t("requested_name_label")}</p>
+                      <p className="text-[#888] text-xs mt-0.5">{amb.customPromoRequest}</p>
                     </div>
+                    <Badge className={
+                      amb.customPromoRequestStatus === "approved"
+                        ? "bg-green-600/20 text-green-400 border-green-600/30"
+                        : amb.customPromoRequestStatus === "rejected"
+                        ? "bg-red-600/20 text-red-400 border-red-600/30"
+                        : "bg-yellow-600/20 text-yellow-400 border-yellow-600/30"
+                    }>
+                      {amb.customPromoRequestStatus === "approved" ? t("status_approved") :
+                       amb.customPromoRequestStatus === "rejected" ? t("status_rejected") : t("status_pending")}
+                    </Badge>
+                  </div>
+                )}
+
+                {(!amb.customPromoRequest || amb.customPromoRequestStatus === "rejected") && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customPromoInput}
+                      onChange={(e) => setCustomPromoInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                      placeholder={t("placeholder_eg_mychain")}
+                      maxLength={20}
+                      className="flex-1 h-11 rounded-xl px-3 text-white text-sm font-mono focus:outline-none"
+                      style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
+                    />
+                    <button
+                      onClick={() => promoNameMutation.mutate(customPromoInput)}
+                      disabled={customPromoInput.length < 3 || promoNameMutation.isPending}
+                      className="h-11 px-4 rounded-xl flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
+                      style={{ background: "#3b82f6" }}
+                    >
+                      {promoNameMutation.isPending
+                        ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                        : <span className="text-white font-semibold text-sm">{t("request_label")}</span>}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Posting Mode + Schedule */}
+              <div className="rounded-2xl p-4 mb-3" style={{ background: SECTION_BG }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Clock className="w-4 h-4 text-[#3b82f6]" />
+                  <p className="text-[#888] text-xs font-semibold uppercase tracking-wider">{t("posting_schedule_label")}</p>
+                </div>
+
+                {/* Mode toggle */}
+                <div className="flex rounded-xl overflow-hidden mb-4" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+                  {(["automatic", "manual"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setPostingMode(m)}
+                      className="flex-1 h-10 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all"
+                      style={{
+                        background: postingMode === m ? "rgba(59,130,246,0.2)" : "transparent",
+                        color: postingMode === m ? "#3b82f6" : "#555",
+                      }}
+                    >
+                      {m === "automatic" ? <Clock className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
+                      {m.charAt(0).toUpperCase() + m.slice(1)}
+                    </button>
                   ))}
                 </div>
 
-                {scheduleSlots.length < 3 && (
-                  <button
-                    onClick={() => setScheduleSlots(prev => [...prev, "12:00"])}
-                    className="w-full h-10 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
-                    style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}
-                  >
-                    <Plus className="w-4 h-4 text-white/30" />
-                    <span className="text-white/30 text-xs">{t("add_time_slot")}</span>
-                  </button>
-                )}
-              </>
-            ) : (
-              /* Manual mode — Post Now button with 24 h rate limit */
-              <div className="mb-4">
-                <p className="text-[#555] text-xs mb-4 leading-relaxed">
-                  {t("post_promo_desc")}
-                </p>
-                {postNowCountdown !== null ? (
-                  <div
-                    className="w-full h-12 rounded-xl flex items-center justify-center gap-2"
-                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-                  >
-                    <Timer className="w-4 h-4 text-[#888]" />
-                    <span className="text-[#888] text-sm font-semibold">
-                      {t("next_post_in")}{" "}
-                      {String(Math.floor(postNowCountdown / 3600000)).padStart(2, "0")}:
-                      {String(Math.floor((postNowCountdown % 3600000) / 60000)).padStart(2, "0")}:
-                      {String(Math.floor((postNowCountdown % 60000) / 1000)).padStart(2, "0")}
-                    </span>
-                  </div>
+                {postingMode === "automatic" ? (
+                  <>
+                    <p className="text-[#555] text-xs mb-4 leading-relaxed">
+                      {t("posting_schedule_desc")}
+                    </p>
+                    <div className="space-y-2 mb-3">
+                      {scheduleSlots.map((time, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={time}
+                            onChange={(e) =>
+                              setScheduleSlots(prev => prev.map((v, i) => i === idx ? e.target.value : v))
+                            }
+                            className="flex-1 h-10 rounded-xl px-3 text-white text-sm focus:outline-none"
+                            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
+                          />
+                          <button
+                            onClick={() => setScheduleSlots(prev => prev.filter((_, i) => i !== idx))}
+                            className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-transform flex-shrink-0"
+                            style={{ background: "rgba(239,68,68,0.10)" }}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {scheduleSlots.length < 3 && (
+                      <button
+                        onClick={() => setScheduleSlots(prev => [...prev, "12:00"])}
+                        className="w-full h-10 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform mb-3"
+                        style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}
+                      >
+                        <Plus className="w-4 h-4 text-white/30" />
+                        <span className="text-white/30 text-xs">{t("add_time_slot")}</span>
+                      </button>
+                    )}
+                  </>
                 ) : (
-                  <button
-                    onClick={() => postNowMutation.mutate()}
-                    disabled={postNowMutation.isPending}
-                    className="w-full h-12 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
-                    style={{ background: "rgba(76,211,255,0.14)", border: "1px solid rgba(76,211,255,0.28)" }}
-                  >
-                    {postNowMutation.isPending
-                      ? <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
-                      : <>
-                          <Zap className="w-4 h-4 text-[#4cd3ff]" />
-                          <span className="text-[#4cd3ff] font-semibold text-sm">{t("post_now")}</span>
-                        </>}
-                  </button>
+                  <div className="mb-4">
+                    <p className="text-[#555] text-xs mb-4 leading-relaxed">{t("post_promo_desc")}</p>
+                    {postNowCountdown !== null ? (
+                      <div
+                        className="w-full h-12 rounded-xl flex items-center justify-center gap-2"
+                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+                      >
+                        <Timer className="w-4 h-4 text-[#888]" />
+                        <span className="text-[#888] text-sm font-semibold">
+                          {t("next_post_in")}{" "}
+                          {String(Math.floor(postNowCountdown / 3600000)).padStart(2, "0")}:
+                          {String(Math.floor((postNowCountdown % 3600000) / 60000)).padStart(2, "0")}:
+                          {String(Math.floor((postNowCountdown % 60000) / 1000)).padStart(2, "0")}
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => postNowMutation.mutate()}
+                        disabled={postNowMutation.isPending}
+                        className="w-full h-12 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
+                        style={{ background: "#3b82f6" }}
+                      >
+                        {postNowMutation.isPending
+                          ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                          : <>
+                              <Zap className="w-4 h-4 text-white" />
+                              <span className="text-white font-semibold text-sm">{t("post_now")}</span>
+                            </>}
+                      </button>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
 
-            {/* Require channel join toggle */}
-            <div
-              className="flex items-center justify-between py-3 mb-4"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
-            >
-              <div>
-                <p className="text-white text-sm font-semibold">{t("require_channel_join")}</p>
-                <p className="text-[#555] text-xs mt-0.5">{t("require_channel_join_desc")}</p>
-              </div>
-              <button
-                onClick={() => setRequireChannelJoin(prev => !prev)}
-                className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
-                style={{
-                  background: requireChannelJoin ? "rgba(76,211,255,0.35)" : "rgba(255,255,255,0.1)",
-                  border: requireChannelJoin ? "1.5px solid rgba(76,211,255,0.5)" : "1.5px solid rgba(255,255,255,0.12)",
-                }}
-              >
-                <span
-                  className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-                  style={{
-                    background: requireChannelJoin ? "#4cd3ff" : "rgba(255,255,255,0.3)",
-                    left: requireChannelJoin ? "calc(100% - 18px)" : "2px",
-                  }}
-                />
-              </button>
-            </div>
+                {/* Require channel join toggle */}
+                <div
+                  className="flex items-center justify-between py-3 mb-4"
+                  style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+                >
+                  <div>
+                    <p className="text-white text-sm font-semibold">{t("require_channel_join")}</p>
+                    <p className="text-[#555] text-xs mt-0.5">{t("require_channel_join_desc")}</p>
+                  </div>
+                  <button
+                    onClick={() => setRequireChannelJoin(prev => !prev)}
+                    className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+                    style={{
+                      background: requireChannelJoin ? "#3b82f6" : "rgba(255,255,255,0.1)",
+                      border: requireChannelJoin ? "1.5px solid rgba(59,130,246,0.5)" : "1.5px solid rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <span
+                      className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                      style={{
+                        background: "#fff",
+                        left: requireChannelJoin ? "calc(100% - 18px)" : "2px",
+                      }}
+                    />
+                  </button>
+                </div>
 
-            <button
-              onClick={() => scheduleMutation.mutate()}
-              disabled={scheduleMutation.isPending || (postingMode === "automatic" && scheduleSlots.length === 0)}
-              className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
-              style={{ background: "rgba(76,211,255,0.12)", border: "1px solid rgba(76,211,255,0.22)" }}
-            >
-              {scheduleMutation.isPending
-                ? <Loader2 className="w-4 h-4 text-[#4cd3ff] animate-spin" />
-                : <>
-                    <CheckCircle2 className="w-4 h-4 text-[#4cd3ff]" />
-                    <span className="text-[#4cd3ff] font-semibold text-sm">{t("save_schedule_btn")}</span>
-                  </>}
-            </button>
-          </div>
+                <button
+                  onClick={() => scheduleMutation.mutate()}
+                  disabled={scheduleMutation.isPending || (postingMode === "automatic" && scheduleSlots.length === 0)}
+                  className="w-full h-11 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40"
+                  style={{ background: "#3b82f6" }}
+                >
+                  {scheduleMutation.isPending
+                    ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    : <>
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                        <span className="text-white font-semibold text-sm">{t("save_schedule_btn")}</span>
+                      </>}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ── Tab 2: Promo Codes ── */}
+          {ambActiveTab === 'promos' && (
+            <>
+              {/* Claim History */}
+              <div className="mb-3">
+                <button
+                  onClick={() => setHistoryOpen(true)}
+                  className="w-full h-12 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-transform"
+                  style={{ background: "#3b82f6" }}
+                >
+                  <Scroll className="w-4 h-4 text-white" />
+                  <span className="text-white font-bold text-sm">{t("claim_history_label")}</span>
+                </button>
+              </div>
+
+              {/* Promo Codes List */}
+              {dashLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 text-white/30 animate-spin" />
+                </div>
+              ) : (dashboard?.promoCodeHistory?.length ?? 0) === 0 ? (
+                <div className="rounded-2xl p-6 text-center" style={{ background: SECTION_BG }}>
+                  <Scroll className="w-10 h-10 text-white/20 mx-auto mb-2" />
+                  <p className="text-white/40 text-sm">{t("no_promo_codes_yet")}</p>
+                  <p className="text-white/25 text-xs mt-1">{t("codes_appear_once_posted")}</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {dashboard!.promoCodeHistory.map((pc) => {
+                    const rewardPow = parseInt(pc.rewardAmount || "0");
+                    const maxClaims = pc.usageLimit;
+                    const claimsUsed = pc.usageCount ?? 0;
+                    const remaining = pc.remainingClaims;
+                    const totalRewarded = Math.round(parseFloat(pc.totalRewardsDistributed || "0"));
+                    return (
+                      <div key={pc.promoCode} className="rounded-2xl overflow-hidden" style={{ background: SECTION_BG }}>
+                        {/* Code header */}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                          <span className="font-mono text-white text-sm font-bold">{pc.promoCode}</span>
+                          <span className={`text-[9px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${
+                            pc.status === "active"
+                              ? "bg-green-500/15 text-green-400"
+                              : "bg-white/10 text-white/40"
+                          }`}>{pc.status}</span>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                          <div>
+                            <p className="text-[#555] text-[10px] font-semibold uppercase tracking-wider">Reward / Claim</p>
+                            <p className="text-white text-sm font-bold mt-0.5">{rewardPow.toLocaleString()} POW</p>
+                          </div>
+                          <div>
+                            <p className="text-[#555] text-[10px] font-semibold uppercase tracking-wider">Claim Limit</p>
+                            <p className="text-white text-sm font-bold mt-0.5">{maxClaims !== null ? maxClaims.toLocaleString() : "∞"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[#555] text-[10px] font-semibold uppercase tracking-wider">Total Claims</p>
+                            <p className="text-white text-sm font-bold mt-0.5">{claimsUsed.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-[#555] text-[10px] font-semibold uppercase tracking-wider">Remaining</p>
+                            <p className={`text-sm font-bold mt-0.5 ${remaining !== null && remaining === 0 ? "text-red-400" : "text-white"}`}>
+                              {remaining !== null ? remaining.toLocaleString() : "∞"}
+                            </p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-[#555] text-[10px] font-semibold uppercase tracking-wider">Total Distributed</p>
+                            <p className="text-[#3b82f6] text-sm font-bold mt-0.5">{totalRewarded.toLocaleString()} POW</p>
+                          </div>
+                          {pc.expiresAt && (
+                            <div className="col-span-2">
+                              <p className="text-[#555] text-[10px] font-semibold uppercase tracking-wider">Expires</p>
+                              <p className="text-white/60 text-sm font-semibold mt-0.5">
+                                {new Date(pc.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              </p>
+                            </div>
+                          )}
+                          <div className="col-span-2">
+                            <p className="text-[#555] text-[10px] font-semibold uppercase tracking-wider">Created</p>
+                            <p className="text-white/60 text-sm font-semibold mt-0.5">
+                              {new Date(pc.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
 
         </main>
 
