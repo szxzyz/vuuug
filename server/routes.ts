@@ -3453,7 +3453,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             await db.transaction(async (tx) => {
               // Deduct 2× reward from balance
-              await tx.execute(sql`UPDATE users SET balance = GREATEST(CAST(balance AS BIGINT) - ${penaltyAmount}, 0)::text, updated_at = NOW() WHERE id = ${userId}`);
+              await tx.execute(sql`UPDATE users SET balance = GREATEST(balance::numeric - ${penaltyAmount}::numeric, 0), updated_at = NOW() WHERE id = ${userId}`);
 
               if (existing.length) {
                 // Update existing watching case
@@ -4930,7 +4930,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           u.balance, u.usd_balance, u.ton_balance, u.total_earned, u.friends_invited,
           u.referral_code, u.personal_code, u.cwallet_id, u.usdt_wallet_address,
           u.telegram_stars_username, u.referred_by, u.tasks_completed,
-          u.banned, u.ads_watched, u.created_at
+          u.banned, u.ads_watched, u.created_at, u.last_login_at
         FROM users u
         ${whereClause}
         ORDER BY u.created_at DESC
@@ -4959,6 +4959,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         banned: u.banned || false,
         adsWatched: u.ads_watched || 0,
         createdAt: u.created_at,
+        lastLoginAt: u.last_login_at,
       }));
 
       res.json({
@@ -10993,19 +10994,31 @@ ${walletAddress}
   app.put('/api/admin/promo-codes/:id', authenticateAdmin, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { isActive, rewardAmount } = req.body;
+      const { isActive, rewardAmount, usageLimit, expiresAt } = req.body;
 
-      const updateData: any = {};
+      const updateData: any = { updatedAt: new Date() };
       if (typeof isActive === 'boolean') updateData.isActive = isActive;
       if (rewardAmount !== undefined) {
         const ra = parseFloat(rewardAmount);
         if (!isNaN(ra) && ra >= 0) updateData.rewardAmount = ra.toString();
       }
+      if (usageLimit !== undefined) {
+        if (usageLimit === null || usageLimit === '' || usageLimit === 0) {
+          updateData.usageLimit = null; // unlimited
+        } else {
+          const ul = parseInt(usageLimit);
+          if (!isNaN(ul) && ul > 0) updateData.usageLimit = ul;
+        }
+      }
+      if (expiresAt !== undefined) {
+        updateData.expiresAt = expiresAt ? new Date(expiresAt) : null;
+      }
 
-      if (Object.keys(updateData).length === 0) return res.status(400).json({ error: 'Nothing to update' });
+      if (Object.keys(updateData).length <= 1) return res.status(400).json({ error: 'Nothing to update' });
 
       await db.update(promoCodes).set(updateData).where(eq(promoCodes.id, id));
-      res.json({ success: true });
+      const [updated] = await db.select().from(promoCodes).where(eq(promoCodes.id, id));
+      res.json({ success: true, promoCode: updated });
     } catch (error) {
       console.error('❌ Error updating promo code:', error);
       res.status(500).json({ error: 'Failed to update promo code' });
@@ -11856,8 +11869,13 @@ ${walletAddress}
       const promoCodeHistory = allAmbassadorCodes.map(pc => {
         const claims = claimsByCode[pc.code] || [];
         const totalEarnings = claims.reduce((sum, c) => sum + parseFloat(c.commissionUsd || '0'), 0);
-        const isExpired = pc.expiresAt ? new Date(pc.expiresAt) < new Date() : false;
+        const isExpired = (pc.usageLimit && (pc.usageCount || 0) >= pc.usageLimit) ||
+          (pc.expiresAt ? new Date(pc.expiresAt) < new Date() : false);
         const status = (!pc.isActive || isExpired) ? 'expired' : 'active';
+        const claimsUsed = pc.usageCount || 0;
+        const maxClaims = pc.usageLimit || null;
+        const remainingClaims = maxClaims !== null ? Math.max(0, maxClaims - claimsUsed) : null;
+        const totalRewardsDistributed = (parseFloat(pc.rewardAmount || '0') * claimsUsed).toString();
         return {
           promoCode: pc.code,
           totalClaims: claims.length,
@@ -11865,13 +11883,17 @@ ${walletAddress}
           createdAt: pc.createdAt,
           expiresAt: pc.expiresAt,
           rewardAmount: pc.rewardAmount,
+          usageLimit: maxClaims,
+          usageCount: claimsUsed,
+          remainingClaims,
+          totalRewardsDistributed,
           status,
           claims: claims.map(c => ({
             id: c.id,
             username: c.claimUserUsername || null,
             firstName: c.claimUserFirstName || null,
             claimedAt: c.createdAt,
-            rewardGranted: pc.rewardAmount || '10000',
+            rewardGranted: pc.rewardAmount,
           })),
         };
       });
@@ -12343,7 +12365,7 @@ ${walletAddress}
             `<b>Congratulations! You're now a Paid Adz Ambassador!</b>\n\n` +
             `Your promo code prefix: <b>${promoCodeName}</b>\n\n` +
             `Your first promo post will go out shortly. After that, a new post will be published automatically every <b>12 hours</b> (2 posts per day).\n\n` +
-            `Every time someone claims your code, they receive <b>10,000 POW</b> and you earn <b>$0.0001</b>!\n\n` +
+            `Every time someone claims your code, they receive <b>2,000 POW</b> and you earn <b>$0.0001</b>!\n\n` +
             `Open the app to view your Ambassador Dashboard.`,
             { parse_mode: 'HTML' }
           );
@@ -12715,7 +12737,7 @@ ${walletAddress}
       // Get default reward amount from settings or use a default PAD amount
       const [rewardSetting] = await db.select({ v: adminSettings.settingValue })
         .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
-      const rewardAmount = rewardSetting?.v || '10000'; // Default: 10,000 PAD
+      const rewardAmount = rewardSetting?.v || '2000'; // Default: 2,000 PAD
 
       const codeUpper = promoCodeName.toUpperCase();
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
