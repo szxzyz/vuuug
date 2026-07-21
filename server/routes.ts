@@ -10980,6 +10980,7 @@ ${walletAddress}
       const { id } = req.params;
       // Wrap in transaction so partial failure leaves no orphaned rows
       await db.transaction(async (tx) => {
+        await tx.delete(ambassadorEarnings).where(eq(ambassadorEarnings.promoCodeId, id));
         await tx.delete(promoCodeUsage).where(eq(promoCodeUsage.promoCodeId, id));
         await tx.delete(promoCodes).where(eq(promoCodes.id, id));
       });

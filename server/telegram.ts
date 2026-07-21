@@ -2370,7 +2370,7 @@ ${walletAddress}
             return true;
           }
           // Restore original reward
-          await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${penCase.originalReward})::text, updated_at = NOW() WHERE id = ${penCase.userId}`);
+          await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${penCase.originalReward}), updated_at = NOW() WHERE id = ${penCase.userId}`);
           await dbConn.update(cpcT).set({ status: 'resolved', resolvedAt: new Date() }).where(eq(cpcT.id, caseId));
           await sendUserTelegramNotification(chatId,
             `✅ <b>POW Restored!</b>\n\n<b>${penCase.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
@@ -3934,7 +3934,7 @@ export async function checkChannelPenalties(): Promise<void> {
       if (!isMember) {
         const penalty = p.originalReward * 2;
         const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-        await dbConn.execute(sqlFn`UPDATE users SET balance = GREATEST(CAST(balance AS BIGINT) - ${penalty}, 0)::text, updated_at = NOW() WHERE id = ${p.userId}`);
+        await dbConn.execute(sqlFn`UPDATE users SET balance = GREATEST(CAST(balance AS BIGINT) - ${penalty}, 0), updated_at = NOW() WHERE id = ${p.userId}`);
         await dbConn.update(cpcT).set({ status: 'penalized', leftAt: now, deadlineAt: deadline, penaltyDeducted: penalty }).where(eq(cpcT.id, p.id));
         // Send Telegram warning with inline buttons
         const warnMsg =
@@ -3962,7 +3962,7 @@ export async function checkChannelPenalties(): Promise<void> {
       }
       const isMember = await verifyChannelMembership(parseInt(p.telegramId), p.channelId, botToken);
       if (isMember) {
-        await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${p.originalReward})::text, updated_at = NOW() WHERE id = ${p.userId}`);
+        await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${p.originalReward}), updated_at = NOW() WHERE id = ${p.userId}`);
         await dbConn.update(cpcT).set({ status: 'resolved', resolvedAt: now }).where(eq(cpcT.id, p.id));
         await sendUserTelegramNotification(p.telegramId,
           `✅ <b>POW Restored!</b>\n\n<b>${p.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
