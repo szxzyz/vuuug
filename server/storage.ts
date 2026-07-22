@@ -5,7 +5,6 @@ import {
   referralCommissions,
   promoCodes,
   promoCodeUsage,
-  ambassadorEarnings,
   withdrawals,
   userBalances,
   transactions,
@@ -1327,7 +1326,6 @@ export class DatabaseStorage implements IStorage {
       if (expired.length === 0) return 0;
 
       const ids = expired.map(row => row.id);
-      await tx.delete(ambassadorEarnings).where(inArray(ambassadorEarnings.promoCodeId, ids));
       await tx.delete(promoCodeUsage).where(inArray(promoCodeUsage.promoCodeId, ids));
       await tx.delete(promoCodes).where(inArray(promoCodes.id, ids));
       return ids.length;
