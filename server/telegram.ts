@@ -911,21 +911,21 @@ function buildAmbassadorPromoPayload(
   code2: string,
   rewardAmount: string,
   referralLink: string,
+  maxClaims: number = 100,
 ): { html: string; inlineKeyboard: any } {
   const s = AMB_PROMO_STRINGS[(lang as AmbPromoLang)] ?? AMB_PROMO_STRINGS.en;
-  const rewardPow = parseInt(rewardAmount || '10000').toLocaleString('en-US');
+  const rewardInt = parseInt(rewardAmount || '10000');
+  const rewardPow = rewardInt.toLocaleString('en-US');
+  const usdValue = (rewardInt / 100000).toFixed(2);
 
   const lines: string[] = [
-    `💸 <b>${escHtml(s.title)}</b>`,
+    `👤 <b>First ${maxClaims} Active Users Only!</b>`,
+    `🎁 <b>Reward: ${escHtml(rewardPow)} POW | $${usdValue}</b>`,
     '',
-    `👤 <b>${escHtml(s.subtitle)}</b>`,
+    `🎟 <b>Claim Code 1:</b> <code>${escHtml(code1)}</code>`,
+    `🎟 <b>Claim Code 2:</b> <code>${escHtml(code2)}</code>`,
     '',
-    `🎁 <b>${escHtml(s.rewardLabel)}</b> ${escHtml(rewardPow)} POW`,
-    '',
-    `🎟 <b>${escHtml(s.codeLabel)}</b> <code>${escHtml(code1)}</code>`,
-    `🎟 <b>${escHtml(s.codeLabel)}</b> <code>${escHtml(code2)}</code>`,
-    '',
-    `🚀 <b>${escHtml(s.cta)}</b>`,
+    `🔥 <b>Redeem your code and claim your FREE ${escHtml(rewardPow)} POW before all rewards are claimed!</b>`,
   ];
 
   const html = lines.join('\n');
@@ -3574,7 +3574,7 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
 
   const ambLang = (user?.language as string) || 'en';
   const { html: postHtml, inlineKeyboard } =
-    buildAmbassadorPromoPayload(ambLang, uniqueCode1, uniqueCode2, rewardAmount, referralLink);
+    buildAmbassadorPromoPayload(ambLang, uniqueCode1, uniqueCode2, rewardAmount, referralLink, maxClaims);
 
   // ── Post to channel ───────────────────────────────────────────────────────
   let postedToChannel = false;

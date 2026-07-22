@@ -4905,16 +4905,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string || '50')));
       const offset = (page - 1) * limit;
 
-      // Build WHERE clause for search — done in SQL for performance
-      const whereClause = q
-        ? sql`WHERE (
+      // Optional status filter: ?status=active|banned
+      const statusFilter = (req.query.status as string || '').trim().toLowerCase();
+
+      // Build WHERE clause for search + optional status filter — done in SQL for performance
+      const conditions: any[] = [];
+      if (q) {
+        conditions.push(sql`(
             u.telegram_id ILIKE ${'%' + q + '%'} OR
             u.first_name  ILIKE ${'%' + q + '%'} OR
             u.last_name   ILIKE ${'%' + q + '%'} OR
             u.username    ILIKE ${'%' + q + '%'} OR
             u.referral_code ILIKE ${'%' + q + '%'} OR
             u.personal_code ILIKE ${'%' + q + '%'}
-          )`
+          )`);
+      }
+      if (statusFilter === 'active') conditions.push(sql`(u.banned IS NULL OR u.banned = false)`);
+      if (statusFilter === 'banned') conditions.push(sql`u.banned = true`);
+      const whereClause = conditions.length > 0
+        ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
         : sql``;
 
       // Count total matching users (fast — no data transfer)
@@ -4930,7 +4939,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           u.balance, u.usd_balance, u.ton_balance, u.total_earned, u.friends_invited,
           u.referral_code, u.personal_code, u.cwallet_id, u.usdt_wallet_address,
           u.telegram_stars_username, u.referred_by, u.tasks_completed,
-          u.banned, u.ads_watched, u.created_at, u.last_login_at
+          u.banned, u.ads_watched, u.platform, u.created_at, u.last_login_at
         FROM users u
         ${whereClause}
         ORDER BY u.created_at DESC
@@ -4958,6 +4967,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tasksCompleted: u.tasks_completed || 0,
         banned: u.banned || false,
         adsWatched: u.ads_watched || 0,
+        platform: u.platform || null,
         createdAt: u.created_at,
         lastLoginAt: u.last_login_at,
       }));
@@ -12762,26 +12772,32 @@ ${walletAddress}
   // Helper: generate + send daily promo code for an ambassador
   async function generateAmbassadorPromoCode(ambassadorId: string, promoCodeName: string): Promise<void> {
     try {
-      // Get default reward amount from settings or use a default PAD amount
-      const [rewardSetting] = await db.select({ v: adminSettings.settingValue })
-        .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
-      const rewardAmount = rewardSetting?.v || '2000'; // Default: 2,000 PAD
+      // Load all ambassador settings dynamically from DB
+      const settingKeys = ['ambassador_promo_reward', 'ambassador_max_claims', 'ambassador_promo_expiry_hours', 'ambassador_commission_usd'];
+      const settingRows = await db.select({ k: adminSettings.settingKey, v: adminSettings.settingValue })
+        .from(adminSettings)
+        .where(sql`${adminSettings.settingKey} IN (${sql.join(settingKeys.map(k => sql`${k}`), sql`, `)})`);
+      const getSetting = (key: string, def: string) => settingRows.find(r => r.k === key)?.v ?? def;
+
+      const rewardAmount = getSetting('ambassador_promo_reward', '10000');
+      const maxClaims = parseInt(getSetting('ambassador_max_claims', '100'));
+      const expiryHours = parseInt(getSetting('ambassador_promo_expiry_hours', '24'));
+      const commissionUsd = getSetting('ambassador_commission_usd', '0.0001');
 
       const codeUpper = promoCodeName.toUpperCase();
-      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
       // Upsert the promo code for today
       const existing = await db.select().from(promoCodes)
         .where(eq(promoCodes.code, codeUpper)).limit(1);
 
       if (existing.length > 0) {
-        // Update usage count and expiry
         await db.update(promoCodes).set({
           usageCount: 0,
-          usageLimit: null, // unlimited daily claims
+          usageLimit: maxClaims,
           perUserLimit: 1,
           isActive: true,
-          expiresAt: tomorrow,
+          expiresAt,
           rewardAmount,
           rewardType: 'PAD',
           updatedAt: new Date(),
@@ -12791,10 +12807,10 @@ ${walletAddress}
           code: codeUpper,
           rewardAmount,
           rewardType: 'PAD',
-          usageLimit: null,
+          usageLimit: maxClaims,
           perUserLimit: 1,
           isActive: true,
-          expiresAt: tomorrow,
+          expiresAt,
         });
       }
 
@@ -12808,13 +12824,17 @@ ${walletAddress}
       if (ambassador) {
         const user = await storage.getUser(ambassador.userId);
         if (user?.telegram_id) {
+          const rewardPow = parseInt(rewardAmount).toLocaleString('en-US');
+          const usdValue = (parseInt(rewardAmount) / 100000).toFixed(2);
           const { sendTelegramMessage } = await import('./telegram');
           await sendTelegramMessage(user.telegram_id,
             `🎯 <b>Your Daily Promo Code is Ready!</b>\n\n` +
             `📛 Code: <code>${codeUpper}</code>\n` +
-            `⏰ Valid for 24 hours\n\n` +
+            `🎁 Reward: <b>${rewardPow} POW | $${usdValue}</b>\n` +
+            `👥 Max Claims: <b>${maxClaims}</b>\n` +
+            `⏰ Valid for ${expiryHours} hours\n\n` +
             `Share this code with your followers!\n` +
-            `You earn <b>$0.0001</b> for every successful claim.\n\n` +
+            `You earn <b>$${commissionUsd}</b> for every successful claim.\n\n` +
             `Post it in your channel now! 🚀`,
             { parse_mode: 'HTML' }
           ).catch(() => {});
