@@ -1153,7 +1153,7 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
             Loading users…
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-white/10 rounded-lg">
+          <div className="overflow-x-auto max-h-[380px] overflow-y-auto border border-white/10 rounded-lg">
             <Table className="text-xs min-w-[820px]">
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
@@ -4578,12 +4578,6 @@ function AmbassadorAdminSection() {
   const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
   const [commission, setCommission] = useState('0.0001');
   const [programEnabled, setProgramEnabled] = useState(true);
-  const [defaultReward, setDefaultReward] = useState('10000');
-  const [maxClaimLimit, setMaxClaimLimit] = useState('0');
-  const [promoExpiryDays, setPromoExpiryDays] = useState('0');
-  const [postingCooldownHours, setPostingCooldownHours] = useState('24');
-  const [dailyPostingLimitEnabled, setDailyPostingLimitEnabled] = useState(false);
-  const [dailyPostingLimit, setDailyPostingLimit] = useState('3');
   const [saving, setSaving] = useState(false);
 
   const { data: applicationsData } = useQuery<{ applications: any[] }>({
@@ -4601,20 +4595,11 @@ function AmbassadorAdminSection() {
   const { data: settingsData } = useQuery<Record<string, string>>({
     queryKey: ['/api/admin/ambassadors/settings'],
     queryFn: () => apiRequest('GET', '/api/admin/ambassadors/settings').then(r => r.json()),
-  });
-
-  // Sync settings from server when data loads
-  useEffect(() => {
-    if (!settingsData) return;
-    setCommission(settingsData.ambassador_commission_usd || '0.0001');
-    setProgramEnabled(settingsData.ambassador_program_enabled !== 'false');
-    setDefaultReward(settingsData.ambassador_default_reward || '10000');
-    setMaxClaimLimit(settingsData.ambassador_max_claim_limit || '0');
-    setPromoExpiryDays(settingsData.ambassador_promo_expiry_days || '0');
-    setPostingCooldownHours(settingsData.ambassador_posting_cooldown_hours || '24');
-    setDailyPostingLimitEnabled(settingsData.ambassador_daily_posting_limit_enabled === 'true');
-    setDailyPostingLimit(settingsData.ambassador_daily_posting_limit || '3');
-  }, [settingsData]);
+    onSuccess: (data: Record<string, string>) => {
+      setCommission(data.ambassador_commission_usd || '0.0001');
+      setProgramEnabled(data.ambassador_program_enabled !== 'false');
+    },
+  } as any);
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => apiRequest('POST', `/api/admin/ambassadors/applications/${id}/approve`).then(r => r.json()),
@@ -4691,15 +4676,8 @@ function AmbassadorAdminSection() {
       await apiRequest('POST', '/api/admin/ambassadors/settings', {
         ambassadorProgramEnabled: programEnabled,
         ambassadorCommissionUsd: commission,
-        ambassadorDefaultReward: defaultReward,
-        ambassadorMaxClaimLimit: maxClaimLimit,
-        ambassadorPromoExpiryDays: promoExpiryDays,
-        ambassadorPostingCooldownHours: postingCooldownHours,
-        ambassadorDailyPostingLimitEnabled: dailyPostingLimitEnabled,
-        ambassadorDailyPostingLimit: dailyPostingLimit,
       });
       showNotification('Settings saved!', 'success');
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/ambassadors/settings'] });
     } catch {
       showNotification('Failed to save settings', 'error');
     } finally {
@@ -4944,130 +4922,37 @@ function AmbassadorAdminSection() {
         <div className="space-y-3">
           <div className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5">
-              <h3 className="text-sm font-semibold text-white">Ambassador Program Settings</h3>
-              <p className="text-[10px] text-gray-500 mt-0.5">Global settings — applied immediately to all ambassadors</p>
+              <h3 className="text-sm font-semibold text-white">Ambassador Program</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">Global settings for all ambassadors</p>
             </div>
 
             <div className="px-4 py-3 space-y-4">
-              {/* Enable / Disable */}
-              <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-white font-medium">Enable Ambassador Program</p>
+                  <p className="text-sm text-white font-medium">Program Enabled</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Allow applications and commission payouts</p>
                 </div>
                 <button
                   onClick={() => setProgramEnabled(!programEnabled)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${programEnabled ? 'bg-blue-500' : 'bg-white/15'}`}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${programEnabled ? 'bg-green-500' : 'bg-white/15'}`}
                 >
                   <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${programEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </button>
               </div>
 
-              {/* Commission per Claim */}
               <div className="space-y-1.5">
-                <label className="text-xs text-gray-300 font-semibold">Commission per Claim (USD)</label>
+                <label className="text-xs text-gray-400 font-medium">Commission per Claim (USD)</label>
                 <Input
                   value={commission}
                   onChange={e => setCommission(e.target.value)}
                   placeholder="0.0001"
-                  type="number"
-                  step="0.00001"
-                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-blue-500/50"
+                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
                 />
-                <p className="text-[10px] text-gray-600">USD credited to ambassador per promo code claim</p>
+                <p className="text-[10px] text-gray-600">Credited to ambassador each time their promo code is claimed</p>
               </div>
 
-              {/* Default Reward */}
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-300 font-semibold">Default Reward Amount (POW per claim)</label>
-                <Input
-                  value={defaultReward}
-                  onChange={e => setDefaultReward(e.target.value)}
-                  placeholder="10000"
-                  type="number"
-                  min="1"
-                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-blue-500/50"
-                />
-                <p className="text-[10px] text-gray-600">POW given to users who claim an ambassador promo code</p>
-              </div>
-
-              {/* Max Claim Limit */}
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-300 font-semibold">Maximum Claim Limit (per code)</label>
-                <Input
-                  value={maxClaimLimit}
-                  onChange={e => setMaxClaimLimit(e.target.value)}
-                  placeholder="0 = unlimited"
-                  type="number"
-                  min="0"
-                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-blue-500/50"
-                />
-                <p className="text-[10px] text-gray-600">0 = unlimited. Max total users who can claim each promo code</p>
-              </div>
-
-              {/* Promo Code Expiry */}
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-300 font-semibold">Promo Code Expiry (days)</label>
-                <Input
-                  value={promoExpiryDays}
-                  onChange={e => setPromoExpiryDays(e.target.value)}
-                  placeholder="0 = no expiry"
-                  type="number"
-                  min="0"
-                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-blue-500/50"
-                />
-                <p className="text-[10px] text-gray-600">0 = no expiry. Days until a new promo code expires after creation</p>
-              </div>
-
-              {/* Posting Cooldown */}
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-300 font-semibold">Posting Cooldown (hours)</label>
-                <Input
-                  value={postingCooldownHours}
-                  onChange={e => setPostingCooldownHours(e.target.value)}
-                  placeholder="24"
-                  type="number"
-                  min="1"
-                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-blue-500/50"
-                />
-                <p className="text-[10px] text-gray-600">Minimum hours between manual promo posts per ambassador</p>
-              </div>
-
-              {/* Daily Posting Limit */}
-              <div className="py-2 border-t border-white/5">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-sm text-white font-medium">Daily Posting Limit</p>
-                    <p className="text-[10px] text-gray-500 mt-0.5">Cap how many times an ambassador can post per day</p>
-                  </div>
-                  <button
-                    onClick={() => setDailyPostingLimitEnabled(!dailyPostingLimitEnabled)}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${dailyPostingLimitEnabled ? 'bg-blue-500' : 'bg-white/15'}`}
-                  >
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${dailyPostingLimitEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                  </button>
-                </div>
-                {dailyPostingLimitEnabled && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs text-gray-300 font-semibold">Max Posts Per Day</label>
-                    <Input
-                      value={dailyPostingLimit}
-                      onChange={e => setDailyPostingLimit(e.target.value)}
-                      placeholder="3"
-                      type="number"
-                      min="1"
-                      className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-blue-500/50"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <Button
-                onClick={saveSettings}
-                disabled={saving}
-                className="w-full h-10 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {saving ? 'Saving…' : '💾 Save Ambassador Settings'}
+              <Button onClick={saveSettings} disabled={saving} className="w-full h-9 text-sm font-semibold">
+                {saving ? 'Saving…' : '💾 Save Settings'}
               </Button>
             </div>
           </div>
