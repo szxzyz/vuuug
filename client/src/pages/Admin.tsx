@@ -4578,6 +4578,12 @@ function AmbassadorAdminSection() {
   const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
   const [commission, setCommission] = useState('0.0001');
   const [programEnabled, setProgramEnabled] = useState(true);
+  const [promoReward, setPromoReward] = useState('10000');
+  const [maxClaims, setMaxClaims] = useState('100');
+  const [postingCooldown, setPostingCooldown] = useState('24');
+  const [autoPosting, setAutoPosting] = useState(true);
+  const [dailyLimit, setDailyLimit] = useState('2');
+  const [promoExpiryHours, setPromoExpiryHours] = useState('24');
   const [saving, setSaving] = useState(false);
 
   const { data: applicationsData } = useQuery<{ applications: any[] }>({
@@ -4598,6 +4604,12 @@ function AmbassadorAdminSection() {
     onSuccess: (data: Record<string, string>) => {
       setCommission(data.ambassador_commission_usd || '0.0001');
       setProgramEnabled(data.ambassador_program_enabled !== 'false');
+      setPromoReward(data.ambassador_promo_reward || '10000');
+      setMaxClaims(data.ambassador_max_claims || '100');
+      setPostingCooldown(data.ambassador_posting_cooldown || '24');
+      setAutoPosting(data.ambassador_auto_posting !== 'false');
+      setDailyLimit(data.ambassador_daily_limit || '2');
+      setPromoExpiryHours(data.ambassador_promo_expiry_hours || '24');
     },
   } as any);
 
@@ -4674,8 +4686,14 @@ function AmbassadorAdminSection() {
     setSaving(true);
     try {
       await apiRequest('POST', '/api/admin/ambassadors/settings', {
-        ambassadorProgramEnabled: programEnabled,
-        ambassadorCommissionUsd: commission,
+        ambassadorProgramEnabled:   programEnabled,
+        ambassadorCommissionUsd:    commission,
+        ambassadorPromoReward:      promoReward,
+        ambassadorMaxClaims:        maxClaims,
+        ambassadorPostingCooldown:  postingCooldown,
+        ambassadorAutoPosting:      autoPosting,
+        ambassadorDailyLimit:       dailyLimit,
+        ambassadorPromoExpiryHours: promoExpiryHours,
       });
       showNotification('Settings saved!', 'success');
     } catch {
@@ -4920,42 +4938,159 @@ function AmbassadorAdminSection() {
       {/* Settings */}
       {activeSubTab === 'settings' && (
         <div className="space-y-3">
+
+          {/* ── Toggle controls ─────────────────────────────────────── */}
           <div className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5">
-              <h3 className="text-sm font-semibold text-white">Ambassador Program</h3>
-              <p className="text-[10px] text-gray-500 mt-0.5">Global settings for all ambassadors</p>
+              <h3 className="text-sm font-semibold text-white">Program Controls</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">Global on/off switches applied to all ambassadors</p>
             </div>
-
-            <div className="px-4 py-3 space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="divide-y divide-white/5">
+              {/* Program enabled */}
+              <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="text-sm text-white font-medium">Program Enabled</p>
+                  <p className="text-sm text-white font-medium">Ambassador Program</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Allow applications and commission payouts</p>
                 </div>
                 <button
-                  onClick={() => setProgramEnabled(!programEnabled)}
+                  onClick={() => setProgramEnabled(v => !v)}
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${programEnabled ? 'bg-green-500' : 'bg-white/15'}`}
                 >
                   <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${programEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </button>
               </div>
+              {/* Auto posting */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="text-sm text-white font-medium">Auto Posting</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Allow the bot to auto-post promos on ambassadors' schedules</p>
+                </div>
+                <button
+                  onClick={() => setAutoPosting(v => !v)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${autoPosting ? 'bg-green-500' : 'bg-white/15'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${autoPosting ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
+          </div>
 
+          {/* ── Reward & claim settings ──────────────────────────────── */}
+          <div className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/5">
+              <h3 className="text-sm font-semibold text-white">Promo Code Settings</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">Applied to every code generated by the bot</p>
+            </div>
+            <div className="px-4 py-3 space-y-4">
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 font-medium">Default POW Reward</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={promoReward}
+                  onChange={e => setPromoReward(e.target.value)}
+                  placeholder="10000"
+                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
+                />
+                <p className="text-[10px] text-gray-600">POW tokens given to each user who claims a promo code</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 font-medium">Maximum Claims per Code</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={maxClaims}
+                  onChange={e => setMaxClaims(e.target.value)}
+                  placeholder="100"
+                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
+                />
+                <p className="text-[10px] text-gray-600">How many users can claim each generated promo code</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 font-medium">Promo Code Expiration (hours)</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={promoExpiryHours}
+                  onChange={e => setPromoExpiryHours(e.target.value)}
+                  placeholder="24"
+                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
+                />
+                <p className="text-[10px] text-gray-600">Hours until a generated code expires and becomes unclaimed</p>
+              </div>
+
+            </div>
+          </div>
+
+          {/* ── Posting behaviour ────────────────────────────────────── */}
+          <div className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/5">
+              <h3 className="text-sm font-semibold text-white">Posting Behaviour</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">Controls how often ambassadors can post promos</p>
+            </div>
+            <div className="px-4 py-3 space-y-4">
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 font-medium">Posting Cooldown (hours)</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={postingCooldown}
+                  onChange={e => setPostingCooldown(e.target.value)}
+                  placeholder="24"
+                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
+                />
+                <p className="text-[10px] text-gray-600">Minimum hours between manual posts for each ambassador</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 font-medium">Daily Posting Limit</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={dailyLimit}
+                  onChange={e => setDailyLimit(e.target.value)}
+                  placeholder="2"
+                  className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
+                />
+                <p className="text-[10px] text-gray-600">Maximum auto-posts per ambassador per day (automatic mode)</p>
+              </div>
+
+            </div>
+          </div>
+
+          {/* ── Commission ───────────────────────────────────────────── */}
+          <div className="bg-[#0f0f0f] border border-white/8 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/5">
+              <h3 className="text-sm font-semibold text-white">Commission</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">Earnings credited to ambassadors</p>
+            </div>
+            <div className="px-4 py-3 space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs text-gray-400 font-medium">Commission per Claim (USD)</label>
                 <Input
+                  type="number"
+                  step="0.0001"
+                  min="0"
                   value={commission}
                   onChange={e => setCommission(e.target.value)}
                   placeholder="0.0001"
                   className="bg-[#1a1a1a] border-white/10 text-white h-9 text-sm focus:border-white/25"
                 />
-                <p className="text-[10px] text-gray-600">Credited to ambassador each time their promo code is claimed</p>
+                <p className="text-[10px] text-gray-600">Credited to the ambassador each time their promo code is claimed</p>
               </div>
-
-              <Button onClick={saveSettings} disabled={saving} className="w-full h-9 text-sm font-semibold">
-                {saving ? 'Saving…' : '💾 Save Settings'}
-              </Button>
             </div>
           </div>
+
+          {/* ── Save ─────────────────────────────────────────────────── */}
+          <Button onClick={saveSettings} disabled={saving} className="w-full h-10 text-sm font-semibold">
+            {saving ? 'Saving…' : '💾 Save Ambassador Settings'}
+          </Button>
+
         </div>
       )}
     </div>
