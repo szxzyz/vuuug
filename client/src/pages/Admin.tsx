@@ -1077,6 +1077,7 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all');
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [activeView, setActiveView] = useState<UserViewTab>('list');
   const queryClient = useQueryClient();
@@ -1090,12 +1091,16 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // Reset to page 1 when filter changes
+  useEffect(() => { setCurrentPage(1); }, [statusFilter]);
+
   // Server-side paginated query — only fetches 50 users at a time
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['/api/admin/users', searchTerm, currentPage],
+  const { data, isLoading, isFetching, isError } = useQuery({
+    queryKey: ['/api/admin/users', searchTerm, currentPage, statusFilter],
     queryFn: () => {
       const params = new URLSearchParams({ page: String(currentPage), limit: '50' });
       if (searchTerm) params.set('q', searchTerm);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
       return apiRequest('GET', `/api/admin/users?${params}`).then(r => r.json());
     },
     staleTime: 15_000,
@@ -1120,12 +1125,23 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
         </div>
 
         {activeView === 'list' && (
-          <Input
-            placeholder="Search by name, @username, UID, Telegram ID..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="h-8 text-sm"
-          />
+          <div className="flex gap-2 flex-wrap">
+            <Input
+              placeholder="Search by name, @username, UID, Telegram ID..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="h-8 text-sm flex-1 min-w-[200px]"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="h-8 text-xs rounded-md border border-white/20 bg-background text-foreground px-2 focus:outline-none focus:border-[#4cd3ff]/50"
+            >
+              <option value="all">All Users</option>
+              <option value="active">Active Only</option>
+              <option value="banned">Banned Only</option>
+            </select>
+          </div>
         )}
 
         {activeView === 'stats' ? (
@@ -1147,22 +1163,34 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
               <p className="text-xs text-muted-foreground">Wallet (this page)</p>
             </div>
           </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center py-8 text-sm gap-2">
+            <i className="fas fa-exclamation-triangle text-red-400 text-2xl mb-1" />
+            <p className="text-red-400 font-semibold">Failed to load users</p>
+            <p className="text-muted-foreground text-xs">Check your admin session or try refreshing.</p>
+            <Button size="sm" variant="outline" className="mt-2 text-xs h-7" onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] })}>
+              <i className="fas fa-redo mr-1" /> Retry
+            </Button>
+          </div>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
             <i className="fas fa-circle-notch fa-spin text-[#4cd3ff]" />
             Loading users…
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[380px] overflow-y-auto border border-white/10 rounded-lg">
-            <Table className="text-xs min-w-[820px]">
+          <div className="overflow-x-auto max-h-[420px] overflow-y-auto border border-white/10 rounded-lg">
+            <Table className="text-xs min-w-[1000px]">
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
-                  <TableHead className="text-xs w-16">Status</TableHead>
-                  <TableHead className="text-xs">User ID / Telegram ID</TableHead>
-                  <TableHead className="text-xs">Name / Username</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Status</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">User ID</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Telegram ID</TableHead>
+                  <TableHead className="text-xs">Username</TableHead>
+                  <TableHead className="text-xs">Full Name</TableHead>
                   <TableHead className="text-xs text-right">Balance</TableHead>
                   <TableHead className="text-xs text-center">Refs</TableHead>
                   <TableHead className="text-xs text-center">Ads</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Country</TableHead>
                   <TableHead className="text-xs whitespace-nowrap">Registered</TableHead>
                   <TableHead className="text-xs whitespace-nowrap">Last Active</TableHead>
                   <TableHead className="text-xs"></TableHead>
@@ -1171,8 +1199,12 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
               <TableBody>
                 {users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-4 text-sm">
-                      {searchTerm ? `No users matching "${searchTerm}"` : 'No users'}
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-6 text-sm">
+                      {searchTerm
+                        ? `No users matching "${searchTerm}"`
+                        : statusFilter !== 'all'
+                          ? `No ${statusFilter} users found`
+                          : 'No users found'}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -1185,11 +1217,19 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
                       </TableCell>
                       <TableCell className="py-2">
                         <div className="font-mono text-[10px] text-[#4cd3ff]">{user.referralCode || user.personalCode || user.id?.slice(0,8) || 'N/A'}</div>
+                      </TableCell>
+                      <TableCell className="py-2">
                         <div className="font-mono text-[10px] text-muted-foreground">{user.telegramId || '—'}</div>
                       </TableCell>
                       <TableCell className="py-2">
+                        {user.username ? (
+                          <span className="text-[10px] text-muted-foreground">@{user.username}</span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/40">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2">
                         <div className="text-xs font-medium">{[user.firstName, user.lastName].filter(Boolean).join(' ') || 'User'}</div>
-                        {user.username && <div className="text-[10px] text-muted-foreground">@{user.username}</div>}
                       </TableCell>
                       <TableCell className="text-right py-2">
                         <div className="text-xs font-semibold">{parseInt(user.balance || '0').toLocaleString()} POW</div>
@@ -1199,6 +1239,11 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
                       </TableCell>
                       <TableCell className="py-2 text-center">{user.friendsInvited || 0}</TableCell>
                       <TableCell className="py-2 text-center">{user.adsWatched || 0}</TableCell>
+                      <TableCell className="py-2 text-[10px] text-muted-foreground">
+                        {user.platform ? (
+                          <span className="capitalize">{user.platform}</span>
+                        ) : '—'}
+                      </TableCell>
                       <TableCell className="py-2 text-[10px] text-muted-foreground whitespace-nowrap">
                         {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
                       </TableCell>
@@ -4601,17 +4646,20 @@ function AmbassadorAdminSection() {
   const { data: settingsData } = useQuery<Record<string, string>>({
     queryKey: ['/api/admin/ambassadors/settings'],
     queryFn: () => apiRequest('GET', '/api/admin/ambassadors/settings').then(r => r.json()),
-    onSuccess: (data: Record<string, string>) => {
-      setCommission(data.ambassador_commission_usd || '0.0001');
-      setProgramEnabled(data.ambassador_program_enabled !== 'false');
-      setPromoReward(data.ambassador_promo_reward || '10000');
-      setMaxClaims(data.ambassador_max_claims || '100');
-      setPostingCooldown(data.ambassador_posting_cooldown || '24');
-      setAutoPosting(data.ambassador_auto_posting !== 'false');
-      setDailyLimit(data.ambassador_daily_limit || '2');
-      setPromoExpiryHours(data.ambassador_promo_expiry_hours || '24');
-    },
-  } as any);
+  });
+
+  // Sync form state whenever settings load from the server
+  useEffect(() => {
+    if (!settingsData) return;
+    setCommission(settingsData.ambassador_commission_usd || '0.0001');
+    setProgramEnabled(settingsData.ambassador_program_enabled !== 'false');
+    setPromoReward(settingsData.ambassador_promo_reward || '10000');
+    setMaxClaims(settingsData.ambassador_max_claims || '100');
+    setPostingCooldown(settingsData.ambassador_posting_cooldown || '24');
+    setAutoPosting(settingsData.ambassador_auto_posting !== 'false');
+    setDailyLimit(settingsData.ambassador_daily_limit || '2');
+    setPromoExpiryHours(settingsData.ambassador_promo_expiry_hours || '24');
+  }, [settingsData]);
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => apiRequest('POST', `/api/admin/ambassadors/applications/${id}/approve`).then(r => r.json()),
