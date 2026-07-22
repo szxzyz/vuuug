@@ -3541,22 +3541,29 @@ export async function sendAmbassadorPromo(ambId: string): Promise<string | null>
   }
 
   // ── Generate 2 promo codes ────────────────────────────────────────────────
-  const [rewardSetting] = await dbConn.select({ v: adminSettings.settingValue })
-    .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_promo_reward')).limit(1);
-  const rewardAmount = rewardSetting?.v || '10000';
+  // ── Load global ambassador settings from DB ───────────────────────────────
+  const settingKeys = ['ambassador_promo_reward', 'ambassador_max_claims', 'ambassador_promo_expiry_hours'];
+  const settingRows = await dbConn.select({ k: adminSettings.settingKey, v: adminSettings.settingValue })
+    .from(adminSettings)
+    .where(sql`${adminSettings.settingKey} IN (${sql.join(settingKeys.map(k => sql`${k}`), sql`, `)})`);
+  const getSetting = (key: string, def: string) => settingRows.find(r => r.k === key)?.v ?? def;
+
+  const rewardAmount  = getSetting('ambassador_promo_reward',       '10000');
+  const maxClaims     = parseInt(getSetting('ambassador_max_claims', '100'));
+  const expiryHours   = parseInt(getSetting('ambassador_promo_expiry_hours', '24'));
 
   const prefix = (amb.promoPrefix || amb.promoCodeName).toUpperCase().replace(/[^A-Z0-9]/g, '');
   const uniqueCode1 = await generateUniqueAmbassadorCode(prefix);
   // Generate second code with in-memory exclusion of the first to prevent collisions
   const uniqueCode2 = await generateUniqueAmbassadorCode(prefix, new Set([uniqueCode1]));
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 h
+  const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
-  console.log(`🎟 [Ambassador ${amb.id}] Generated promo codes: ${uniqueCode1}, ${uniqueCode2} | reward: ${rewardAmount} PAD | expires: ${expiresAt.toISOString()}`);
+  console.log(`🎟 [Ambassador ${amb.id}] Generated promo codes: ${uniqueCode1}, ${uniqueCode2} | reward: ${rewardAmount} PAD | maxClaims: ${maxClaims} | expires: ${expiresAt.toISOString()} (${expiryHours}h)`);
 
   // Insert both codes — they will be deactivated below if the channel post fails
   await dbConn.insert(promoCodes).values([
-    { code: uniqueCode1, rewardAmount, rewardType: 'PAD', usageLimit: 100, perUserLimit: 1, isActive: true, expiresAt },
-    { code: uniqueCode2, rewardAmount, rewardType: 'PAD', usageLimit: 100, perUserLimit: 1, isActive: true, expiresAt },
+    { code: uniqueCode1, rewardAmount, rewardType: 'PAD', usageLimit: maxClaims, perUserLimit: 1, isActive: true, expiresAt },
+    { code: uniqueCode2, rewardAmount, rewardType: 'PAD', usageLimit: maxClaims, perUserLimit: 1, isActive: true, expiresAt },
   ]);
 
   // ── Build message in ambassador's language ────────────────────────────────
@@ -3682,10 +3689,13 @@ export async function runAmbassadorDailyPromos(): Promise<void> {
     const { ambassadors, adminSettings } = await import('../shared/schema');
     const { eq } = await import('drizzle-orm');
 
-    // Check if program is enabled
-    const [programSetting] = await dbConn.select({ v: adminSettings.settingValue })
-      .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_program_enabled')).limit(1);
-    if (programSetting?.v === 'false') return;
+    // Check if program and auto-posting are enabled
+    const globalSettingRows = await dbConn.select({ k: adminSettings.settingKey, v: adminSettings.settingValue })
+      .from(adminSettings)
+      .where(sql`${adminSettings.settingKey} IN ('ambassador_program_enabled', 'ambassador_auto_posting')`);
+    const getGlobal = (k: string, def: string) => globalSettingRows.find(r => r.k === k)?.v ?? def;
+    if (getGlobal('ambassador_program_enabled', 'true') === 'false') return;
+    if (getGlobal('ambassador_auto_posting', 'true') === 'false') return;
 
     const now = new Date();
     // Find all active ambassadors, then filter by nextPromoAt in JS

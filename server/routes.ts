@@ -12152,21 +12152,24 @@ ${walletAddress}
       if (!ambassador) return res.status(404).json({ message: 'Not an ambassador' });
       if (ambassador.status !== 'active') return res.status(403).json({ message: 'Ambassador account is not active' });
 
-      // 24-hour rate limit for manual mode
+      // Cooldown rate limit for manual mode — uses ambassador_posting_cooldown setting
       const mode = (ambassador as any).postingMode ?? 'automatic';
       if (mode === 'manual') {
+        const [cooldownSetting] = await db.select({ v: adminSettings.settingValue })
+          .from(adminSettings).where(eq(adminSettings.settingKey, 'ambassador_posting_cooldown')).limit(1);
+        const cooldownHours = parseInt(cooldownSetting?.v || '24');
+        const cooldownMs = cooldownHours * 60 * 60 * 1000;
         const lastAt: Date | null = (ambassador as any).manualPostLastAt;
         if (lastAt) {
           const msSinceLast = Date.now() - new Date(lastAt).getTime();
-          const msIn24h = 24 * 60 * 60 * 1000;
-          if (msSinceLast < msIn24h) {
-            const msRemaining = msIn24h - msSinceLast;
+          if (msSinceLast < cooldownMs) {
+            const msRemaining = cooldownMs - msSinceLast;
             const hLeft = Math.floor(msRemaining / 3600000);
             const mLeft = Math.floor((msRemaining % 3600000) / 60000);
             return res.status(429).json({
               success: false,
-              message: `Manual post limit: 1 post per 24 hours. Next post available in ${hLeft}h ${mLeft}m.`,
-              nextAvailableAt: new Date(new Date(lastAt).getTime() + msIn24h).toISOString(),
+              message: `Manual post limit: 1 post per ${cooldownHours} hours. Next post available in ${hLeft}h ${mLeft}m.`,
+              nextAvailableAt: new Date(new Date(lastAt).getTime() + cooldownMs).toISOString(),
             });
           }
         }
@@ -12646,13 +12649,21 @@ ${walletAddress}
   // Admin: Get ambassador program settings
   app.get('/api/admin/ambassadors/settings', authenticateAdmin, async (req: any, res) => {
     try {
-      const keys = ['ambassador_program_enabled', 'ambassador_commission_usd'];
-      const settings: Record<string, string> = {};
-      for (const key of keys) {
-        const [row] = await db.select({ v: adminSettings.settingValue }).from(adminSettings)
-          .where(eq(adminSettings.settingKey, key)).limit(1);
-        settings[key] = row?.v ?? (key === 'ambassador_commission_usd' ? '0.0001' : 'true');
-      }
+      const defaults: Record<string, string> = {
+        ambassador_program_enabled:    'true',
+        ambassador_commission_usd:     '0.0001',
+        ambassador_promo_reward:       '10000',
+        ambassador_max_claims:         '100',
+        ambassador_posting_cooldown:   '24',
+        ambassador_auto_posting:       'true',
+        ambassador_daily_limit:        '2',
+        ambassador_promo_expiry_hours: '24',
+      };
+      const rows = await db.select({ k: adminSettings.settingKey, v: adminSettings.settingValue })
+        .from(adminSettings)
+        .where(sql`${adminSettings.settingKey} IN (${sql.join(Object.keys(defaults).map(k => sql`${k}`), sql`, `)})`);
+      const settings: Record<string, string> = { ...defaults };
+      for (const row of rows) settings[row.k] = row.v;
       res.json(settings);
     } catch (error) {
       res.status(500).json({ message: 'Failed to fetch settings' });
@@ -12662,13 +12673,30 @@ ${walletAddress}
   // Admin: Update ambassador program settings
   app.post('/api/admin/ambassadors/settings', authenticateAdmin, async (req: any, res) => {
     try {
-      const { ambassadorProgramEnabled, ambassadorCommissionUsd } = req.body;
+      const {
+        ambassadorProgramEnabled,
+        ambassadorCommissionUsd,
+        ambassadorPromoReward,
+        ambassadorMaxClaims,
+        ambassadorPostingCooldown,
+        ambassadorAutoPosting,
+        ambassadorDailyLimit,
+        ambassadorPromoExpiryHours,
+      } = req.body;
+
       const updates: Record<string, string> = {};
-      if (ambassadorProgramEnabled !== undefined) updates['ambassador_program_enabled'] = ambassadorProgramEnabled ? 'true' : 'false';
-      if (ambassadorCommissionUsd !== undefined) updates['ambassador_commission_usd'] = String(parseFloat(ambassadorCommissionUsd) || 0.0001);
+      if (ambassadorProgramEnabled  !== undefined) updates['ambassador_program_enabled']    = ambassadorProgramEnabled  ? 'true' : 'false';
+      if (ambassadorCommissionUsd   !== undefined) updates['ambassador_commission_usd']     = String(parseFloat(ambassadorCommissionUsd)   || 0.0001);
+      if (ambassadorPromoReward     !== undefined) updates['ambassador_promo_reward']        = String(parseInt(ambassadorPromoReward)       || 10000);
+      if (ambassadorMaxClaims       !== undefined) updates['ambassador_max_claims']          = String(parseInt(ambassadorMaxClaims)         || 100);
+      if (ambassadorPostingCooldown !== undefined) updates['ambassador_posting_cooldown']   = String(parseInt(ambassadorPostingCooldown)   || 24);
+      if (ambassadorAutoPosting     !== undefined) updates['ambassador_auto_posting']        = ambassadorAutoPosting     ? 'true' : 'false';
+      if (ambassadorDailyLimit      !== undefined) updates['ambassador_daily_limit']         = String(parseInt(ambassadorDailyLimit)        || 2);
+      if (ambassadorPromoExpiryHours !== undefined) updates['ambassador_promo_expiry_hours'] = String(parseInt(ambassadorPromoExpiryHours) || 24);
 
       for (const [key, value] of Object.entries(updates)) {
-        await db.insert(adminSettings).values({ settingKey: key, settingValue: value, description: 'Ambassador setting' })
+        await db.insert(adminSettings)
+          .values({ settingKey: key, settingValue: value, description: 'Ambassador setting' })
           .onConflictDoUpdate({ target: adminSettings.settingKey, set: { settingValue: value, updatedAt: new Date() } });
       }
       res.json({ success: true });
