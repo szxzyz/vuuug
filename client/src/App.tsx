@@ -363,7 +363,14 @@ function App() {
     const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.ready();
-      
+      tg.expand(); // ensure mini app fills the full screen
+
+      // Safety timeout — if auth hangs for any reason, unblock the UI after 10s
+      const authTimeout = setTimeout(() => {
+        setIsAuthenticating(false);
+        setIsChannelVerified(true);
+      }, 10_000);
+
       if (tg.initDataUnsafe?.user) {
         localStorage.setItem("tg_user", JSON.stringify(tg.initDataUnsafe.user));
         setTelegramId(tg.initDataUnsafe.user.id.toString());
@@ -414,6 +421,7 @@ function App() {
       })
         .then(res => res.json())
         .then(data => {
+          clearTimeout(authTimeout);
           if (data.referralProcessed) {
             localStorage.removeItem("tg_start_param");
           }
@@ -433,9 +441,12 @@ function App() {
           }
         })
         .catch(() => {
+          clearTimeout(authTimeout);
           setIsAuthenticating(false);
           setIsChannelVerified(true);
         });
+
+      return () => clearTimeout(authTimeout);
     } else {
       setIsAuthenticating(false);
       setIsChannelVerified(true);
