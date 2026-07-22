@@ -4938,7 +4938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           u.id, u.telegram_id, u.username, u.first_name, u.last_name,
           u.balance, u.usd_balance, u.ton_balance, u.total_earned, u.friends_invited,
           u.referral_code, u.personal_code, u.cwallet_id, u.usdt_wallet_address,
-          u.telegram_stars_username, u.referred_by, u.tasks_completed,
+          u.telegram_stars_username, u.referred_by,
           u.banned, u.ads_watched, u.platform, u.created_at, u.last_login_at
         FROM users u
         ${whereClause}
@@ -4964,7 +4964,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         usdtWalletAddress: u.usdt_wallet_address,
         telegramStarsUsername: u.telegram_stars_username,
         referrerUid: u.referred_by,
-        tasksCompleted: u.tasks_completed || 0,
         banned: u.banned || false,
         adsWatched: u.ads_watched || 0,
         platform: u.platform || null,
@@ -6977,16 +6976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         console.log('✅ Payment deducted (TON):', { oldBalance: currentTONBalance, newBalance: newTONBalance, deducted: totalCostTON });
 
-        await storage.logTransaction({
-          userId,
-          amount: totalCostTON.toFixed(10),
-          type: "deduction",
-          source: "task_creation",
-          description: `Created ${taskType} task: ${title}`,
-          metadata: { taskId: null, taskType, totalClicksRequired: parsedClicksRequired, paymentMethod: 'TON' }
-        });
-
-        // Create task with TON cost
+        // Create task FIRST so we have the real ID for the transaction log
         const task = await storage.createTask({
           advertiserId: userId,
           taskType,
@@ -7001,6 +6991,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         console.log('✅ Task saved to database:', task);
+
+        // Log transaction AFTER task creation so taskId and link are recorded
+        await storage.logTransaction({
+          userId,
+          amount: totalCostTON.toFixed(10),
+          type: "deduction",
+          source: "task_creation",
+          description: `Created ${taskType} task: ${title}`,
+          metadata: { taskId: task.id, taskType, title, link, totalClicksRequired: parsedClicksRequired, paymentMethod: 'TON' }
+        });
 
         broadcastUpdate({
           type: 'task:created',
