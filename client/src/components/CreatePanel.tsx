@@ -197,13 +197,15 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
     onError: (e: Error) => showNotification(e.message, "error"),
   });
 
+  const botStartInvalidForVerif = category === "bot" && isVerif && botStart.trim().length > 0 && !botStart.includes("t.me");
+
   const canSubmit = (() => {
     if (!taskName.trim() || !selectedPkg || createMutation.isPending) return false;
     if (category === "channel") {
       if (!channelLink.trim() || !channelLink.includes("t.me/")) return false;
       if (isVerif && !chVerified) return false;
     } else {
-      if (isVerif && !botStart.trim()) return false;
+      if (isVerif && (!botStart.trim() || !botStart.includes("t.me"))) return false;
       if (!isVerif && !botUser.trim()) return false;
     }
     return true;
@@ -493,11 +495,18 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                               placeholder="https://t.me/YourBot?start=REF_CODE"
                               value={botStart}
                               onChange={e => setBotStart(e.target.value)}
-                              style={INPUT}
+                              style={{ ...INPUT, ...(botStartInvalidForVerif ? { borderColor: "rgba(248,113,113,0.5)" } : {}) }}
                             />
-                            <p style={{ color: "rgba(255,255,255,0.22)", fontSize: 11.5, marginTop: 6, lineHeight: 1.6 }}>
-                              Users must start via your referral link — verified before reward is granted.
-                            </p>
+                            {botStartInvalidForVerif ? (
+                              <p style={{ color: "#f87171", fontSize: 11.5, marginTop: 6, lineHeight: 1.6, display: "flex", alignItems: "flex-start", gap: 5 }}>
+                                <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                                Verification is only supported for Telegram (t.me) links. Please disable verification for external websites.
+                              </p>
+                            ) : (
+                              <p style={{ color: "rgba(255,255,255,0.22)", fontSize: 11.5, marginTop: 6, lineHeight: 1.6 }}>
+                                Users must start via your referral link — verified before reward is granted.
+                              </p>
+                            )}
                           </>
                         ) : (
                           <div style={{ position: "relative" }}>

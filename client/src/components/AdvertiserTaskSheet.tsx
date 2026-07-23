@@ -77,7 +77,7 @@ function openLink(link: string) {
   const tg = (window as any).Telegram?.WebApp;
   if (tg) {
     if (url.includes("t.me/") && tg.openTelegramLink) tg.openTelegramLink(url);
-    else if (tg.openLink) tg.openLink(url);
+    else if (tg.openLink) tg.openLink(url, { try_instant_view: false });
     else window.open(url, "_blank");
   } else {
     window.open(url, "_blank");
