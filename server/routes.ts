@@ -10031,17 +10031,19 @@ ${walletAddress}
       }
 
       if (reward.type === 'POW') {
-        const currentBalance = parseFloat(user.balance?.toString() || '0');
-        const newBalance = currentBalance + reward.amount;
+        // Atomic increment — never read-then-write to avoid clobbering concurrent updates
         await db.update(users).set({
-          balance: newBalance.toString(),
+          balance: sql`COALESCE(${users.balance}, 0) + ${reward.amount.toString()}`,
           updatedAt: new Date(),
         }).where(eq(users.id, userId));
+        await db.update(userBalances).set({
+          balance: sql`COALESCE(${userBalances.balance}, 0) + ${reward.amount.toString()}`,
+          updatedAt: new Date(),
+        }).where(eq(userBalances.userId, userId));
       } else if (reward.type === 'TON') {
-        const currentTon = parseFloat(user.tonBalance?.toString() || '0');
-        const newTon = currentTon + reward.amount;
+        // Atomic increment for TON balance
         await db.update(users).set({
-          tonBalance: newTon.toString(),
+          tonBalance: sql`COALESCE(${users.tonBalance}, 0) + ${reward.amount.toString()}`,
           updatedAt: new Date(),
         }).where(eq(users.id, userId));
       }
@@ -10333,15 +10335,15 @@ ${walletAddress}
         });
       }
 
-      // Add reward to user balance
-      const user = await storage.getUser(userId);
-      if (user) {
-        const currentBalance = parseFloat(user.balance?.toString() || '0');
-        await db.update(users).set({
-          balance: (currentBalance + reward).toString(),
-          updatedAt: new Date(),
-        }).where(eq(users.id, userId));
-      }
+      // Add reward to user balance — atomic increment prevents clobbering concurrent updates
+      await db.update(users).set({
+        balance: sql`COALESCE(${users.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, userId));
+      await db.update(userBalances).set({
+        balance: sql`COALESCE(${userBalances.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(userBalances.userId, userId));
 
       // Record transaction
       await db.insert(transactions).values({
@@ -10403,15 +10405,15 @@ ${walletAddress}
         });
       }
 
-      // Add reward to user balance
-      const user = await storage.getUser(userId);
-      if (user) {
-        const currentBalance = parseFloat(user.balance?.toString() || '0');
-        await db.update(users).set({
-          balance: (currentBalance + reward).toString(),
-          updatedAt: new Date(),
-        }).where(eq(users.id, userId));
-      }
+      // Add reward to user balance — atomic increment prevents clobbering concurrent updates
+      await db.update(users).set({
+        balance: sql`COALESCE(${users.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, userId));
+      await db.update(userBalances).set({
+        balance: sql`COALESCE(${userBalances.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(userBalances.userId, userId));
 
       // Record transaction
       await db.insert(transactions).values({
@@ -10473,15 +10475,15 @@ ${walletAddress}
         });
       }
 
-      // Add reward to user balance
-      const user = await storage.getUser(userId);
-      if (user) {
-        const currentBalance = parseFloat(user.balance?.toString() || '0');
-        await db.update(users).set({
-          balance: (currentBalance + reward).toString(),
-          updatedAt: new Date(),
-        }).where(eq(users.id, userId));
-      }
+      // Add reward to user balance — atomic increment prevents clobbering concurrent updates
+      await db.update(users).set({
+        balance: sql`COALESCE(${users.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, userId));
+      await db.update(userBalances).set({
+        balance: sql`COALESCE(${userBalances.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(userBalances.userId, userId));
 
       // Record transaction
       await db.insert(transactions).values({
@@ -10961,6 +10963,17 @@ ${walletAddress}
       updateData[fieldKey] = newVal.toString();
       await db.update(users).set(updateData).where(eq(users.id, id));
 
+      // CRITICAL: keep user_balances in sync for POW adjustments.
+      // Without this, addEarning's drift-correction guard sees a mismatch
+      // between users.balance and user_balances.balance (> 1 PAD) and
+      // overwrites users.balance back to the old user_balances value,
+      // silently reverting the admin's change the next time the user watches an ad.
+      if (currency === 'pow') {
+        await db.update(userBalances)
+          .set({ balance: newVal.toString(), updatedAt: new Date() })
+          .where(eq(userBalances.userId, id));
+      }
+
       const txSource = `admin_${action}_${currency}`;
       const txType = action === 'deduct' ? 'deduction' : 'addition';
       await db.insert(transactions).values({
@@ -10975,6 +10988,95 @@ ${walletAddress}
     } catch (error) {
       console.error('❌ Error adjusting balance:', error);
       res.status(500).json({ error: 'Failed to adjust balance' });
+    }
+  });
+
+  // POST /api/admin/repair/backfill-counters
+  // Repairs users whose counter columns (ads_watched, total_earned, balance) have
+  // drifted from the canonical earnings / user_balances tables.
+  // Safe to run multiple times — uses UPDATE … FROM aggregates, never deletes data.
+  app.post('/api/admin/repair/backfill-counters', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { userId } = req.body; // optional — omit to repair ALL users
+
+      const whereClause = userId ? sql`WHERE u.id = ${userId}` : sql``;
+
+      // 1. Sync users.ads_watched from the earnings table (count ad-watch rows)
+      const adsResult = await db.execute(sql`
+        UPDATE users u
+        SET ads_watched = sub.ad_count,
+            updated_at  = NOW()
+        FROM (
+          SELECT user_id,
+                 COUNT(*) AS ad_count
+          FROM   earnings
+          WHERE  source IN ('ad_watch', 'mission_ad', 'adsgram', 'monetag', 'gigapub',
+                            'extra_ad', 'bonus_ad', 'daily_bonus')
+          GROUP  BY user_id
+        ) sub
+        WHERE u.id = sub.user_id
+          AND (u.ads_watched IS NULL OR u.ads_watched < sub.ad_count)
+          ${whereClause}
+      `);
+
+      // 2. Sync users.total_earned from the earnings table (sum of all non-withdrawal rows)
+      const earnedResult = await db.execute(sql`
+        UPDATE users u
+        SET total_earned = sub.total,
+            updated_at   = NOW()
+        FROM (
+          SELECT user_id,
+                 COALESCE(SUM(amount::numeric), 0) AS total
+          FROM   earnings
+          WHERE  source <> 'withdrawal'
+          GROUP  BY user_id
+        ) sub
+        WHERE u.id = sub.user_id
+          AND (u.total_earned IS NULL
+               OR ABS(u.total_earned::numeric - sub.total) > 1)
+          ${whereClause}
+      `);
+
+      // 3. Sync users.balance AND user_balances.balance from whichever is larger
+      //    (takes the max so we never accidentally reduce a balance)
+      const balanceResult = await db.execute(sql`
+        UPDATE users u
+        SET balance    = GREATEST(
+                           COALESCE(u.balance::numeric,  0),
+                           COALESCE(ub.balance::numeric, 0)
+                         )::text,
+            updated_at = NOW()
+        FROM user_balances ub
+        WHERE ub.user_id = u.id
+          AND ABS(COALESCE(u.balance::numeric, 0) - COALESCE(ub.balance::numeric, 0)) > 1
+          ${whereClause}
+      `);
+
+      // 4. Mirror the reconciled users.balance back into user_balances
+      await db.execute(sql`
+        UPDATE user_balances ub
+        SET balance    = u.balance,
+            updated_at = NOW()
+        FROM users u
+        WHERE ub.user_id = u.id
+          AND ABS(COALESCE(ub.balance::numeric, 0) - COALESCE(u.balance::numeric, 0)) > 1
+          ${whereClause}
+      `);
+
+      res.json({
+        success: true,
+        message: userId
+          ? `Counters repaired for user ${userId}`
+          : 'Counter backfill complete for all users',
+        rowsUpdated: {
+          adsWatched: (adsResult as any).rowCount ?? 0,
+          totalEarned: (earnedResult as any).rowCount ?? 0,
+          balance: (balanceResult as any).rowCount ?? 0,
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error in counter backfill:', error);
+      res.status(500).json({ error: 'Backfill failed', detail: String(error) });
     }
   });
 
@@ -11067,11 +11169,15 @@ ${walletAddress}
       await db.insert(dailyMissions).values({ userId, missionType, completed: true, claimedAt: new Date(), resetDate: today });
     }
 
-    const user = await storage.getUser(userId);
-    if (user) {
-      const current = parseFloat(user.balance?.toString() || '0');
-      await db.update(users).set({ balance: (current + reward).toString(), updatedAt: new Date() }).where(eq(users.id, userId));
-    }
+    // Atomic increment — never read-then-write to avoid clobbering concurrent updates
+    await db.update(users).set({
+      balance: sql`COALESCE(${users.balance}, 0) + ${reward.toString()}`,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+    await db.update(userBalances).set({
+      balance: sql`COALESCE(${userBalances.balance}, 0) + ${reward.toString()}`,
+      updatedAt: new Date(),
+    }).where(eq(userBalances.userId, userId));
     await db.insert(transactions).values({ userId, amount: reward.toString(), type: 'addition', source: `mission_${missionType}`, description });
     return reward;
   }
@@ -11163,8 +11269,15 @@ ${walletAddress}
       } else {
         await db.insert(dailyMissions).values({ userId, missionType: 'first_active_referral', completed: true, claimedAt: new Date(), resetDate: 'permanent' });
       }
-      const current = parseFloat(user.balance?.toString() || '0');
-      await db.update(users).set({ balance: (current + reward).toString(), updatedAt: new Date() }).where(eq(users.id, userId));
+      // Atomic increment — never read-then-write to avoid clobbering concurrent updates
+      await db.update(users).set({
+        balance: sql`COALESCE(${users.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, userId));
+      await db.update(userBalances).set({
+        balance: sql`COALESCE(${userBalances.balance}, 0) + ${reward.toString()}`,
+        updatedAt: new Date(),
+      }).where(eq(userBalances.userId, userId));
       await db.insert(transactions).values({ userId, amount: reward.toString(), type: 'addition', source: 'mission_first_active_referral', description: 'First Active Referral Mission Reward' });
       res.json({ success: true, reward });
     } catch (error) {

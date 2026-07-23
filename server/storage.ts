@@ -183,7 +183,15 @@ export class DatabaseStorage implements IStorage {
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          ...userData,
+          // IMPORTANT: only update safe profile/identity fields on conflict.
+          // Never spread ...userData here — it would overwrite cumulative
+          // counters (balance, adsWatched, totalEarned, etc.) with the
+          // zeroed values passed in by the auth layer, erasing all history.
+          email: userData.email,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          username: userData.username,
+          personalCode: userData.personalCode,
           updatedAt: new Date(),
         },
       })
