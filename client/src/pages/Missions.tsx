@@ -731,7 +731,7 @@ export default function Missions() {
     const tg = (window as any).Telegram?.WebApp;
     if (tg) {
       if (link.includes('t.me/') && tg.openTelegramLink) tg.openTelegramLink(link);
-      else if (tg.openLink) tg.openLink(link);
+      else if (tg.openLink) tg.openLink(link, { try_instant_view: false });
       else window.open(link, '_blank');
     } else {
       window.open(link, '_blank');
