@@ -6810,6 +6810,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Verification is only supported for Telegram (t.me) links
+      if (verificationRequired && !link.includes('t.me')) {
+        return res.status(400).json({
+          success: false,
+          message: "Verification is only supported for Telegram (t.me) links. Please disable verification for external websites."
+        });
+      }
+
       // Get user data to check if admin early for partner task validation
       const [userData] = await db
         .select({ 

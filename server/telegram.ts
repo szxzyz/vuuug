@@ -916,7 +916,7 @@ function buildAmbassadorPromoPayload(
   const s = AMB_PROMO_STRINGS[(lang as AmbPromoLang)] ?? AMB_PROMO_STRINGS.en;
   const rewardInt = parseInt(rewardAmount || '10000');
   const rewardPow = rewardInt.toLocaleString('en-US');
-  const usdValue = (rewardInt / 100000).toFixed(2);
+  const usdValue = (rewardInt / 10000000).toFixed(7).replace(/\.?0+$/, '');
 
   const lines: string[] = [
     `👤 <b>First ${maxClaims} Active Users Only!</b>`,
