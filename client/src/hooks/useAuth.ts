@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useCallback } from "react";
 import { setupDeviceTracking } from "../lib/deviceId";
+import { getTurnstileToken } from "../lib/turnstile";
 
 // Storage keys - CRITICAL: These must never be cleared automatically
 const AUTH_CACHE_KEY = 'cashwatch_user_cache';
@@ -322,6 +323,8 @@ const authenticateWithTelegram = async (initData: string) => {
       'Content-Type': 'application/json',
       'x-device-id': deviceId,
       'x-device-fingerprint': JSON.stringify(fingerprint),
+      ...(await getTurnstileToken('telegram-auth')
+        .then((token) => token ? { 'x-turnstile-token': token } : {})),
     },
     body: JSON.stringify(body),
   });
