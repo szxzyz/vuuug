@@ -6,6 +6,7 @@ import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import AppNotification from "@/components/AppNotification";
 import { useEffect, lazy, Suspense, useState, memo, useCallback, useRef } from "react";
 import { setupDeviceTracking } from "@/lib/deviceId";
+import { getTurnstileToken } from "@/lib/turnstile";
 import BanScreen from "@/components/BanScreen";
 import CountryBlockedScreen from "@/components/CountryBlockedScreen";
 import SeasonEndOverlay from "@/components/SeasonEndOverlay";
@@ -407,11 +408,17 @@ function App() {
         }
       }
       
-      fetch("/api/auth/telegram", {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      })
+      getTurnstileToken("telegram-auth")
+        .then((turnstileToken) => {
+          if (turnstileToken) {
+            headers["x-turnstile-token"] = turnstileToken;
+          }
+          return fetch("/api/auth/telegram", {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+          });
+        })
         .then(res => res.json())
         .then(data => {
           if (data.referralProcessed) {
