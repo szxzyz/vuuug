@@ -1476,6 +1476,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Ad watching endpoint - configurable daily limit and reward amount
   app.post('/api/ads/watch', authenticateTelegram, async (req: any, res) => {
     try {
+      const turnstileRejection = await requireTurnstile(req, "ad-watch");
+      if (turnstileRejection) {
+        return res.status(turnstileRejection.status).json(turnstileRejection.body);
+      }
+
       const userId = req.user.user.id;
       
       // Get user to check daily ad limit
@@ -4393,6 +4398,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mission Ads Watch endpoint — per-platform reward from admin settings
   app.post('/api/missions/ads/watch', authenticateTelegram, async (req: any, res) => {
     try {
+      const turnstileRejection = await requireTurnstile(req, "mission-ad-watch");
+      if (turnstileRejection) {
+        return res.status(turnstileRejection.status).json(turnstileRejection.body);
+      }
+
       const userId = req.user.user.id;
       const { platform, sessionId, backgroundDuration, backgroundEntered } = req.body as {
         platform?: string; sessionId?: string; backgroundDuration?: number; backgroundEntered?: boolean;
