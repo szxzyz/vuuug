@@ -18,6 +18,7 @@ import { computeRiskScore, persistRiskScore, checkRateLimit } from "./fraudDetec
 import { users } from "../shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
+import { rejectAutomatedRequest } from "./antiBot";
 
 // Helper to extract client IP from request
 function getClientIP(req: any): string {
@@ -107,6 +108,11 @@ export function verifyTelegramWebAppData(initData: string, botToken: string): { 
 // Modern Telegram authentication middleware
 export const authenticateTelegram: RequestHandler = async (req: any, res, next) => {
   try {
+    const botRejection = rejectAutomatedRequest(req, "authenticated API");
+    if (botRejection) {
+      return res.status(botRejection.status).json(botRejection.body);
+    }
+
     const telegramData = req.headers['x-telegram-data'] || req.query.tgData;
     
     // Extract device tracking information

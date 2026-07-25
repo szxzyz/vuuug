@@ -37,6 +37,8 @@ import { authenticateTelegram, requireAuth } from "./auth";
 import { isAuthenticated } from "./replitAuth";
 import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
+import { rejectAutomatedRequest } from "./antiBot";
+import { requireTurnstile } from "./turnstile";
 
 // Store WebSocket connections for real-time updates
 // Map: sessionId -> { socket: WebSocket, userId: string }
@@ -972,6 +974,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // New Telegram WebApp authentication route
   app.post('/api/auth/telegram', async (req: any, res) => {
     try {
+      const botRejection = rejectAutomatedRequest(req, "Telegram authentication");
+      if (botRejection) {
+        return res.status(botRejection.status).json(botRejection.body);
+      }
+      const turnstileRejection = await requireTurnstile(req, "telegram-auth");
+      if (turnstileRejection) {
+        return res.status(turnstileRejection.status).json(turnstileRejection.body);
+      }
+
       const { initData, startParam } = req.body;
       
       const refererUrl = req.headers['referer'] || req.headers['referrer'] || '';
@@ -1421,6 +1432,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // the /api/ads/watch claim endpoint never trusts the client-supplied field.
   app.post('/api/ads/register-session', authenticateTelegram, async (req: any, res) => {
     try {
+      const turnstileRejection = await requireTurnstile(req, "ad-session");
+      if (turnstileRejection) {
+        return res.status(turnstileRejection.status).json(turnstileRejection.body);
+      }
+
       const userId = req.user.user.id;
       const { sessionId, adType, context } = req.body as { sessionId?: string; adType?: string; context?: string };
 
