@@ -1437,6 +1437,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const turnstileRejection = await requireTurnstile(req, "ad-session");
       if (turnstileRejection) {
+        console.warn(`🚫 [register-session] Turnstile blocked user=${req.user?.user?.id} ip=${req.ip}`);
         return res.status(turnstileRejection.status).json(turnstileRejection.body);
       }
 
@@ -1444,6 +1445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { sessionId, adType, context } = req.body as { sessionId?: string; adType?: string; context?: string };
 
       if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
+        console.warn(`🚫 [register-session] Invalid sessionId from user=${userId} value=${String(sessionId).slice(0,20)}`);
         return res.status(400).json({ message: "Invalid session ID", errorType: 'invalid_session' });
       }
 
@@ -1453,6 +1455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : ['adsgram', 'monetag', 'gigapub'];
       const normalizedAdType = allowedAdTypes.includes(adType ?? '') ? (adType as string) : null;
       if (!normalizedAdType) {
+        console.warn(`🚫 [register-session] Invalid adType="${adType}" context="${context}" user=${userId}`);
         return res.status(400).json({ message: "Invalid ad type", errorType: 'invalid_ad_type' });
       }
 
@@ -1464,14 +1467,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           adType: normalizedAdType,
           status: 'pending',
         });
+        console.log(`✅ [register-session] Registered sessionId=${sessionId.slice(0,20)}… adType=${normalizedAdType} user=${userId}`);
       } catch (insertErr: any) {
         // Unique PK violation = sessionId already registered (fresh or previously used)
+        console.warn(`🚫 [register-session] Duplicate sessionId from user=${userId}`);
         return res.status(400).json({ message: "Session already in use", errorType: 'duplicate_session' });
       }
 
       return res.json({ success: true });
     } catch (err) {
-      console.error('❌ register-session error:', err);
+      console.error('❌ [register-session] Unexpected error:', err);
       return res.status(500).json({ message: 'Internal error' });
     }
   });
@@ -1481,6 +1486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const turnstileRejection = await requireTurnstile(req, "ad-watch");
       if (turnstileRejection) {
+        console.warn(`🚫 [ads/watch] Turnstile blocked user=${req.user?.user?.id} ip=${req.ip}`);
         return res.status(turnstileRejection.status).json(turnstileRejection.body);
       }
 
@@ -1489,11 +1495,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get user to check daily ad limit
       const user = await storage.getUser(userId);
       if (!user) {
+        console.warn(`🚫 [ads/watch] User not found: ${userId}`);
         return res.status(404).json({ message: "User not found" });
       }
       
       // Check if user is banned
       if (user.banned) {
+        console.warn(`🚫 [ads/watch] Banned user attempted claim: ${userId}`);
         return res.status(403).json({ 
           banned: true,
           message: "Your account has been banned due to suspicious multi-account activity",

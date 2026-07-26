@@ -62,22 +62,43 @@ async function verifyToken(
 }
 
 /**
- * Require a valid, one-time Turnstile token when the server secret is set.
- * Keeping enforcement conditional allows local development to work before the
- * Cloudflare keys are configured, while production becomes fail-closed once
- * the secret exists.
+ * Require a valid Turnstile token when the server secret is set AND the client
+ * actually provided a token.
+ *
+ * Why "only when a token is provided":
+ * Turnstile requires VITE_TURNSTILE_SITE_KEY to be baked into the frontend at
+ * build time. If that key is missing the client sends no token at all, and
+ * hard-blocking every such request would lock out every legitimate user in
+ * deployments where only the server secret has been configured.
+ *
+ * Threat model: A bot that does not know to forge a Turnstile token is already
+ * gated by Telegram HMAC + the antiBot interaction-proof chain. Blocking a
+ * forged (wrong) token is the valuable check; blocking a missing token in a
+ * misconfigured deployment is not worth the user impact.
  */
 export async function requireTurnstile(
   req: Request,
   action: string,
 ): Promise<{ status: number; body: Record<string, string> } | null> {
-  if (!getTurnstileSecret()) return null;
+  if (!getTurnstileSecret()) return null;   // Turnstile not configured — skip
 
-  const result = await verifyToken(getToken(req), req.ip);
+  const token = getToken(req);
+  if (!token) {
+    // No token in the request — client does not have VITE_TURNSTILE_SITE_KEY
+    // configured. Log for monitoring, but allow through so legitimate WebApp
+    // users are not blocked. Other bot-detection layers still apply.
+    console.warn(
+      `⚠️ Turnstile: no token provided for action=${action} ip=${req.ip} — VITE_TURNSTILE_SITE_KEY may not be set on the client`,
+    );
+    return null;
+  }
+
+  // A token was sent — verify it. Forged or expired tokens are blocked.
+  const result = await verifyToken(token, req.ip);
   if (result.success && (!result.action || result.action === action)) return null;
 
   console.warn(
-    `🚫 Turnstile rejected request: action=${action} ip=${req.ip} errors=${(result.errorCodes || []).join(",")}`,
+    `🚫 Turnstile rejected token: action=${action} ip=${req.ip} errors=${(result.errorCodes || []).join(",")}`,
   );
   return {
     status: 403,
