@@ -26,7 +26,7 @@ interface AdWatchingSectionProps {
 // ─── Card definitions — each maps to its own ad provider ─────────────────────
 const AD_CARDS = [
   { id: 1, adType: "adsgram", title: "AdsGram", accentColor: "#3b82f6", image: "/adsgram-logo.jpg"  },
-  { id: 2, adType: "monetag", title: "MonetaG", accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
+  { id: 2, adType: "monetag", title: "Monetag", accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
   { id: 3, adType: "gigapub", title: "Gigapub", accentColor: "#3b82f6", image: "/gigapub-logo.jpg"  },
 ];
 
