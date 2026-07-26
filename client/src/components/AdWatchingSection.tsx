@@ -101,6 +101,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       else if (error.errorType === "duplicate_session")       showNotification(t("error") + ": Session already used.", "error");
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
       else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
+      else if (error.errorType === "bot_detected")            showNotification(t("something_went_wrong") + ". Please try again.", "error");
       else if (error.limitType  === "daily")                  showNotification(t("daily_limit_reached_tomorrow"), "error");
       else if (error.message)                                 showNotification(`${t("error")}: ${error.message}`, "error");
       else                                                    showNotification(t("something_went_wrong"), "error");
