@@ -9339,9 +9339,6 @@ ${walletAddress}
             eq(dailyTasks.completionDate, currentDate)
           ));
         
-        // Add balance
-        await storage.addBalance(userId, task.rewardAmount);
-        
         // Add earning record
         await storage.addEarning({
           userId,

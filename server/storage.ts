@@ -426,92 +426,27 @@ export class DatabaseStorage implements IStorage {
       metadata: { earningId: newEarning.id }
     });
     
-    // Update canonical user_balances table and keep users table in sync
-    // All earnings contribute to available balance
+    // Update both balance tables together.  Older reward paths could update
+    // users.balance without updating user_balances (or vice versa), and the
+    // old drift check then restored the lower value on the next reward.
+    // Additions must never reduce an already credited balance, so use the
+    // higher table value as the starting point and write the same result to
+    // both tables while holding the user row lock.
     if (parseFloat(earning.amount) !== 0) {
       try {
-        // Ensure user has a balance record first with improved error handling
-        await this.createOrUpdateUserBalance(earning.userId);
-        
-        // Update canonical user_balances table
-        await db
-          .update(userBalances)
-          .set({
-            balance: sql`COALESCE(${userBalances.balance}, 0) + ${earning.amount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(userBalances.userId, earning.userId));
-      } catch (balanceError) {
-        console.error('Error updating user balance in addEarning:', balanceError);
-        // Auto-create the record if it doesn't exist instead of throwing error
-        try {
-          console.log('🔄 Attempting to auto-create missing balance record...');
-          await this.createOrUpdateUserBalance(earning.userId, '0');
-          // Retry the balance update
-          await db
-            .update(userBalances)
-            .set({
-              balance: sql`COALESCE(${userBalances.balance}, 0) + ${earning.amount}`,
-              updatedAt: new Date(),
-            })
-            .where(eq(userBalances.userId, earning.userId));
-          console.log('✅ Successfully recovered from balance error');
-        } catch (recoveryError) {
-          console.error('❌ Failed to recover from balance error:', recoveryError);
-          // Continue with the function - don't let balance errors block earnings
-        }
-      }
-      
-      try {
-        // Keep users table in sync for compatibility
+        await this.addBalance(earning.userId, earning.amount);
         await db
           .update(users)
           .set({
-            balance: sql`COALESCE(${users.balance}, 0) + ${earning.amount}`,
             withdrawBalance: sql`COALESCE(${users.withdrawBalance}, 0) + ${earning.amount}`,
             totalEarned: sql`COALESCE(${users.totalEarned}, 0) + ${earning.amount}`,
             totalEarnings: sql`COALESCE(${users.totalEarnings}, 0) + ${earning.amount}`,
             updatedAt: new Date(),
           })
           .where(eq(users.id, earning.userId));
-      } catch (userUpdateError) {
-        console.error('Error updating users table in addEarning:', userUpdateError);
-        // Don't throw - the earning was already recorded
-      }
-
-      // Balance integrity guard: sync users.balance from canonical user_balances if they drift.
-      // Uses a single JOIN query to minimise DB round-trips on the hot path.
-      // Drift can happen when a repair/reset script touches one table but not the other.
-      try {
-        const driftCheck = await db.execute(sql`
-          SELECT u.balance AS users_balance, ub.balance AS canonical_balance
-          FROM users u
-          JOIN user_balances ub ON ub.user_id = u.id
-          WHERE u.id = ${earning.userId}
-          LIMIT 1
-        `);
-        const row = driftCheck.rows[0] as { users_balance: string; canonical_balance: string } | undefined;
-        if (row) {
-          const usersBalanceVal = parseFloat(String(row.users_balance || '0'));
-          const canonicalBalance = parseFloat(String(row.canonical_balance || '0'));
-          // Sync on any drift > 1 PAD in either direction (canonical is authoritative)
-          if (Math.abs(canonicalBalance - usersBalanceVal) > 1) {
-            console.warn(
-              `⚠️ Balance drift detected for user ${earning.userId}: ` +
-              `users.balance=${usersBalanceVal}, user_balances.balance=${canonicalBalance}. Auto-syncing...`
-            );
-            // Use UPDATE...FROM to avoid a subquery that could resolve to NULL
-            await db.execute(sql`
-              UPDATE users u
-              SET balance = ub.balance, updated_at = NOW()
-              FROM user_balances ub
-              WHERE ub.user_id = u.id AND u.id = ${earning.userId}
-            `);
-            console.log(`✅ Balance synced from user_balances for user ${earning.userId}`);
-          }
-        }
-      } catch (integrityError) {
-        console.error('⚠️ Balance integrity check failed (non-critical):', integrityError);
+      } catch (balanceError) {
+        console.error('❌ Error updating synchronized user balance in addEarning:', balanceError);
+        throw balanceError;
       }
     }
     
@@ -607,17 +542,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserBalance(userId: string, amount: string): Promise<void> {
-    // Ensure user has a balance record first
-    await this.createOrUpdateUserBalance(userId);
-    
-    // Update the canonical user_balances table
-    await db
-      .update(userBalances)
-      .set({
-        balance: sql`${userBalances.balance} + ${amount}`,
-        updatedAt: new Date(),
-      })
-      .where(eq(userBalances.userId, userId));
+    await this.addBalance(userId, amount);
   }
 
   // Helper function to get the correct day bucket start (12:00 PM UTC)
@@ -2946,22 +2871,41 @@ export class DatabaseStorage implements IStorage {
 
   async addBalance(userId: string, amount: string): Promise<void> {
     try {
-      // First ensure the user has a balance record
-      let existingBalance = await this.getUserBalance(userId);
-      if (!existingBalance) {
-        // Create new balance record with the amount if user not found
-        await this.createOrUpdateUserBalance(userId, amount);
-      } else {
-        // Add to existing balance
-        await db.update(userBalances)
-          .set({
-            balance: sql`${userBalances.balance} + ${amount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(userBalances.userId, userId));
-      }
+      await db.transaction(async (tx) => {
+        // Create the secondary balance row without overwriting an existing
+        // value, then lock both rows before reconciling and incrementing.
+        await tx.execute(sql`
+          INSERT INTO user_balances (user_id, balance, updated_at)
+          VALUES (${userId}, 0, NOW())
+          ON CONFLICT (user_id) DO NOTHING
+        `);
+        await tx.execute(sql`
+          SELECT u.id
+          FROM users u
+          JOIN user_balances ub ON ub.user_id = u.id
+          WHERE u.id = ${userId}
+          FOR UPDATE
+        `);
+        await tx.execute(sql`
+          UPDATE users u
+          SET balance = (
+                GREATEST(
+                  COALESCE(u.balance::numeric, 0),
+                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
+                ) + ${amount}::numeric
+              )::text,
+              updated_at = NOW()
+          WHERE u.id = ${userId}
+        `);
+        await tx.execute(sql`
+          UPDATE user_balances ub
+          SET balance = (SELECT u.balance::numeric FROM users u WHERE u.id = ub.user_id),
+              updated_at = NOW()
+          WHERE ub.user_id = ${userId}
+        `);
+      });
     } catch (error) {
-      console.error('Error adding balance:', error);
+      console.error('Error adding synchronized balance:', error);
       throw error;
     }
   }
