@@ -14,7 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2, Award, Handshake } from "lucide-react";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2, Award, Handshake, Database, Download, RotateCcw, AlertTriangle, RefreshCw } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -248,6 +248,7 @@ export default function AdminPage() {
               ...(can('manage_admins') ? [{ value: 'admins', icon: <Shield size={13}/>, label: 'Admins' }] : []),
               { value: 'ambassadors', icon: <Award size={13}/>, label: 'Ambassadors' },
               { value: 'partner',     icon: <Handshake size={13}/>, label: 'Partner Tasks' },
+              { value: 'backups',     icon: <Database size={13}/>,  label: 'Backups' },
             ] as { value: string; icon: React.ReactNode; label: string }[]).map(tab => (
               <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap flex items-center gap-1">
                 {tab.icon}{tab.label}
@@ -384,6 +385,10 @@ export default function AdminPage() {
 
           <TabsContent value="partner" className="mt-0">
             <PartnerTasksSection />
+          </TabsContent>
+
+          <TabsContent value="backups" className="mt-0">
+            <BackupSection />
           </TabsContent>
         </Tabs>
       </main>
@@ -2273,11 +2278,11 @@ function SettingsSection() {
     withdrawalGroupChatId: '-1002480439556',
     channelTaskCost: '0.003',
     botTaskCost: '0.003',
-    channelTaskReward: '2000',
-    botTaskReward: '2000',
+    channelTaskReward: '4000',
+    botTaskReward: '4000',
     partnerTaskReward: '5000',
-    taskRewardNoVerify: '2000',
-    taskRewardWithVerify: '3000',
+    taskRewardNoVerify: '4000',
+    taskRewardWithVerify: '7000',
     minimumClicks: '500',
     seasonBroadcastActive: false,
     referralRewardEnabled: false,
@@ -2331,11 +2336,11 @@ function SettingsSection() {
         withdrawalGroupChatId: settingsData.withdrawalGroupChatId?.toString() || '-1002480439556',
         channelTaskCost: settingsData.channelTaskCost?.toString() || '0.003',
         botTaskCost: settingsData.botTaskCost?.toString() || '0.003',
-        channelTaskReward: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.channelTaskReward?.toString() || '2000',
-        botTaskReward: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.botTaskReward?.toString() || '2000',
+        channelTaskReward: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.channelTaskReward?.toString() || '4000',
+        botTaskReward: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.botTaskReward?.toString() || '4000',
         partnerTaskReward: settingsData.partnerTaskReward?.toString() || '5000',
-        taskRewardNoVerify: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.channelTaskReward?.toString() || '2000',
-        taskRewardWithVerify: (settingsData as any).taskRewardWithVerify?.toString() || '3000',
+        taskRewardNoVerify: (settingsData as any).taskRewardNoVerify?.toString() || settingsData.channelTaskReward?.toString() || '4000',
+        taskRewardWithVerify: (settingsData as any).taskRewardWithVerify?.toString() || '7000',
         minimumClicks: settingsData.minimumClicks?.toString() || '500',
         seasonBroadcastActive: settingsData.seasonBroadcastActive || false,
         referralRewardEnabled: settingsData.referralRewardEnabled || false,
@@ -2459,8 +2464,8 @@ function SettingsSection() {
         channelTaskReward: channelReward,
         botTaskReward: botReward,
         partnerTaskReward: partnerReward,
-        taskRewardNoVerify: parseInt((settings as any).taskRewardNoVerify) || channelReward,
-        taskRewardWithVerify: parseInt((settings as any).taskRewardWithVerify) || 3000,
+        taskRewardNoVerify: parseInt((settings as any).taskRewardNoVerify) || channelReward || 4000,
+        taskRewardWithVerify: parseInt((settings as any).taskRewardWithVerify) || 7000,
         minimumClicks: minClicks,
         seasonBroadcastActive: settings.seasonBroadcastActive,
         referralRewardEnabled: settings.referralRewardPOWEnabled || settings.referralRewardUSDEnabled,
@@ -3025,13 +3030,13 @@ function SettingsSection() {
               </Label>
               <Input
                 type="number"
-                value={(settings as any).taskRewardNoVerify || settings.channelTaskReward}
+                value={(settings as any).taskRewardNoVerify ?? ''}
                 onChange={(e) => setSettings({ ...settings, taskRewardNoVerify: e.target.value } as any)}
-                placeholder="2000"
+                placeholder="4000"
                 min="1"
                 className="h-8"
               />
-              <p className="text-xs text-muted-foreground">Current: {(settingsData as any)?.taskRewardNoVerify || settingsData?.channelTaskReward || 2000} POW</p>
+              <p className="text-xs text-muted-foreground">Current: {(settingsData as any)?.taskRewardNoVerify || settingsData?.channelTaskReward || 4000} POW</p>
             </div>
 
             <div className="space-y-2 p-3 border rounded-lg border-yellow-500/20 bg-yellow-500/5">
@@ -3041,13 +3046,13 @@ function SettingsSection() {
               </Label>
               <Input
                 type="number"
-                value={(settings as any).taskRewardWithVerify || 3000}
+                value={(settings as any).taskRewardWithVerify ?? ''}
                 onChange={(e) => setSettings({ ...settings, taskRewardWithVerify: e.target.value } as any)}
-                placeholder="3000"
+                placeholder="7000"
                 min="1"
                 className="h-8"
               />
-              <p className="text-xs text-muted-foreground">Current: {(settingsData as any)?.taskRewardWithVerify || 3000} POW · Requires channel join verification</p>
+              <p className="text-xs text-muted-foreground">Current: {(settingsData as any)?.taskRewardWithVerify || 7000} POW · Requires channel join verification</p>
             </div>
 
             <div className="space-y-2 p-3 border rounded-lg border-pink-500/20 bg-pink-500/5">
@@ -5427,6 +5432,242 @@ function PartnerTasksSection() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Backup & Restore Section ──────────────────────────────────────────────────
+
+interface BackupMeta {
+  filename: string;
+  createdAt: string;
+  sizeBytes: number;
+  sizeHuman: string;
+  type: 'auto' | 'manual';
+}
+
+function BackupSection() {
+  const queryClient = useQueryClient();
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  const { data, isLoading, refetch } = useQuery<{ backups: BackupMeta[] }>({
+    queryKey: ['/api/admin/backups'],
+    queryFn: () => apiRequest('GET', '/api/admin/backups').then(r => r.json()),
+    refetchInterval: 30_000,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () => apiRequest('POST', '/api/admin/backups').then(r => r.json()),
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/backups'] });
+      showNotification(`✅ Backup created: ${result.backup?.filename}`, 'success');
+    },
+    onError: (err: any) => showNotification(`❌ Backup failed: ${err.message}`, 'error'),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (filename: string) =>
+      apiRequest('POST', `/api/admin/backups/${encodeURIComponent(filename)}/restore`).then(r => r.json()),
+    onSuccess: () => {
+      setRestoreTarget(null);
+      showNotification('✅ Database restored successfully', 'success');
+    },
+    onError: (err: any) => {
+      setRestoreTarget(null);
+      showNotification(`❌ Restore failed: ${err.message}`, 'error');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (filename: string) =>
+      apiRequest('DELETE', `/api/admin/backups/${encodeURIComponent(filename)}`).then(r => r.json()),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/backups'] });
+      showNotification('🗑️ Backup deleted', 'success');
+    },
+    onError: (err: any) => {
+      setDeleteTarget(null);
+      showNotification(`❌ Delete failed: ${err.message}`, 'error');
+    },
+  });
+
+  const backups = data?.backups ?? [];
+
+  return (
+    <div className="space-y-4">
+      <Card className="bg-[#0d0d0d] border-white/10">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm text-white">
+              <Database size={16} className="text-blue-400" />
+              Database Backups
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-white/10 text-white/70"
+                onClick={() => refetch()}
+              >
+                <RefreshCw size={11} className="mr-1" /> Refresh
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                onClick={() => createMutation.mutate()}
+                disabled={createMutation.isPending}
+              >
+                <Database size={11} className="mr-1.5" />
+                {createMutation.isPending ? 'Creating…' : 'Backup Now'}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-[#121212] rounded-xl p-3 border border-white/5 text-center">
+              <p className="text-2xl font-bold text-white">{backups.length}</p>
+              <p className="text-[10px] text-white/50 mt-0.5">Total Backups</p>
+            </div>
+            <div className="bg-[#121212] rounded-xl p-3 border border-white/5 text-center">
+              <p className="text-2xl font-bold text-emerald-400">{backups.filter(b => b.type === 'auto').length}</p>
+              <p className="text-[10px] text-white/50 mt-0.5">Automatic</p>
+            </div>
+            <div className="bg-[#121212] rounded-xl p-3 border border-white/5 text-center">
+              <p className="text-2xl font-bold text-purple-400">{backups.filter(b => b.type === 'manual').length}</p>
+              <p className="text-[10px] text-white/50 mt-0.5">Manual</p>
+            </div>
+          </div>
+
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 flex gap-2 items-start text-xs text-amber-300 mb-4">
+            <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+            <span>
+              Backups run automatically every day at <strong>03:00 UTC</strong>. The last 7 backups are kept.
+              Restoring a backup will <strong>overwrite all current data</strong>.
+            </span>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-14 bg-[#121212] rounded-xl animate-pulse border border-white/5" />
+              ))}
+            </div>
+          ) : backups.length === 0 ? (
+            <div className="text-center py-8 text-white/40 text-sm">
+              <Database size={32} className="mx-auto mb-2 opacity-30" />
+              No backups yet. Click <strong>Backup Now</strong> to create the first one.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {backups.map((b) => (
+                <div
+                  key={b.filename}
+                  className="bg-[#121212] border border-white/5 rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <Badge
+                        className={`text-[9px] px-1.5 py-0 h-4 ${
+                          b.type === 'auto'
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            : 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+                        }`}
+                        variant="outline"
+                      >
+                        {b.type}
+                      </Badge>
+                      <span className="text-xs text-white/80 font-mono truncate">{b.filename}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] text-white/40">
+                      <span>{new Date(b.createdAt).toLocaleString()}</span>
+                      <span>{b.sizeHuman}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <a
+                      href={`/api/admin/backups/${encodeURIComponent(b.filename)}/download`}
+                      download={b.filename}
+                      className="inline-flex items-center gap-1 h-7 px-2 text-xs rounded-md border border-white/10 text-white/60 hover:bg-white/5 hover:text-white transition-colors"
+                    >
+                      <Download size={11} />
+                    </a>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                      onClick={() => setRestoreTarget(b.filename)}
+                    >
+                      <RotateCcw size={11} className="mr-1" /> Restore
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                      onClick={() => setDeleteTarget(b.filename)}
+                    >
+                      <Trash2 size={11} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!restoreTarget} onOpenChange={(o) => { if (!o) setRestoreTarget(null); }}>
+        <DialogContent className="bg-[#0d0d0d] border-white/10 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-400">
+              <AlertTriangle size={18} /> Confirm Restore
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-white/70 space-y-3">
+            <p>This will <strong className="text-white">overwrite all current database data</strong> with the contents of:</p>
+            <p className="font-mono text-xs bg-[#121212] rounded p-2 break-all">{restoreTarget}</p>
+            <p className="text-rose-300 text-xs">This action cannot be undone. Create a fresh backup first if needed.</p>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" size="sm" className="flex-1 border-white/10 text-white/70"
+              onClick={() => setRestoreTarget(null)} disabled={restoreMutation.isPending}>
+              Cancel
+            </Button>
+            <Button size="sm" className="flex-1 bg-rose-600 hover:bg-rose-700"
+              onClick={() => restoreTarget && restoreMutation.mutate(restoreTarget)}
+              disabled={restoreMutation.isPending}>
+              {restoreMutation.isPending ? 'Restoring…' : 'Yes, Restore'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <DialogContent className="bg-[#0d0d0d] border-white/10 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-400">
+              <Trash2 size={18} /> Delete Backup
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-white/70">
+            Permanently delete <span className="font-mono text-xs text-white">{deleteTarget}</span>?
+          </p>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" size="sm" className="flex-1 border-white/10 text-white/70"
+              onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>
+              Cancel
+            </Button>
+            <Button size="sm" className="flex-1 bg-rose-600 hover:bg-rose-700"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+              disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
