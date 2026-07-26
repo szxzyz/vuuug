@@ -3162,23 +3162,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
+      // Single atomic transaction on one connection: avoids the cross-connection
+      // deadlock that occurred when storage.addEarning() (which opens its own tx via
+      // addBalance with SELECT … FOR UPDATE) was called inside an outer db.transaction()
+      // that already held a write-lock on the users row.
+      // All SQL uses `tx` exclusively — no calls to storage.* methods here.
       await db.transaction(async (tx) => {
-        // Update balance and mark task complete — no star reward from tasks
+        // Ensure the secondary balance row exists before locking
         await tx.execute(sql`
-          UPDATE users SET
-            balance                    = balance + ${rewardAmount}::numeric,
-            task_share_completed_today = true,
-            updated_at                 = NOW()
-          WHERE id = ${userId}
+          INSERT INTO user_balances (user_id, balance, updated_at)
+          VALUES (${userId}, 0, NOW())
+          ON CONFLICT (user_id) DO NOTHING
         `);
-        
-        // Add earning record
-        await storage.addEarning({
-          userId,
-          amount: rewardAmount,
-          source: 'task_share',
-          description: 'Share with Friends task completed'
-        });
+        // Acquire row locks on both tables (same connection = no deadlock)
+        await tx.execute(sql`
+          SELECT u.id FROM users u
+          JOIN user_balances ub ON ub.user_id = u.id
+          WHERE u.id = ${userId}
+          FOR UPDATE
+        `);
+        // Credit balance with GREATEST drift-guard, mark task done, update totals
+        await tx.execute(sql`
+          UPDATE users u
+          SET balance    = (
+                GREATEST(
+                  COALESCE(u.balance::numeric, 0),
+                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
+                ) + ${rewardAmount}::numeric
+              )::text,
+              task_share_completed_today = true,
+              withdraw_balance = COALESCE(withdraw_balance::numeric, 0) + ${rewardAmount}::numeric,
+              total_earned     = COALESCE(total_earned::numeric, 0)     + ${rewardAmount}::numeric,
+              total_earnings   = COALESCE(total_earnings::numeric, 0)   + ${rewardAmount}::numeric,
+              updated_at       = NOW()
+          WHERE u.id = ${userId}
+        `);
+        // Mirror the new balance back into user_balances
+        await tx.execute(sql`
+          UPDATE user_balances
+          SET balance    = (SELECT balance::numeric FROM users WHERE id = ${userId}),
+              updated_at = NOW()
+          WHERE user_id  = ${userId}
+        `);
+        // Earning record (audit trail)
+        await tx.execute(sql`
+          INSERT INTO earnings (user_id, amount, source, description)
+          VALUES (${userId}, ${rewardAmount}, 'task_share', 'Share with Friends task completed')
+        `);
+        // Transaction log
+        await tx.execute(sql`
+          INSERT INTO transactions (user_id, amount, type, source, description)
+          VALUES (${userId}, ${rewardAmount}, 'addition', 'task_share', 'Share with Friends task completed')
+        `);
       });
       
       res.json({
@@ -3334,21 +3369,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
+      // Single atomic transaction on one connection — same pattern as /share to avoid
+      // the cross-connection deadlock and keep the task flag + balance credit atomic.
       await db.transaction(async (tx) => {
         await tx.execute(sql`
-          UPDATE users SET
-            balance                      = balance + ${rewardAmount}::numeric,
-            task_channel_completed_today = true,
-            updated_at                   = NOW()
-          WHERE id = ${userId}
+          INSERT INTO user_balances (user_id, balance, updated_at)
+          VALUES (${userId}, 0, NOW())
+          ON CONFLICT (user_id) DO NOTHING
         `);
-        
-        await storage.addEarning({
-          userId,
-          amount: rewardAmount,
-          source: 'task_channel',
-          description: 'Check for Updates task completed'
-        });
+        await tx.execute(sql`
+          SELECT u.id FROM users u
+          JOIN user_balances ub ON ub.user_id = u.id
+          WHERE u.id = ${userId}
+          FOR UPDATE
+        `);
+        await tx.execute(sql`
+          UPDATE users u
+          SET balance    = (
+                GREATEST(
+                  COALESCE(u.balance::numeric, 0),
+                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
+                ) + ${rewardAmount}::numeric
+              )::text,
+              task_channel_completed_today = true,
+              withdraw_balance = COALESCE(withdraw_balance::numeric, 0) + ${rewardAmount}::numeric,
+              total_earned     = COALESCE(total_earned::numeric, 0)     + ${rewardAmount}::numeric,
+              total_earnings   = COALESCE(total_earnings::numeric, 0)   + ${rewardAmount}::numeric,
+              updated_at       = NOW()
+          WHERE u.id = ${userId}
+        `);
+        await tx.execute(sql`
+          UPDATE user_balances
+          SET balance    = (SELECT balance::numeric FROM users WHERE id = ${userId}),
+              updated_at = NOW()
+          WHERE user_id  = ${userId}
+        `);
+        await tx.execute(sql`
+          INSERT INTO earnings (user_id, amount, source, description)
+          VALUES (${userId}, ${rewardAmount}, 'task_channel', 'Check for Updates task completed')
+        `);
+        await tx.execute(sql`
+          INSERT INTO transactions (user_id, amount, type, source, description)
+          VALUES (${userId}, ${rewardAmount}, 'addition', 'task_channel', 'Check for Updates task completed')
+        `);
       });
       
       res.json({
@@ -3580,21 +3643,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
+      // Single atomic transaction on one connection — same pattern as /share to avoid
+      // the cross-connection deadlock and keep the task flag + balance credit atomic.
       await db.transaction(async (tx) => {
         await tx.execute(sql`
-          UPDATE users SET
-            balance                        = balance + ${rewardAmount}::numeric,
-            task_community_completed_today = true,
-            updated_at                     = NOW()
-          WHERE id = ${userId}
+          INSERT INTO user_balances (user_id, balance, updated_at)
+          VALUES (${userId}, 0, NOW())
+          ON CONFLICT (user_id) DO NOTHING
         `);
-        
-        await storage.addEarning({
-          userId,
-          amount: rewardAmount,
-          source: 'task_community',
-          description: 'Join Community task completed'
-        });
+        await tx.execute(sql`
+          SELECT u.id FROM users u
+          JOIN user_balances ub ON ub.user_id = u.id
+          WHERE u.id = ${userId}
+          FOR UPDATE
+        `);
+        await tx.execute(sql`
+          UPDATE users u
+          SET balance    = (
+                GREATEST(
+                  COALESCE(u.balance::numeric, 0),
+                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
+                ) + ${rewardAmount}::numeric
+              )::text,
+              task_community_completed_today = true,
+              withdraw_balance = COALESCE(withdraw_balance::numeric, 0) + ${rewardAmount}::numeric,
+              total_earned     = COALESCE(total_earned::numeric, 0)     + ${rewardAmount}::numeric,
+              total_earnings   = COALESCE(total_earnings::numeric, 0)   + ${rewardAmount}::numeric,
+              updated_at       = NOW()
+          WHERE u.id = ${userId}
+        `);
+        await tx.execute(sql`
+          UPDATE user_balances
+          SET balance    = (SELECT balance::numeric FROM users WHERE id = ${userId}),
+              updated_at = NOW()
+          WHERE user_id  = ${userId}
+        `);
+        await tx.execute(sql`
+          INSERT INTO earnings (user_id, amount, source, description)
+          VALUES (${userId}, ${rewardAmount}, 'task_community', 'Join Community task completed')
+        `);
+        await tx.execute(sql`
+          INSERT INTO transactions (user_id, amount, type, source, description)
+          VALUES (${userId}, ${rewardAmount}, 'addition', 'task_community', 'Join Community task completed')
+        `);
       });
       
       res.json({

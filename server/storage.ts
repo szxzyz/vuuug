@@ -2243,10 +2243,10 @@ export class DatabaseStorage implements IStorage {
 
       console.log(`📊 DAILY_TASK_COMPLETION_LOG: UserID=${userId}, TaskID=${promotionId}, AmountRewarded=${rewardAmount}, Date=${currentDate}, Status=SUCCESS, Title="${promotion.title}"`);
 
-      // Add reward to user's earnings balance
-      await this.addBalance(userId, rewardAmount);
-
-      // Add earning record
+      // Add earning record — addEarning → addBalance handles both users.balance and
+      // user_balances.balance atomically. Do NOT call addBalance separately here;
+      // a standalone addBalance followed by addEarning (which also calls addBalance)
+      // would double-credit the reward.
       await this.addEarning({
         userId,
         amount: rewardAmount,
