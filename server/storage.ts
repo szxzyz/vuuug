@@ -12,8 +12,6 @@ import {
   advertiserTasks,
   taskClicks,
   adminSettings,
-  adSessions,
-  missionAdClaims,
   type User,
   type UpsertUser,
   type InsertEarning,
@@ -131,22 +129,6 @@ export interface IStorage {
   createOrUpdateUserBalance(userId: string, balance?: string): Promise<UserBalance>;
   deductBalance(userId: string, amount: string): Promise<{ success: boolean; message: string }>;
   addBalance(userId: string, amount: string): Promise<void>;
-  claimAdReward(input: {
-    sessionId: string;
-    userId: string;
-    amount: string;
-    source: string;
-    description: string;
-  }): Promise<{ claimed: boolean; earning?: Earning }>;
-  claimMissionAdReward(input: {
-    sessionId: string;
-    userId: string;
-    platform: string;
-    resetDate: string;
-    limit: number;
-    amount: string;
-    description: string;
-  }): Promise<{ claimed: boolean; limitExceeded?: boolean; count: number; earning?: Earning }>;
   
   // Admin/Statistics operations
   getAppStats(): Promise<{
@@ -444,27 +426,92 @@ export class DatabaseStorage implements IStorage {
       metadata: { earningId: newEarning.id }
     });
     
-    // Update both balance tables together.  Older reward paths could update
-    // users.balance without updating user_balances (or vice versa), and the
-    // old drift check then restored the lower value on the next reward.
-    // Additions must never reduce an already credited balance, so use the
-    // higher table value as the starting point and write the same result to
-    // both tables while holding the user row lock.
+    // Update canonical user_balances table and keep users table in sync
+    // All earnings contribute to available balance
     if (parseFloat(earning.amount) !== 0) {
       try {
-        await this.addBalance(earning.userId, earning.amount);
+        // Ensure user has a balance record first with improved error handling
+        await this.createOrUpdateUserBalance(earning.userId);
+        
+        // Update canonical user_balances table
+        await db
+          .update(userBalances)
+          .set({
+            balance: sql`COALESCE(${userBalances.balance}, 0) + ${earning.amount}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(userBalances.userId, earning.userId));
+      } catch (balanceError) {
+        console.error('Error updating user balance in addEarning:', balanceError);
+        // Auto-create the record if it doesn't exist instead of throwing error
+        try {
+          console.log('🔄 Attempting to auto-create missing balance record...');
+          await this.createOrUpdateUserBalance(earning.userId, '0');
+          // Retry the balance update
+          await db
+            .update(userBalances)
+            .set({
+              balance: sql`COALESCE(${userBalances.balance}, 0) + ${earning.amount}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(userBalances.userId, earning.userId));
+          console.log('✅ Successfully recovered from balance error');
+        } catch (recoveryError) {
+          console.error('❌ Failed to recover from balance error:', recoveryError);
+          // Continue with the function - don't let balance errors block earnings
+        }
+      }
+      
+      try {
+        // Keep users table in sync for compatibility
         await db
           .update(users)
           .set({
+            balance: sql`COALESCE(${users.balance}, 0) + ${earning.amount}`,
             withdrawBalance: sql`COALESCE(${users.withdrawBalance}, 0) + ${earning.amount}`,
             totalEarned: sql`COALESCE(${users.totalEarned}, 0) + ${earning.amount}`,
             totalEarnings: sql`COALESCE(${users.totalEarnings}, 0) + ${earning.amount}`,
             updatedAt: new Date(),
           })
           .where(eq(users.id, earning.userId));
-      } catch (balanceError) {
-        console.error('❌ Error updating synchronized user balance in addEarning:', balanceError);
-        throw balanceError;
+      } catch (userUpdateError) {
+        console.error('Error updating users table in addEarning:', userUpdateError);
+        // Don't throw - the earning was already recorded
+      }
+
+      // Balance integrity guard: sync users.balance from canonical user_balances if they drift.
+      // Uses a single JOIN query to minimise DB round-trips on the hot path.
+      // Drift can happen when a repair/reset script touches one table but not the other.
+      try {
+        const driftCheck = await db.execute(sql`
+          SELECT u.balance AS users_balance, ub.balance AS canonical_balance
+          FROM users u
+          JOIN user_balances ub ON ub.user_id = u.id
+          WHERE u.id = ${earning.userId}
+          LIMIT 1
+        `);
+        const row = driftCheck.rows[0] as { users_balance: string; canonical_balance: string } | undefined;
+        if (row) {
+          const usersBalanceVal = parseFloat(String(row.users_balance || '0'));
+          const canonicalBalance = parseFloat(String(row.canonical_balance || '0'));
+          // Sync on any drift > 1 PAD in either direction (canonical is authoritative)
+          if (Math.abs(canonicalBalance - usersBalanceVal) > 1) {
+            console.warn(
+              `⚠️ Balance drift detected for user ${earning.userId}: ` +
+              `users.balance=${usersBalanceVal}, user_balances.balance=${canonicalBalance}. Auto-syncing...`
+            );
+            // Use UPDATE...FROM to avoid a subquery that could resolve to NULL
+            await db.execute(sql`
+              UPDATE users u
+              SET balance = ub.balance, updated_at = NOW()
+              FROM user_balances ub
+              WHERE ub.user_id = u.id AND u.id = ${earning.userId}
+            `);
+            console.log(`✅ Balance synced from user_balances for user ${earning.userId}`);
+          }
+        }
+      } catch (integrityError) {
+        console.error('⚠️ Balance integrity check failed (non-critical):', integrityError);
       }
     }
     
@@ -478,187 +525,6 @@ export class DatabaseStorage implements IStorage {
     // to avoid double-paying commission on every ad watch.
     
     return newEarning;
-  }
-
-  /**
-   * Claim a pre-registered ad session and credit the reward in one database
-   * transaction.  The session update is the idempotency gate: a concurrent
-   * request can update neither the session nor the reward twice.
-   */
-  async claimAdReward(input: {
-    sessionId: string;
-    userId: string;
-    amount: string;
-    source: string;
-    description: string;
-    backgroundEntered?: boolean;
-    backgroundDurationMs?: number;
-  }): Promise<{ claimed: boolean; earning?: Earning }> {
-    return db.transaction(async (tx) => {
-      const [claimed] = await tx
-        .update(adSessions)
-        .set({
-          status: 'used',
-          usedAt: new Date(),
-          backgroundEntered: input.backgroundEntered ?? false,
-          backgroundDurationMs: input.backgroundDurationMs ?? 0,
-        })
-        .where(and(
-          eq(adSessions.id, input.sessionId),
-          eq(adSessions.userId, input.userId),
-          eq(adSessions.status, 'pending'),
-        ))
-        .returning({ id: adSessions.id });
-
-      if (!claimed) return { claimed: false };
-
-      const [earning] = await tx
-        .insert(earnings)
-        .values({
-          userId: input.userId,
-          amount: input.amount,
-          source: input.source,
-          description: input.description,
-        })
-        .returning();
-
-      await tx.insert(transactions).values({
-        userId: input.userId,
-        amount: input.amount,
-        type: 'addition',
-        source: input.source,
-        description: input.description,
-        metadata: { earningId: earning.id },
-      });
-
-      await this.creditEarningInTransaction(tx, input.userId, input.amount);
-      return { claimed: true, earning };
-    });
-  }
-
-  /**
-   * Mission-ad equivalent of claimAdReward.  The daily counter is locked and
-   * checked before the session is consumed, so a limit rejection is retry-safe
-   * and the session/reward/counter changes commit atomically.
-   */
-  async claimMissionAdReward(input: {
-    sessionId: string;
-    userId: string;
-    platform: string;
-    resetDate: string;
-    limit: number;
-    amount: string;
-    description: string;
-    backgroundEntered?: boolean;
-    backgroundDurationMs?: number;
-  }): Promise<{ claimed: boolean; limitExceeded?: boolean; count: number; earning?: Earning }> {
-    return db.transaction(async (tx) => {
-      await tx.execute(sql`
-        INSERT INTO mission_ad_claims (user_id, platform, reset_date, count, updated_at)
-        VALUES (${input.userId}, ${input.platform}, ${input.resetDate}, 0, NOW())
-        ON CONFLICT (user_id, platform, reset_date) DO NOTHING
-      `);
-
-      const [current] = await tx
-        .select()
-        .from(missionAdClaims)
-        .where(and(
-          eq(missionAdClaims.userId, input.userId),
-          eq(missionAdClaims.platform, input.platform),
-          eq(missionAdClaims.resetDate, input.resetDate),
-        ))
-        .for('update');
-      const currentCount = current?.count ?? 0;
-
-      if (currentCount >= input.limit) {
-        return { claimed: false, limitExceeded: true, count: currentCount };
-      }
-
-      const [claimed] = await tx
-        .update(adSessions)
-        .set({
-          status: 'used',
-          usedAt: new Date(),
-          backgroundEntered: input.backgroundEntered ?? false,
-          backgroundDurationMs: input.backgroundDurationMs ?? 0,
-        })
-        .where(and(
-          eq(adSessions.id, input.sessionId),
-          eq(adSessions.userId, input.userId),
-          eq(adSessions.context, 'mission_ad'),
-          eq(adSessions.adType, input.platform),
-          eq(adSessions.status, 'pending'),
-        ))
-        .returning({ id: adSessions.id });
-
-      if (!claimed) return { claimed: false, count: currentCount };
-
-      const [counter] = await tx
-        .update(missionAdClaims)
-        .set({
-          count: sql`${missionAdClaims.count} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(missionAdClaims.id, current.id))
-        .returning({ count: missionAdClaims.count });
-
-      const [earning] = await tx
-        .insert(earnings)
-        .values({
-          userId: input.userId,
-          amount: input.amount,
-          source: 'mission_ad',
-          description: input.description,
-        })
-        .returning();
-
-      await tx.insert(transactions).values({
-        userId: input.userId,
-        amount: input.amount,
-        type: 'addition',
-        source: 'mission_ad',
-        description: input.description,
-        metadata: { earningId: earning.id, platform: input.platform },
-      });
-
-      await this.creditEarningInTransaction(tx, input.userId, input.amount);
-      return { claimed: true, count: counter.count, earning };
-    });
-  }
-
-  private async creditEarningInTransaction(tx: any, userId: string, amount: string): Promise<void> {
-    await tx.execute(sql`
-      INSERT INTO user_balances (user_id, balance, updated_at)
-      VALUES (${userId}, 0, NOW())
-      ON CONFLICT (user_id) DO NOTHING
-    `);
-    await tx.execute(sql`
-      SELECT u.id
-      FROM users u
-      JOIN user_balances ub ON ub.user_id = u.id
-      WHERE u.id = ${userId}
-      FOR UPDATE
-    `);
-    await tx.execute(sql`
-      UPDATE users u
-      SET balance = (
-            GREATEST(
-              COALESCE(u.balance::numeric, 0),
-              COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
-            ) + ${amount}::numeric
-          )::numeric,
-          withdraw_balance = COALESCE(u.withdraw_balance::numeric, 0) + ${amount}::numeric,
-          total_earned = COALESCE(u.total_earned::numeric, 0) + ${amount}::numeric,
-          total_earnings = COALESCE(u.total_earnings::numeric, 0) + ${amount}::numeric,
-          updated_at = NOW()
-      WHERE u.id = ${userId}
-    `);
-    await tx.execute(sql`
-      UPDATE user_balances ub
-      SET balance = (SELECT u.balance::numeric FROM users u WHERE u.id = ub.user_id),
-          updated_at = NOW()
-      WHERE ub.user_id = ${userId}
-    `);
   }
 
   async getUserEarnings(userId: string, limit: number = 20): Promise<Earning[]> {
@@ -741,7 +607,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserBalance(userId: string, amount: string): Promise<void> {
-    await this.addBalance(userId, amount);
+    // Ensure user has a balance record first
+    await this.createOrUpdateUserBalance(userId);
+    
+    // Update the canonical user_balances table
+    await db
+      .update(userBalances)
+      .set({
+        balance: sql`${userBalances.balance} + ${amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(userBalances.userId, userId));
   }
 
   // Helper function to get the correct day bucket start (12:00 PM UTC)
@@ -867,37 +743,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   async incrementAdsWatched(userId: string): Promise<void> {
-    // Fully atomic: the CASE expression computes the new daily count inside the UPDATE,
-    // eliminating the read-then-write race condition that caused count corruption under
-    // concurrent ad watches.  The 12 PM UTC reset boundary mirrors getResetDate() logic.
-    const result = await db.execute(sql`
-      UPDATE users SET
-        ads_watched_today = CASE
-          WHEN last_ad_date IS NOT NULL
-           AND last_ad_date >= (
-             CASE
-               WHEN EXTRACT(HOUR FROM NOW() AT TIME ZONE 'UTC') >= 12
-                 THEN date_trunc('day', NOW() AT TIME ZONE 'UTC') + interval '12 hours'
-               ELSE date_trunc('day', NOW() AT TIME ZONE 'UTC') - interval '12 hours'
-             END
-           )
-          THEN COALESCE(ads_watched_today, 0) + 1
-          ELSE 1
-        END,
-        ads_watched  = COALESCE(ads_watched, 0) + 1,
-        last_ad_date = NOW(),
-        updated_at   = NOW()
-      WHERE id = ${userId}
-      RETURNING ads_watched_today
-    `);
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    
+    if (!user) return;
 
-    if ((result as any).rowCount === 0) return; // user not found
+    const now = new Date();
+    const currentResetDate = this.getResetDate(now); // 12 PM UTC reset boundary
 
-    const newAdsCount = Number((result.rows[0] as any)?.ads_watched_today ?? 1);
-    console.log(`📊 ADS_COUNT_DEBUG: User ${userId}, New Count: ${newAdsCount} (atomic update)`);
+    // Check if last ad was watched in the same reset period
+    let adsCount = 1; // Default for first ad of the period
+    
+    if (user.lastAdDate) {
+      const lastAdResetDate = this.getResetDate(user.lastAdDate); // Use same 12 PM reset logic
+      
+      // If same reset period, increment current count
+      if (lastAdResetDate === currentResetDate) {
+        adsCount = (user.adsWatchedToday || 0) + 1;
+      }
+    }
 
-    // Update task progress for the task system
-    await this.updateTaskProgress(userId, newAdsCount);
+    console.log(`📊 ADS_COUNT_DEBUG: User ${userId}, Reset Date: ${currentResetDate}, New Count: ${adsCount}, Previous Count: ${user.adsWatchedToday || 0}`);
+
+    await db
+      .update(users)
+      .set({
+        adsWatchedToday: adsCount,
+        adsWatched: sql`COALESCE(${users.adsWatched}, 0) + 1`, // Increment total ads watched
+        lastAdDate: now,
+        updatedAt: now,
+      })
+      .where(eq(users.id, userId));
+
+    // NEW: Update task progress for the new task system
+    await this.updateTaskProgress(userId, adsCount);
   }
 
   async resetDailyAdsCount(userId: string): Promise<void> {
@@ -1037,38 +915,6 @@ export class DatabaseStorage implements IStorage {
       console.error(`Error getting app setting ${key}:`, error);
       return String(defaultValue);
     }
-  }
-
-  async getAdvertiserTaskRewardSettings(): Promise<{
-    noVerify: number;
-    withVerify: number;
-    partner: number;
-  }> {
-    const [noVerifyValue, withVerifyValue, partnerValue] = await Promise.all([
-      this.getAppSetting('task_reward_no_verify', '2000'),
-      this.getAppSetting('task_reward_with_verify', '3000'),
-      this.getAppSetting('partner_task_reward', '5000'),
-    ]);
-
-    const parseReward = (value: string, fallback: number) => {
-      const reward = Number.parseInt(value, 10);
-      return Number.isFinite(reward) && reward >= 0 ? reward : fallback;
-    };
-
-    return {
-      noVerify: parseReward(noVerifyValue, 2000),
-      withVerify: parseReward(withVerifyValue, 3000),
-      partner: parseReward(partnerValue, 5000),
-    };
-  }
-
-  getAdvertiserTaskReward(
-    taskType: string,
-    verificationRequired: boolean | null | undefined,
-    settings: { noVerify: number; withVerify: number; partner: number },
-  ): number {
-    if (taskType === 'partner') return settings.partner;
-    return verificationRequired ? settings.withVerify : settings.noVerify;
   }
 
   // Check and activate referral bonus when friend watches required number of ads (PAD + USD rewards)
@@ -1564,104 +1410,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async confirmPromoCodeUsage(promoCodeId: string, userId: string, rewardAmount: string): Promise<void> {
-    // Record usage AFTER reward is successfully given.
-    // Both writes are wrapped in a transaction so the usage row and the counter
-    // are always in sync — partial writes can't leave the counter ahead of actual rows.
-    await db.transaction(async (tx) => {
-      await tx.insert(promoCodeUsage).values({ promoCodeId, userId, rewardAmount });
-      await tx
-        .update(promoCodes)
-        .set({
-          usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(promoCodes.id, promoCodeId));
+    // Record usage AFTER reward is successfully given
+    await db.insert(promoCodeUsage).values({
+      promoCodeId,
+      userId,
+      rewardAmount,
     });
-  }
 
-  // Atomically validate + lock + record a promo code claim in one DB transaction.
-  // Prevents the TOCTOU race where two concurrent requests both pass the usage-limit
-  // check and both receive the reward.  The SELECT … FOR UPDATE locks the promo code
-  // row for the duration of the transaction.
-  //
-  // NOTE: usage is recorded inside the transaction BEFORE the reward is given in
-  // routes.ts.  If the reward step fails the usage row persists (user cannot retry),
-  // but this is intentional — it prevents unlimited reward re-claims.  Admins can
-  // manually credit affected users via the balance management tools.
-  async atomicClaimPromoCode(code: string, userId: string): Promise<{
-    success: boolean;
-    message: string;
-    errorType?: string;
-    reward?: string;
-    rewardType?: string;
-    rewardCurrency?: string;
-    promoCodeId?: string;
-  }> {
-    try {
-      return await db.transaction(async (tx) => {
-        // Lock the row — concurrent requests on the same code will queue here
-        const rows = await tx
-          .select()
-          .from(promoCodes)
-          .where(eq(promoCodes.code, code))
-          .for('update');
-
-        const promoCode = rows[0];
-        if (!promoCode) {
-          return { success: false, message: 'Invalid promo code', errorType: 'invalid' };
-        }
-        if (!promoCode.isActive) {
-          return { success: false, message: 'Promo code not active', errorType: 'not_active' };
-        }
-        if (promoCode.expiresAt && new Date() > new Date(promoCode.expiresAt)) {
-          return { success: false, message: 'Promo code has expired', errorType: 'expired' };
-        }
-
-        // Re-read usage count inside the lock to get the authoritative value
-        const [{ count: globalCount }] = await tx
-          .select({ count: sql<number>`count(*)` })
-          .from(promoCodeUsage)
-          .where(eq(promoCodeUsage.promoCodeId, promoCode.id));
-
-        if (promoCode.usageLimit && Number(globalCount) >= promoCode.usageLimit) {
-          return { success: false, message: 'Promo code limit reached', errorType: 'limit_reached' };
-        }
-
-        // Per-user limit check (inside lock)
-        const [{ count: userCount }] = await tx
-          .select({ count: sql<number>`count(*)` })
-          .from(promoCodeUsage)
-          .where(and(
-            eq(promoCodeUsage.promoCodeId, promoCode.id),
-            eq(promoCodeUsage.userId, userId),
-          ));
-
-        if (Number(userCount) >= (promoCode.perUserLimit || 1)) {
-          return { success: false, message: 'Promo code already applied', errorType: 'already_applied' };
-        }
-
-        const rewardAmount = promoCode.rewardAmount || '0';
-
-        // Record usage atomically while the row is still locked
-        await tx.insert(promoCodeUsage).values({ promoCodeId: promoCode.id, userId, rewardAmount });
-        await tx
-          .update(promoCodes)
-          .set({ usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`, updatedAt: new Date() })
-          .where(eq(promoCodes.id, promoCode.id));
-
-        return {
-          success: true,
-          message: `Promo code redeemed! You earned ${rewardAmount} ${promoCode.rewardCurrency || 'PAD'}`,
-          reward: rewardAmount,
-          rewardType: promoCode.rewardType || 'PAD',
-          rewardCurrency: promoCode.rewardCurrency || 'PAD',
-          promoCodeId: promoCode.id,
-        };
-      });
-    } catch (err: any) {
-      console.error('atomicClaimPromoCode error:', err);
-      return { success: false, message: 'Failed to claim promo code', errorType: 'server_error' };
-    }
+    await db
+      .update(promoCodes)
+      .set({
+        usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(promoCodes.id, promoCodeId));
   }
 
   // Process referral commission (10% of user's earnings)
@@ -2474,10 +2236,10 @@ export class DatabaseStorage implements IStorage {
 
       console.log(`📊 DAILY_TASK_COMPLETION_LOG: UserID=${userId}, TaskID=${promotionId}, AmountRewarded=${rewardAmount}, Date=${currentDate}, Status=SUCCESS, Title="${promotion.title}"`);
 
-      // Add earning record — addEarning → addBalance handles both users.balance and
-      // user_balances.balance atomically. Do NOT call addBalance separately here;
-      // a standalone addBalance followed by addEarning (which also calls addBalance)
-      // would double-credit the reward.
+      // Add reward to user's earnings balance
+      await this.addBalance(userId, rewardAmount);
+
+      // Add earning record
       await this.addEarning({
         userId,
         amount: rewardAmount,
@@ -3102,41 +2864,22 @@ export class DatabaseStorage implements IStorage {
 
   async addBalance(userId: string, amount: string): Promise<void> {
     try {
-      await db.transaction(async (tx) => {
-        // Create the secondary balance row without overwriting an existing
-        // value, then lock both rows before reconciling and incrementing.
-        await tx.execute(sql`
-          INSERT INTO user_balances (user_id, balance, updated_at)
-          VALUES (${userId}, 0, NOW())
-          ON CONFLICT (user_id) DO NOTHING
-        `);
-        await tx.execute(sql`
-          SELECT u.id
-          FROM users u
-          JOIN user_balances ub ON ub.user_id = u.id
-          WHERE u.id = ${userId}
-          FOR UPDATE
-        `);
-        await tx.execute(sql`
-          UPDATE users u
-          SET balance = (
-                GREATEST(
-                  COALESCE(u.balance::numeric, 0),
-                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
-                ) + ${amount}::numeric
-              )::numeric,
-              updated_at = NOW()
-          WHERE u.id = ${userId}
-        `);
-        await tx.execute(sql`
-          UPDATE user_balances ub
-          SET balance = (SELECT u.balance::numeric FROM users u WHERE u.id = ub.user_id),
-              updated_at = NOW()
-          WHERE ub.user_id = ${userId}
-        `);
-      });
+      // First ensure the user has a balance record
+      let existingBalance = await this.getUserBalance(userId);
+      if (!existingBalance) {
+        // Create new balance record with the amount if user not found
+        await this.createOrUpdateUserBalance(userId, amount);
+      } else {
+        // Add to existing balance
+        await db.update(userBalances)
+          .set({
+            balance: sql`${userBalances.balance} + ${amount}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(userBalances.userId, userId));
+      }
     } catch (error) {
-      console.error('Error adding synchronized balance:', error);
+      console.error('Error adding balance:', error);
       throw error;
     }
   }
@@ -3691,13 +3434,24 @@ export class DatabaseStorage implements IStorage {
         return { success: false, message: "Task has reached its click limit" };
       }
 
-      // Use the same admin-configured reward tiers that the task feed exposes.
-      const rewardSettings = await this.getAdvertiserTaskRewardSettings();
-      const rewardPOW = this.getAdvertiserTaskReward(
-        task.taskType,
-        task.verificationRequired,
-        rewardSettings,
-      );
+      // Get reward amount from admin settings based on task type and verification tier
+      let rewardPOW: number;
+      if (task.taskType === 'partner') {
+        // Partner tasks: always use partner_task_reward setting (default 5000 POW)
+        const partnerSetting = await db.select().from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'partner_task_reward')).limit(1);
+        rewardPOW = parseInt(partnerSetting[0]?.settingValue || '5000');
+      } else if (task.verificationRequired) {
+        // Tasks with verification: use task_reward_with_verify setting (default 3000 POW)
+        const verifySetting = await db.select().from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'task_reward_with_verify')).limit(1);
+        rewardPOW = parseInt(verifySetting[0]?.settingValue || '3000');
+      } else {
+        // Tasks without verification: use task_reward_no_verify setting (default 2000 POW)
+        const noVerifySetting = await db.select().from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'task_reward_no_verify')).limit(1);
+        rewardPOW = parseInt(noVerifySetting[0]?.settingValue || '2000');
+      }
 
       // Insert click record
       await db.insert(taskClicks).values({
@@ -3737,17 +3491,6 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(users.id, publisherId));
 
-      // CRITICAL: keep user_balances in sync. Without this, addEarning's drift-correction
-      // guard (which treats user_balances as the canonical source) will overwrite users.balance
-      // back to the pre-task value the next time the user watches an ad.
-      await db.execute(sql`
-        INSERT INTO user_balances (user_id, balance, updated_at)
-        VALUES (${publisherId}, ${rewardPOW.toString()}, NOW())
-        ON CONFLICT (user_id) DO UPDATE
-        SET balance    = COALESCE(user_balances.balance::numeric, 0) + ${rewardPOW}::numeric,
-            updated_at = NOW()
-      `);
-
       // Record the earning
       await db.insert(earnings).values({
         userId: publisherId,
@@ -3778,8 +3521,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Add USD balance to user — uses a single atomic SQL increment to prevent
-  // read-modify-write race conditions under concurrent requests.
+  // Add USD balance to user
   async addUSDBalance(userId: string, amount: string, source: string, description: string): Promise<void> {
     try {
       const amountNum = parseFloat(amount);
@@ -3787,20 +3529,27 @@ export class DatabaseStorage implements IStorage {
         throw new Error('Invalid USD amount');
       }
 
-      // Atomic increment — no separate read, no stale-value overwrite
-      const result = await db.execute(sql`
-        UPDATE users
-        SET usd_balance = COALESCE(usd_balance::numeric, 0) + ${amountNum},
-            updated_at  = NOW()
-        WHERE id = ${userId}
-        RETURNING usd_balance
-      `);
+      // Get current USD balance
+      const [user] = await db
+        .select({ usdBalance: users.usdBalance })
+        .from(users)
+        .where(eq(users.id, userId));
 
-      if ((result as any).rowCount === 0) {
+      if (!user) {
         throw new Error('User not found');
       }
 
-      const newUsdBalance = (result.rows[0] as any)?.usd_balance ?? amountNum;
+      const currentUsdBalance = parseFloat(user.usdBalance || '0');
+      const newUsdBalance = (currentUsdBalance + amountNum).toFixed(10);
+
+      // Update user's USD balance
+      await db
+        .update(users)
+        .set({
+          usdBalance: newUsdBalance,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
 
       // Log the transaction
       await this.logTransaction({
@@ -3947,9 +3696,7 @@ export class DatabaseStorage implements IStorage {
     return;
   }
 
-  // Deduct balance for withdrawal approval.
-  // Each branch performs a single conditional UPDATE — atomic, no read-modify-write race.
-  // Returns false (without throwing) when balance is insufficient or user not found.
+  // Deduct balance for withdrawal approval (direct deduction method)
   async deductBalanceForWithdrawal(userId: string, amount: string, currency: string = 'TON'): Promise<boolean> {
     try {
       const amountNum = parseFloat(amount);
@@ -3959,49 +3706,92 @@ export class DatabaseStorage implements IStorage {
       }
 
       if (currency === 'TON') {
-        const result = await db.execute(sql`
-          UPDATE users
-          SET ton_balance = COALESCE(ton_balance::numeric, 0) - ${amountNum},
-              updated_at  = NOW()
-          WHERE id = ${userId}
-          AND   COALESCE(ton_balance::numeric, 0) >= ${amountNum}
-          RETURNING ton_balance
-        `);
-        if ((result as any).rowCount === 0) {
-          console.error(`Insufficient TON balance or user not found for ${userId}`);
+        // Deduct from TON balance
+        const [user] = await db
+          .select({ tonBalance: users.tonBalance })
+          .from(users)
+          .where(eq(users.id, userId));
+
+        if (!user) {
+          console.error('User not found for balance deduction');
           return false;
         }
-        console.log(`💰 Deducted ${amountNum} TON from ${userId}. Remaining: ${(result.rows[0] as any)?.ton_balance}`);
+
+        const currentBalance = parseFloat(user.tonBalance || '0');
+        if (currentBalance < amountNum) {
+          console.error(`Insufficient TON balance: ${currentBalance} < ${amountNum}`);
+          return false;
+        }
+
+        const newBalance = (currentBalance - amountNum).toFixed(8);
+
+        await db
+          .update(users)
+          .set({
+            tonBalance: newBalance,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, userId));
+
+        console.log(`💰 Deducted ${amountNum} TON from user ${userId}. New balance: ${newBalance}`);
       } else if (currency === 'USD') {
-        // USD — atomic conditional deduct
-        const usdResult = await db.execute(sql`
-          UPDATE users
-          SET usd_balance = COALESCE(usd_balance::numeric, 0) - ${amountNum},
-              updated_at  = NOW()
-          WHERE id = ${userId}
-          AND   COALESCE(usd_balance::numeric, 0) >= ${amountNum}
-          RETURNING usd_balance
-        `);
-        if ((usdResult as any).rowCount === 0) {
-          console.error(`Insufficient USD balance or user not found for ${userId}`);
+        // Deduct from USD balance
+        const [user] = await db
+          .select({ usdBalance: users.usdBalance })
+          .from(users)
+          .where(eq(users.id, userId));
+
+        if (!user) {
+          console.error('User not found for USD balance deduction');
           return false;
         }
-        console.log(`💰 Deducted $${amountNum} USD from ${userId}. Remaining: ${(usdResult.rows[0] as any)?.usd_balance}`);
+
+        const currentBalance = parseFloat(user.usdBalance || '0');
+        if (currentBalance < amountNum) {
+          console.error(`Insufficient USD balance: ${currentBalance} < ${amountNum}`);
+          return false;
+        }
+
+        const newBalance = (currentBalance - amountNum).toFixed(10);
+
+        await db
+          .update(users)
+          .set({
+            usdBalance: newBalance,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, userId));
+
+        console.log(`💰 Deducted $${amountNum} USD from user ${userId}. New balance: $${newBalance}`);
       } else {
-        // PAD (default) — atomic conditional deduct
-        const padResult = await db.execute(sql`
-          UPDATE users
-          SET balance    = (COALESCE(balance::numeric, 0) - ${amountNum})::text,
-              updated_at = NOW()
-          WHERE id = ${userId}
-          AND   COALESCE(balance::numeric, 0) >= ${amountNum}
-          RETURNING balance
-        `);
-        if ((padResult as any).rowCount === 0) {
-          console.error(`Insufficient PAD balance or user not found for ${userId}`);
+        // Deduct from PAD balance (default)
+        const [user] = await db
+          .select({ balance: users.balance })
+          .from(users)
+          .where(eq(users.id, userId));
+
+        if (!user) {
+          console.error('User not found for PAD balance deduction');
           return false;
         }
-        console.log(`💰 Deducted ${amountNum} PAD from ${userId}. Remaining: ${(padResult.rows[0] as any)?.balance}`);
+
+        const currentBalance = parseInt(user.balance || '0');
+        if (currentBalance < amountNum) {
+          console.error(`Insufficient PAD balance: ${currentBalance} < ${amountNum}`);
+          return false;
+        }
+
+        const newBalance = Math.round(currentBalance - amountNum);
+
+        await db
+          .update(users)
+          .set({
+            balance: newBalance.toString(),
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, userId));
+
+        console.log(`💰 Deducted ${amountNum} PAD from user ${userId}. New balance: ${newBalance}`);
       }
 
       return true;

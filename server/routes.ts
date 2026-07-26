@@ -37,9 +37,6 @@ import { authenticateTelegram, requireAuth } from "./auth";
 import { isAuthenticated } from "./replitAuth";
 import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
-import { rejectAutomatedRequest } from "./antiBot";
-import { createBackup, listBackups, deleteBackup, getBackupPath, startBackupScheduler } from "./backup";
-import { requireTurnstile } from "./turnstile";
 
 // Store WebSocket connections for real-time updates
 // Map: sessionId -> { socket: WebSocket, userId: string }
@@ -975,15 +972,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // New Telegram WebApp authentication route
   app.post('/api/auth/telegram', async (req: any, res) => {
     try {
-      const botRejection = rejectAutomatedRequest(req, "Telegram authentication");
-      if (botRejection) {
-        return res.status(botRejection.status).json(botRejection.body);
-      }
-      const turnstileRejection = await requireTurnstile(req, "telegram-auth");
-      if (turnstileRejection) {
-        return res.status(turnstileRejection.status).json(turnstileRejection.body);
-      }
-
       const { initData, startParam } = req.body;
       
       const refererUrl = req.headers['referer'] || req.headers['referrer'] || '';
@@ -1351,8 +1339,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCostTON,
         channelTaskRewardPOW,
         botTaskRewardPOW,
-        taskRewardNoVerify: channelTaskRewardPOW,
-        taskRewardWithVerify,
         taskCostPerClick,
         taskRewardPerClick,
         taskRewardPAD: channelTaskRewardPOW, // Use channel reward as default
@@ -1435,17 +1421,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // the /api/ads/watch claim endpoint never trusts the client-supplied field.
   app.post('/api/ads/register-session', authenticateTelegram, async (req: any, res) => {
     try {
-      const turnstileRejection = await requireTurnstile(req, "ad-session");
-      if (turnstileRejection) {
-        console.warn(`🚫 [register-session] Turnstile blocked user=${req.user?.user?.id} ip=${req.ip}`);
-        return res.status(turnstileRejection.status).json(turnstileRejection.body);
-      }
-
       const userId = req.user.user.id;
       const { sessionId, adType, context } = req.body as { sessionId?: string; adType?: string; context?: string };
 
       if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
-        console.warn(`🚫 [register-session] Invalid sessionId from user=${userId} value=${String(sessionId).slice(0,20)}`);
         return res.status(400).json({ message: "Invalid session ID", errorType: 'invalid_session' });
       }
 
@@ -1455,7 +1434,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : ['adsgram', 'monetag', 'gigapub'];
       const normalizedAdType = allowedAdTypes.includes(adType ?? '') ? (adType as string) : null;
       if (!normalizedAdType) {
-        console.warn(`🚫 [register-session] Invalid adType="${adType}" context="${context}" user=${userId}`);
         return res.status(400).json({ message: "Invalid ad type", errorType: 'invalid_ad_type' });
       }
 
@@ -1467,16 +1445,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           adType: normalizedAdType,
           status: 'pending',
         });
-        console.log(`✅ [register-session] Registered sessionId=${sessionId.slice(0,20)}… adType=${normalizedAdType} user=${userId}`);
       } catch (insertErr: any) {
         // Unique PK violation = sessionId already registered (fresh or previously used)
-        console.warn(`🚫 [register-session] Duplicate sessionId from user=${userId}`);
         return res.status(400).json({ message: "Session already in use", errorType: 'duplicate_session' });
       }
 
       return res.json({ success: true });
     } catch (err) {
-      console.error('❌ [register-session] Unexpected error:', err);
+      console.error('❌ register-session error:', err);
       return res.status(500).json({ message: 'Internal error' });
     }
   });
@@ -1484,24 +1460,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Ad watching endpoint - configurable daily limit and reward amount
   app.post('/api/ads/watch', authenticateTelegram, async (req: any, res) => {
     try {
-      const turnstileRejection = await requireTurnstile(req, "ad-watch");
-      if (turnstileRejection) {
-        console.warn(`🚫 [ads/watch] Turnstile blocked user=${req.user?.user?.id} ip=${req.ip}`);
-        return res.status(turnstileRejection.status).json(turnstileRejection.body);
-      }
-
       const userId = req.user.user.id;
       
       // Get user to check daily ad limit
       const user = await storage.getUser(userId);
       if (!user) {
-        console.warn(`🚫 [ads/watch] User not found: ${userId}`);
         return res.status(404).json({ message: "User not found" });
       }
       
       // Check if user is banned
       if (user.banned) {
-        console.warn(`🚫 [ads/watch] Banned user attempted claim: ${userId}`);
         return res.status(403).json({ 
           banned: true,
           message: "Your account has been banned due to suspicious multi-account activity",
@@ -1613,22 +1581,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // 5. Anti-fake background/minimize check — the user must have actually left the app
-      //    (backgrounded/minimized it) OR held the session open long enough for the ad
-      //    to have played. In-WebView ad overlays (AdsGram, Monetag, Gigapub) render
-      //    inside the Telegram WebView without ever triggering blur/visibilitychange, so
-      //    bgEntered is always false for those providers. We accept sessions that are at
-      //    least MIN_SESSION_DURATION_MS old as an equivalent proof that an ad was shown.
+      //    (backgrounded/minimized it, e.g. to view the ad in another window/overlay) for at
+      //    least MIN_BACKGROUND_MS before returning. This is our proxy for "the ad was really shown"
+      //    since we cannot directly verify third-party ad SDK click/view events.
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
       const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
-      const sessionDurationAtClaim = Date.now() - new Date(sessionRow.registeredAt as any).getTime();
-      // Minimum time the session must have been open if no background event fired.
-      // This is the minimum realistic ad duration; instant claims are rejected.
-      const MIN_SESSION_DURATION_MS = 5_000;
-      console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms sessionAge=${sessionDurationAtClaim}ms (total: ${sessionAgeMs}ms)`);
+      console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms (total: ${sessionAgeMs}ms)`);
 
-      const bgOk = (bgEntered && bgDuration >= MIN_BACKGROUND_MS) || sessionDurationAtClaim >= MIN_SESSION_DURATION_MS;
-      if (!bgOk) {
+      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
         // Mark session as failed so it can't be retried/replayed, and bump the abuse score
         await db.update(adSessions)
           .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
@@ -1686,6 +1647,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Never block ad reward on analysis failure
         }
       });
+
+      // ✅ All checks passed — atomically claim the session (only succeeds if it's
+      // still 'pending'), which prevents a duplicate/resumed request racing this
+      // one from also being rewarded for the same session.
+      const [claimed] = await db.update(adSessions)
+        .set({ status: 'used', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+        .where(and(eq(adSessions.id, sessionId), eq(adSessions.status, 'pending')))
+        .returning({ id: adSessions.id });
+      if (!claimed) {
+        return res.status(400).json({
+          message: "Session already used. Please watch a new ad.",
+          errorType: 'duplicate_session',
+        });
+      }
+      adUserCooldowns.set(userKey, Date.now());
+      if (abuse.score > 0) {
+        adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
+      }
+      console.log(`✅ Ad session valid for user ${userId}: adType=${serverAdType} bgDuration=${bgDuration}ms`);
+      // ─────────────────────────────────────────────────────────────────────
 
       // Use the server-authoritative adType from pre-registration (never trust client field)
       const normalizedAdType = serverAdType;
@@ -1758,53 +1739,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const adRewardPOW = rewardPerAdPOW;
       
       try {
-        // Consume the pending session and credit the earning atomically. If any
-        // write fails, the transaction rolls back and the user can retry the
-        // still-pending session instead of losing a valid reward.
-        const rewardResult = await storage.claimAdReward({
-          sessionId,
+        // Process reward with error handling to ensure success response
+        // Capture the earning so we can reference its ID for referral commission tracking
+        const adWatchEarning = await storage.addEarning({
           userId,
           amount: String(adRewardPOW),
           source: 'ad_watch',
           description: 'Watched advertisement',
-          backgroundEntered: bgEntered,
-          backgroundDurationMs: bgDuration,
         });
-        if (!rewardResult.claimed || !rewardResult.earning) {
-          return res.status(400).json({
-            message: "Session already used. Please watch a new ad.",
-            errorType: 'duplicate_session',
-          });
-        }
-        const adWatchEarning = rewardResult.earning;
-        adUserCooldowns.set(userKey, Date.now());
-        if (abuse.score > 0) {
-          adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
-        }
-        console.log(`✅ Ad session valid and reward credited for user ${userId}: adType=${serverAdType} bgDuration=${bgDuration}ms`);
         
         // Increment per-provider daily ads watched count (period-reset aware)
-        try {
-          if (normalizedAdType === 'adsgram') {
-            await storage.incrementAdsWatched(userId); // handles period reset internally
-          } else {
-            const col = normalizedAdType === 'monetag' ? 'monetag_ads_watched_today' : 'gigapub_ads_watched_today';
-            // If this is a new reset period, start counter at 1; otherwise increment
-            const newProviderCount = isNewAdPeriod ? 1 : (currentTypeWatched + 1);
-            await db.execute(sql`
-              UPDATE users SET
-                ${sql.raw(col)} = ${newProviderCount},
-                ads_watched     = COALESCE(ads_watched, 0) + 1,
-                last_ad_date    = NOW(),
-                updated_at      = NOW()
-              WHERE id = ${userId}
-            `);
-          }
-        } catch (counterError) {
-          // Reward and audit history are already committed atomically. Counter
-          // repair is safe to retry and must not turn a successful credit into
-          // the generic "Reward processing failed" response.
-          console.error('⚠️ Ad counter update failed after credited reward:', counterError);
+        if (normalizedAdType === 'adsgram') {
+          await storage.incrementAdsWatched(userId); // handles period reset internally
+        } else {
+          const col = normalizedAdType === 'monetag' ? 'monetag_ads_watched_today' : 'gigapub_ads_watched_today';
+          // If this is a new reset period, start counter at 1; otherwise increment
+          const newProviderCount = isNewAdPeriod ? 1 : (currentTypeWatched + 1);
+          await db.execute(sql`
+            UPDATE users SET
+              ${sql.raw(col)} = ${newProviderCount},
+              ads_watched     = COALESCE(ads_watched, 0) + 1,
+              last_ad_date    = NOW(),
+              updated_at      = NOW()
+            WHERE id = ${userId}
+          `);
         }
 
         // Stars system — increment weeklyStars when monthly contest is active
@@ -3105,20 +3063,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(users)
         .where(eq(users.id, userId));
 
-      // Use the same settings and selection logic as the task feed and payout path.
-      const rewardSettings = await storage.getAdvertiserTaskRewardSettings();
-
+      // Get reward settings for advertiser task types from admin settings
+      // Use snake_case keys — the PUT handler stores both camelCase and snake_case;
+      // snake_case is the canonical form used everywhere else in the codebase.
+      const channelTaskReward = await storage.getAppSetting('channel_task_reward', '1000');
+      const botTaskReward = await storage.getAppSetting('bot_task_reward', '1000');
+      const partnerTaskReward = await storage.getAppSetting('partner_task_reward', '1000');
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
       const advertiserTasks = await storage.getActiveTasksForUser(userId);
       
-      // Format advertiser tasks with rewards that mirror the server-side recordTaskClick logic
+      // Format advertiser tasks with PAD and BUG rewards from admin settings
       const formattedTasks = advertiserTasks.map(task => {
-        const rewardPOW = storage.getAdvertiserTaskReward(
-          task.taskType,
-          task.verificationRequired,
-          rewardSettings,
-        );
+        let rewardPOW = 0;
+        if (task.taskType === 'channel') {
+          rewardPOW = parseInt(channelTaskReward);
+        } else if (task.taskType === 'bot') {
+          rewardPOW = parseInt(botTaskReward);
+        } else if (task.taskType === 'partner') {
+          rewardPOW = parseInt(partnerTaskReward);
+        } else {
+          rewardPOW = 20;
+        }
         
         return {
           id: task.id,
@@ -3131,7 +3097,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           rewardType: 'POW',
           isAdminTask: false,
           isAdvertiserTask: true,
-          verificationRequired: task.verificationRequired || false,
           priority: 1
         };
       });
@@ -3175,58 +3140,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
-      // Single atomic transaction on one connection: avoids the cross-connection
-      // deadlock that occurred when storage.addEarning() (which opens its own tx via
-      // addBalance with SELECT … FOR UPDATE) was called inside an outer db.transaction()
-      // that already held a write-lock on the users row.
-      // All SQL uses `tx` exclusively — no calls to storage.* methods here.
       await db.transaction(async (tx) => {
-        // Ensure the secondary balance row exists before locking
+        // Update balance and mark task complete — no star reward from tasks
         await tx.execute(sql`
-          INSERT INTO user_balances (user_id, balance, updated_at)
-          VALUES (${userId}, 0, NOW())
-          ON CONFLICT (user_id) DO NOTHING
+          UPDATE users SET
+            balance                    = balance + ${rewardAmount}::numeric,
+            task_share_completed_today = true,
+            updated_at                 = NOW()
+          WHERE id = ${userId}
         `);
-        // Acquire row locks on both tables (same connection = no deadlock)
-        await tx.execute(sql`
-          SELECT u.id FROM users u
-          JOIN user_balances ub ON ub.user_id = u.id
-          WHERE u.id = ${userId}
-          FOR UPDATE
-        `);
-        // Credit balance with GREATEST drift-guard, mark task done, update totals
-        await tx.execute(sql`
-          UPDATE users u
-          SET balance    = (
-                GREATEST(
-                  COALESCE(u.balance::numeric, 0),
-                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
-                ) + ${rewardAmount}::numeric
-              )::text,
-              task_share_completed_today = true,
-              withdraw_balance = COALESCE(withdraw_balance::numeric, 0) + ${rewardAmount}::numeric,
-              total_earned     = COALESCE(total_earned::numeric, 0)     + ${rewardAmount}::numeric,
-              total_earnings   = COALESCE(total_earnings::numeric, 0)   + ${rewardAmount}::numeric,
-              updated_at       = NOW()
-          WHERE u.id = ${userId}
-        `);
-        // Mirror the new balance back into user_balances
-        await tx.execute(sql`
-          UPDATE user_balances
-          SET balance    = (SELECT balance::numeric FROM users WHERE id = ${userId}),
-              updated_at = NOW()
-          WHERE user_id  = ${userId}
-        `);
-        // Earning record (audit trail)
-        await tx.execute(sql`
-          INSERT INTO earnings (user_id, amount, source, description)
-          VALUES (${userId}, ${rewardAmount}, 'task_share', 'Share with Friends task completed')
-        `);
-        // Transaction log
-        await tx.execute(sql`
-          INSERT INTO transactions (user_id, amount, type, source, description)
-          VALUES (${userId}, ${rewardAmount}, 'addition', 'task_share', 'Share with Friends task completed')
-        `);
+        
+        // Add earning record
+        await storage.addEarning({
+          userId,
+          amount: rewardAmount,
+          source: 'task_share',
+          description: 'Share with Friends task completed'
+        });
       });
       
       res.json({
@@ -3382,49 +3312,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
-      // Single atomic transaction on one connection — same pattern as /share to avoid
-      // the cross-connection deadlock and keep the task flag + balance credit atomic.
       await db.transaction(async (tx) => {
         await tx.execute(sql`
-          INSERT INTO user_balances (user_id, balance, updated_at)
-          VALUES (${userId}, 0, NOW())
-          ON CONFLICT (user_id) DO NOTHING
+          UPDATE users SET
+            balance                      = balance + ${rewardAmount}::numeric,
+            task_channel_completed_today = true,
+            updated_at                   = NOW()
+          WHERE id = ${userId}
         `);
-        await tx.execute(sql`
-          SELECT u.id FROM users u
-          JOIN user_balances ub ON ub.user_id = u.id
-          WHERE u.id = ${userId}
-          FOR UPDATE
-        `);
-        await tx.execute(sql`
-          UPDATE users u
-          SET balance    = (
-                GREATEST(
-                  COALESCE(u.balance::numeric, 0),
-                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
-                ) + ${rewardAmount}::numeric
-              )::text,
-              task_channel_completed_today = true,
-              withdraw_balance = COALESCE(withdraw_balance::numeric, 0) + ${rewardAmount}::numeric,
-              total_earned     = COALESCE(total_earned::numeric, 0)     + ${rewardAmount}::numeric,
-              total_earnings   = COALESCE(total_earnings::numeric, 0)   + ${rewardAmount}::numeric,
-              updated_at       = NOW()
-          WHERE u.id = ${userId}
-        `);
-        await tx.execute(sql`
-          UPDATE user_balances
-          SET balance    = (SELECT balance::numeric FROM users WHERE id = ${userId}),
-              updated_at = NOW()
-          WHERE user_id  = ${userId}
-        `);
-        await tx.execute(sql`
-          INSERT INTO earnings (user_id, amount, source, description)
-          VALUES (${userId}, ${rewardAmount}, 'task_channel', 'Check for Updates task completed')
-        `);
-        await tx.execute(sql`
-          INSERT INTO transactions (user_id, amount, type, source, description)
-          VALUES (${userId}, ${rewardAmount}, 'addition', 'task_channel', 'Check for Updates task completed')
-        `);
+        
+        await storage.addEarning({
+          userId,
+          amount: rewardAmount,
+          source: 'task_channel',
+          description: 'Check for Updates task completed'
+        });
       });
       
       res.json({
@@ -3656,49 +3558,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reward: 0.0001 TON = 1,000 PAD
       const rewardAmount = '0.0001';
       
-      // Single atomic transaction on one connection — same pattern as /share to avoid
-      // the cross-connection deadlock and keep the task flag + balance credit atomic.
       await db.transaction(async (tx) => {
         await tx.execute(sql`
-          INSERT INTO user_balances (user_id, balance, updated_at)
-          VALUES (${userId}, 0, NOW())
-          ON CONFLICT (user_id) DO NOTHING
+          UPDATE users SET
+            balance                        = balance + ${rewardAmount}::numeric,
+            task_community_completed_today = true,
+            updated_at                     = NOW()
+          WHERE id = ${userId}
         `);
-        await tx.execute(sql`
-          SELECT u.id FROM users u
-          JOIN user_balances ub ON ub.user_id = u.id
-          WHERE u.id = ${userId}
-          FOR UPDATE
-        `);
-        await tx.execute(sql`
-          UPDATE users u
-          SET balance    = (
-                GREATEST(
-                  COALESCE(u.balance::numeric, 0),
-                  COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
-                ) + ${rewardAmount}::numeric
-              )::text,
-              task_community_completed_today = true,
-              withdraw_balance = COALESCE(withdraw_balance::numeric, 0) + ${rewardAmount}::numeric,
-              total_earned     = COALESCE(total_earned::numeric, 0)     + ${rewardAmount}::numeric,
-              total_earnings   = COALESCE(total_earnings::numeric, 0)   + ${rewardAmount}::numeric,
-              updated_at       = NOW()
-          WHERE u.id = ${userId}
-        `);
-        await tx.execute(sql`
-          UPDATE user_balances
-          SET balance    = (SELECT balance::numeric FROM users WHERE id = ${userId}),
-              updated_at = NOW()
-          WHERE user_id  = ${userId}
-        `);
-        await tx.execute(sql`
-          INSERT INTO earnings (user_id, amount, source, description)
-          VALUES (${userId}, ${rewardAmount}, 'task_community', 'Join Community task completed')
-        `);
-        await tx.execute(sql`
-          INSERT INTO transactions (user_id, amount, type, source, description)
-          VALUES (${userId}, ${rewardAmount}, 'addition', 'task_community', 'Join Community task completed')
-        `);
+        
+        await storage.addEarning({
+          userId,
+          amount: rewardAmount,
+          source: 'task_community',
+          description: 'Join Community task completed'
+        });
       });
       
       res.json({
@@ -4430,8 +4304,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCost: parseFloat(getSetting('bot_task_cost_usd', '0.003')), // NEW: Bot cost in USD (admin only)
         channelTaskCostTON: parseFloat(getSetting('channel_task_cost_ton', '0.0003')), // TON cost for regular users
         botTaskCostTON: parseFloat(getSetting('bot_task_cost_ton', '0.0003')), // TON cost for regular users
-        channelTaskReward: parseInt(getSetting('task_reward_no_verify', '2000')), // Channel reward (legacy)
-        botTaskReward: parseInt(getSetting('task_reward_no_verify', '2000')), // Bot reward (legacy)
+        channelTaskReward: parseInt(getSetting('channel_task_reward', '2000')), // Channel reward (legacy)
+        botTaskReward: parseInt(getSetting('bot_task_reward', '2000')), // Bot reward (legacy)
         partnerTaskReward: parseInt(getSetting('partner_task_reward', '5000')), // Partner task reward in PAD
         taskRewardNoVerify: parseInt(getSetting('task_reward_no_verify', '2000')), // Task without verification
         taskRewardWithVerify: parseInt(getSetting('task_reward_with_verify', '3000')), // Task with verification
@@ -4503,11 +4377,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mission Ads Watch endpoint — per-platform reward from admin settings
   app.post('/api/missions/ads/watch', authenticateTelegram, async (req: any, res) => {
     try {
-      const turnstileRejection = await requireTurnstile(req, "mission-ad-watch");
-      if (turnstileRejection) {
-        return res.status(turnstileRejection.status).json(turnstileRejection.body);
-      }
-
       const userId = req.user.user.id;
       const { platform, sessionId, backgroundDuration, backgroundEntered } = req.body as {
         platform?: string; sessionId?: string; backgroundDuration?: number; backgroundEntered?: boolean;
@@ -4544,18 +4413,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
-      // Same fallback as the main ads/watch endpoint: in-WebView ad overlays
-      // (Monetag, Gigapub, Monetix on Telegram WebView) don't trigger
-      // blur/visibilitychange, so bgEntered is always false for those providers.
-      // Accept the session if it has been open long enough to have shown a real ad.
-      const MIN_SESSION_DURATION_MS = 5_000;
-      const missionSessionDurationAtClaim = Date.now() - new Date(missionSession.registeredAt as any).getTime();
-      const missionBgOk = (bgEntered && bgDuration >= MIN_BACKGROUND_MS) || missionSessionDurationAtClaim >= MIN_SESSION_DURATION_MS;
-      if (!missionBgOk) {
+      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
         await db.update(adSessions)
           .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
           .where(eq(adSessions.id, sessionId));
-        console.log(`⚠️ Mission ad reward rejected for user ${userId}: not backgrounded long enough and session too short (entered=${bgEntered}, duration=${bgDuration}ms, sessionAge=${missionSessionDurationAtClaim}ms)`);
+        console.log(`⚠️ Mission ad reward rejected for user ${userId}: not backgrounded long enough (entered=${bgEntered}, duration=${bgDuration}ms)`);
         return res.status(400).json({ success: false, message: "We couldn't confirm the ad was watched. Please try again.", errorType: 'insufficient_background' });
       }
 
@@ -4588,34 +4450,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
           limit = 25;
       }
 
-      const resetDate = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
-      const rewardResult = await storage.claimMissionAdReward({
-        sessionId,
-        userId,
-        platform,
-        resetDate,
-        limit,
-        amount: String(reward),
-        description: `Mission ad reward (${platform})`,
-        backgroundEntered: bgEntered,
-        backgroundDurationMs: bgDuration,
-      });
+      // Atomically claim the session (only succeeds if still 'pending') before
+      // granting anything — this is what prevents a duplicated/resumed request
+      // for the same session from being rewarded twice.
+      const [claimedMissionSession] = await db.update(adSessions)
+        .set({ status: 'used', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+        .where(and(eq(adSessions.id, sessionId), eq(adSessions.status, 'pending')))
+        .returning({ id: adSessions.id });
+      if (!claimedMissionSession) {
+        return res.status(400).json({ success: false, message: "Session already used. Please watch a new ad.", errorType: 'duplicate_session' });
+      }
 
-      if (rewardResult.limitExceeded) {
+      // Atomically increment today's claim counter for this user/platform and
+      // enforce the admin-configured daily limit. This prevents the endpoint
+      // from being called an unlimited number of times to mint POW.
+      const resetDate = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
+      const [counter] = await db
+        .insert(missionAdClaims)
+        .values({ userId, platform, resetDate, count: 1 })
+        .onConflictDoUpdate({
+          target: [missionAdClaims.userId, missionAdClaims.platform, missionAdClaims.resetDate],
+          set: { count: sql`${missionAdClaims.count} + 1`, updatedAt: new Date() },
+        })
+        .returning({ count: missionAdClaims.count });
+
+      if (counter.count > limit) {
         return res.status(429).json({
           success: false,
           message: `Daily limit reached for ${platform} (${limit}/day). Try again tomorrow.`,
         });
       }
-      if (!rewardResult.claimed) {
-        return res.status(400).json({
-          success: false,
-          message: "Session already used. Please watch a new ad.",
-          errorType: 'duplicate_session',
-        });
-      }
 
-      return res.json({ success: true, reward, claimsToday: rewardResult.count, dailyLimit: limit });
+      await storage.addEarning({
+        userId,
+        amount: String(reward),
+        source: 'mission_ad',
+        description: `Mission ad reward (${platform})`,
+      });
+
+      return res.json({ success: true, reward, claimsToday: counter.count, dailyLimit: limit });
     } catch (error) {
       console.error('Error in mission ad watch:', error);
       return res.status(500).json({ success: false, message: 'Internal error' });
@@ -6893,19 +6766,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/advertiser-tasks', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      const [tasks, rewardSettings] = await Promise.all([
-        storage.getActiveTasksForUser(userId),
-        storage.getAdvertiserTaskRewardSettings(),
-      ]);
-      const tasksWithRewards = tasks.map(task => ({
-        ...task,
-        rewardPOW: storage.getAdvertiserTaskReward(
-          task.taskType,
-          task.verificationRequired,
-          rewardSettings,
-        ),
-      }));
-      res.json({ success: true, tasks: tasksWithRewards });
+      const tasks = await storage.getActiveTasksForUser(userId);
+      res.json({ success: true, tasks });
     } catch (error) {
       console.error("Error fetching advertiser tasks:", error);
       res.status(500).json({ success: false, message: "Failed to fetch tasks" });
@@ -7007,12 +6869,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Partner tasks are free. Telegram verification is only possible for t.me
-      // links — external HTTPS tasks (e.g. https://timebucks.com/...) cannot be
-      // verified via the Bot API, so they are saved with verificationRequired: false
-      // and use the simple "open → claim" flow instead.
+      // Partner tasks are free and always use Telegram verification
       if (taskType === "partner") {
-        const isTelegramLink = link.includes('t.me');
+        // Partner tasks always require verification via Telegram Bot API
+        const useVerification = verificationRequired !== false; // default true for partner tasks
         const task = await storage.createTask({
           advertiserId: userId,
           taskType,
@@ -7022,7 +6882,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           costPerClick: "0",
           totalCost: "0",
           status: "running",
-          verificationRequired: isTelegramLink, // Only t.me links can be Telegram-verified
+          verificationRequired: true, // Partner tasks always require Telegram verification
           channelVerified: channelVerified || false,
         });
 
@@ -7186,19 +7046,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const telegramUserId = req.user?.telegramUser?.id || req.session?.user?.telegramUser?.id;
       const { taskId } = req.params;
 
-      // Telegram membership verification — only for tasks whose link is a public
-      // t.me channel/bot username AND verificationRequired is true.
-      // External HTTPS tasks (e.g. https://timebucks.com/...) are intentionally
-      // excluded: they have verificationRequired: false and use the simple
-      // "open → claim" flow on the frontend.
+      // For partner tasks or tasks with verificationRequired, enforce server-side Telegram verification (fail-closed)
       const task = await storage.getTaskById(taskId);
-      const needsTelegramVerif = task &&
-        task.verificationRequired === true &&
-        task.link?.includes('t.me');
-
-      if (needsTelegramVerif) {
+      if (task && (task.taskType === 'partner' || task.verificationRequired)) {
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
-
+        
         // Fail-closed: if we can't verify, block the claim
         if (!botToken) {
           return res.status(403).json({
@@ -7222,18 +7074,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        const urlMatch = task.link.trim().match(/t\.me\/([^/?]+)/);
-        const segment = urlMatch?.[1];
-        if (!segment || segment.startsWith('+') || segment === 'joinchat') {
-          // Private invite link — cannot verify server-side
-          return res.status(403).json({
-            success: false,
-            message: "Please join the channel via the invite link and then verify",
-            requiresVerification: true,
-          });
+        let channelId = task.link.trim();
+        const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
+        if (urlMatch && urlMatch[1]) {
+          const segment = urlMatch[1];
+          if (!segment.startsWith('+') && !segment.startsWith('joinchat')) {
+            channelId = `@${segment}`;
+          } else {
+            // Private invite link — cannot verify server-side, block claim
+            return res.status(403).json({
+              success: false,
+              message: "Please join the channel via the invite link and then verify",
+              requiresVerification: true,
+            });
+          }
+        } else if (!channelId.startsWith('@') && !channelId.startsWith('-')) {
+          channelId = `@${channelId}`;
         }
 
-        const channelId = `@${segment}`;
+        // Verify membership for public channel usernames
         if (/^@[A-Za-z][A-Za-z0-9_]{2,31}$/.test(channelId)) {
           const isMember = await verifyChannelMembership(
             parseInt(String(telegramUserId)),
@@ -7248,6 +7107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         } else {
+          // Unrecognized link format — fail-closed
           return res.status(403).json({
             success: false,
             message: "Cannot verify channel membership for this task — contact support",
@@ -7779,19 +7639,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/advertiser-tasks/avatar', authenticateTelegram, async (req: any, res) => {
     try {
       const link = String(req.query.link || '');
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (!botToken) return res.status(404).end();
-
-      // Extract the first path segment after t.me/
       const match = link.match(/t\.me\/([^/?]+)/);
-      const segment = match?.[1];
-
-      // Reject missing, private-invite (+hash), and joinchat links — they have
-      // no public username and will always fail the Telegram Bot API lookup.
-      if (!segment || segment.startsWith('+') || segment === 'joinchat') {
-        return res.status(404).end();
-      }
-      const username = segment;
+      const username = match?.[1];
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!username || !botToken) return res.status(404).end();
 
       // ── Serve from in-memory cache if fresh (avoids 2 Telegram API round-trips) ─
       const cached = _avatarCache.get(username);
@@ -9461,6 +9312,9 @@ ${walletAddress}
             eq(dailyTasks.completionDate, currentDate)
           ));
         
+        // Add balance
+        await storage.addBalance(userId, task.rewardAmount);
+        
         // Add earning record
         await storage.addEarning({
           userId,
@@ -9537,24 +9391,21 @@ ${walletAddress}
         }
       }
 
-      // STEP 1: Atomically validate + record usage in one DB transaction with a
-      // SELECT FOR UPDATE lock on the promo code row.  This prevents the TOCTOU
-      // race where two concurrent requests both pass the usage-limit check and
-      // both receive the reward.  Usage is recorded BEFORE the reward is given;
-      // if the reward step fails the usage persists (admin can credit manually)
-      // but unlimited re-claims are prevented.
-      const result = await storage.atomicClaimPromoCode(cleanCode, userId);
+      // STEP 1: Validate only — does NOT record usage yet
+      const result = await storage.usePromoCode(cleanCode, userId);
       if (!result.success) {
         return res.status(400).json({ success: false, message: result.message });
       }
 
-      const rewardAmount = result.reward || '0';
-      const promoCodeId  = result.promoCodeId!;
-      let   rewardType   = (result.rewardType || 'PAD').toUpperCase();
-      if (rewardType === 'PDZ') rewardType = 'TON';
-      if (rewardType === 'POW') rewardType = 'PAD';
+      // Pull validated values from result (no second DB fetch needed)
+      const rewardAmount  = result.reward || '0';
+      const promoCodeId   = result.promoCodeId!;
+      let   rewardType    = (result.rewardType || 'PAD').toUpperCase();
+      // Normalize aliases
+      if (rewardType === 'PDZ')  rewardType = 'TON';
+      if (rewardType === 'POW')  rewardType = 'PAD';
 
-      // STEP 2: Give the reward (usage already recorded atomically above)
+      // STEP 2: Give the reward — if this throws, usage is NOT recorded
       if (rewardType === 'PAD') {
         const rewardPow = parseInt(rewardAmount);
         await storage.addEarning({
@@ -9564,6 +9415,10 @@ ${walletAddress}
           description: `Redeemed promo code: ${cleanCode}`,
         });
 
+        // STEP 3: Only record usage after reward is successfully given
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
+
+        // STEP 4: Ambassador commission
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
         return res.json({
@@ -9574,14 +9429,12 @@ ${walletAddress}
         });
 
       } else if (rewardType === 'TON') {
-        // Atomic SQL increment — no read-modify-write race
-        await db.execute(sql`
-          UPDATE users
-          SET ton_balance = COALESCE(ton_balance::numeric, 0) + ${parseFloat(rewardAmount)},
-              updated_at  = NOW()
-          WHERE id = ${userId}
-        `);
+        const [currentUser] = await db.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId));
+        const newTonBalance = (parseFloat(currentUser?.tonBalance || '0') + parseFloat(rewardAmount)).toFixed(8);
+        await db.update(users).set({ tonBalance: newTonBalance, updatedAt: new Date() }).where(eq(users.id, userId));
         await storage.logTransaction({ userId, amount: rewardAmount, type: 'credit', source: 'promo_code', description: `Redeemed promo code: ${cleanCode}`, metadata: { code: cleanCode, rewardType: 'TON' } });
+
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
@@ -9594,6 +9447,8 @@ ${walletAddress}
 
       } else if (rewardType === 'USD') {
         await storage.addUSDBalance(userId, rewardAmount, 'promo_code', `Redeemed promo code: ${cleanCode}`);
+
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
@@ -9613,6 +9468,8 @@ ${walletAddress}
           source: 'promo_code',
           description: `Redeemed promo code: ${cleanCode}`,
         });
+
+        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
@@ -11111,16 +10968,10 @@ ${walletAddress}
       // between users.balance and user_balances.balance (> 1 PAD) and
       // overwrites users.balance back to the old user_balances value,
       // silently reverting the admin's change the next time the user watches an ad.
-      // Use INSERT ... ON CONFLICT to create the row if it doesn't exist yet —
-      // a plain UPDATE silently no-ops on missing rows and leaves the tables out of sync.
       if (currency === 'pow') {
-        await db.execute(sql`
-          INSERT INTO user_balances (user_id, balance, updated_at)
-          VALUES (${id}, ${newVal.toString()}, NOW())
-          ON CONFLICT (user_id) DO UPDATE
-          SET balance    = ${newVal.toString()},
-              updated_at = NOW()
-        `);
+        await db.update(userBalances)
+          .set({ balance: newVal.toString(), updatedAt: new Date() })
+          .where(eq(userBalances.userId, id));
       }
 
       const txSource = `admin_${action}_${currency}`;
@@ -11689,69 +11540,6 @@ ${walletAddress}
     }
   });
 
-  // ── Missing admin user-profile sub-endpoints ─────────────────────────────
-  // These are fetched by the UserProfileTabs component but were never implemented.
-
-  // Withdrawal history for a specific user (admin view)
-  app.get('/api/admin/user-withdrawals/:id', authenticateAdmin, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const userWithdrawals = await db
-        .select()
-        .from(withdrawals)
-        .where(eq(withdrawals.userId, id))
-        .orderBy(desc(withdrawals.createdAt));
-      res.json({ success: true, withdrawals: userWithdrawals });
-    } catch (error) {
-      console.error('❌ Error fetching user withdrawals (admin):', error);
-      res.status(500).json({ success: false, message: 'Failed to fetch withdrawals' });
-    }
-  });
-
-  // Ad-watch stats for a specific user (admin view)
-  app.get('/api/admin/user-ads/:id', authenticateAdmin, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const [userData] = await db
-        .select({
-          adsWatched:             users.adsWatched,
-          adsWatchedToday:        users.adsWatchedToday,
-          monetagAdsWatchedToday: users.monetagAdsWatchedToday,
-          gigapubAdsWatchedToday: users.gigapubAdsWatchedToday,
-        })
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-      res.json({ success: true, ads: userData || {} });
-    } catch (error) {
-      console.error('❌ Error fetching user ad stats (admin):', error);
-      res.status(500).json({ success: false, message: 'Failed to fetch ad stats' });
-    }
-  });
-
-  // Ban history for a specific user (admin view)
-  app.get('/api/admin/user-ban-history/:id', authenticateAdmin, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const [userData] = await db
-        .select({
-          banned:       users.banned,
-          bannedReason: users.bannedReason,
-        })
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-      // Return as a list so the UI can map over it
-      const banHistory = (userData?.banned && userData?.bannedReason)
-        ? [{ reason: userData.bannedReason, active: true }]
-        : [];
-      res.json({ success: true, banHistory, currentStatus: userData });
-    } catch (error) {
-      console.error('❌ Error fetching user ban history (admin):', error);
-      res.status(500).json({ success: false, message: 'Failed to fetch ban history' });
-    }
-  });
-
   // Prizes settings may be stored either as JSON (e.g. '["$20","$10"]') or as
   // plain newline-separated text (e.g. "🤴🏻 $20\n💎 $10\n..."). Parse safely.
   const parsePrizesSetting = (raw: string): string[] => {
@@ -12202,19 +11990,14 @@ ${walletAddress}
         .orderBy(desc(promoCodes.createdAt))
         .limit(50);
 
-      // Build grouped per-promo-code history from earnings (authoritative source)
+      // Build grouped per-promo-code history
       const claimsByCode: Record<string, typeof historyRows> = {};
       for (const row of historyRows) {
         if (!claimsByCode[row.promoCode]) claimsByCode[row.promoCode] = [];
         claimsByCode[row.promoCode].push(row);
       }
 
-      // Index currently-existing promo codes by their code string for fast lookup
-      const existingCodeMap = new Map(allAmbassadorCodes.map(pc => [pc.code, pc]));
-
-      // Start from currently-existing codes
-      const codesInHistory = new Map<string, any>();
-      for (const pc of allAmbassadorCodes) {
+      const promoCodeHistory = allAmbassadorCodes.map(pc => {
         const claims = claimsByCode[pc.code] || [];
         const totalEarnings = claims.reduce((sum, c) => sum + parseFloat(c.commissionUsd || '0'), 0);
         const isExpired = (pc.usageLimit && (pc.usageCount || 0) >= pc.usageLimit) ||
@@ -12224,7 +12007,7 @@ ${walletAddress}
         const maxClaims = pc.usageLimit || null;
         const remainingClaims = maxClaims !== null ? Math.max(0, maxClaims - claimsUsed) : null;
         const totalRewardsDistributed = (parseFloat(pc.rewardAmount || '0') * claimsUsed).toString();
-        codesInHistory.set(pc.code, {
+        return {
           promoCode: pc.code,
           totalClaims: claims.length,
           totalEarnings: totalEarnings.toFixed(4),
@@ -12243,39 +12026,8 @@ ${walletAddress}
             claimedAt: c.createdAt,
             rewardGranted: pc.rewardAmount,
           })),
-        });
-      }
-
-      // Also include orphaned earnings whose promo codes were deleted/expired out of the table
-      // This ensures the claim history drawer always shows ALL historical claims
-      for (const [code, claims] of Object.entries(claimsByCode)) {
-        if (!codesInHistory.has(code)) {
-          const totalEarnings = claims.reduce((sum, c) => sum + parseFloat(c.commissionUsd || '0'), 0);
-          codesInHistory.set(code, {
-            promoCode: code,
-            totalClaims: claims.length,
-            totalEarnings: totalEarnings.toFixed(4),
-            createdAt: claims[claims.length - 1]?.createdAt || new Date(),
-            expiresAt: null,
-            rewardAmount: null,
-            usageLimit: null,
-            usageCount: claims.length,
-            remainingClaims: null,
-            totalRewardsDistributed: '0',
-            status: 'expired',
-            claims: claims.map(c => ({
-              id: c.id,
-              username: c.claimUserUsername || null,
-              firstName: c.claimUserFirstName || null,
-              claimedAt: c.createdAt,
-              rewardGranted: null,
-            })),
-          });
-        }
-      }
-
-      const promoCodeHistory = Array.from(codesInHistory.values())
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        };
+      });
 
       // Keep flat history for backward compat
       const history = historyRows.slice(0, 50).map(r => ({
@@ -13224,67 +12976,6 @@ ${walletAddress}
       res.status(500).json({ message: 'Failed to reset stars' });
     }
   });
-
-  // ── Admin: Database Backup & Restore ─────────────────────────────────────────
-
-  /** List all available backups */
-  app.get('/api/admin/backups', authenticateAdmin, async (_req: any, res) => {
-    try {
-      const backups = listBackups();
-      res.json({ backups });
-    } catch (err: any) {
-      console.error('Error listing backups:', err);
-      res.status(500).json({ message: err.message || 'Failed to list backups' });
-    }
-  });
-
-  /** Trigger a manual backup immediately */
-  app.post('/api/admin/backups', authenticateAdmin, async (_req: any, res) => {
-    try {
-      const meta = await createBackup('manual');
-      res.json({ success: true, backup: meta });
-    } catch (err: any) {
-      console.error('Error creating backup:', err);
-      res.status(500).json({ message: err.message || 'Failed to create backup' });
-    }
-  });
-
-  /** Download a backup file */
-  app.get('/api/admin/backups/:filename/download', authenticateAdmin, async (req: any, res) => {
-    try {
-      const filepath = getBackupPath(req.params.filename);
-      res.download(filepath, req.params.filename);
-    } catch (err: any) {
-      console.error('Error downloading backup:', err);
-      res.status(404).json({ message: err.message || 'Backup not found' });
-    }
-  });
-
-  /** Restore database from a backup — ⚠️ destructive */
-  app.post('/api/admin/backups/:filename/restore', authenticateAdmin, async (req: any, res) => {
-    try {
-      const { restoreBackup } = await import('./backup');
-      await restoreBackup(req.params.filename);
-      res.json({ success: true, message: `Database restored from ${req.params.filename}` });
-    } catch (err: any) {
-      console.error('Error restoring backup:', err);
-      res.status(500).json({ message: err.message || 'Failed to restore backup' });
-    }
-  });
-
-  /** Delete a backup file */
-  app.delete('/api/admin/backups/:filename', authenticateAdmin, async (req: any, res) => {
-    try {
-      deleteBackup(req.params.filename);
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error('Error deleting backup:', err);
-      res.status(404).json({ message: err.message || 'Backup not found' });
-    }
-  });
-
-  // Start daily auto-backup scheduler
-  startBackupScheduler();
 
   // ── Twice-daily ad counter reset scheduler ───────────────────────────────────
   // Resets ads_watched_today, monetag_ads_watched_today, gigapub_ads_watched_today
