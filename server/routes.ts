@@ -3085,27 +3085,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(users)
         .where(eq(users.id, userId));
 
-      // Get reward settings for advertiser task types from admin settings
-      // Use snake_case keys — the PUT handler stores both camelCase and snake_case;
-      // snake_case is the canonical form used everywhere else in the codebase.
-      const channelTaskReward = await storage.getAppSetting('channel_task_reward', '1000');
-      const botTaskReward = await storage.getAppSetting('bot_task_reward', '1000');
-      const partnerTaskReward = await storage.getAppSetting('partner_task_reward', '1000');
+      // Get reward settings for advertiser task types from admin settings.
+      // Use the SAME settings that recordTaskClick uses so the displayed reward
+      // exactly matches what the user will actually receive.
+      const taskRewardWithVerify  = await storage.getAppSetting('task_reward_with_verify',  '3000');
+      const taskRewardNoVerify    = await storage.getAppSetting('task_reward_no_verify',     '2000');
+      const partnerTaskReward     = await storage.getAppSetting('partner_task_reward',       '5000');
+
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
       const advertiserTasks = await storage.getActiveTasksForUser(userId);
       
-      // Format advertiser tasks with PAD and BUG rewards from admin settings
+      // Format advertiser tasks with rewards that mirror the server-side recordTaskClick logic
       const formattedTasks = advertiserTasks.map(task => {
         let rewardPOW = 0;
-        if (task.taskType === 'channel') {
-          rewardPOW = parseInt(channelTaskReward);
-        } else if (task.taskType === 'bot') {
-          rewardPOW = parseInt(botTaskReward);
-        } else if (task.taskType === 'partner') {
+        if (task.taskType === 'partner') {
           rewardPOW = parseInt(partnerTaskReward);
+        } else if (task.verificationRequired) {
+          rewardPOW = parseInt(taskRewardWithVerify);
         } else {
-          rewardPOW = 20;
+          rewardPOW = parseInt(taskRewardNoVerify);
         }
         
         return {
@@ -3119,6 +3118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           rewardType: 'POW',
           isAdminTask: false,
           isAdvertiserTask: true,
+          verificationRequired: task.verificationRequired || false,
           priority: 1
         };
       });
@@ -10992,10 +10992,16 @@ ${walletAddress}
       // between users.balance and user_balances.balance (> 1 PAD) and
       // overwrites users.balance back to the old user_balances value,
       // silently reverting the admin's change the next time the user watches an ad.
+      // Use INSERT ... ON CONFLICT to create the row if it doesn't exist yet —
+      // a plain UPDATE silently no-ops on missing rows and leaves the tables out of sync.
       if (currency === 'pow') {
-        await db.update(userBalances)
-          .set({ balance: newVal.toString(), updatedAt: new Date() })
-          .where(eq(userBalances.userId, id));
+        await db.execute(sql`
+          INSERT INTO user_balances (user_id, balance, updated_at)
+          VALUES (${id}, ${newVal.toString()}, NOW())
+          ON CONFLICT (user_id) DO UPDATE
+          SET balance    = ${newVal.toString()},
+              updated_at = NOW()
+        `);
       }
 
       const txSource = `admin_${action}_${currency}`;
@@ -11564,6 +11570,69 @@ ${walletAddress}
     }
   });
 
+  // ── Missing admin user-profile sub-endpoints ─────────────────────────────
+  // These are fetched by the UserProfileTabs component but were never implemented.
+
+  // Withdrawal history for a specific user (admin view)
+  app.get('/api/admin/user-withdrawals/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userWithdrawals = await db
+        .select()
+        .from(withdrawals)
+        .where(eq(withdrawals.userId, id))
+        .orderBy(desc(withdrawals.createdAt));
+      res.json({ success: true, withdrawals: userWithdrawals });
+    } catch (error) {
+      console.error('❌ Error fetching user withdrawals (admin):', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch withdrawals' });
+    }
+  });
+
+  // Ad-watch stats for a specific user (admin view)
+  app.get('/api/admin/user-ads/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [userData] = await db
+        .select({
+          adsWatched:             users.adsWatched,
+          adsWatchedToday:        users.adsWatchedToday,
+          monetagAdsWatchedToday: users.monetagAdsWatchedToday,
+          gigapubAdsWatchedToday: users.gigapubAdsWatchedToday,
+        })
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+      res.json({ success: true, ads: userData || {} });
+    } catch (error) {
+      console.error('❌ Error fetching user ad stats (admin):', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch ad stats' });
+    }
+  });
+
+  // Ban history for a specific user (admin view)
+  app.get('/api/admin/user-ban-history/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [userData] = await db
+        .select({
+          banned:       users.banned,
+          bannedReason: users.bannedReason,
+        })
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+      // Return as a list so the UI can map over it
+      const banHistory = (userData?.banned && userData?.bannedReason)
+        ? [{ reason: userData.bannedReason, active: true }]
+        : [];
+      res.json({ success: true, banHistory, currentStatus: userData });
+    } catch (error) {
+      console.error('❌ Error fetching user ban history (admin):', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch ban history' });
+    }
+  });
+
   // Prizes settings may be stored either as JSON (e.g. '["$20","$10"]') or as
   // plain newline-separated text (e.g. "🤴🏻 $20\n💎 $10\n..."). Parse safely.
   const parsePrizesSetting = (raw: string): string[] => {
@@ -12014,14 +12083,19 @@ ${walletAddress}
         .orderBy(desc(promoCodes.createdAt))
         .limit(50);
 
-      // Build grouped per-promo-code history
+      // Build grouped per-promo-code history from earnings (authoritative source)
       const claimsByCode: Record<string, typeof historyRows> = {};
       for (const row of historyRows) {
         if (!claimsByCode[row.promoCode]) claimsByCode[row.promoCode] = [];
         claimsByCode[row.promoCode].push(row);
       }
 
-      const promoCodeHistory = allAmbassadorCodes.map(pc => {
+      // Index currently-existing promo codes by their code string for fast lookup
+      const existingCodeMap = new Map(allAmbassadorCodes.map(pc => [pc.code, pc]));
+
+      // Start from currently-existing codes
+      const codesInHistory = new Map<string, any>();
+      for (const pc of allAmbassadorCodes) {
         const claims = claimsByCode[pc.code] || [];
         const totalEarnings = claims.reduce((sum, c) => sum + parseFloat(c.commissionUsd || '0'), 0);
         const isExpired = (pc.usageLimit && (pc.usageCount || 0) >= pc.usageLimit) ||
@@ -12031,7 +12105,7 @@ ${walletAddress}
         const maxClaims = pc.usageLimit || null;
         const remainingClaims = maxClaims !== null ? Math.max(0, maxClaims - claimsUsed) : null;
         const totalRewardsDistributed = (parseFloat(pc.rewardAmount || '0') * claimsUsed).toString();
-        return {
+        codesInHistory.set(pc.code, {
           promoCode: pc.code,
           totalClaims: claims.length,
           totalEarnings: totalEarnings.toFixed(4),
@@ -12050,8 +12124,39 @@ ${walletAddress}
             claimedAt: c.createdAt,
             rewardGranted: pc.rewardAmount,
           })),
-        };
-      });
+        });
+      }
+
+      // Also include orphaned earnings whose promo codes were deleted/expired out of the table
+      // This ensures the claim history drawer always shows ALL historical claims
+      for (const [code, claims] of Object.entries(claimsByCode)) {
+        if (!codesInHistory.has(code)) {
+          const totalEarnings = claims.reduce((sum, c) => sum + parseFloat(c.commissionUsd || '0'), 0);
+          codesInHistory.set(code, {
+            promoCode: code,
+            totalClaims: claims.length,
+            totalEarnings: totalEarnings.toFixed(4),
+            createdAt: claims[claims.length - 1]?.createdAt || new Date(),
+            expiresAt: null,
+            rewardAmount: null,
+            usageLimit: null,
+            usageCount: claims.length,
+            remainingClaims: null,
+            totalRewardsDistributed: '0',
+            status: 'expired',
+            claims: claims.map(c => ({
+              id: c.id,
+              username: c.claimUserUsername || null,
+              firstName: c.claimUserFirstName || null,
+              claimedAt: c.createdAt,
+              rewardGranted: null,
+            })),
+          });
+        }
+      }
+
+      const promoCodeHistory = Array.from(codesInHistory.values())
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       // Keep flat history for backward compat
       const history = historyRows.slice(0, 50).map(r => ({

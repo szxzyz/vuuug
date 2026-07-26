@@ -3573,6 +3573,17 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(users.id, publisherId));
 
+      // CRITICAL: keep user_balances in sync. Without this, addEarning's drift-correction
+      // guard (which treats user_balances as the canonical source) will overwrite users.balance
+      // back to the pre-task value the next time the user watches an ad.
+      await db.execute(sql`
+        INSERT INTO user_balances (user_id, balance, updated_at)
+        VALUES (${publisherId}, ${rewardPOW.toString()}, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET balance    = COALESCE(user_balances.balance::numeric, 0) + ${rewardPOW}::numeric,
+            updated_at = NOW()
+      `);
+
       // Record the earning
       await db.insert(earnings).values({
         userId: publisherId,
