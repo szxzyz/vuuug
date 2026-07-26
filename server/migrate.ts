@@ -351,6 +351,37 @@ export async function ensureDatabaseSchema(): Promise<void> {
       )
     `);
 
+    // Persistent ad-watch sessions.  The reward endpoints use this table for
+    // server-authoritative provider binding and duplicate protection.  Keep it
+    // in the startup schema verifier as well as the checked-in migration files:
+    // imported/deployed projects do not necessarily run drizzle migrations.
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ad_sessions (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        context VARCHAR NOT NULL,
+        ad_type VARCHAR NOT NULL,
+        status VARCHAR NOT NULL DEFAULT 'pending',
+        background_entered BOOLEAN DEFAULT false,
+        background_duration_ms INTEGER DEFAULT 0,
+        registered_at TIMESTAMP DEFAULT NOW(),
+        used_at TIMESTAMP
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS mission_ad_claims (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        platform VARCHAR NOT NULL,
+        reset_date VARCHAR NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT NOW(),
+        CONSTRAINT mission_ad_claims_user_platform_date_unique
+          UNIQUE (user_id, platform, reset_date)
+      )
+    `);
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS promotion_claims (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -432,6 +463,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
       db.execute(sql`CREATE INDEX IF NOT EXISTS idx_promotions_status ON promotions(status)`),
       db.execute(sql`CREATE INDEX IF NOT EXISTS idx_task_completions_user_id ON task_completions(user_id)`),
       db.execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_missions_user_date ON daily_missions(user_id, reset_date)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS ad_sessions_user_idx ON ad_sessions(user_id)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS ad_sessions_registered_idx ON ad_sessions(registered_at)`),
+      db.execute(sql`CREATE INDEX IF NOT EXISTS mission_ad_claims_user_idx ON mission_ad_claims(user_id)`),
       db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_user_id ON ban_logs(banned_user_id)`),
       db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_device_id ON ban_logs(device_id)`),
       db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ban_logs_ip ON ban_logs(ip)`),

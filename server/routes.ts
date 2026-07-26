@@ -1687,26 +1687,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // ✅ All checks passed — atomically claim the session (only succeeds if it's
-      // still 'pending'), which prevents a duplicate/resumed request racing this
-      // one from also being rewarded for the same session.
-      const [claimed] = await db.update(adSessions)
-        .set({ status: 'used', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
-        .where(and(eq(adSessions.id, sessionId), eq(adSessions.status, 'pending')))
-        .returning({ id: adSessions.id });
-      if (!claimed) {
-        return res.status(400).json({
-          message: "Session already used. Please watch a new ad.",
-          errorType: 'duplicate_session',
-        });
-      }
-      adUserCooldowns.set(userKey, Date.now());
-      if (abuse.score > 0) {
-        adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
-      }
-      console.log(`✅ Ad session valid for user ${userId}: adType=${serverAdType} bgDuration=${bgDuration}ms`);
-      // ─────────────────────────────────────────────────────────────────────
-
       // Use the server-authoritative adType from pre-registration (never trust client field)
       const normalizedAdType = serverAdType;
 
@@ -1778,30 +1758,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const adRewardPOW = rewardPerAdPOW;
       
       try {
-        // Process reward with error handling to ensure success response
-        // Capture the earning so we can reference its ID for referral commission tracking
-        const adWatchEarning = await storage.addEarning({
+        // Consume the pending session and credit the earning atomically. If any
+        // write fails, the transaction rolls back and the user can retry the
+        // still-pending session instead of losing a valid reward.
+        const rewardResult = await storage.claimAdReward({
+          sessionId,
           userId,
           amount: String(adRewardPOW),
           source: 'ad_watch',
           description: 'Watched advertisement',
+          backgroundEntered: bgEntered,
+          backgroundDurationMs: bgDuration,
         });
+        if (!rewardResult.claimed || !rewardResult.earning) {
+          return res.status(400).json({
+            message: "Session already used. Please watch a new ad.",
+            errorType: 'duplicate_session',
+          });
+        }
+        const adWatchEarning = rewardResult.earning;
+        adUserCooldowns.set(userKey, Date.now());
+        if (abuse.score > 0) {
+          adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
+        }
+        console.log(`✅ Ad session valid and reward credited for user ${userId}: adType=${serverAdType} bgDuration=${bgDuration}ms`);
         
         // Increment per-provider daily ads watched count (period-reset aware)
-        if (normalizedAdType === 'adsgram') {
-          await storage.incrementAdsWatched(userId); // handles period reset internally
-        } else {
-          const col = normalizedAdType === 'monetag' ? 'monetag_ads_watched_today' : 'gigapub_ads_watched_today';
-          // If this is a new reset period, start counter at 1; otherwise increment
-          const newProviderCount = isNewAdPeriod ? 1 : (currentTypeWatched + 1);
-          await db.execute(sql`
-            UPDATE users SET
-              ${sql.raw(col)} = ${newProviderCount},
-              ads_watched     = COALESCE(ads_watched, 0) + 1,
-              last_ad_date    = NOW(),
-              updated_at      = NOW()
-            WHERE id = ${userId}
-          `);
+        try {
+          if (normalizedAdType === 'adsgram') {
+            await storage.incrementAdsWatched(userId); // handles period reset internally
+          } else {
+            const col = normalizedAdType === 'monetag' ? 'monetag_ads_watched_today' : 'gigapub_ads_watched_today';
+            // If this is a new reset period, start counter at 1; otherwise increment
+            const newProviderCount = isNewAdPeriod ? 1 : (currentTypeWatched + 1);
+            await db.execute(sql`
+              UPDATE users SET
+                ${sql.raw(col)} = ${newProviderCount},
+                ads_watched     = COALESCE(ads_watched, 0) + 1,
+                last_ad_date    = NOW(),
+                updated_at      = NOW()
+              WHERE id = ${userId}
+            `);
+          }
+        } catch (counterError) {
+          // Reward and audit history are already committed atomically. Counter
+          // repair is safe to retry and must not turn a successful credit into
+          // the generic "Reward processing failed" response.
+          console.error('⚠️ Ad counter update failed after credited reward:', counterError);
         }
 
         // Stars system — increment weeklyStars when monthly contest is active
@@ -4585,45 +4588,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
           limit = 25;
       }
 
-      // Atomically claim the session (only succeeds if still 'pending') before
-      // granting anything — this is what prevents a duplicated/resumed request
-      // for the same session from being rewarded twice.
-      const [claimedMissionSession] = await db.update(adSessions)
-        .set({ status: 'used', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
-        .where(and(eq(adSessions.id, sessionId), eq(adSessions.status, 'pending')))
-        .returning({ id: adSessions.id });
-      if (!claimedMissionSession) {
-        return res.status(400).json({ success: false, message: "Session already used. Please watch a new ad.", errorType: 'duplicate_session' });
-      }
-
-      // Atomically increment today's claim counter for this user/platform and
-      // enforce the admin-configured daily limit. This prevents the endpoint
-      // from being called an unlimited number of times to mint POW.
       const resetDate = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
-      const [counter] = await db
-        .insert(missionAdClaims)
-        .values({ userId, platform, resetDate, count: 1 })
-        .onConflictDoUpdate({
-          target: [missionAdClaims.userId, missionAdClaims.platform, missionAdClaims.resetDate],
-          set: { count: sql`${missionAdClaims.count} + 1`, updatedAt: new Date() },
-        })
-        .returning({ count: missionAdClaims.count });
+      const rewardResult = await storage.claimMissionAdReward({
+        sessionId,
+        userId,
+        platform,
+        resetDate,
+        limit,
+        amount: String(reward),
+        description: `Mission ad reward (${platform})`,
+        backgroundEntered: bgEntered,
+        backgroundDurationMs: bgDuration,
+      });
 
-      if (counter.count > limit) {
+      if (rewardResult.limitExceeded) {
         return res.status(429).json({
           success: false,
           message: `Daily limit reached for ${platform} (${limit}/day). Try again tomorrow.`,
         });
       }
+      if (!rewardResult.claimed) {
+        return res.status(400).json({
+          success: false,
+          message: "Session already used. Please watch a new ad.",
+          errorType: 'duplicate_session',
+        });
+      }
 
-      await storage.addEarning({
-        userId,
-        amount: String(reward),
-        source: 'mission_ad',
-        description: `Mission ad reward (${platform})`,
-      });
-
-      return res.json({ success: true, reward, claimsToday: counter.count, dailyLimit: limit });
+      return res.json({ success: true, reward, claimsToday: rewardResult.count, dailyLimit: limit });
     } catch (error) {
       console.error('Error in mission ad watch:', error);
       return res.status(500).json({ success: false, message: 'Internal error' });

@@ -12,6 +12,8 @@ import {
   advertiserTasks,
   taskClicks,
   adminSettings,
+  adSessions,
+  missionAdClaims,
   type User,
   type UpsertUser,
   type InsertEarning,
@@ -129,6 +131,22 @@ export interface IStorage {
   createOrUpdateUserBalance(userId: string, balance?: string): Promise<UserBalance>;
   deductBalance(userId: string, amount: string): Promise<{ success: boolean; message: string }>;
   addBalance(userId: string, amount: string): Promise<void>;
+  claimAdReward(input: {
+    sessionId: string;
+    userId: string;
+    amount: string;
+    source: string;
+    description: string;
+  }): Promise<{ claimed: boolean; earning?: Earning }>;
+  claimMissionAdReward(input: {
+    sessionId: string;
+    userId: string;
+    platform: string;
+    resetDate: string;
+    limit: number;
+    amount: string;
+    description: string;
+  }): Promise<{ claimed: boolean; limitExceeded?: boolean; count: number; earning?: Earning }>;
   
   // Admin/Statistics operations
   getAppStats(): Promise<{
@@ -460,6 +478,187 @@ export class DatabaseStorage implements IStorage {
     // to avoid double-paying commission on every ad watch.
     
     return newEarning;
+  }
+
+  /**
+   * Claim a pre-registered ad session and credit the reward in one database
+   * transaction.  The session update is the idempotency gate: a concurrent
+   * request can update neither the session nor the reward twice.
+   */
+  async claimAdReward(input: {
+    sessionId: string;
+    userId: string;
+    amount: string;
+    source: string;
+    description: string;
+    backgroundEntered?: boolean;
+    backgroundDurationMs?: number;
+  }): Promise<{ claimed: boolean; earning?: Earning }> {
+    return db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .update(adSessions)
+        .set({
+          status: 'used',
+          usedAt: new Date(),
+          backgroundEntered: input.backgroundEntered ?? false,
+          backgroundDurationMs: input.backgroundDurationMs ?? 0,
+        })
+        .where(and(
+          eq(adSessions.id, input.sessionId),
+          eq(adSessions.userId, input.userId),
+          eq(adSessions.status, 'pending'),
+        ))
+        .returning({ id: adSessions.id });
+
+      if (!claimed) return { claimed: false };
+
+      const [earning] = await tx
+        .insert(earnings)
+        .values({
+          userId: input.userId,
+          amount: input.amount,
+          source: input.source,
+          description: input.description,
+        })
+        .returning();
+
+      await tx.insert(transactions).values({
+        userId: input.userId,
+        amount: input.amount,
+        type: 'addition',
+        source: input.source,
+        description: input.description,
+        metadata: { earningId: earning.id },
+      });
+
+      await this.creditEarningInTransaction(tx, input.userId, input.amount);
+      return { claimed: true, earning };
+    });
+  }
+
+  /**
+   * Mission-ad equivalent of claimAdReward.  The daily counter is locked and
+   * checked before the session is consumed, so a limit rejection is retry-safe
+   * and the session/reward/counter changes commit atomically.
+   */
+  async claimMissionAdReward(input: {
+    sessionId: string;
+    userId: string;
+    platform: string;
+    resetDate: string;
+    limit: number;
+    amount: string;
+    description: string;
+    backgroundEntered?: boolean;
+    backgroundDurationMs?: number;
+  }): Promise<{ claimed: boolean; limitExceeded?: boolean; count: number; earning?: Earning }> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO mission_ad_claims (user_id, platform, reset_date, count, updated_at)
+        VALUES (${input.userId}, ${input.platform}, ${input.resetDate}, 0, NOW())
+        ON CONFLICT (user_id, platform, reset_date) DO NOTHING
+      `);
+
+      const [current] = await tx
+        .select()
+        .from(missionAdClaims)
+        .where(and(
+          eq(missionAdClaims.userId, input.userId),
+          eq(missionAdClaims.platform, input.platform),
+          eq(missionAdClaims.resetDate, input.resetDate),
+        ))
+        .for('update');
+      const currentCount = current?.count ?? 0;
+
+      if (currentCount >= input.limit) {
+        return { claimed: false, limitExceeded: true, count: currentCount };
+      }
+
+      const [claimed] = await tx
+        .update(adSessions)
+        .set({
+          status: 'used',
+          usedAt: new Date(),
+          backgroundEntered: input.backgroundEntered ?? false,
+          backgroundDurationMs: input.backgroundDurationMs ?? 0,
+        })
+        .where(and(
+          eq(adSessions.id, input.sessionId),
+          eq(adSessions.userId, input.userId),
+          eq(adSessions.context, 'mission_ad'),
+          eq(adSessions.adType, input.platform),
+          eq(adSessions.status, 'pending'),
+        ))
+        .returning({ id: adSessions.id });
+
+      if (!claimed) return { claimed: false, count: currentCount };
+
+      const [counter] = await tx
+        .update(missionAdClaims)
+        .set({
+          count: sql`${missionAdClaims.count} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(missionAdClaims.id, current.id))
+        .returning({ count: missionAdClaims.count });
+
+      const [earning] = await tx
+        .insert(earnings)
+        .values({
+          userId: input.userId,
+          amount: input.amount,
+          source: 'mission_ad',
+          description: input.description,
+        })
+        .returning();
+
+      await tx.insert(transactions).values({
+        userId: input.userId,
+        amount: input.amount,
+        type: 'addition',
+        source: 'mission_ad',
+        description: input.description,
+        metadata: { earningId: earning.id, platform: input.platform },
+      });
+
+      await this.creditEarningInTransaction(tx, input.userId, input.amount);
+      return { claimed: true, count: counter.count, earning };
+    });
+  }
+
+  private async creditEarningInTransaction(tx: any, userId: string, amount: string): Promise<void> {
+    await tx.execute(sql`
+      INSERT INTO user_balances (user_id, balance, updated_at)
+      VALUES (${userId}, 0, NOW())
+      ON CONFLICT (user_id) DO NOTHING
+    `);
+    await tx.execute(sql`
+      SELECT u.id
+      FROM users u
+      JOIN user_balances ub ON ub.user_id = u.id
+      WHERE u.id = ${userId}
+      FOR UPDATE
+    `);
+    await tx.execute(sql`
+      UPDATE users u
+      SET balance = (
+            GREATEST(
+              COALESCE(u.balance::numeric, 0),
+              COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
+            ) + ${amount}::numeric
+          )::numeric,
+          withdraw_balance = COALESCE(u.withdraw_balance::numeric, 0) + ${amount}::numeric,
+          total_earned = COALESCE(u.total_earned::numeric, 0) + ${amount}::numeric,
+          total_earnings = COALESCE(u.total_earnings::numeric, 0) + ${amount}::numeric,
+          updated_at = NOW()
+      WHERE u.id = ${userId}
+    `);
+    await tx.execute(sql`
+      UPDATE user_balances ub
+      SET balance = (SELECT u.balance::numeric FROM users u WHERE u.id = ub.user_id),
+          updated_at = NOW()
+      WHERE ub.user_id = ${userId}
+    `);
   }
 
   async getUserEarnings(userId: string, limit: number = 20): Promise<Earning[]> {
@@ -2925,7 +3124,7 @@ export class DatabaseStorage implements IStorage {
                   COALESCE(u.balance::numeric, 0),
                   COALESCE((SELECT ub.balance::numeric FROM user_balances ub WHERE ub.user_id = u.id), 0)
                 ) + ${amount}::numeric
-              )::text,
+              )::numeric,
               updated_at = NOW()
           WHERE u.id = ${userId}
         `);
