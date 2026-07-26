@@ -1269,9 +1269,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const botTaskCostTON = parseFloat(getSetting('bot_task_cost_ton', '0.0003')); // Default 0.0003 TON per click
       
       // Separate channel and bot task rewards (in PAD) — tiered by verification
-      const channelTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '4000')); // Default 4000 POW (no verify)
-      const botTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '4000')); // Default 4000 POW (no verify)
-      const taskRewardWithVerify = parseInt(getSetting('task_reward_with_verify', '7000')); // Default 7000 POW (with verify)
+      const channelTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '2000')); // Default 2000 POW (no verify)
+      const botTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '2000')); // Default 2000 POW (no verify)
+      const taskRewardWithVerify = parseInt(getSetting('task_reward_with_verify', '3000')); // Default 3000 POW (with verify)
       
       // Currency conversion: 10,000,000 POW = 1 USD
       const padPerUsd = parseInt(getSetting('pad_per_usd', '10000000')); // Default 10M POW = 1 USD
@@ -1351,6 +1351,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCostTON,
         channelTaskRewardPOW,
         botTaskRewardPOW,
+        taskRewardNoVerify: channelTaskRewardPOW,
+        taskRewardWithVerify,
         taskCostPerClick,
         taskRewardPerClick,
         taskRewardPAD: channelTaskRewardPOW, // Use channel reward as default
@@ -3085,12 +3087,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(users)
         .where(eq(users.id, userId));
 
-      // Get reward settings for advertiser task types from admin settings.
-      // Use the SAME settings that recordTaskClick uses so the displayed reward
-      // exactly matches what the user will actually receive.
-      const taskRewardWithVerify  = await storage.getAppSetting('task_reward_with_verify',  '3000');
-      const taskRewardNoVerify    = await storage.getAppSetting('task_reward_no_verify',     '2000');
-      const partnerTaskReward     = await storage.getAppSetting('partner_task_reward',       '5000');
+      // Use the same settings and selection logic as the task feed and payout path.
+      const rewardSettings = await storage.getAdvertiserTaskRewardSettings();
 
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
@@ -3098,14 +3096,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Format advertiser tasks with rewards that mirror the server-side recordTaskClick logic
       const formattedTasks = advertiserTasks.map(task => {
-        let rewardPOW = 0;
-        if (task.taskType === 'partner') {
-          rewardPOW = parseInt(partnerTaskReward);
-        } else if (task.verificationRequired) {
-          rewardPOW = parseInt(taskRewardWithVerify);
-        } else {
-          rewardPOW = parseInt(taskRewardNoVerify);
-        }
+        const rewardPOW = storage.getAdvertiserTaskReward(
+          task.taskType,
+          task.verificationRequired,
+          rewardSettings,
+        );
         
         return {
           id: task.id,
@@ -4417,11 +4412,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCost: parseFloat(getSetting('bot_task_cost_usd', '0.003')), // NEW: Bot cost in USD (admin only)
         channelTaskCostTON: parseFloat(getSetting('channel_task_cost_ton', '0.0003')), // TON cost for regular users
         botTaskCostTON: parseFloat(getSetting('bot_task_cost_ton', '0.0003')), // TON cost for regular users
-        channelTaskReward: parseInt(getSetting('channel_task_reward', '4000')), // Channel reward (legacy)
-        botTaskReward: parseInt(getSetting('bot_task_reward', '4000')), // Bot reward (legacy)
+        channelTaskReward: parseInt(getSetting('task_reward_no_verify', '2000')), // Channel reward (legacy)
+        botTaskReward: parseInt(getSetting('task_reward_no_verify', '2000')), // Bot reward (legacy)
         partnerTaskReward: parseInt(getSetting('partner_task_reward', '5000')), // Partner task reward in PAD
-        taskRewardNoVerify: parseInt(getSetting('task_reward_no_verify', '4000')), // Task without verification
-        taskRewardWithVerify: parseInt(getSetting('task_reward_with_verify', '7000')), // Task with verification
+        taskRewardNoVerify: parseInt(getSetting('task_reward_no_verify', '2000')), // Task without verification
+        taskRewardWithVerify: parseInt(getSetting('task_reward_with_verify', '3000')), // Task with verification
         minimumConvertPOW: parseInt(getSetting('minimum_convert_pad', '100')), // NEW: Min convert in PAD (100 PAD = $0.01)
         minimumConvertUSD: parseInt(getSetting('minimum_convert_pad', '100')) / 10000, // Convert to USD
         minimumClicks: parseInt(getSetting('minimum_clicks', '500')), // NEW: Min clicks for task creation
@@ -6884,8 +6879,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/advertiser-tasks', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      const tasks = await storage.getActiveTasksForUser(userId);
-      res.json({ success: true, tasks });
+      const [tasks, rewardSettings] = await Promise.all([
+        storage.getActiveTasksForUser(userId),
+        storage.getAdvertiserTaskRewardSettings(),
+      ]);
+      const tasksWithRewards = tasks.map(task => ({
+        ...task,
+        rewardPOW: storage.getAdvertiserTaskReward(
+          task.taskType,
+          task.verificationRequired,
+          rewardSettings,
+        ),
+      }));
+      res.json({ success: true, tasks: tasksWithRewards });
     } catch (error) {
       console.error("Error fetching advertiser tasks:", error);
       res.status(500).json({ success: false, message: "Failed to fetch tasks" });

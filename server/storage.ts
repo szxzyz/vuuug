@@ -840,6 +840,38 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getAdvertiserTaskRewardSettings(): Promise<{
+    noVerify: number;
+    withVerify: number;
+    partner: number;
+  }> {
+    const [noVerifyValue, withVerifyValue, partnerValue] = await Promise.all([
+      this.getAppSetting('task_reward_no_verify', '2000'),
+      this.getAppSetting('task_reward_with_verify', '3000'),
+      this.getAppSetting('partner_task_reward', '5000'),
+    ]);
+
+    const parseReward = (value: string, fallback: number) => {
+      const reward = Number.parseInt(value, 10);
+      return Number.isFinite(reward) && reward >= 0 ? reward : fallback;
+    };
+
+    return {
+      noVerify: parseReward(noVerifyValue, 2000),
+      withVerify: parseReward(withVerifyValue, 3000),
+      partner: parseReward(partnerValue, 5000),
+    };
+  }
+
+  getAdvertiserTaskReward(
+    taskType: string,
+    verificationRequired: boolean | null | undefined,
+    settings: { noVerify: number; withVerify: number; partner: number },
+  ): number {
+    if (taskType === 'partner') return settings.partner;
+    return verificationRequired ? settings.withVerify : settings.noVerify;
+  }
+
   // Check and activate referral bonus when friend watches required number of ads (PAD + USD rewards)
   // Uses admin-configured 'referral_ads_required' setting instead of hardcoded value
   // Returns list of referrer IDs that received rewards (so caller can push WebSocket updates)
@@ -3460,24 +3492,13 @@ export class DatabaseStorage implements IStorage {
         return { success: false, message: "Task has reached its click limit" };
       }
 
-      // Get reward amount from admin settings based on task type and verification tier
-      let rewardPOW: number;
-      if (task.taskType === 'partner') {
-        // Partner tasks: always use partner_task_reward setting (default 5000 POW)
-        const partnerSetting = await db.select().from(adminSettings)
-          .where(eq(adminSettings.settingKey, 'partner_task_reward')).limit(1);
-        rewardPOW = parseInt(partnerSetting[0]?.settingValue || '5000');
-      } else if (task.verificationRequired) {
-        // Tasks with verification: use task_reward_with_verify setting (default 3000 POW)
-        const verifySetting = await db.select().from(adminSettings)
-          .where(eq(adminSettings.settingKey, 'task_reward_with_verify')).limit(1);
-        rewardPOW = parseInt(verifySetting[0]?.settingValue || '3000');
-      } else {
-        // Tasks without verification: use task_reward_no_verify setting (default 2000 POW)
-        const noVerifySetting = await db.select().from(adminSettings)
-          .where(eq(adminSettings.settingKey, 'task_reward_no_verify')).limit(1);
-        rewardPOW = parseInt(noVerifySetting[0]?.settingValue || '2000');
-      }
+      // Use the same admin-configured reward tiers that the task feed exposes.
+      const rewardSettings = await this.getAdvertiserTaskRewardSettings();
+      const rewardPOW = this.getAdvertiserTaskReward(
+        task.taskType,
+        task.verificationRequired,
+        rewardSettings,
+      );
 
       // Insert click record
       await db.insert(taskClicks).values({
