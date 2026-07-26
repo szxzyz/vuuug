@@ -856,12 +856,22 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             </div>
             <div className="bg-white/5 p-2 rounded text-center">
               <p className="text-xs text-muted-foreground">Today</p>
-              <p className="font-bold text-xl">{user.dailyAdsWatched || 0}</p>
+              <p className="font-bold text-xl">{userAds?.ads?.adsWatchedToday ?? user.adsWatchedToday ?? 0}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="bg-white/5 p-2 rounded text-center">
+              <p className="text-xs text-muted-foreground">Monetag Today</p>
+              <p className="font-bold">{userAds?.ads?.monetagAdsWatchedToday ?? 0}</p>
+            </div>
+            <div className="bg-white/5 p-2 rounded text-center">
+              <p className="text-xs text-muted-foreground">GigaPub Today</p>
+              <p className="font-bold">{userAds?.ads?.gigapubAdsWatchedToday ?? 0}</p>
             </div>
           </div>
           <div className="bg-white/5 p-2 rounded">
             <p className="text-xs text-muted-foreground">Since Last Withdrawal</p>
-            <p className="font-bold">{user.adsWatchedSinceLastWithdrawal || 0}</p>
+            <p className="font-bold">{user.adsWatchedSinceLastWithdrawal ?? 0}</p>
           </div>
         </div>
       )}
@@ -873,8 +883,14 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
             <div className="space-y-2 max-h-[300px] overflow-y-auto">
               {userReferrals.referrals.map((ref: any) => (
                 <div key={ref.id} className="bg-white/5 p-2 rounded border border-white/10">
-                  <p className="text-sm font-mono text-[#4cd3ff]">{ref.refereeCode || ref.refereeId?.slice(0, 8) || 'N/A'}</p>
-                  <p className="text-xs text-muted-foreground">Status: {ref.status}</p>
+                  <div className="flex justify-between items-start">
+                    <p className="text-sm font-mono text-[#4cd3ff]">{ref.refereeName || ref.refereeCode || ref.refereeId?.slice(0, 8) || 'N/A'}</p>
+                    {ref.rewardAmount && parseFloat(ref.rewardAmount) > 0 && (
+                      <p className="text-xs font-bold text-green-400">+{Math.round(parseFloat(ref.rewardAmount)).toLocaleString()} POW</p>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">{ref.refereeCode || 'N/A'}</p>
+                  <p className="text-xs text-muted-foreground">Status: <span className={ref.status === 'active' ? 'text-green-400' : 'text-yellow-400'}>{ref.status}</span></p>
                   <p className="text-xs text-muted-foreground">Joined: {ref.createdAt ? new Date(ref.createdAt).toLocaleDateString() : 'N/A'}</p>
                 </div>
               ))}
@@ -2596,7 +2612,7 @@ function SettingsSection() {
             {/* ── MonetaG ── */}
             <div className="rounded-xl border border-white/10 p-3 space-y-3">
               <p className="text-sm font-bold text-green-400 flex items-center gap-2">
-                <i className="fas fa-tv"></i> MonetaG (Card 2)
+                <i className="fas fa-tv"></i> Monetag (Card 2)
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1">

@@ -401,7 +401,15 @@ export default function Home() {
     }
 
     if (task.link) {
-      window.open(task.link, '_blank');
+      const tgWebApp = (window as any).Telegram?.WebApp;
+      const isTelegramLink = task.link.includes('t.me');
+      if (tgWebApp?.openTelegramLink && isTelegramLink) {
+        tgWebApp.openTelegramLink(task.link);
+      } else if (tgWebApp?.openLink) {
+        tgWebApp.openLink(task.link);
+      } else {
+        window.open(task.link, '_blank');
+      }
       advertiserTaskMutation.mutate(task.id);
     } else {
       advertiserTaskMutation.mutate(task.id);
