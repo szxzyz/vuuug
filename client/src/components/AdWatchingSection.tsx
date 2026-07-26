@@ -137,14 +137,26 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
       // Register session server-side with its adType BEFORE showing the ad.
       // The server uses this to prevent clients from claiming a different provider's reward.
-      const regRes = await apiRequest("POST", "/api/ads/register-session", {
-        sessionId,
-        adType: card.adType,
-        context: "ads_watch",
-      });
-      if (!regRes.ok) {
+      // apiRequest throws on non-OK responses (via throwIfResNotOk), so we wrap
+      // this call in its own try/catch to surface specific error types rather
+      // than falling through to the generic outer catch.
+      try {
+        await apiRequest("POST", "/api/ads/register-session", {
+          sessionId,
+          adType: card.adType,
+          context: "ads_watch",
+        });
+      } catch (regErr: any) {
         cancelSession();
-        showNotification(t("something_went_wrong"), "error");
+        if (regErr.errorType === 'duplicate_session') {
+          showNotification(t("error") + ": Session already used. Please try again.", "error");
+        } else if (regErr.errorType === 'bot_detected') {
+          showNotification(t("something_went_wrong") + ". Please try again.", "error");
+        } else if (regErr.message) {
+          showNotification(`${t("error")}: ${regErr.message}`, "error");
+        } else {
+          showNotification(t("something_went_wrong"), "error");
+        }
         return;
       }
       let result: { success: boolean; unavailable: boolean };
