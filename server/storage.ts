@@ -743,39 +743,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async incrementAdsWatched(userId: string): Promise<void> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    
-    if (!user) return;
+    // Fully atomic: the CASE expression computes the new daily count inside the UPDATE,
+    // eliminating the read-then-write race condition that caused count corruption under
+    // concurrent ad watches.  The 12 PM UTC reset boundary mirrors getResetDate() logic.
+    const result = await db.execute(sql`
+      UPDATE users SET
+        ads_watched_today = CASE
+          WHEN last_ad_date IS NOT NULL
+           AND last_ad_date >= (
+             CASE
+               WHEN EXTRACT(HOUR FROM NOW() AT TIME ZONE 'UTC') >= 12
+                 THEN date_trunc('day', NOW() AT TIME ZONE 'UTC') + interval '12 hours'
+               ELSE date_trunc('day', NOW() AT TIME ZONE 'UTC') - interval '12 hours'
+             END
+           )
+          THEN COALESCE(ads_watched_today, 0) + 1
+          ELSE 1
+        END,
+        ads_watched  = COALESCE(ads_watched, 0) + 1,
+        last_ad_date = NOW(),
+        updated_at   = NOW()
+      WHERE id = ${userId}
+      RETURNING ads_watched_today
+    `);
 
-    const now = new Date();
-    const currentResetDate = this.getResetDate(now); // 12 PM UTC reset boundary
+    if ((result as any).rowCount === 0) return; // user not found
 
-    // Check if last ad was watched in the same reset period
-    let adsCount = 1; // Default for first ad of the period
-    
-    if (user.lastAdDate) {
-      const lastAdResetDate = this.getResetDate(user.lastAdDate); // Use same 12 PM reset logic
-      
-      // If same reset period, increment current count
-      if (lastAdResetDate === currentResetDate) {
-        adsCount = (user.adsWatchedToday || 0) + 1;
-      }
-    }
+    const newAdsCount = Number((result.rows[0] as any)?.ads_watched_today ?? 1);
+    console.log(`📊 ADS_COUNT_DEBUG: User ${userId}, New Count: ${newAdsCount} (atomic update)`);
 
-    console.log(`📊 ADS_COUNT_DEBUG: User ${userId}, Reset Date: ${currentResetDate}, New Count: ${adsCount}, Previous Count: ${user.adsWatchedToday || 0}`);
-
-    await db
-      .update(users)
-      .set({
-        adsWatchedToday: adsCount,
-        adsWatched: sql`COALESCE(${users.adsWatched}, 0) + 1`, // Increment total ads watched
-        lastAdDate: now,
-        updatedAt: now,
-      })
-      .where(eq(users.id, userId));
-
-    // NEW: Update task progress for the new task system
-    await this.updateTaskProgress(userId, adsCount);
+    // Update task progress for the task system
+    await this.updateTaskProgress(userId, newAdsCount);
   }
 
   async resetDailyAdsCount(userId: string): Promise<void> {
@@ -1410,20 +1408,104 @@ export class DatabaseStorage implements IStorage {
   }
 
   async confirmPromoCodeUsage(promoCodeId: string, userId: string, rewardAmount: string): Promise<void> {
-    // Record usage AFTER reward is successfully given
-    await db.insert(promoCodeUsage).values({
-      promoCodeId,
-      userId,
-      rewardAmount,
+    // Record usage AFTER reward is successfully given.
+    // Both writes are wrapped in a transaction so the usage row and the counter
+    // are always in sync — partial writes can't leave the counter ahead of actual rows.
+    await db.transaction(async (tx) => {
+      await tx.insert(promoCodeUsage).values({ promoCodeId, userId, rewardAmount });
+      await tx
+        .update(promoCodes)
+        .set({
+          usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(promoCodes.id, promoCodeId));
     });
+  }
 
-    await db
-      .update(promoCodes)
-      .set({
-        usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(promoCodes.id, promoCodeId));
+  // Atomically validate + lock + record a promo code claim in one DB transaction.
+  // Prevents the TOCTOU race where two concurrent requests both pass the usage-limit
+  // check and both receive the reward.  The SELECT … FOR UPDATE locks the promo code
+  // row for the duration of the transaction.
+  //
+  // NOTE: usage is recorded inside the transaction BEFORE the reward is given in
+  // routes.ts.  If the reward step fails the usage row persists (user cannot retry),
+  // but this is intentional — it prevents unlimited reward re-claims.  Admins can
+  // manually credit affected users via the balance management tools.
+  async atomicClaimPromoCode(code: string, userId: string): Promise<{
+    success: boolean;
+    message: string;
+    errorType?: string;
+    reward?: string;
+    rewardType?: string;
+    rewardCurrency?: string;
+    promoCodeId?: string;
+  }> {
+    try {
+      return await db.transaction(async (tx) => {
+        // Lock the row — concurrent requests on the same code will queue here
+        const rows = await tx
+          .select()
+          .from(promoCodes)
+          .where(eq(promoCodes.code, code))
+          .for('update');
+
+        const promoCode = rows[0];
+        if (!promoCode) {
+          return { success: false, message: 'Invalid promo code', errorType: 'invalid' };
+        }
+        if (!promoCode.isActive) {
+          return { success: false, message: 'Promo code not active', errorType: 'not_active' };
+        }
+        if (promoCode.expiresAt && new Date() > new Date(promoCode.expiresAt)) {
+          return { success: false, message: 'Promo code has expired', errorType: 'expired' };
+        }
+
+        // Re-read usage count inside the lock to get the authoritative value
+        const [{ count: globalCount }] = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(promoCodeUsage)
+          .where(eq(promoCodeUsage.promoCodeId, promoCode.id));
+
+        if (promoCode.usageLimit && Number(globalCount) >= promoCode.usageLimit) {
+          return { success: false, message: 'Promo code limit reached', errorType: 'limit_reached' };
+        }
+
+        // Per-user limit check (inside lock)
+        const [{ count: userCount }] = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(promoCodeUsage)
+          .where(and(
+            eq(promoCodeUsage.promoCodeId, promoCode.id),
+            eq(promoCodeUsage.userId, userId),
+          ));
+
+        if (Number(userCount) >= (promoCode.perUserLimit || 1)) {
+          return { success: false, message: 'Promo code already applied', errorType: 'already_applied' };
+        }
+
+        const rewardAmount = promoCode.rewardAmount || '0';
+
+        // Record usage atomically while the row is still locked
+        await tx.insert(promoCodeUsage).values({ promoCodeId: promoCode.id, userId, rewardAmount });
+        await tx
+          .update(promoCodes)
+          .set({ usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`, updatedAt: new Date() })
+          .where(eq(promoCodes.id, promoCode.id));
+
+        return {
+          success: true,
+          message: `Promo code redeemed! You earned ${rewardAmount} ${promoCode.rewardCurrency || 'PAD'}`,
+          reward: rewardAmount,
+          rewardType: promoCode.rewardType || 'PAD',
+          rewardCurrency: promoCode.rewardCurrency || 'PAD',
+          promoCodeId: promoCode.id,
+        };
+      });
+    } catch (err: any) {
+      console.error('atomicClaimPromoCode error:', err);
+      return { success: false, message: 'Failed to claim promo code', errorType: 'server_error' };
+    }
   }
 
   // Process referral commission (10% of user's earnings)
@@ -3521,7 +3603,8 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Add USD balance to user
+  // Add USD balance to user — uses a single atomic SQL increment to prevent
+  // read-modify-write race conditions under concurrent requests.
   async addUSDBalance(userId: string, amount: string, source: string, description: string): Promise<void> {
     try {
       const amountNum = parseFloat(amount);
@@ -3529,27 +3612,20 @@ export class DatabaseStorage implements IStorage {
         throw new Error('Invalid USD amount');
       }
 
-      // Get current USD balance
-      const [user] = await db
-        .select({ usdBalance: users.usdBalance })
-        .from(users)
-        .where(eq(users.id, userId));
+      // Atomic increment — no separate read, no stale-value overwrite
+      const result = await db.execute(sql`
+        UPDATE users
+        SET usd_balance = COALESCE(usd_balance::numeric, 0) + ${amountNum},
+            updated_at  = NOW()
+        WHERE id = ${userId}
+        RETURNING usd_balance
+      `);
 
-      if (!user) {
+      if ((result as any).rowCount === 0) {
         throw new Error('User not found');
       }
 
-      const currentUsdBalance = parseFloat(user.usdBalance || '0');
-      const newUsdBalance = (currentUsdBalance + amountNum).toFixed(10);
-
-      // Update user's USD balance
-      await db
-        .update(users)
-        .set({
-          usdBalance: newUsdBalance,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, userId));
+      const newUsdBalance = (result.rows[0] as any)?.usd_balance ?? amountNum;
 
       // Log the transaction
       await this.logTransaction({
@@ -3696,7 +3772,9 @@ export class DatabaseStorage implements IStorage {
     return;
   }
 
-  // Deduct balance for withdrawal approval (direct deduction method)
+  // Deduct balance for withdrawal approval.
+  // Each branch performs a single conditional UPDATE — atomic, no read-modify-write race.
+  // Returns false (without throwing) when balance is insufficient or user not found.
   async deductBalanceForWithdrawal(userId: string, amount: string, currency: string = 'TON'): Promise<boolean> {
     try {
       const amountNum = parseFloat(amount);
@@ -3706,92 +3784,49 @@ export class DatabaseStorage implements IStorage {
       }
 
       if (currency === 'TON') {
-        // Deduct from TON balance
-        const [user] = await db
-          .select({ tonBalance: users.tonBalance })
-          .from(users)
-          .where(eq(users.id, userId));
-
-        if (!user) {
-          console.error('User not found for balance deduction');
+        const result = await db.execute(sql`
+          UPDATE users
+          SET ton_balance = COALESCE(ton_balance::numeric, 0) - ${amountNum},
+              updated_at  = NOW()
+          WHERE id = ${userId}
+          AND   COALESCE(ton_balance::numeric, 0) >= ${amountNum}
+          RETURNING ton_balance
+        `);
+        if ((result as any).rowCount === 0) {
+          console.error(`Insufficient TON balance or user not found for ${userId}`);
           return false;
         }
-
-        const currentBalance = parseFloat(user.tonBalance || '0');
-        if (currentBalance < amountNum) {
-          console.error(`Insufficient TON balance: ${currentBalance} < ${amountNum}`);
-          return false;
-        }
-
-        const newBalance = (currentBalance - amountNum).toFixed(8);
-
-        await db
-          .update(users)
-          .set({
-            tonBalance: newBalance,
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, userId));
-
-        console.log(`💰 Deducted ${amountNum} TON from user ${userId}. New balance: ${newBalance}`);
+        console.log(`💰 Deducted ${amountNum} TON from ${userId}. Remaining: ${(result.rows[0] as any)?.ton_balance}`);
       } else if (currency === 'USD') {
-        // Deduct from USD balance
-        const [user] = await db
-          .select({ usdBalance: users.usdBalance })
-          .from(users)
-          .where(eq(users.id, userId));
-
-        if (!user) {
-          console.error('User not found for USD balance deduction');
+        // USD — atomic conditional deduct
+        const usdResult = await db.execute(sql`
+          UPDATE users
+          SET usd_balance = COALESCE(usd_balance::numeric, 0) - ${amountNum},
+              updated_at  = NOW()
+          WHERE id = ${userId}
+          AND   COALESCE(usd_balance::numeric, 0) >= ${amountNum}
+          RETURNING usd_balance
+        `);
+        if ((usdResult as any).rowCount === 0) {
+          console.error(`Insufficient USD balance or user not found for ${userId}`);
           return false;
         }
-
-        const currentBalance = parseFloat(user.usdBalance || '0');
-        if (currentBalance < amountNum) {
-          console.error(`Insufficient USD balance: ${currentBalance} < ${amountNum}`);
-          return false;
-        }
-
-        const newBalance = (currentBalance - amountNum).toFixed(10);
-
-        await db
-          .update(users)
-          .set({
-            usdBalance: newBalance,
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, userId));
-
-        console.log(`💰 Deducted $${amountNum} USD from user ${userId}. New balance: $${newBalance}`);
+        console.log(`💰 Deducted $${amountNum} USD from ${userId}. Remaining: ${(usdResult.rows[0] as any)?.usd_balance}`);
       } else {
-        // Deduct from PAD balance (default)
-        const [user] = await db
-          .select({ balance: users.balance })
-          .from(users)
-          .where(eq(users.id, userId));
-
-        if (!user) {
-          console.error('User not found for PAD balance deduction');
+        // PAD (default) — atomic conditional deduct
+        const padResult = await db.execute(sql`
+          UPDATE users
+          SET balance    = (COALESCE(balance::numeric, 0) - ${amountNum})::text,
+              updated_at = NOW()
+          WHERE id = ${userId}
+          AND   COALESCE(balance::numeric, 0) >= ${amountNum}
+          RETURNING balance
+        `);
+        if ((padResult as any).rowCount === 0) {
+          console.error(`Insufficient PAD balance or user not found for ${userId}`);
           return false;
         }
-
-        const currentBalance = parseInt(user.balance || '0');
-        if (currentBalance < amountNum) {
-          console.error(`Insufficient PAD balance: ${currentBalance} < ${amountNum}`);
-          return false;
-        }
-
-        const newBalance = Math.round(currentBalance - amountNum);
-
-        await db
-          .update(users)
-          .set({
-            balance: newBalance.toString(),
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, userId));
-
-        console.log(`💰 Deducted ${amountNum} PAD from user ${userId}. New balance: ${newBalance}`);
+        console.log(`💰 Deducted ${amountNum} PAD from ${userId}. Remaining: ${(padResult.rows[0] as any)?.balance}`);
       }
 
       return true;

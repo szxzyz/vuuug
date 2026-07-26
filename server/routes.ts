@@ -38,6 +38,7 @@ import { isAuthenticated } from "./replitAuth";
 import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
 import { rejectAutomatedRequest } from "./antiBot";
+import { createBackup, listBackups, deleteBackup, getBackupPath, startBackupScheduler } from "./backup";
 import { requireTurnstile } from "./turnstile";
 
 // Store WebSocket connections for real-time updates
@@ -1268,9 +1269,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const botTaskCostTON = parseFloat(getSetting('bot_task_cost_ton', '0.0003')); // Default 0.0003 TON per click
       
       // Separate channel and bot task rewards (in PAD) — tiered by verification
-      const channelTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '2000')); // Default 2000 POW (no verify)
-      const botTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '2000')); // Default 2000 POW (no verify)
-      const taskRewardWithVerify = parseInt(getSetting('task_reward_with_verify', '3000')); // Default 3000 POW (with verify)
+      const channelTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '4000')); // Default 4000 POW (no verify)
+      const botTaskRewardPOW = parseInt(getSetting('task_reward_no_verify', '4000')); // Default 4000 POW (no verify)
+      const taskRewardWithVerify = parseInt(getSetting('task_reward_with_verify', '7000')); // Default 7000 POW (with verify)
       
       // Currency conversion: 10,000,000 POW = 1 USD
       const padPerUsd = parseInt(getSetting('pad_per_usd', '10000000')); // Default 10M POW = 1 USD
@@ -4325,11 +4326,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         botTaskCost: parseFloat(getSetting('bot_task_cost_usd', '0.003')), // NEW: Bot cost in USD (admin only)
         channelTaskCostTON: parseFloat(getSetting('channel_task_cost_ton', '0.0003')), // TON cost for regular users
         botTaskCostTON: parseFloat(getSetting('bot_task_cost_ton', '0.0003')), // TON cost for regular users
-        channelTaskReward: parseInt(getSetting('channel_task_reward', '2000')), // Channel reward (legacy)
-        botTaskReward: parseInt(getSetting('bot_task_reward', '2000')), // Bot reward (legacy)
+        channelTaskReward: parseInt(getSetting('channel_task_reward', '4000')), // Channel reward (legacy)
+        botTaskReward: parseInt(getSetting('bot_task_reward', '4000')), // Bot reward (legacy)
         partnerTaskReward: parseInt(getSetting('partner_task_reward', '5000')), // Partner task reward in PAD
-        taskRewardNoVerify: parseInt(getSetting('task_reward_no_verify', '2000')), // Task without verification
-        taskRewardWithVerify: parseInt(getSetting('task_reward_with_verify', '3000')), // Task with verification
+        taskRewardNoVerify: parseInt(getSetting('task_reward_no_verify', '4000')), // Task without verification
+        taskRewardWithVerify: parseInt(getSetting('task_reward_with_verify', '7000')), // Task with verification
         minimumConvertPOW: parseInt(getSetting('minimum_convert_pad', '100')), // NEW: Min convert in PAD (100 PAD = $0.01)
         minimumConvertUSD: parseInt(getSetting('minimum_convert_pad', '100')) / 10000, // Convert to USD
         minimumClicks: parseInt(getSetting('minimum_clicks', '500')), // NEW: Min clicks for task creation
@@ -9417,21 +9418,24 @@ ${walletAddress}
         }
       }
 
-      // STEP 1: Validate only — does NOT record usage yet
-      const result = await storage.usePromoCode(cleanCode, userId);
+      // STEP 1: Atomically validate + record usage in one DB transaction with a
+      // SELECT FOR UPDATE lock on the promo code row.  This prevents the TOCTOU
+      // race where two concurrent requests both pass the usage-limit check and
+      // both receive the reward.  Usage is recorded BEFORE the reward is given;
+      // if the reward step fails the usage persists (admin can credit manually)
+      // but unlimited re-claims are prevented.
+      const result = await storage.atomicClaimPromoCode(cleanCode, userId);
       if (!result.success) {
         return res.status(400).json({ success: false, message: result.message });
       }
 
-      // Pull validated values from result (no second DB fetch needed)
-      const rewardAmount  = result.reward || '0';
-      const promoCodeId   = result.promoCodeId!;
-      let   rewardType    = (result.rewardType || 'PAD').toUpperCase();
-      // Normalize aliases
-      if (rewardType === 'PDZ')  rewardType = 'TON';
-      if (rewardType === 'POW')  rewardType = 'PAD';
+      const rewardAmount = result.reward || '0';
+      const promoCodeId  = result.promoCodeId!;
+      let   rewardType   = (result.rewardType || 'PAD').toUpperCase();
+      if (rewardType === 'PDZ') rewardType = 'TON';
+      if (rewardType === 'POW') rewardType = 'PAD';
 
-      // STEP 2: Give the reward — if this throws, usage is NOT recorded
+      // STEP 2: Give the reward (usage already recorded atomically above)
       if (rewardType === 'PAD') {
         const rewardPow = parseInt(rewardAmount);
         await storage.addEarning({
@@ -9441,10 +9445,6 @@ ${walletAddress}
           description: `Redeemed promo code: ${cleanCode}`,
         });
 
-        // STEP 3: Only record usage after reward is successfully given
-        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
-
-        // STEP 4: Ambassador commission
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
         return res.json({
@@ -9455,12 +9455,14 @@ ${walletAddress}
         });
 
       } else if (rewardType === 'TON') {
-        const [currentUser] = await db.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId));
-        const newTonBalance = (parseFloat(currentUser?.tonBalance || '0') + parseFloat(rewardAmount)).toFixed(8);
-        await db.update(users).set({ tonBalance: newTonBalance, updatedAt: new Date() }).where(eq(users.id, userId));
+        // Atomic SQL increment — no read-modify-write race
+        await db.execute(sql`
+          UPDATE users
+          SET ton_balance = COALESCE(ton_balance::numeric, 0) + ${parseFloat(rewardAmount)},
+              updated_at  = NOW()
+          WHERE id = ${userId}
+        `);
         await storage.logTransaction({ userId, amount: rewardAmount, type: 'credit', source: 'promo_code', description: `Redeemed promo code: ${cleanCode}`, metadata: { code: cleanCode, rewardType: 'TON' } });
-
-        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
@@ -9473,8 +9475,6 @@ ${walletAddress}
 
       } else if (rewardType === 'USD') {
         await storage.addUSDBalance(userId, rewardAmount, 'promo_code', `Redeemed promo code: ${cleanCode}`);
-
-        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
@@ -9494,8 +9494,6 @@ ${walletAddress}
           source: 'promo_code',
           description: `Redeemed promo code: ${cleanCode}`,
         });
-
-        await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
 
         await creditAmbassadorCommission(cleanCode, promoCodeId, userId);
 
@@ -13002,6 +13000,67 @@ ${walletAddress}
       res.status(500).json({ message: 'Failed to reset stars' });
     }
   });
+
+  // ── Admin: Database Backup & Restore ─────────────────────────────────────────
+
+  /** List all available backups */
+  app.get('/api/admin/backups', authenticateAdmin, async (_req: any, res) => {
+    try {
+      const backups = listBackups();
+      res.json({ backups });
+    } catch (err: any) {
+      console.error('Error listing backups:', err);
+      res.status(500).json({ message: err.message || 'Failed to list backups' });
+    }
+  });
+
+  /** Trigger a manual backup immediately */
+  app.post('/api/admin/backups', authenticateAdmin, async (_req: any, res) => {
+    try {
+      const meta = await createBackup('manual');
+      res.json({ success: true, backup: meta });
+    } catch (err: any) {
+      console.error('Error creating backup:', err);
+      res.status(500).json({ message: err.message || 'Failed to create backup' });
+    }
+  });
+
+  /** Download a backup file */
+  app.get('/api/admin/backups/:filename/download', authenticateAdmin, async (req: any, res) => {
+    try {
+      const filepath = getBackupPath(req.params.filename);
+      res.download(filepath, req.params.filename);
+    } catch (err: any) {
+      console.error('Error downloading backup:', err);
+      res.status(404).json({ message: err.message || 'Backup not found' });
+    }
+  });
+
+  /** Restore database from a backup — ⚠️ destructive */
+  app.post('/api/admin/backups/:filename/restore', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { restoreBackup } = await import('./backup');
+      await restoreBackup(req.params.filename);
+      res.json({ success: true, message: `Database restored from ${req.params.filename}` });
+    } catch (err: any) {
+      console.error('Error restoring backup:', err);
+      res.status(500).json({ message: err.message || 'Failed to restore backup' });
+    }
+  });
+
+  /** Delete a backup file */
+  app.delete('/api/admin/backups/:filename', authenticateAdmin, async (req: any, res) => {
+    try {
+      deleteBackup(req.params.filename);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('Error deleting backup:', err);
+      res.status(404).json({ message: err.message || 'Backup not found' });
+    }
+  });
+
+  // Start daily auto-backup scheduler
+  startBackupScheduler();
 
   // ── Twice-daily ad counter reset scheduler ───────────────────────────────────
   // Resets ads_watched_today, monetag_ads_watched_today, gigapub_ads_watched_today
