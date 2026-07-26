@@ -11,7 +11,6 @@ import AdFailurePopup from "@/components/AdFailurePopup";
 import { useAdSession } from "@/hooks/useAdSession";
 import { apiRequest } from "@/lib/queryClient";
 import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle } from "lucide-react";
-import { getTurnstileToken } from "@/lib/turnstile";
 
 declare global {
   interface Window {
@@ -641,9 +640,7 @@ export default function Missions() {
 
   const claimMissionAdMutation = useMutation({
     mutationFn: async (payload: { platform: string; sessionId: string; backgroundDuration: number; backgroundEntered: boolean }) => {
-      const tsToken = await getTurnstileToken("mission-ad-watch");
-      const tsHeaders: Record<string, string> = tsToken ? { 'x-turnstile-token': tsToken } : {};
-      const response = await fetch('/api/missions/ads/watch', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tsHeaders }, credentials: 'include', body: JSON.stringify(payload) });
+      const response = await fetch('/api/missions/ads/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) });
       const data = await response.json();
       if (!data.success) {
         const err: any = new Error(data.message || t('failed'));
