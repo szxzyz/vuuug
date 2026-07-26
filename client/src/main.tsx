@@ -27,7 +27,19 @@ if (typeof window !== 'undefined') {
   
   // Focus check
   window.addEventListener('blur', () => { interactionEntropy = 0; });
-  
+
+  // Refresh heartbeat immediately when the user returns to the app — critical
+  // for ad watching, where the app goes to the background for 20+ seconds
+  // and the server rejects the reward claim if heartbeat > 20s old.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      lastHeartbeat = Date.now();
+    }
+  });
+  window.addEventListener('focus', () => {
+    lastHeartbeat = Date.now();
+  });
+
   // Heartbeat loop
   setInterval(() => {
     if (document.visibilityState === 'visible') {
