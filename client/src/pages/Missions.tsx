@@ -267,15 +267,27 @@ function DailyMissionCard({
   );
 }
 
+/** Returns true only for public t.me/username links the avatar proxy can resolve. */
+function hasTelegramAvatar(link: string): boolean {
+  if (!link) return false;
+  const m = link.match(/t\.me\/([^/?]+)/);
+  if (!m) return false;
+  const seg = m[1];
+  // Invite-hash links (+hash) and joinchat paths have no public username.
+  return !seg.startsWith('+') && seg !== 'joinchat';
+}
+
 /* ── Task avatar — same approach as AdvertiserTaskSheet ── */
 function TaskAvatar({ task }: { task: Task }) {
-  const [imgOk, setImgOk] = useState(true);
-  const [loaded, setLoaded] = useState(false);
   const isBot = task.taskType === 'bot';
-  const src = `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}`;
+  const canFetch = hasTelegramAvatar(task.link);
+  const [imgOk, setImgOk] = useState(canFetch);
+  const [loaded, setLoaded] = useState(false);
+  const src = canFetch ? `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}` : '';
 
   useEffect(() => {
-    setImgOk(true);
+    const ok = hasTelegramAvatar(task.link);
+    setImgOk(ok);
     setLoaded(false);
   }, [task.link]);
 
@@ -286,7 +298,7 @@ function TaskAvatar({ task }: { task: Task }) {
       background: 'rgba(76,211,255,0.10)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
-      {imgOk && (
+      {imgOk && src && (
         <img
           key={src}
           src={src}
