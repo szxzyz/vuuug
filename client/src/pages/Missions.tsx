@@ -43,6 +43,7 @@ interface Task {
   completedAt?: string;
   verificationRequired?: boolean;
   channelVerified?: boolean;
+  rewardPOW?: number;
 }
 
 interface AmbassadorEntry {
@@ -464,11 +465,11 @@ export default function Missions() {
   const gigaPubReward = appSettings?.gigaPubMissionReward ?? 50;
   const gigaPubLimit  = appSettings?.gigaPubMissionLimit  ?? 10;
   // Separate reward tiers based on verification and task type
-  const taskRewardNoVerify   = appSettings?.taskRewardNoVerify  || appSettings?.channelTaskReward || 2000;
-  const taskRewardWithVerify = appSettings?.taskRewardWithVerify || 3000;
+  const taskRewardNoVerify   = appSettings?.taskRewardNoVerify  ?? appSettings?.channelTaskReward ?? 2000;
+  const taskRewardWithVerify = appSettings?.taskRewardWithVerify ?? 3000;
   const channelReward = taskRewardNoVerify;
   const botReward     = taskRewardNoVerify;
-  const partnerReward = appSettings?.partnerTaskReward  || 5000;
+  const partnerReward = appSettings?.partnerTaskReward  ?? 5000;
 
   const botUsername = botInfo?.username || (import.meta as any).env?.VITE_BOT_USERNAME || 'Paid_Adzbot';
   const referralLink = (user as any)?.referralCode
@@ -805,6 +806,7 @@ export default function Missions() {
   const partnerTasks = allTasks.filter(t => t.taskType === 'partner');
 
   const getReward = (task: Task) => {
+    if (typeof task.rewardPOW === 'number') return task.rewardPOW;
     if (task.taskType === 'partner') return partnerReward;
     if (task.verificationRequired) return taskRewardWithVerify;
     return task.taskType === 'channel' ? channelReward : botReward;
