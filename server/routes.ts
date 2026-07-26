@@ -6993,10 +6993,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Partner tasks are free and always use Telegram verification
+      // Partner tasks are free. Telegram verification is only possible for t.me
+      // links — external HTTPS tasks (e.g. https://timebucks.com/...) cannot be
+      // verified via the Bot API, so they are saved with verificationRequired: false
+      // and use the simple "open → claim" flow instead.
       if (taskType === "partner") {
-        // Partner tasks always require verification via Telegram Bot API
-        const useVerification = verificationRequired !== false; // default true for partner tasks
+        const isTelegramLink = link.includes('t.me');
         const task = await storage.createTask({
           advertiserId: userId,
           taskType,
@@ -7006,7 +7008,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           costPerClick: "0",
           totalCost: "0",
           status: "running",
-          verificationRequired: true, // Partner tasks always require Telegram verification
+          verificationRequired: isTelegramLink, // Only t.me links can be Telegram-verified
           channelVerified: channelVerified || false,
         });
 
@@ -7170,11 +7172,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const telegramUserId = req.user?.telegramUser?.id || req.session?.user?.telegramUser?.id;
       const { taskId } = req.params;
 
-      // For partner tasks or tasks with verificationRequired, enforce server-side Telegram verification (fail-closed)
+      // Telegram membership verification — only for tasks whose link is a public
+      // t.me channel/bot username AND verificationRequired is true.
+      // External HTTPS tasks (e.g. https://timebucks.com/...) are intentionally
+      // excluded: they have verificationRequired: false and use the simple
+      // "open → claim" flow on the frontend.
       const task = await storage.getTaskById(taskId);
-      if (task && (task.taskType === 'partner' || task.verificationRequired)) {
+      const needsTelegramVerif = task &&
+        task.verificationRequired === true &&
+        task.link?.includes('t.me');
+
+      if (needsTelegramVerif) {
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
-        
+
         // Fail-closed: if we can't verify, block the claim
         if (!botToken) {
           return res.status(403).json({
@@ -7198,25 +7208,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        let channelId = task.link.trim();
-        const urlMatch = channelId.match(/t\.me\/([^/?]+)/);
-        if (urlMatch && urlMatch[1]) {
-          const segment = urlMatch[1];
-          if (!segment.startsWith('+') && !segment.startsWith('joinchat')) {
-            channelId = `@${segment}`;
-          } else {
-            // Private invite link — cannot verify server-side, block claim
-            return res.status(403).json({
-              success: false,
-              message: "Please join the channel via the invite link and then verify",
-              requiresVerification: true,
-            });
-          }
-        } else if (!channelId.startsWith('@') && !channelId.startsWith('-')) {
-          channelId = `@${channelId}`;
+        const urlMatch = task.link.trim().match(/t\.me\/([^/?]+)/);
+        const segment = urlMatch?.[1];
+        if (!segment || segment.startsWith('+') || segment === 'joinchat') {
+          // Private invite link — cannot verify server-side
+          return res.status(403).json({
+            success: false,
+            message: "Please join the channel via the invite link and then verify",
+            requiresVerification: true,
+          });
         }
 
-        // Verify membership for public channel usernames
+        const channelId = `@${segment}`;
         if (/^@[A-Za-z][A-Za-z0-9_]{2,31}$/.test(channelId)) {
           const isMember = await verifyChannelMembership(
             parseInt(String(telegramUserId)),
@@ -7231,7 +7234,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         } else {
-          // Unrecognized link format — fail-closed
           return res.status(403).json({
             success: false,
             message: "Cannot verify channel membership for this task — contact support",
@@ -7763,10 +7765,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/advertiser-tasks/avatar', authenticateTelegram, async (req: any, res) => {
     try {
       const link = String(req.query.link || '');
-      const match = link.match(/t\.me\/([^/?]+)/);
-      const username = match?.[1];
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (!username || !botToken) return res.status(404).end();
+      if (!botToken) return res.status(404).end();
+
+      // Extract the first path segment after t.me/
+      const match = link.match(/t\.me\/([^/?]+)/);
+      const segment = match?.[1];
+
+      // Reject missing, private-invite (+hash), and joinchat links — they have
+      // no public username and will always fail the Telegram Bot API lookup.
+      if (!segment || segment.startsWith('+') || segment === 'joinchat') {
+        return res.status(404).end();
+      }
+      const username = segment;
 
       // ── Serve from in-memory cache if fresh (avoids 2 Telegram API round-trips) ─
       const cached = _avatarCache.get(username);
