@@ -26,7 +26,7 @@ interface AdWatchingSectionProps {
 // ─── Card definitions — each maps to its own ad provider ─────────────────────
 const AD_CARDS = [
   { id: 1, adType: "adsgram", title: "AdsGram", accentColor: "#3b82f6", image: "/adsgram-logo.jpg"  },
-  { id: 2, adType: "monetag", title: "Monetag", accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
+  { id: 2, adType: "monetag", title: "MonetaG", accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
   { id: 3, adType: "gigapub", title: "Gigapub", accentColor: "#3b82f6", image: "/gigapub-logo.jpg"  },
 ];
 
@@ -101,8 +101,6 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       else if (error.errorType === "duplicate_session")       showNotification(t("error") + ": Session already used.", "error");
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
       else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
-      else if (error.errorType === "bot_detected")            showNotification(t("something_went_wrong") + ". Please try again.", "error");
-      else if (error.errorType === "turnstile_failed")        showNotification(t("something_went_wrong") + ". Please reload and try again.", "error");
       else if (error.limitType  === "daily")                  showNotification(t("daily_limit_reached_tomorrow"), "error");
       else if (error.message)                                 showNotification(`${t("error")}: ${error.message}`, "error");
       else                                                    showNotification(t("something_went_wrong"), "error");
@@ -138,35 +136,14 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
       // Register session server-side with its adType BEFORE showing the ad.
       // The server uses this to prevent clients from claiming a different provider's reward.
-      // apiRequest throws on non-OK responses (via throwIfResNotOk), so we wrap
-      // this call in its own try/catch to surface specific error types rather
-      // than falling through to the generic outer catch.
-      try {
-        await apiRequest("POST", "/api/ads/register-session", {
-          sessionId,
-          adType: card.adType,
-          context: "ads_watch",
-        });
-      } catch (regErr: any) {
+      const regRes = await apiRequest("POST", "/api/ads/register-session", {
+        sessionId,
+        adType: card.adType,
+        context: "ads_watch",
+      });
+      if (!regRes.ok) {
         cancelSession();
-        const et = regErr?.errorType;
-        if (et === 'duplicate_session') {
-          showNotification(t("error") + ": Session already used. Please try again.", "error");
-        } else if (et === 'bot_detected') {
-          showNotification(t("something_went_wrong") + ". Please try again.", "error");
-        } else if (et === 'turnstile_failed') {
-          // Server-side Turnstile is configured but the client could not supply a
-          // token (VITE_TURNSTILE_SITE_KEY not set). This should not happen after
-          // the turnstile.ts fix (missing tokens are now allowed through), but guard
-          // here in case the server is on an older version.
-          showNotification(t("something_went_wrong") + ". Please reload and try again.", "error");
-        } else if (et === 'invalid_ad_type') {
-          showNotification(t("something_went_wrong") + ": Invalid ad type.", "error");
-        } else if (regErr.message) {
-          showNotification(`${t("error")}: ${regErr.message}`, "error");
-        } else {
-          showNotification(t("something_went_wrong"), "error");
-        }
+        showNotification(t("something_went_wrong"), "error");
         return;
       }
       let result: { success: boolean; unavailable: boolean };

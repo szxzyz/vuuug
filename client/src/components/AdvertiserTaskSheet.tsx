@@ -1,34 +1,22 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bot, Megaphone, Globe, ArrowUpRight, ClipboardPaste, Link2,
+  Bot, Megaphone, ArrowUpRight, ClipboardPaste, Link2,
   CheckCircle2, Loader2, AlertCircle, X, ShieldCheck, Zap,
 } from "lucide-react";
 import { useLanguage } from "@/hooks/useLanguage";
 
 const BLUE_ACCENT = "#4cd3ff";
 
-/** Returns true only for public t.me/username links the avatar proxy can resolve. */
-function hasTelegramAvatar(link: string): boolean {
-  if (!link) return false;
-  const m = link.match(/t\.me\/([^/?]+)/);
-  if (!m) return false;
-  const seg = m[1];
-  // Invite-hash links (+hash) and joinchat paths have no public username.
-  return !seg.startsWith('+') && seg !== 'joinchat';
-}
-
 function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
-  const canFetch = hasTelegramAvatar(task.link);
-  const [imgOk, setImgOk] = useState(canFetch);
+  const [imgOk, setImgOk] = useState(true);
   const [loaded, setLoaded] = useState(false);
-  const src = canFetch ? `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}` : '';
+  const src = `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}`;
 
   // Reset load state whenever the underlying task/link changes — otherwise a
   // failed load for one task permanently hides the image for every task after it.
   useEffect(() => {
-    const ok = hasTelegramAvatar(task.link);
-    setImgOk(ok);
+    setImgOk(true);
     setLoaded(false);
   }, [task.link]);
 
@@ -39,7 +27,7 @@ function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
       background: "rgba(76,211,255,0.10)",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      {imgOk && src && (
+      {imgOk && (
         <img
           key={src}
           src={src}
@@ -52,9 +40,7 @@ function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
       {(!imgOk || !loaded) && (
         isBot
           ? <Bot style={{ width: "22px", height: "22px", color: BLUE_ACCENT }} />
-          : !hasTelegramAvatar(task.link)
-            ? <Globe style={{ width: "22px", height: "22px", color: BLUE_ACCENT }} />
-            : <Megaphone style={{ width: "22px", height: "22px", color: BLUE_ACCENT }} />
+          : <Megaphone style={{ width: "22px", height: "22px", color: BLUE_ACCENT }} />
       )}
     </div>
   );
@@ -208,18 +194,12 @@ export default function AdvertiserTaskSheet({
   if (!task) return null;
 
   const isPartner = task.taskType === "partner";
-  // External partner tasks: partner tasks whose link is not a Telegram (t.me) URL.
-  // These cannot use Telegram verification; they use the simple open→claim flow.
-  const isExternalLink = !task.link?.includes("t.me");
-  const isExternal = isPartner && isExternalLink;
-
-  // Bot / channel flags exclude external-link partner tasks (they have their own flow).
-  const isBot     = !isExternal && (task.taskType === "bot" || (isPartner && task.channelVerified !== true));
-  const isChannel = !isExternal && (task.taskType === "channel" || (isPartner && task.channelVerified === true));
-
-  // Verification (3-step referral/membership check) only applies to Telegram links.
-  // External partner tasks always use the instant open→claim flow.
-  const withVerif = task.verificationRequired === true && !isExternalLink;
+  // For partner tasks: channelVerified === true means it's a channel partner task;
+  // otherwise it's a bot/website partner task.
+  const isBot     = task.taskType === "bot" || (isPartner && task.channelVerified !== true);
+  const isChannel = task.taskType === "channel" || (isPartner && task.channelVerified === true);
+  // Partner tasks are always created with verificationRequired: true
+  const withVerif = task.verificationRequired === true || isPartner;
 
   const handleOpen = () => {
     openLink(task.link);
@@ -454,19 +434,15 @@ export default function AdvertiserTaskSheet({
     )
   );
 
-  const flowLabel = isExternal
-    ? "Visit Website"
-    : isPartner
-      ? t("flow_partner_verified")
-      : isBot
-        ? (withVerif ? t("flow_bot_verified") : t("flow_bot_instant"))
-        : (withVerif ? t("flow_channel_verified") : t("flow_channel_instant"));
+  const flowLabel = isPartner
+    ? t("flow_partner_verified")
+    : isBot
+      ? (withVerif ? t("flow_bot_verified") : t("flow_bot_instant"))
+      : (withVerif ? t("flow_channel_verified") : t("flow_channel_instant"));
 
-  const flowIcon = isExternal
-    ? <Globe style={{ width: "12px", height: "12px", color: BLUE_ACCENT }} />
-    : withVerif
-      ? <ShieldCheck style={{ width: "12px", height: "12px", color: BLUE_ACCENT }} />
-      : <Zap style={{ width: "12px", height: "12px", color: BLUE_ACCENT }} />;
+  const flowIcon = withVerif
+    ? <ShieldCheck style={{ width: "12px", height: "12px", color: BLUE_ACCENT }} />
+    : <Zap style={{ width: "12px", height: "12px", color: BLUE_ACCENT }} />;
 
   return (
     <AnimatePresence>
@@ -525,11 +501,7 @@ export default function AdvertiserTaskSheet({
                       {task.title}
                     </h2>
                     <p style={{ color: TEXT_DIM, fontSize: "12.5px", marginTop: "3px" }}>
-                      {isExternal
-                        ? "Visit the website to earn your reward"
-                        : isBot
-                          ? t("looking_for_referrals")
-                          : t("looking_for_subscribers")}
+                      {isBot ? t("looking_for_referrals") : t("looking_for_subscribers")}
                     </p>
                   </div>
                 </div>
@@ -555,11 +527,6 @@ export default function AdvertiserTaskSheet({
               overflowY: "auto",
               padding: "20px 20px 12px",
             }}>
-              {isExternal && (
-                <StepRow num={1} Icon={Globe} accent={BLUE_ACCENT}
-                  title="Visit the website"
-                  body="Open the website, complete the task, then come back here to claim your reward." />
-              )}
               {isBot     && withVerif  && <BotVerifiedBody />}
               {isBot     && !withVerif && (
                 <StepRow num={1} Icon={Bot} accent={BLUE_ACCENT}
@@ -581,20 +548,6 @@ export default function AdvertiserTaskSheet({
               background: BG,
               borderTop: "1px solid rgba(255,255,255,0.06)",
             }}>
-              {/* External website: open → claim (no Telegram verification) */}
-              {isExternal && (
-                !opened ? (
-                  <ActionBtn color="indigo" onClick={handleOpen}>
-                    <Globe style={{ width: "17px", height: "17px" }} /> Visit Website
-                  </ActionBtn>
-                ) : (
-                  <ActionBtn color="green" onClick={() => { onClaim(task.id); handleClose(); }} disabled={claiming || !canClaim}>
-                    {claiming
-                      ? <Loader2 style={{ width: "17px", height: "17px", animation: "spin 1s linear infinite" }} />
-                      : <><CheckCircle2 style={{ width: "17px", height: "17px" }} /> Claim +{reward.toLocaleString()} POW</>}
-                  </ActionBtn>
-                )
-              )}
               {isBot     && withVerif  && <BotVerifiedFooter />}
               {isBot     && !withVerif && (
                 !opened ? (
