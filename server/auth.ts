@@ -108,13 +108,27 @@ export function verifyTelegramWebAppData(initData: string, botToken: string): { 
 // Modern Telegram authentication middleware
 export const authenticateTelegram: RequestHandler = async (req: any, res, next) => {
   try {
+    const telegramData = req.headers['x-telegram-data'] || req.query.tgData;
+
+    // Check for existing session BEFORE running antiBot checks.
+    // <img> tags and other browser-native requests send the session cookie but
+    // cannot attach custom headers (x-interaction-proof, x-telegram-data).
+    // A user with a valid server session has already authenticated; there is
+    // no need to repeat the antiBot proof on every subsequent request.
+    if (!telegramData && req.session?.user?.user?.id) {
+      console.log('🔄 Using existing session for user:', req.session.user.user.id);
+      req.user = req.session.user;
+      return next();
+    }
+
+    // Only enforce the antiBot proof for requests that do NOT already have a
+    // valid session — these are first-time or unauthenticated callers that need
+    // the full Telegram initData + interaction-proof verification chain.
     const botRejection = rejectAutomatedRequest(req, "authenticated API");
     if (botRejection) {
       return res.status(botRejection.status).json(botRejection.body);
     }
 
-    const telegramData = req.headers['x-telegram-data'] || req.query.tgData;
-    
     // Extract device tracking information
     const deviceId = req.headers['x-device-id'] as string;
     const deviceFingerprint = req.headers['x-device-fingerprint'];
@@ -141,13 +155,6 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
         ip: clientIP,
         userAgent,
       };
-    }
-    
-    // Check for existing session first (before requiring Telegram data)
-    if (!telegramData && req.session?.user?.user?.id) {
-      console.log('🔄 Using existing session for user:', req.session.user.user.id);
-      req.user = req.session.user;
-      return next();
     }
     
     // Development mode - allow test users (only in development, not production)

@@ -1605,15 +1605,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // 5. Anti-fake background/minimize check — the user must have actually left the app
-      //    (backgrounded/minimized it, e.g. to view the ad in another window/overlay) for at
-      //    least MIN_BACKGROUND_MS before returning. This is our proxy for "the ad was really shown"
-      //    since we cannot directly verify third-party ad SDK click/view events.
+      //    (backgrounded/minimized it) OR held the session open long enough for the ad
+      //    to have played. In-WebView ad overlays (AdsGram, Monetag, Gigapub) render
+      //    inside the Telegram WebView without ever triggering blur/visibilitychange, so
+      //    bgEntered is always false for those providers. We accept sessions that are at
+      //    least MIN_SESSION_DURATION_MS old as an equivalent proof that an ad was shown.
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
       const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
-      console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms (total: ${sessionAgeMs}ms)`);
+      const sessionDurationAtClaim = Date.now() - new Date(sessionRow.registeredAt as any).getTime();
+      // Minimum time the session must have been open if no background event fired.
+      // This is the minimum realistic ad duration; instant claims are rejected.
+      const MIN_SESSION_DURATION_MS = 5_000;
+      console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms sessionAge=${sessionDurationAtClaim}ms (total: ${sessionAgeMs}ms)`);
 
-      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
+      const bgOk = (bgEntered && bgDuration >= MIN_BACKGROUND_MS) || sessionDurationAtClaim >= MIN_SESSION_DURATION_MS;
+      if (!bgOk) {
         // Mark session as failed so it can't be retried/replayed, and bump the abuse score
         await db.update(adSessions)
           .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
@@ -4526,11 +4533,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
-      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
+      // Same fallback as the main ads/watch endpoint: in-WebView ad overlays
+      // (Monetag, Gigapub, Monetix on Telegram WebView) don't trigger
+      // blur/visibilitychange, so bgEntered is always false for those providers.
+      // Accept the session if it has been open long enough to have shown a real ad.
+      const MIN_SESSION_DURATION_MS = 5_000;
+      const missionSessionDurationAtClaim = Date.now() - new Date(missionSession.registeredAt as any).getTime();
+      const missionBgOk = (bgEntered && bgDuration >= MIN_BACKGROUND_MS) || missionSessionDurationAtClaim >= MIN_SESSION_DURATION_MS;
+      if (!missionBgOk) {
         await db.update(adSessions)
           .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
           .where(eq(adSessions.id, sessionId));
-        console.log(`⚠️ Mission ad reward rejected for user ${userId}: not backgrounded long enough (entered=${bgEntered}, duration=${bgDuration}ms)`);
+        console.log(`⚠️ Mission ad reward rejected for user ${userId}: not backgrounded long enough and session too short (entered=${bgEntered}, duration=${bgDuration}ms, sessionAge=${missionSessionDurationAtClaim}ms)`);
         return res.status(400).json({ success: false, message: "We couldn't confirm the ad was watched. Please try again.", errorType: 'insufficient_background' });
       }
 
