@@ -102,6 +102,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
       else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
       else if (error.errorType === "bot_detected")            showNotification(t("something_went_wrong") + ". Please try again.", "error");
+      else if (error.errorType === "turnstile_failed")        showNotification(t("something_went_wrong") + ". Please reload and try again.", "error");
       else if (error.limitType  === "daily")                  showNotification(t("daily_limit_reached_tomorrow"), "error");
       else if (error.message)                                 showNotification(`${t("error")}: ${error.message}`, "error");
       else                                                    showNotification(t("something_went_wrong"), "error");
@@ -148,10 +149,19 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         });
       } catch (regErr: any) {
         cancelSession();
-        if (regErr.errorType === 'duplicate_session') {
+        const et = regErr?.errorType;
+        if (et === 'duplicate_session') {
           showNotification(t("error") + ": Session already used. Please try again.", "error");
-        } else if (regErr.errorType === 'bot_detected') {
+        } else if (et === 'bot_detected') {
           showNotification(t("something_went_wrong") + ". Please try again.", "error");
+        } else if (et === 'turnstile_failed') {
+          // Server-side Turnstile is configured but the client could not supply a
+          // token (VITE_TURNSTILE_SITE_KEY not set). This should not happen after
+          // the turnstile.ts fix (missing tokens are now allowed through), but guard
+          // here in case the server is on an older version.
+          showNotification(t("something_went_wrong") + ". Please reload and try again.", "error");
+        } else if (et === 'invalid_ad_type') {
+          showNotification(t("something_went_wrong") + ": Invalid ad type.", "error");
         } else if (regErr.message) {
           showNotification(`${t("error")}: ${regErr.message}`, "error");
         } else {
