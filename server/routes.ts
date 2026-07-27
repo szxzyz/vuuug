@@ -3040,27 +3040,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(users)
         .where(eq(users.id, userId));
 
-      // Get reward settings for advertiser task types from admin settings
-      // Use snake_case keys — the PUT handler stores both camelCase and snake_case;
-      // snake_case is the canonical form used everywhere else in the codebase.
-      const channelTaskReward = await storage.getAppSetting('channel_task_reward', '1000');
-      const botTaskReward = await storage.getAppSetting('bot_task_reward', '1000');
-      const partnerTaskReward = await storage.getAppSetting('partner_task_reward', '1000');
+      // Get reward settings using the SAME keys that recordTaskClick (payout) uses.
+      // Display must mirror payout exactly: partner → partner_task_reward,
+      // verificationRequired → task_reward_with_verify, else → task_reward_no_verify.
+      // (The old code read channel_task_reward / bot_task_reward which are legacy keys
+      //  not updated by the admin panel, causing a display/payout mismatch.)
+      const partnerTaskReward    = await storage.getAppSetting('partner_task_reward',    '5000');
+      const taskRewardWithVerify = await storage.getAppSetting('task_reward_with_verify','3000');
+      const taskRewardNoVerify   = await storage.getAppSetting('task_reward_no_verify',  '2000');
       // Get ALL approved public tasks (admin-created AND user-created after admin approval)
       // Task eligibility: status = 'running' (approved/active), user hasn't completed, not their own task
       const advertiserTasks = await storage.getActiveTasksForUser(userId);
       
-      // Format advertiser tasks with PAD and BUG rewards from admin settings
+      // Format advertiser tasks — reward calculation mirrors recordTaskClick exactly
       const formattedTasks = advertiserTasks.map(task => {
         let rewardPOW = 0;
-        if (task.taskType === 'channel') {
-          rewardPOW = parseInt(channelTaskReward);
-        } else if (task.taskType === 'bot') {
-          rewardPOW = parseInt(botTaskReward);
-        } else if (task.taskType === 'partner') {
+        if (task.taskType === 'partner') {
           rewardPOW = parseInt(partnerTaskReward);
+        } else if (task.verificationRequired) {
+          rewardPOW = parseInt(taskRewardWithVerify);
         } else {
-          rewardPOW = 20;
+          rewardPOW = parseInt(taskRewardNoVerify);
         }
         
         return {
@@ -3069,6 +3069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           taskType: task.taskType,
           title: task.title,
           link: task.link,
+          verificationRequired: task.verificationRequired,
           rewardPOW,
           rewardSTAR: 0,
           rewardType: 'POW',
@@ -10940,15 +10941,16 @@ ${walletAddress}
       updateData[fieldKey] = newVal.toString();
       await db.update(users).set(updateData).where(eq(users.id, id));
 
-      // CRITICAL: keep user_balances in sync for POW adjustments.
-      // Without this, addEarning's drift-correction guard sees a mismatch
-      // between users.balance and user_balances.balance (> 1 PAD) and
-      // overwrites users.balance back to the old user_balances value,
-      // silently reverting the admin's change the next time the user watches an ad.
+      // Keep user_balances in sync for POW adjustments using UPSERT.
+      // A plain UPDATE silently hits 0 rows when the user has no user_balances record,
+      // leaving user_balances stale and causing addEarning to work from a wrong base.
       if (currency === 'pow') {
-        await db.update(userBalances)
-          .set({ balance: newVal.toString(), updatedAt: new Date() })
-          .where(eq(userBalances.userId, id));
+        await db.insert(userBalances)
+          .values({ userId: id, balance: newVal.toString(), updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: userBalances.userId,
+            set: { balance: newVal.toString(), updatedAt: new Date() },
+          });
       }
 
       const txSource = `admin_${action}_${currency}`;

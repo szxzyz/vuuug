@@ -479,40 +479,16 @@ export class DatabaseStorage implements IStorage {
         // Don't throw - the earning was already recorded
       }
 
-      // Balance integrity guard: sync users.balance from canonical user_balances if they drift.
-      // Uses a single JOIN query to minimise DB round-trips on the hot path.
-      // Drift can happen when a repair/reset script touches one table but not the other.
-      try {
-        const driftCheck = await db.execute(sql`
-          SELECT u.balance AS users_balance, ub.balance AS canonical_balance
-          FROM users u
-          JOIN user_balances ub ON ub.user_id = u.id
-          WHERE u.id = ${earning.userId}
-          LIMIT 1
-        `);
-        const row = driftCheck.rows[0] as { users_balance: string; canonical_balance: string } | undefined;
-        if (row) {
-          const usersBalanceVal = parseFloat(String(row.users_balance || '0'));
-          const canonicalBalance = parseFloat(String(row.canonical_balance || '0'));
-          // Sync on any drift > 1 PAD in either direction (canonical is authoritative)
-          if (Math.abs(canonicalBalance - usersBalanceVal) > 1) {
-            console.warn(
-              `⚠️ Balance drift detected for user ${earning.userId}: ` +
-              `users.balance=${usersBalanceVal}, user_balances.balance=${canonicalBalance}. Auto-syncing...`
-            );
-            // Use UPDATE...FROM to avoid a subquery that could resolve to NULL
-            await db.execute(sql`
-              UPDATE users u
-              SET balance = ub.balance, updated_at = NOW()
-              FROM user_balances ub
-              WHERE ub.user_id = u.id AND u.id = ${earning.userId}
-            `);
-            console.log(`✅ Balance synced from user_balances for user ${earning.userId}`);
-          }
-        }
-      } catch (integrityError) {
-        console.error('⚠️ Balance integrity check failed (non-critical):', integrityError);
-      }
+      // NOTE: The former "balance integrity guard" that synced users.balance FROM
+      // user_balances has been intentionally removed. That check treated user_balances
+      // as the canonical source, which caused it to silently revert legitimate admin
+      // balance adjustments the next time a user watched an ad:
+      //   1. Admin sets users.balance = 50 000 and user_balances.balance = 50 000.
+      //   2. If user_balances had no row yet, the admin UPDATE hit 0 rows.
+      //   3. addEarning created a fresh user_balances row at 0, then += reward.
+      //   4. Drift check: |reward − 50 000| > 1  →  overwrote users.balance with reward.
+      // Both tables are updated additively above, so they stay in sync naturally.
+      // users.balance is the authoritative value; user_balances is a shadow copy.
     }
     
     // NOTE: Referral bonus activation is handled by the /api/ads/watch route handler
