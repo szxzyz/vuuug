@@ -91,10 +91,7 @@ const AD_ABUSE_LOCK_SCORE   = 3;       // lock after 3 consecutive failures (was
 const AD_ABUSE_BASE_LOCK_MS = 120_000; // 2 min base lock, doubles per extra level (was 1 min)
 // How long a pending ad_sessions row is honored before it's considered stale/abandoned.
 const AD_SESSION_MAX_AGE_MS = 15 * 60_000; // 15 minutes
-// Hard cap: reject any per-ad reward that exceeds this — protects against misconfigured admin settings
-// Set to 5000 to allow admins to configure rewards up to 5000 POW while still blocking
-// runaway values (e.g. accidental 2,000,000 POW settings).
-const MAX_REWARD_PER_AD_POW = 10000;
+// No hard cap on per-ad reward — the admin-configured value is always used as-is.
 
 // Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
 // Note: adUsedSessions and adPendingSessions were migrated to the DB (ad_sessions table);
@@ -1685,26 +1682,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({
           message: `${normalizedAdType} ads are currently disabled by admin.`,
           errorType: 'provider_disabled',
-        });
-      }
-
-      // ── ANOMALY GUARD: server-side hard cap on reward amount ─────────────────
-      // If admin settings have been misconfigured to an absurd value, reject the
-      // reward rather than silently paying out millions of POW.  This is the last
-      // defence against a misconfigured admin panel.
-      if (rewardPerAdPOW > MAX_REWARD_PER_AD_POW) {
-        console.error(`🚨 ANOMALY BLOCKED: ${normalizedAdType} reward ${rewardPerAdPOW} POW exceeds hard cap ${MAX_REWARD_PER_AD_POW} for user ${userId}. Admin setting must be corrected.`);
-        // Log a security event but do NOT reward
-        await db.execute(sql`
-          INSERT INTO transactions (user_id, amount, type, source, description, metadata, created_at)
-          VALUES (${userId}, 0, 'blocked', 'anomaly_detection',
-                  ${'Blocked inflated reward: ' + rewardPerAdPOW + ' POW for ' + normalizedAdType},
-                  ${JSON.stringify({ rewardPerAdPOW, cap: MAX_REWARD_PER_AD_POW, adType: normalizedAdType })}::jsonb,
-                  NOW())
-        `);
-        return res.status(503).json({
-          message: 'Reward system is under maintenance. Please try again later.',
-          errorType: 'system_maintenance',
         });
       }
 
