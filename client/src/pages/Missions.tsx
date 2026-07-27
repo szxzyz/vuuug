@@ -10,7 +10,7 @@ import AdvertiserTaskSheet from "@/components/AdvertiserTaskSheet";
 import AdFailurePopup from "@/components/AdFailurePopup";
 import { useAdSession } from "@/hooks/useAdSession";
 import { apiRequest } from "@/lib/queryClient";
-import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle } from "lucide-react";
+import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle, ShieldCheck, ShieldOff, Zap } from "lucide-react";
 
 declare global {
   interface Window {
@@ -343,15 +343,23 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
       {/* Title + reward */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{ color: TEXT, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, display: 'block' }}>{task.title}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
+          {(task.verificationRequired || task.taskType === 'partner')
+            ? <ShieldCheck style={{ width: 11, height: 11, color: 'rgba(251,191,36,0.85)', flexShrink: 0 }} />
+            : <Zap style={{ width: 11, height: 11, color: 'rgba(255,255,255,0.28)', flexShrink: 0 }} />
+          }
+          <span style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 600 }}>
+            {(task.verificationRequired || task.taskType === 'partner') ? 'Verified' : 'Instant'}
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: 11 }}>·</span>
           <span style={{ color: accent, fontSize: 12, fontWeight: 800 }}>+{reward.toLocaleString()}</span>
           <span style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 600 }}>POW</span>
-          <span style={{ color: TEXT_DIM, fontSize: 10, fontWeight: 500, opacity: 0.6 }}>· {typeLabel}</span>
+          <span style={{ color: TEXT_DIM, fontSize: 10, fontWeight: 500, opacity: 0.55 }}>· {typeLabel}</span>
         </div>
         {task.taskType === 'channel' && task.verificationRequired && (
-          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 10 }}>⚠️</span>
-            <span style={{ color: 'rgba(251,191,36,0.72)', fontSize: 10, fontWeight: 600 }}>7-day penalty applies</span>
+          <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 9 }}>⚠️</span>
+            <span style={{ color: 'rgba(251,191,36,0.65)', fontSize: 10, fontWeight: 600 }}>7-day penalty applies</span>
           </div>
         )}
       </div>

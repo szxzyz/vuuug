@@ -633,6 +633,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
     queryKey: ["/api/admin/user-analytics-overview", user.id],
     queryFn: () => apiRequest("GET", `/api/admin/users/${user.id}/analytics`).then(res => res.json()),
     enabled: activeTab === 'overview',
+    refetchInterval: 30_000,
   });
   const { data: userDeposits } = useQuery({
     queryKey: ["/api/admin/user-deposits", user.id],
@@ -759,6 +760,31 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
               <div><p className="text-xs text-muted-foreground">Friends</p><p className="font-bold">{user.friendsInvited || 0}</p></div>
               <div><p className="text-xs text-muted-foreground">Ads Watched</p><p className="font-bold">{user.adsWatched || 0}</p></div>
               <div><p className="text-xs text-muted-foreground">Tasks Done</p><p className="font-bold">{analyticsData?.analytics?.tasksCompleted ?? (user.tasksCompleted || 0)}</p></div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 p-3 rounded">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-muted-foreground">Ads & Referrals</p>
+              <span className="text-[10px] text-muted-foreground/50">Live · 30s</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Ads Completed Today</p>
+                <p className="font-bold text-xl text-[#4cd3ff]">{analyticsData?.analytics?.adsWatchedToday ?? user.adsWatchedToday ?? 0}</p>
+              </div>
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Total Ads Completed</p>
+                <p className="font-bold text-xl text-[#4cd3ff]">{analyticsData?.analytics?.adsWatched ?? user.adsWatched ?? 0}</p>
+              </div>
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Referral Income</p>
+                <p className="font-bold text-xl text-emerald-400">{formatPOW(analyticsData?.analytics?.referralIncome)} POW</p>
+              </div>
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Referral Count</p>
+                <p className="font-bold text-xl text-amber-400">{analyticsData?.analytics?.referralCount ?? user.friendsInvited ?? 0}</p>
+              </div>
             </div>
           </div>
 
