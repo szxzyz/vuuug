@@ -169,11 +169,22 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      const buildWebsiteLink = (raw: string): string => {
+        const trimmed = raw.trim();
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+        if (trimmed.startsWith('t.me/')) return `https://${trimmed}`;
+        // @username or plain word without a dot → Telegram bot link
+        if (trimmed.startsWith('@') || !trimmed.includes('.')) {
+          return `https://t.me/${trimmed.replace(/^@/, '')}`;
+        }
+        // Bare domain or domain/path (e.g. example.com, timebucks.com/?refID=123) → external website
+        return `https://${trimmed}`;
+      };
       const link = category === "channel"
         ? channelLink.trim()
         : isVerif
           ? botStart.trim()
-          : `https://t.me/${botUser.replace(/^@/, "").trim()}`;
+          : buildWebsiteLink(botUser);
       const res = await fetch("/api/advertiser-tasks/create", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -206,7 +217,15 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
       if (isVerif && !chVerified) return false;
     } else {
       if (isVerif && (!botStart.trim() || !botStart.includes("t.me"))) return false;
-      if (!isVerif && !botUser.trim()) return false;
+      if (!isVerif) {
+        const raw = botUser.trim();
+        if (!raw) return false;
+        // Must either look like a URL (has a dot or starts with http/@ ) or be a plain username
+        // Reject obviously malformed input (spaces, no scheme and no dot = ambiguous junk)
+        if (raw.includes(' ')) return false;
+        // If it contains a protocol, it must be http or https
+        if (raw.includes('://') && !raw.startsWith('http://') && !raw.startsWith('https://')) return false;
+      }
     }
     return true;
   })();
@@ -485,9 +504,9 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                       </Field>
                     )}
 
-                    {/* ── BOT fields ── */}
+                    {/* ── BOT/WEBSITE fields ── */}
                     {category === "bot" && (
-                      <Field label={isVerif ? t("referral_start_link") : t("bot_username_label")}>
+                      <Field label={isVerif ? t("referral_start_link") : "Website or Bot Link"}>
                         {isVerif ? (
                           <>
                             <input
@@ -509,16 +528,18 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                             )}
                           </>
                         ) : (
-                          <div style={{ position: "relative" }}>
-                            <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.3)", fontSize: 15, pointerEvents: "none" }}>@</span>
+                          <>
                             <input
-                              type="text"
-                              placeholder="yourbotname"
+                              type="url"
+                              placeholder="https://example.com or https://t.me/YourBot"
                               value={botUser}
                               onChange={e => setBotUser(e.target.value)}
-                              style={{ ...INPUT, paddingLeft: 28 }}
+                              style={INPUT}
                             />
-                          </div>
+                            <p style={{ color: "rgba(255,255,255,0.22)", fontSize: 11.5, marginTop: 6, lineHeight: 1.6 }}>
+                              Any website or Telegram bot link — users visit the page, no verification required.
+                            </p>
+                          </>
                         )}
                       </Field>
                     )}
