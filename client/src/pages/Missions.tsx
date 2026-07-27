@@ -331,10 +331,6 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
     : task.taskType === 'partner' ? '#ec4899'
     : '#8b5cf6';
 
-  const typeLabel = task.taskType === 'channel' ? 'Channel'
-    : task.taskType === 'partner' ? 'Partner'
-    : 'Bot / Game';
-
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px' }}>
       {/* Avatar */}
@@ -354,7 +350,6 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
           <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: 11 }}>·</span>
           <span style={{ color: accent, fontSize: 12, fontWeight: 800 }}>+{reward.toLocaleString()}</span>
           <span style={{ color: TEXT_DIM, fontSize: 11, fontWeight: 600 }}>POW</span>
-          <span style={{ color: TEXT_DIM, fontSize: 10, fontWeight: 500, opacity: 0.55 }}>· {typeLabel}</span>
         </div>
         {task.taskType === 'channel' && task.verificationRequired && (
           <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
