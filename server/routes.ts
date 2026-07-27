@@ -11335,6 +11335,12 @@ ${walletAddress}
           sql`${earnings.source} IN ('ad_watch', 'mission_ad')`
         ));
 
+      // Referral income: total commissions earned as a referrer
+      const referralIncomeStats = await db
+        .select({ total: sql<string>`COALESCE(SUM(${referralCommissions.commissionAmount}), 0)` })
+        .from(referralCommissions)
+        .where(eq(referralCommissions.referrerId, id));
+
       // Promo codes claimed + POW earned from promo codes (PAD/POW reward type only)
       const promoClaimStats = await db
         .select({ count: sql<number>`count(*)` })
