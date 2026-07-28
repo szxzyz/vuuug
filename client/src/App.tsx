@@ -14,6 +14,7 @@ import { SeasonEndContext } from "@/lib/SeasonEndContext";
 import { useAdmin } from "@/hooks/useAdmin";
 import ChannelJoinPopup from "@/components/ChannelJoinPopup";
 import { LanguageProvider } from "@/hooks/useLanguage";
+import TurnstileGate from "@/components/TurnstileGate";
 
 // Eagerly import frequently-visited pages — no Suspense flash on navigation
 import Home from "@/pages/Home";
@@ -487,32 +488,34 @@ function App() {
   const isTelegramEnv = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp?.initData;
 
   return (
-    <TonConnectUIProvider
-      manifestUrl={manifestUrl}
-      actionsConfiguration={{
-        // In Telegram Mini App, tell TonKeeper to return via tgback (Telegram deep link)
-        returnStrategy: isTelegramEnv ? 'tgback' : 'back',
-        twaReturnUrl: 'back' as any,
-      }}
-      uiPreferences={{
-        theme: 'DARK',
-      }}
-    >
-      <QueryClientProvider client={queryClient}>
-        <LanguageProvider>
-          <TooltipProvider>
-            {isChannelVerified === false && telegramId && !isDevMode ? (
-              <ChannelJoinPopup
-                telegramId={telegramId}
-                onVerified={() => setIsChannelVerified(true)}
-              />
-            ) : (
-              <AppContent />
-            )}
-          </TooltipProvider>
-        </LanguageProvider>
-      </QueryClientProvider>
-    </TonConnectUIProvider>
+    <TurnstileGate>
+      <TonConnectUIProvider
+        manifestUrl={manifestUrl}
+        actionsConfiguration={{
+          // In Telegram Mini App, tell TonKeeper to return via tgback (Telegram deep link)
+          returnStrategy: isTelegramEnv ? 'tgback' : 'back',
+          twaReturnUrl: 'back' as any,
+        }}
+        uiPreferences={{
+          theme: 'DARK',
+        }}
+      >
+        <QueryClientProvider client={queryClient}>
+          <LanguageProvider>
+            <TooltipProvider>
+              {isChannelVerified === false && telegramId && !isDevMode ? (
+                <ChannelJoinPopup
+                  telegramId={telegramId}
+                  onVerified={() => setIsChannelVerified(true)}
+                />
+              ) : (
+                <AppContent />
+              )}
+            </TooltipProvider>
+          </LanguageProvider>
+        </QueryClientProvider>
+      </TonConnectUIProvider>
+    </TurnstileGate>
   );
 }
 
