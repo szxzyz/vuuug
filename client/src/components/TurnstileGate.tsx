@@ -115,6 +115,16 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
     }
   }, []);
 
+  // ── preload — start fetching the CF script immediately on mount ───────────
+  // This runs in parallel with checkStatus so the script is ready (or nearly
+  // ready) by the time state transitions to "widget", preventing a visible
+  // flash of the loading spinner between the status check and widget render.
+  useEffect(() => {
+    loadScript().catch(() => {
+      // Ignore errors here — the "widget" effect handles them with retry logic.
+    });
+  }, []);
+
   useEffect(() => { checkStatus(); }, [checkStatus]);
 
   // ── step 2 — render widget ─────────────────────────────────────────────────
@@ -163,7 +173,14 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
   }, [state, siteKey]);
 
   // ── step 3 — verify token ──────────────────────────────────────────────────
-  async function submit(token: string) {
+  // Retries the POST with the same token on transient network / 503 errors
+  // (exponential back-off: 1 s → 2 s → 4 s) before surfacing the "unavailable"
+  // state.  The token is only refreshed (widget re-render) after all fetch
+  // retries fail — this keeps the user on "Verifying…" instead of flashing
+  // an error before they even saw the challenge widget.
+  const MAX_FETCH_RETRIES = 3;
+
+  async function submit(token: string, attempt = 0): Promise<void> {
     setState("submitting");
     try {
       const r = await fetch("/api/turnstile/verify", {
@@ -174,10 +191,24 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
       });
       const d = await r.json() as { success: boolean; message?: string; retryable?: boolean };
       if (!alive.current) return;
+
       if (d.success) {
         setState("success");
         setTimeout(() => { if (alive.current) setState("done"); }, 700);
-      } else if (r.status === 503 || d.retryable) {
+        return;
+      }
+
+      const isTransient = r.status === 503 || d.retryable === true;
+      if (isTransient && attempt < MAX_FETCH_RETRIES) {
+        // Back-off and retry the same token — the server is warming up
+        await new Promise(res => setTimeout(res, Math.min(1000 * 2 ** attempt, 8000)));
+        if (!alive.current) return;
+        return submit(token, attempt + 1);
+      }
+
+      if (isTransient) {
+        // All retries exhausted — surface a clear error so the user can act.
+        // Do NOT silently reset to "widget"; that creates an invisible loop.
         setMsg(d.message ?? "Verification service unavailable. Please retry.");
         setState("unavailable");
       } else {
@@ -185,10 +216,18 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
         setState("error");
       }
     } catch {
-      if (alive.current) {
-        setMsg("Network error. Please check your connection and retry.");
-        setState("unavailable");
+      if (!alive.current) return;
+      // Network error — retry silently before surfacing anything.
+      // Root-cause scenario: server is still starting when Cloudflare
+      // auto-solves the challenge, so the POST fires before the API is ready.
+      if (attempt < MAX_FETCH_RETRIES) {
+        await new Promise(res => setTimeout(res, Math.min(1000 * 2 ** attempt, 8000)));
+        if (!alive.current) return;
+        return submit(token, attempt + 1);
       }
+      // All retries exhausted — show error with a manual retry button
+      setMsg("Verification service temporarily unavailable. Please retry.");
+      setState("unavailable");
     }
   }
 
