@@ -8711,6 +8711,53 @@ ${walletAddress}
   
   // Admin withdrawal management endpoints
   
+  // All withdrawals for a specific user (admin user profile)
+  app.get('/api/admin/user-withdrawals/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userWithdrawals = await db
+        .select({
+          id: withdrawals.id,
+          amount: withdrawals.amount,
+          status: withdrawals.status,
+          method: withdrawals.method,
+          details: withdrawals.details,
+          comment: withdrawals.comment,
+          transactionHash: withdrawals.transactionHash,
+          adminNotes: withdrawals.adminNotes,
+          rejectionReason: withdrawals.rejectionReason,
+          deducted: withdrawals.deducted,
+          refunded: withdrawals.refunded,
+          createdAt: withdrawals.createdAt,
+          updatedAt: withdrawals.updatedAt,
+        })
+        .from(withdrawals)
+        .where(eq(withdrawals.userId, id))
+        .orderBy(desc(withdrawals.createdAt));
+
+      const completedStatuses = ['completed', 'success', 'paid', 'Approved', 'Successfull'];
+      const completedCount = userWithdrawals.filter((w: any) => completedStatuses.includes(w.status)).length;
+      const totalPaid = userWithdrawals
+        .filter((w: any) => completedStatuses.includes(w.status))
+        .reduce((sum: number, w: any) => sum + parseFloat(w.amount || '0'), 0);
+
+      res.json({
+        success: true,
+        withdrawals: userWithdrawals,
+        summary: {
+          total: userWithdrawals.length,
+          completed: completedCount,
+          pending: userWithdrawals.filter((w: any) => w.status === 'pending').length,
+          rejected: userWithdrawals.filter((w: any) => w.status?.toLowerCase() === 'rejected').length,
+          totalPaid: totalPaid.toFixed(4),
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error fetching user withdrawals:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch user withdrawals' });
+    }
+  });
+
   // Get pending withdrawals (admin only)
   app.get('/api/admin/withdrawals/pending', authenticateAdmin, async (req: any, res) => {
     try {
@@ -11434,21 +11481,46 @@ ${walletAddress}
     try {
       const { id } = req.params;
       const refereeUser = alias(users, 'refereeUser');
-      const userReferrals = await db
-        .select({
-          id: referrals.id,
-          refereeId: referrals.refereeId,
-          refereeCode: refereeUser.referralCode,
-          refereeName: refereeUser.firstName,
-          rewardAmount: referrals.rewardAmount,
-          status: referrals.status,
-          createdAt: referrals.createdAt,
-        })
-        .from(referrals)
-        .leftJoin(refereeUser, eq(referrals.refereeId, refereeUser.id))
-        .where(eq(referrals.referrerId, id))
-        .orderBy(desc(referrals.createdAt));
-      res.json({ success: true, referrals: userReferrals });
+
+      const [userReferrals, commissionStats] = await Promise.all([
+        db
+          .select({
+            id: referrals.id,
+            refereeId: referrals.refereeId,
+            refereeCode: refereeUser.referralCode,
+            refereeName: refereeUser.firstName,
+            rewardAmount: referrals.rewardAmount,
+            status: referrals.status,
+            createdAt: referrals.createdAt,
+          })
+          .from(referrals)
+          .leftJoin(refereeUser, eq(referrals.refereeId, refereeUser.id))
+          .where(eq(referrals.referrerId, id))
+          .orderBy(desc(referrals.createdAt)),
+
+        db
+          .select({
+            totalIncome: sql<string>`COALESCE(SUM(${referralCommissions.commissionAmount}), 0)`,
+            totalTransactions: sql<number>`COUNT(*)`,
+          })
+          .from(referralCommissions)
+          .where(eq(referralCommissions.referrerId, id)),
+      ]);
+
+      const totalReferralIncome = commissionStats[0]?.totalIncome || '0';
+      const totalTransactions = commissionStats[0]?.totalTransactions || 0;
+      const activeCount = userReferrals.filter((r: any) => r.status === 'active').length;
+
+      res.json({
+        success: true,
+        referrals: userReferrals,
+        summary: {
+          totalIncome: totalReferralIncome,
+          totalTransactions,
+          totalReferrals: userReferrals.length,
+          activeReferrals: activeCount,
+        },
+      });
     } catch (error) {
       console.error('❌ Error fetching user referrals:', error);
       res.status(500).json({ success: false, message: 'Failed to fetch referrals' });
@@ -12861,19 +12933,60 @@ ${walletAddress}
     }
   });
 
-  // Admin: View ambassador earning stats
+  // Admin: View ambassador earning stats with full claim history
   app.get('/api/admin/ambassadors/:id/stats', authenticateAdmin, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const history = await db.select().from(ambassadorEarnings)
-        .where(eq(ambassadorEarnings.ambassadorId, id))
-        .orderBy(desc(ambassadorEarnings.createdAt)).limit(100);
-      const [totals] = await db.select({
-        totalClaims: sql<number>`count(*)`,
-        totalEarnings: sql<string>`COALESCE(SUM(commission_usd), 0)`,
-      }).from(ambassadorEarnings).where(eq(ambassadorEarnings.ambassadorId, id));
-      res.json({ history, totals });
+      const claimUser = alias(users, 'claimUser');
+
+      const [history, totals] = await Promise.all([
+        db
+          .select({
+            id: ambassadorEarnings.id,
+            promoCode: ambassadorEarnings.promoCode,
+            commissionUsd: ambassadorEarnings.commissionUsd,
+            claimUserId: ambassadorEarnings.claimUserId,
+            claimedAt: ambassadorEarnings.createdAt,
+            // User who claimed
+            claimUserName: claimUser.firstName,
+            claimUserUsername: claimUser.username,
+            claimUserCode: claimUser.referralCode,
+            // Reward the user received
+            userRewardAmount: promoCodeUsage.rewardAmount,
+          })
+          .from(ambassadorEarnings)
+          .leftJoin(claimUser, eq(ambassadorEarnings.claimUserId, claimUser.id))
+          .leftJoin(
+            promoCodeUsage,
+            and(
+              eq(promoCodeUsage.promoCodeId, ambassadorEarnings.promoCodeId),
+              eq(promoCodeUsage.userId, ambassadorEarnings.claimUserId),
+            ),
+          )
+          .where(eq(ambassadorEarnings.ambassadorId, id))
+          .orderBy(desc(ambassadorEarnings.createdAt))
+          .limit(200),
+
+        db
+          .select({
+            totalClaims: sql<number>`count(*)`,
+            totalEarningsUsd: sql<string>`COALESCE(SUM(${ambassadorEarnings.commissionUsd}), 0)`,
+            totalRewardGiven: sql<string>`COALESCE(SUM(${promoCodeUsage.rewardAmount}), 0)`,
+          })
+          .from(ambassadorEarnings)
+          .leftJoin(
+            promoCodeUsage,
+            and(
+              eq(promoCodeUsage.promoCodeId, ambassadorEarnings.promoCodeId),
+              eq(promoCodeUsage.userId, ambassadorEarnings.claimUserId),
+            ),
+          )
+          .where(eq(ambassadorEarnings.ambassadorId, id)),
+      ]);
+
+      res.json({ history, totals: totals[0] });
     } catch (error) {
+      console.error('❌ Error fetching ambassador stats:', error);
       res.status(500).json({ message: 'Failed to fetch stats' });
     }
   });
