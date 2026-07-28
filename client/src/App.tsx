@@ -14,7 +14,6 @@ import { SeasonEndContext } from "@/lib/SeasonEndContext";
 import { useAdmin } from "@/hooks/useAdmin";
 import ChannelJoinPopup from "@/components/ChannelJoinPopup";
 import { LanguageProvider } from "@/hooks/useLanguage";
-import TurnstileGate from "@/components/TurnstileGate";
 
 // Eagerly import frequently-visited pages — no Suspense flash on navigation
 import Home from "@/pages/Home";
@@ -409,18 +408,7 @@ function App() {
         }
       }
       
-      // Fire auth immediately — don't await the Turnstile invisible widget.
-      // getTurnstileToken can take up to 15 s, which kept isAuthenticating=true
-      // and blocked TurnstileGate from mounting, causing the "network error"
-      // to flash before the verification screen ever appeared.
-      // Instead we race: send auth now, attach the token only if it resolves
-      // fast enough (< 3 s), otherwise proceed without it.
-      const turnstileRace = Promise.race([
-        getTurnstileToken("telegram-auth"),
-        new Promise<null>(resolve => setTimeout(() => resolve(null), 3000)),
-      ]);
-
-      turnstileRace
+      getTurnstileToken("telegram-auth")
         .then((turnstileToken) => {
           if (turnstileToken) {
             headers["x-turnstile-token"] = turnstileToken;
@@ -499,34 +487,32 @@ function App() {
   const isTelegramEnv = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp?.initData;
 
   return (
-    <TurnstileGate>
-      <TonConnectUIProvider
-        manifestUrl={manifestUrl}
-        actionsConfiguration={{
-          // In Telegram Mini App, tell TonKeeper to return via tgback (Telegram deep link)
-          returnStrategy: isTelegramEnv ? 'tgback' : 'back',
-          twaReturnUrl: 'back' as any,
-        }}
-        uiPreferences={{
-          theme: 'DARK',
-        }}
-      >
-        <QueryClientProvider client={queryClient}>
-          <LanguageProvider>
-            <TooltipProvider>
-              {isChannelVerified === false && telegramId && !isDevMode ? (
-                <ChannelJoinPopup
-                  telegramId={telegramId}
-                  onVerified={() => setIsChannelVerified(true)}
-                />
-              ) : (
-                <AppContent />
-              )}
-            </TooltipProvider>
-          </LanguageProvider>
-        </QueryClientProvider>
-      </TonConnectUIProvider>
-    </TurnstileGate>
+    <TonConnectUIProvider
+      manifestUrl={manifestUrl}
+      actionsConfiguration={{
+        // In Telegram Mini App, tell TonKeeper to return via tgback (Telegram deep link)
+        returnStrategy: isTelegramEnv ? 'tgback' : 'back',
+        twaReturnUrl: 'back' as any,
+      }}
+      uiPreferences={{
+        theme: 'DARK',
+      }}
+    >
+      <QueryClientProvider client={queryClient}>
+        <LanguageProvider>
+          <TooltipProvider>
+            {isChannelVerified === false && telegramId && !isDevMode ? (
+              <ChannelJoinPopup
+                telegramId={telegramId}
+                onVerified={() => setIsChannelVerified(true)}
+              />
+            ) : (
+              <AppContent />
+            )}
+          </TooltipProvider>
+        </LanguageProvider>
+      </QueryClientProvider>
+    </TonConnectUIProvider>
   );
 }
 
