@@ -76,7 +76,7 @@ export async function getBotUsername(): Promise<string> {
       if (data.result?.username) {
         cachedBotUsername = data.result.username;
         console.log(`✅ Bot username fetched from API: @${cachedBotUsername}`);
-        return cachedBotUsername;
+        return cachedBotUsername!;
       }
     }
   } catch (e) {
@@ -151,20 +151,61 @@ interface TelegramMessage {
 
 // All claim state functions removed
 
-// Cache bot ID to avoid repeated getMe() calls per membership check
-let cachedBotId: number | null = null;
-// Cache bot admin status per channel: channelId -> { isAdmin: boolean, expiresAt: number }
+// ─── Membership-check caches ────────────────────────────────────────────────
+//
+// Root-cause fix: ALL caches are now keyed by a token-derived prefix so that
+// using a different bot token never returns a stale result from a prior token.
+//
+// Previous bug: `cachedBotId` was a plain module-level variable — the first
+// token to call getCachedBotId() won, and every subsequent call (even with a
+// different token) got the wrong bot ID, poisoning every getChatMember check.
+
+/** Derive a short, stable cache key from a bot token without storing it. */
+function tokenKey(botToken: string): string {
+  // Tokens look like "123456789:ABC-DEF…"; the numeric prefix is unique per bot.
+  return botToken.split(':')[0] ?? botToken.slice(0, 12);
+}
+
+// botId cache: tokenKey → numeric bot user ID
+const botIdCache = new Map<string, number>();
+
+// botAdminCache: `${tokenKey}:${channelIdentifier}` → { isAdmin, expiresAt }
 const botAdminCache = new Map<string, { isAdmin: boolean; expiresAt: number }>();
 
+// chatTypeCache: `${tokenKey}:${channelIdentifier}` → { type, expiresAt }
+// Avoids a getChat() round-trip on every membership check.
+const chatTypeCache = new Map<string, { type: string; expiresAt: number }>();
+
 async function getCachedBotId(botToken: string): Promise<number | null> {
-  if (cachedBotId !== null) return cachedBotId;
+  const key = tokenKey(botToken);
+  const hit = botIdCache.get(key);
+  if (hit !== undefined) return hit;
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
     if (res.ok) {
       const data = await res.json();
       if (data.ok && data.result?.id) {
-        cachedBotId = data.result.id;
-        return cachedBotId;
+        botIdCache.set(key, data.result.id);
+        return data.result.id;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+async function getChatType(botToken: string, channelIdentifier: string): Promise<string | null> {
+  const key = `${tokenKey(botToken)}:${channelIdentifier}`;
+  const hit = chatTypeCache.get(key);
+  if (hit && Date.now() < hit.expiresAt) return hit.type;
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent(channelIdentifier)}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.result?.type) {
+        chatTypeCache.set(key, { type: data.result.type, expiresAt: Date.now() + 30 * 60_000 });
+        return data.result.type;
       }
     }
   } catch { /* ignore */ }
@@ -172,14 +213,16 @@ async function getCachedBotId(botToken: string): Promise<number | null> {
 }
 
 async function isBotAdminInChannel(botToken: string, channelIdentifier: string): Promise<boolean> {
-  const cached = botAdminCache.get(channelIdentifier);
+  const key = `${tokenKey(botToken)}:${channelIdentifier}`;
+  const cached = botAdminCache.get(key);
   if (cached && Date.now() < cached.expiresAt) return cached.isAdmin;
 
   try {
     const botId = await getCachedBotId(botToken);
     if (!botId) {
-      botAdminCache.set(channelIdentifier, { isAdmin: true, expiresAt: Date.now() + 5 * 60_000 });
-      return true; // fail open
+      // Can't resolve bot ID → fail open so users aren't blocked by a bad token
+      botAdminCache.set(key, { isAdmin: true, expiresAt: Date.now() + 5 * 60_000 });
+      return true;
     }
     const res = await fetch(
       `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${botId}`
@@ -187,11 +230,11 @@ async function isBotAdminInChannel(botToken: string, channelIdentifier: string):
     if (res.ok) {
       const data = await res.json();
       const isAdmin = data.ok && ['creator', 'administrator'].includes(data.result?.status);
-      botAdminCache.set(channelIdentifier, { isAdmin, expiresAt: Date.now() + 5 * 60_000 });
+      botAdminCache.set(key, { isAdmin, expiresAt: Date.now() + 5 * 60_000 });
       return isAdmin;
     }
   } catch { /* ignore */ }
-  botAdminCache.set(channelIdentifier, { isAdmin: true, expiresAt: Date.now() + 5 * 60_000 });
+  botAdminCache.set(key, { isAdmin: true, expiresAt: Date.now() + 5 * 60_000 });
   return true; // fail open
 }
 
@@ -261,62 +304,175 @@ export async function checkBotCanPostToChannel(
   }
 }
 
-export async function verifyChannelMembership(userId: number, channelIdOrUsername: string, botToken: string): Promise<boolean> {
-  // Normalize channel identifier
-  let channelIdentifier = channelIdOrUsername;
+/**
+ * Verify whether a Telegram user is a member of a channel or supergroup.
+ *
+ * Key design decisions (and why):
+ *
+ * 1. CHAT-TYPE-AWARE "user not found" handling
+ *    For broadcast CHANNELS (type "channel"), getChatMember cannot look up
+ *    regular subscribers — Telegram returns {"ok":false,"error_code":400,
+ *    "description":"Bad Request: user not found"} even for actual subscribers
+ *    when privacy settings or API limits prevent the lookup.  Treating this
+ *    as "not a member" blocks legitimate users.
+ *    For SUPERGROUPS / GROUPS the same error reliably means "not a member".
+ *    → We call getChat() to determine the chat type first (cached 30 min).
+ *
+ * 2. Retry logic for transient failures (429 rate-limit, 5xx server errors)
+ *    Up to MAX_RETRIES attempts with exponential back-off.
+ *
+ * 3. Full API response logged on every non-ok result for production diagnosis.
+ *
+ * 4. Token-scoped caches (see getCachedBotId / botAdminCache above).
+ */
+export async function verifyChannelMembership(
+  userId: number,
+  channelIdOrUsername: string,
+  botToken: string,
+): Promise<boolean> {
+  // Normalize: numeric IDs start with '-', usernames get '@' prepended
+  let channelIdentifier = channelIdOrUsername.trim();
   if (!channelIdentifier.startsWith('@') && !channelIdentifier.startsWith('-')) {
     channelIdentifier = `@${channelIdentifier}`;
   }
 
-  console.log(`🔍 Checking membership for user ${userId} in channel ${channelIdentifier}...`);
+  console.log(`🔍 verifyChannelMembership: user=${userId} chat=${channelIdentifier}`);
 
-  try {
-    // Check bot admin status (cached for 5 min — zero extra latency on hot path)
-    const botIsAdmin = await isBotAdminInChannel(botToken, channelIdentifier);
-    if (!botIsAdmin) {
-      console.warn(`⚠️ Bot is NOT an admin in ${channelIdentifier} — failing OPEN so users aren't blocked.`);
-      return true;
+  const MAX_RETRIES = 2;
+  let lastError: string = '';
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delay = 1000 * 2 ** (attempt - 1); // 1s, 2s
+      await new Promise(r => setTimeout(r, delay));
+      console.log(`🔄 verifyChannelMembership retry ${attempt}/${MAX_RETRIES} for user=${userId} chat=${channelIdentifier}`);
     }
 
-    // Single direct getChatMember call — Telegram ALWAYS returns HTTP 200; check data.ok for errors
-    const res = await fetch(
-      `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${userId}`
-    );
-    const data = await res.json().catch(() => null);
-
-    if (!data) {
-      console.warn(`⚠️ getChatMember returned non-JSON for ${channelIdentifier} — failing OPEN`);
-      return true;
-    }
-
-    if (!data.ok) {
-      const errorCode = data?.error_code;
-      const description: string = data?.description || '';
-      // Only fail closed on definitive "user is not a member" errors
-      if (
-        errorCode === 400 &&
-        (description.includes('PARTICIPANT_ID_INVALID') ||
-          description.includes('user not found') ||
-          description.includes('USER_NOT_PARTICIPANT'))
-      ) {
-        console.log(`⚠️ User ${userId} not in ${channelIdentifier}: ${description}`);
-        return false;
+    try {
+      // ── Step 1: confirm the bot is an admin (cached 5 min) ──────────────
+      const botIsAdmin = await isBotAdminInChannel(botToken, channelIdentifier);
+      if (!botIsAdmin) {
+        console.warn(
+          `⚠️ Bot is NOT an admin in ${channelIdentifier}. ` +
+          `Add the bot as administrator with "Restrict Members" permission. ` +
+          `Failing OPEN so legitimate users are not blocked.`
+        );
+        return true;
       }
-      // Any other API error (chat not found, bot kicked, etc.) → fail open
-      console.warn(`⚠️ getChatMember error for ${channelIdentifier}: ${description} (code ${errorCode}) — failing OPEN`);
-      return true;
-    }
 
-    const status: string = data.result?.status ?? '';
-    // 'restricted' means the user IS a member but with limited permissions — still valid
-    const validStatuses = ['creator', 'administrator', 'member', 'restricted', 'subscriber'];
-    const isValid = validStatuses.includes(status);
-    console.log(`🔍 User ${userId} status in ${channelIdentifier}: "${status}" → ${isValid ? '✅ valid' : '❌ not a member'}`);
-    return isValid;
-  } catch (error: any) {
-    console.error(`❌ Telegram verification error for user ${userId} in ${channelIdOrUsername}:`, error?.message || error);
-    return true; // fail open on unexpected errors
+      // ── Step 2: call getChatMember ───────────────────────────────────────
+      const url =
+        `https://api.telegram.org/bot${botToken}/getChatMember` +
+        `?chat_id=${encodeURIComponent(channelIdentifier)}&user_id=${userId}`;
+      const res = await fetch(url);
+      const httpStatus = res.status;
+
+      // Telegram always returns HTTP 200 for API calls, even on errors.
+      // Non-200 means a network-level issue (proxy, timeout, etc.) → retry.
+      if (httpStatus === 429 || httpStatus >= 500) {
+        lastError = `HTTP ${httpStatus} from Telegram API`;
+        console.warn(`⚠️ getChatMember HTTP ${httpStatus} for user=${userId} chat=${channelIdentifier} — will retry`);
+        continue; // retry
+      }
+
+      const data = await res.json().catch(() => null);
+      if (!data) {
+        lastError = 'non-JSON response from Telegram API';
+        console.warn(`⚠️ getChatMember returned non-JSON for user=${userId} chat=${channelIdentifier} — will retry`);
+        continue; // retry
+      }
+
+      // ── Step 3: handle API-level errors ─────────────────────────────────
+      if (!data.ok) {
+        const errorCode: number = data.error_code ?? 0;
+        const description: string = data.description ?? '';
+
+        // Full response logged for production diagnosis
+        console.warn(
+          `⚠️ getChatMember not ok for user=${userId} chat=${channelIdentifier}: ` +
+          `code=${errorCode} description="${description}" full=${JSON.stringify(data)}`
+        );
+
+        // Transient Telegram errors → retry
+        if (errorCode === 429 || errorCode >= 500) {
+          lastError = `Telegram error ${errorCode}: ${description}`;
+          continue;
+        }
+
+        // "user not found" / "USER_NOT_PARTICIPANT" — meaning depends on chat type
+        const isUserNotFound =
+          errorCode === 400 &&
+          (description.includes('user not found') ||
+            description.includes('PARTICIPANT_ID_INVALID') ||
+            description.includes('USER_NOT_PARTICIPANT'));
+
+        if (isUserNotFound) {
+          // For broadcast CHANNELS: getChatMember cannot look up regular
+          // subscribers — "user not found" is NOT proof the user didn't join.
+          // For SUPERGROUPS / GROUPS: the API is reliable; this means not a member.
+          const chatType = await getChatType(botToken, channelIdentifier);
+          console.log(
+            `ℹ️ "user not found" for user=${userId} chat=${channelIdentifier} type=${chatType ?? 'unknown'}. ` +
+            `full API response: ${JSON.stringify(data)}`
+          );
+
+          if (chatType === 'channel') {
+            // Cannot reliably verify channel subscription via getChatMember.
+            // Root cause: Telegram does not expose subscriber lists for broadcast
+            // channels via this API, even when the bot is an admin.
+            // Fail OPEN — do not block users who have actually subscribed.
+            console.warn(
+              `⚠️ Cannot verify channel subscription for user=${userId} in broadcast channel ` +
+              `${channelIdentifier} (Telegram API limitation). Failing OPEN. ` +
+              `Ensure the bot has "Restrict Members" admin permission if stricter gating is needed.`
+            );
+            return true;
+          }
+
+          // supergroup / group → "user not found" is reliable: not a member
+          console.log(`❌ User ${userId} is NOT a member of ${channelIdentifier} (${chatType ?? 'group'})`);
+          return false;
+        }
+
+        // Any other API error (chat not found, bot removed, etc.) → fail open
+        console.warn(
+          `⚠️ Unexpected getChatMember error for user=${userId} chat=${channelIdentifier}: ` +
+          `code=${errorCode} "${description}" — failing OPEN`
+        );
+        return true;
+      }
+
+      // ── Step 4: inspect member status ───────────────────────────────────
+      const status: string = data.result?.status ?? '';
+      // Telegram member statuses that mean "is a member":
+      //   creator, administrator, member, restricted (limited perms but still in chat)
+      // Statuses that mean "not a member": left, kicked
+      const validStatuses = new Set(['creator', 'administrator', 'member', 'restricted']);
+      const isValid = validStatuses.has(status);
+
+      console.log(
+        `🔍 User ${userId} status in ${channelIdentifier}: "${status}" ` +
+        `→ ${isValid ? '✅ member' : '❌ not a member'} | full: ${JSON.stringify(data.result)}`
+      );
+
+      return isValid;
+
+    } catch (error: any) {
+      lastError = error?.message ?? String(error);
+      console.error(
+        `❌ verifyChannelMembership exception (attempt ${attempt}/${MAX_RETRIES}) ` +
+        `user=${userId} chat=${channelIdentifier}:`, lastError
+      );
+      // Network-level exception → retry
+    }
   }
+
+  // All retries exhausted → fail OPEN so a Telegram API outage doesn't lock out users
+  console.error(
+    `❌ verifyChannelMembership: all ${MAX_RETRIES + 1} attempts failed for ` +
+    `user=${userId} chat=${channelIdentifier}. Last error: ${lastError}. Failing OPEN.`
+  );
+  return true;
 }
 
 // Extract bot username from URL
