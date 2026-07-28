@@ -409,7 +409,18 @@ function App() {
         }
       }
       
-      getTurnstileToken("telegram-auth")
+      // Fire auth immediately — don't await the Turnstile invisible widget.
+      // getTurnstileToken can take up to 15 s, which kept isAuthenticating=true
+      // and blocked TurnstileGate from mounting, causing the "network error"
+      // to flash before the verification screen ever appeared.
+      // Instead we race: send auth now, attach the token only if it resolves
+      // fast enough (< 3 s), otherwise proceed without it.
+      const turnstileRace = Promise.race([
+        getTurnstileToken("telegram-auth"),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 3000)),
+      ]);
+
+      turnstileRace
         .then((turnstileToken) => {
           if (turnstileToken) {
             headers["x-turnstile-token"] = turnstileToken;
