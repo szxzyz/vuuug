@@ -904,9 +904,35 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
 
       {activeTab === 'referrals' && (
         <div className="space-y-2">
-          <div className="text-xs text-muted-foreground mb-2">Total Referrals: {userReferrals?.referrals?.length || user.friendsInvited || 0}</div>
+          {/* Income summary */}
+          <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg">
+            <p className="text-xs text-emerald-400 font-semibold mb-2">💰 Referral Income</p>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Total Earned</p>
+                <p className="font-bold text-lg text-emerald-400">
+                  {Math.round(parseFloat(userReferrals?.summary?.totalIncome || '0')).toLocaleString()}
+                  <span className="text-xs font-normal text-muted-foreground ml-1">POW</span>
+                </p>
+              </div>
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Commission Txns</p>
+                <p className="font-bold text-lg text-[#4cd3ff]">{userReferrals?.summary?.totalTransactions ?? 0}</p>
+              </div>
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Total Referrals</p>
+                <p className="font-bold text-lg">{userReferrals?.summary?.totalReferrals ?? userReferrals?.referrals?.length ?? 0}</p>
+              </div>
+              <div className="bg-white/5 p-2 rounded">
+                <p className="text-xs text-muted-foreground">Active</p>
+                <p className="font-bold text-lg text-green-400">{userReferrals?.summary?.activeReferrals ?? 0}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Referral list */}
           {userReferrals?.referrals?.length > 0 ? (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+            <div className="space-y-2 max-h-[280px] overflow-y-auto">
               {userReferrals.referrals.map((ref: any) => (
                 <div key={ref.id} className="bg-white/5 p-2 rounded border border-white/10">
                   <div className="flex justify-between items-start">
@@ -927,29 +953,103 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
         </div>
       )}
 
-      {activeTab === 'withdrawals' && (
-        <div className="space-y-2">
-          <div className="text-xs text-muted-foreground mb-2">Total Withdrawals: {userWithdrawals?.withdrawals?.length || 0}</div>
-          {userWithdrawals?.withdrawals?.length > 0 ? (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {userWithdrawals.withdrawals.map((w: any) => (
-                <div key={w.id} className="bg-white/5 p-2 rounded border border-white/10">
-                  <div className="flex justify-between items-center">
-                    <p className="font-bold text-green-400">${parseFloat(w.amount || '0').toFixed(2)}</p>
-                    <Badge className={w.status === 'success' || w.status === 'paid' ? 'bg-green-600' : w.status === 'rejected' ? 'bg-red-600' : 'bg-yellow-600'}>
-                      {w.status}
-                    </Badge>
+      {activeTab === 'withdrawals' && (() => {
+        const completedStatuses = ['completed', 'success', 'paid', 'Approved', 'Successfull'];
+        const getStatusColor = (status: string) => {
+          if (completedStatuses.includes(status)) return 'bg-green-600';
+          if (status?.toLowerCase() === 'rejected') return 'bg-red-600';
+          if (status?.toLowerCase() === 'pending') return 'bg-yellow-600';
+          return 'bg-slate-600';
+        };
+        const getCurrency = (w: any) => {
+          const m = (w.method || '').toUpperCase();
+          if (m === 'TON' || m === 'TON_COIN') return 'TON';
+          if (m === 'USDT') return 'USDT';
+          if (m === 'STARS') return 'STARS';
+          if (m === 'USD') return 'USD';
+          return w.method || 'N/A';
+        };
+        const getWallet = (w: any) => {
+          const d: any = w.details || {};
+          return d.walletAddress || d.wallet_address || d.address || d.usdtAddress || d.tonAddress || '—';
+        };
+        return (
+          <div className="space-y-2">
+            {/* Summary */}
+            {userWithdrawals?.summary && (
+              <div className="grid grid-cols-4 gap-1.5 mb-1">
+                {[
+                  { label: 'Total', value: userWithdrawals.summary.total, color: 'text-white' },
+                  { label: 'Completed', value: userWithdrawals.summary.completed, color: 'text-green-400' },
+                  { label: 'Pending', value: userWithdrawals.summary.pending, color: 'text-yellow-400' },
+                  { label: 'Rejected', value: userWithdrawals.summary.rejected, color: 'text-red-400' },
+                ].map(s => (
+                  <div key={s.label} className="bg-white/5 p-2 rounded text-center">
+                    <p className="text-[10px] text-muted-foreground">{s.label}</p>
+                    <p className={`font-bold text-sm ${s.color}`}>{s.value}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">Method: {w.method || 'N/A'}</p>
-                  <p className="text-xs text-muted-foreground">Date: {w.createdAt ? new Date(w.createdAt).toLocaleDateString() : 'N/A'}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-center text-muted-foreground py-4">No withdrawals</p>
-          )}
-        </div>
-      )}
+                ))}
+              </div>
+            )}
+
+            {/* List */}
+            {userWithdrawals?.withdrawals?.length > 0 ? (
+              <div className="space-y-2 max-h-[340px] overflow-y-auto">
+                {userWithdrawals.withdrawals.map((w: any) => {
+                  const currency = getCurrency(w);
+                  const wallet = getWallet(w);
+                  const isCompleted = completedStatuses.includes(w.status);
+                  return (
+                    <div key={w.id} className={`p-2.5 rounded border ${isCompleted ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                      {/* Row 1: amount + currency + status */}
+                      <div className="flex justify-between items-center mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-green-400">{parseFloat(w.amount || '0').toFixed(4)}</span>
+                          <Badge className="bg-[#4cd3ff]/20 text-[#4cd3ff] text-[10px] px-1.5 py-0">{currency}</Badge>
+                        </div>
+                        <Badge className={`${getStatusColor(w.status)} text-[10px] px-1.5 py-0`}>{w.status}</Badge>
+                      </div>
+
+                      {/* Row 2: wallet address */}
+                      {wallet !== '—' && (
+                        <p className="text-[10px] font-mono text-muted-foreground break-all mb-1">
+                          <span className="text-muted-foreground/60">Wallet: </span>{wallet}
+                        </p>
+                      )}
+
+                      {/* Row 3: tx hash */}
+                      {w.transactionHash && (
+                        <p className="text-[10px] font-mono text-[#4cd3ff]/70 break-all mb-1">
+                          <span className="text-muted-foreground/60">Tx: </span>{w.transactionHash}
+                        </p>
+                      )}
+
+                      {/* Row 4: rejection reason */}
+                      {w.rejectionReason && (
+                        <p className="text-[10px] text-red-400/80 mb-1">Reason: {w.rejectionReason}</p>
+                      )}
+
+                      {/* Row 5: dates */}
+                      <div className="flex justify-between items-center mt-1">
+                        <p className="text-[10px] text-muted-foreground/60">
+                          {w.createdAt ? new Date(w.createdAt).toLocaleString() : 'N/A'}
+                        </p>
+                        {w.updatedAt && w.updatedAt !== w.createdAt && isCompleted && (
+                          <p className="text-[10px] text-green-400/60">
+                            Paid: {new Date(w.updatedAt).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-4">No withdrawals</p>
+            )}
+          </div>
+        );
+      })()}
 
       {activeTab === 'swaps' && (
         <div className="space-y-2">
@@ -4662,6 +4762,93 @@ function ContestSection() {
 }
 
 // ═══════════════════════════════════════════════════════
+// Ambassador Claim History (expandable per-card panel)
+// ═══════════════════════════════════════════════════════
+function AmbassadorClaimHistory({ ambassadorId, promoCodeName }: { ambassadorId: string; promoCodeName: string }) {
+  const [open, setOpen] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['/api/admin/ambassadors/stats', ambassadorId],
+    queryFn: () => apiRequest('GET', `/api/admin/ambassadors/${ambassadorId}/stats`).then(r => r.json()),
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const history: any[] = data?.history || [];
+  const totals = data?.totals;
+
+  return (
+    <div className="border-t border-white/5">
+      {/* Toggle */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-gray-400 hover:text-white hover:bg-white/3 transition-colors"
+      >
+        <span className="font-semibold">📋 Claim History</span>
+        <span className="text-gray-600">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {/* Totals summary */}
+          {totals && (
+            <div className="grid grid-cols-3 gap-1.5 mb-2">
+              <div className="bg-white/5 rounded-lg p-2 text-center">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Claims</p>
+                <p className="text-sm font-bold text-white mt-0.5">{totals.totalClaims ?? 0}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-2 text-center">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Commission</p>
+                <p className="text-sm font-bold text-green-400 mt-0.5">${parseFloat(totals.totalEarningsUsd || '0').toFixed(4)}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-2 text-center">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Rewarded</p>
+                <p className="text-sm font-bold text-[#4cd3ff] mt-0.5">{Math.round(parseFloat(totals.totalRewardGiven || '0')).toLocaleString()} <span className="text-[9px] text-gray-500">POW</span></p>
+              </div>
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="flex justify-center py-4">
+              <div className="w-4 h-4 border-2 border-[#4cd3ff]/30 border-t-[#4cd3ff] rounded-full animate-spin" />
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-center text-gray-600 text-xs py-3">No claims yet</p>
+          ) : (
+            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
+              {/* Header row */}
+              <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 px-2 pb-1 border-b border-white/5">
+                {['Promo Code', 'User', 'Reward', 'Date'].map(h => (
+                  <p key={h} className="text-[10px] text-gray-600 uppercase tracking-wide font-semibold">{h}</p>
+                ))}
+              </div>
+              {history.map((entry: any) => {
+                const userName = entry.claimUserName
+                  ? `${entry.claimUserName}${entry.claimUserUsername ? ` @${entry.claimUserUsername}` : ''}`
+                  : entry.claimUserCode || entry.claimUserId?.slice(0, 8) || 'Unknown';
+                const reward = entry.userRewardAmount != null
+                  ? `${Math.round(parseFloat(entry.userRewardAmount)).toLocaleString()} POW`
+                  : '—';
+                return (
+                  <div key={entry.id} className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 px-2 py-1.5 rounded-lg bg-white/3 hover:bg-white/5 transition-colors items-center">
+                    <p className="text-xs font-mono font-bold text-[#4cd3ff] truncate">{entry.promoCode}</p>
+                    <p className="text-xs text-gray-300 truncate">{userName}</p>
+                    <p className="text-xs font-semibold text-emerald-400 whitespace-nowrap">{reward}</p>
+                    <p className="text-[10px] text-gray-600 whitespace-nowrap">
+                      {entry.claimedAt ? new Date(entry.claimedAt).toLocaleDateString() : '—'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // Ambassador Admin Section
 // ═══════════════════════════════════════════════════════
 function AmbassadorAdminSection() {
@@ -5025,6 +5212,9 @@ function AmbassadorAdminSection() {
                   </Button>
                 </div>
               </div>
+
+              {/* Claim History */}
+              <AmbassadorClaimHistory ambassadorId={amb.id} promoCodeName={amb.promoCodeName} />
             </div>
           ))}
         </div>
