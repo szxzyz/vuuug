@@ -25,11 +25,6 @@ import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
 import { ensureDatabaseSchema } from "./migrate";
 import { countryBlockingMiddleware } from "./countryBlocking";
-import {
-  requireTurnstileSession,
-  handleTurnstileVerify,
-  handleTurnstileStatus,
-} from "./turnstile";
 
 // ─── PROXY SETUP (for Telegram API access on restricted networks) ───────────
 const TELEGRAM_PROXY = process.env.TELEGRAM_PROXY_URL || process.env.HTTPS_PROXY || '';
@@ -143,16 +138,6 @@ app.use((req, res, next) => {
 
 (async () => {
   await setupAuth(app);
-
-  // ── Turnstile full-page verification ───────────────────────────────────────
-  // These two routes must be registered BEFORE requireTurnstileSession so they
-  // are never blocked by the gate (they are the gate).
-  app.get("/api/turnstile/status", handleTurnstileStatus);
-  app.post("/api/turnstile/verify", handleTurnstileVerify);
-
-  // Gate all other /api/* routes — passes through when keys are not configured.
-  app.use(requireTurnstileSession);
-
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
