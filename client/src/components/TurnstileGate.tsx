@@ -81,12 +81,15 @@ type State =
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function TurnstileGate({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<State>("checking");
+  const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)?.trim() ?? "";
+
+  // If the site key is not configured at build time, skip the overlay entirely.
+  // No API call, no flash — children render immediately.
+  const [state, setState] = useState<State>(siteKey ? "checking" : "done");
   const [msg, setMsg] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const alive = useRef(true);
-  const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)?.trim() ?? "";
 
   // ── cleanup ────────────────────────────────────────────────────────────────
   const dropWidget = useCallback(() => {
@@ -102,8 +105,9 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
     return () => { alive.current = false; dropWidget(); };
   }, [dropWidget]);
 
-  // ── step 1 — check session ─────────────────────────────────────────────────
+  // ── step 1 — check session (only when Turnstile is configured) ─────────────
   const checkStatus = useCallback(async () => {
+    if (!siteKey) return; // not configured — already "done"
     setState("checking");
     try {
       const r = await fetch("/api/turnstile/status", { credentials: "include", cache: "no-store" });
@@ -113,17 +117,18 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
     } catch {
       if (alive.current) setState("widget");
     }
-  }, []);
+  }, [siteKey]);
 
   // ── preload — start fetching the CF script immediately on mount ───────────
   // This runs in parallel with checkStatus so the script is ready (or nearly
   // ready) by the time state transitions to "widget", preventing a visible
   // flash of the loading spinner between the status check and widget render.
   useEffect(() => {
+    if (!siteKey) return;
     loadScript().catch(() => {
       // Ignore errors here — the "widget" effect handles them with retry logic.
     });
-  }, []);
+  }, [siteKey]);
 
   useEffect(() => { checkStatus(); }, [checkStatus]);
 
