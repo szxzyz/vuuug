@@ -569,6 +569,186 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Cloudflare Turnstile endpoints ──────────────────────────────────────────
+  // TURNSTILE_SECRET_KEY  — Cloudflare dashboard secret (server only, never sent to client)
+  // VITE_TURNSTILE_SITE_KEY — Cloudflare dashboard site key  (public, sent to Vite build)
+  //
+  // Session fields written here:
+  //   req.session.turnstileVerified    boolean
+  //   req.session.turnstileVerifiedAt  timestamp (ms)
+  //
+  // Verification lasts 24 h.  After expiry the status endpoint returns
+  // verified:false and the TurnstileGate re-challenges the user.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const TURNSTILE_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+  /** GET /api/turnstile/status
+   *  Returns { verified: boolean, configured: boolean }
+   *  - verified:    session has a live Turnstile stamp (not expired)
+   *  - configured:  both env vars are present; client uses this to skip
+   *                 the challenge entirely when Turnstile is not set up
+   */
+  app.get('/api/turnstile/status', (req: any, res) => {
+    const secretKey   = process.env.TURNSTILE_SECRET_KEY?.trim() ?? '';
+    const siteKey     = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
+    const configured  = !!(secretKey && siteKey);
+
+    const { turnstileVerified, turnstileVerifiedAt } = req.session ?? {};
+    const notExpired  =
+      turnstileVerified === true &&
+      typeof turnstileVerifiedAt === 'number' &&
+      Date.now() - turnstileVerifiedAt < TURNSTILE_SESSION_TTL_MS;
+
+    const verified = notExpired;
+
+    console.log(
+      `[turnstile] status — configured=${configured} verified=${verified}` +
+      (turnstileVerifiedAt
+        ? ` age=${Math.round((Date.now() - turnstileVerifiedAt) / 1000)}s`
+        : ''),
+    );
+
+    return res.json({ verified, configured });
+  });
+
+  /** POST /api/turnstile/verify
+   *  Body: { token: string }
+   *  Calls Cloudflare Siteverify, stamps the session on success.
+   *  Returns { success: boolean, message?: string, retryable?: boolean }
+   */
+  app.post('/api/turnstile/verify', async (req: any, res) => {
+    const secretKey = process.env.TURNSTILE_SECRET_KEY?.trim() ?? '';
+    const siteKey   = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
+
+    // Turnstile not configured → accept immediately (no-op gate)
+    if (!secretKey || !siteKey) {
+      console.log('[turnstile] Not configured — stamping session without challenge');
+      req.session.turnstileVerified   = true;
+      req.session.turnstileVerifiedAt = Date.now();
+      return req.session.save((saveErr: any) => {
+        if (saveErr) {
+          console.error('[turnstile] Session save error (not-configured path):', saveErr);
+        }
+        return res.json({ success: true });
+      });
+    }
+
+    const { token } = req.body ?? {};
+    if (!token || typeof token !== 'string') {
+      console.warn('[turnstile] verify called without token');
+      return res.status(400).json({
+        success: false,
+        message: 'Missing Turnstile token',
+      });
+    }
+
+    // Build Siteverify request
+    const formData = new URLSearchParams();
+    formData.set('secret',   secretKey);
+    formData.set('response', token);
+    // Forward the real client IP when behind a reverse proxy
+    const clientIp =
+      (typeof req.headers['x-forwarded-for'] === 'string'
+        ? req.headers['x-forwarded-for'].split(',')[0].trim()
+        : req.headers['x-real-ip']) ||
+      req.socket?.remoteAddress ||
+      '';
+    if (clientIp) formData.set('remoteip', clientIp);
+
+    let cfData: any;
+    try {
+      const cfRes = await fetch(
+        'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body:    formData.toString(),
+          signal:  AbortSignal.timeout(10_000),
+        },
+      );
+
+      const httpStatus = cfRes.status;
+      const rawBody    = await cfRes.text();
+
+      try {
+        cfData = JSON.parse(rawBody);
+      } catch {
+        console.error(
+          `[turnstile] Siteverify non-JSON response status=${httpStatus} body=${rawBody}`,
+        );
+        return res.json({
+          success:   false,
+          retryable: true,
+          message:   'Verification service returned an unexpected response. Please retry.',
+        });
+      }
+
+      if (!cfRes.ok) {
+        console.error(
+          `[turnstile] Siteverify HTTP ${httpStatus} — body=${rawBody}`,
+        );
+        return res.json({
+          success:   false,
+          retryable: true,
+          message:   'Verification service unavailable. Please retry.',
+        });
+      }
+    } catch (err: any) {
+      const isTimeout = err?.name === 'TimeoutError' || err?.code === 'ETIMEDOUT';
+      console.error(
+        `[turnstile] Siteverify fetch failed — ${isTimeout ? 'timeout' : err?.message ?? String(err)}`,
+      );
+      return res.json({
+        success:   false,
+        retryable: true,
+        message:   isTimeout
+          ? 'Verification timed out. Please retry.'
+          : 'Could not reach verification service. Please retry.',
+      });
+    }
+
+    // Log the full Cloudflare response for production diagnosis
+    console.log(
+      `[turnstile] Siteverify response — success=${cfData.success}` +
+      ` error-codes=${JSON.stringify(cfData['error-codes'] ?? [])}` +
+      ` hostname=${cfData.hostname ?? 'n/a'}` +
+      ` action=${cfData.action ?? 'n/a'}` +
+      ` cdata=${cfData.cdata ?? 'n/a'}`,
+    );
+
+    if (!cfData.success) {
+      const codes: string[] = cfData['error-codes'] ?? [];
+      // timeout-or-duplicate and invalid-input-response are non-retryable;
+      // the widget must be re-rendered to get a fresh token.
+      const nonRetryable = codes.some(c =>
+        c === 'timeout-or-duplicate' || c === 'invalid-input-response',
+      );
+      return res.json({
+        success:   false,
+        retryable: !nonRetryable,
+        message:   codes.length
+          ? `Verification failed: ${codes.join(', ')}. Please try again.`
+          : 'Verification failed. Please try again.',
+      });
+    }
+
+    // ✅ Success — stamp the session
+    req.session.turnstileVerified   = true;
+    req.session.turnstileVerifiedAt = Date.now();
+
+    req.session.save((saveErr: any) => {
+      if (saveErr) {
+        console.error('[turnstile] Session save error after successful verify:', saveErr);
+        // Return success anyway — worst case the user re-verifies on next load
+      }
+      console.log(`[turnstile] ✅ Session stamped for IP=${clientIp || 'unknown'}`);
+      return res.json({ success: true });
+    });
+  });
+
+  // ── End Turnstile endpoints ──────────────────────────────────────────────────
+
   // Get channel configuration for frontend
   app.get('/api/config/channel', (req: any, res) => {
     res.json(getChannelConfig());
@@ -753,13 +933,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Mandatory channel/group membership check endpoint - authenticated
+  // Used by ChannelJoinPopup after the user clicks "Verify"
   app.get('/api/membership/check', authenticateTelegram, async (req: any, res) => {
     try {
       const isDevMode = process.env.NODE_ENV === 'development';
       const channelConfig = getChannelConfig();
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
-      if (isDevMode || !botToken) {
+      if (isDevMode) {
+        console.log('🔧 [membership/check] Development mode — auto-verified');
+        return res.json({
+          success: true,
+          isVerified: true,
+          channelMember: true,
+          groupMember: true,
+          channelUrl: channelConfig.channelUrl,
+          groupUrl: channelConfig.groupUrl,
+          channelName: channelConfig.channelName,
+          groupName: channelConfig.groupName
+        });
+      }
+
+      if (!botToken) {
+        console.error('❌ [membership/check] TELEGRAM_BOT_TOKEN not set — failing open');
         return res.json({
           success: true,
           isVerified: true,
@@ -774,6 +970,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const telegramUser = req.telegramUser;
       if (!telegramUser?.id) {
+        console.warn('⚠️ [membership/check] No telegramUser on request — auth middleware issue');
         return res.json({ success: false, isVerified: false, channelMember: false, groupMember: false, channelUrl: channelConfig.channelUrl, groupUrl: channelConfig.groupUrl, channelName: channelConfig.channelName, groupName: channelConfig.groupName });
       }
 
@@ -782,14 +979,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { storage: s } = await import('./storage');
       const dbUser = await s.getUserByTelegramId(telegramIdStr);
 
+      console.log(`🔍 [membership/check] user=${telegramIdStr} channelId=${channelConfig.channelId} groupId=${channelConfig.groupId}`);
+
       // Admin bypass — always let admins through
       if (isAdmin(telegramIdStr)) {
+        console.log(`✅ [membership/check] Admin ${telegramIdStr} bypassed`);
         if (dbUser) await s.updateUserVerificationStatus(dbUser.id, true);
         return res.json({ success: true, isVerified: true, channelMember: true, groupMember: true, channelUrl: channelConfig.channelUrl, groupUrl: channelConfig.groupUrl, channelName: channelConfig.channelName, groupName: channelConfig.groupName });
       }
 
       // Already verified in DB — skip live Telegram API call
       if (dbUser?.isChannelGroupVerified) {
+        console.log(`✅ [membership/check] User ${telegramIdStr} already verified in DB — skipping live check`);
         return res.json({ success: true, isVerified: true, channelMember: true, groupMember: true, channelUrl: channelConfig.channelUrl, groupUrl: channelConfig.groupUrl, channelName: channelConfig.channelName, groupName: channelConfig.groupName });
       }
 
@@ -800,17 +1001,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         channelMember = await verifyChannelMembership(userId, channelConfig.channelId, botToken);
-      } catch {
-        channelMember = true; // fail open
+      } catch (e: any) {
+        // Fail open — Telegram API outage should not block legitimate users
+        console.error(
+          `⚠️ [membership/check] Channel check threw for user=${telegramIdStr} ` +
+          `chat=${channelConfig.channelId} — failing OPEN. Error: ${e?.message ?? String(e)}`
+        );
+        channelMember = true;
       }
 
       try {
         groupMember = await verifyChannelMembership(userId, channelConfig.groupId, botToken);
-      } catch {
-        groupMember = true; // fail open
+      } catch (e: any) {
+        console.error(
+          `⚠️ [membership/check] Group check threw for user=${telegramIdStr} ` +
+          `chat=${channelConfig.groupId} — failing OPEN. Error: ${e?.message ?? String(e)}`
+        );
+        groupMember = true;
       }
 
       const isVerified = channelMember && groupMember;
+
+      console.log(
+        `🔍 [membership/check] user=${telegramIdStr}: ` +
+        `channel(${channelConfig.channelId})=${channelMember} ` +
+        `group(${channelConfig.groupId})=${groupMember} ` +
+        `→ isVerified=${isVerified}`
+      );
 
       if (isVerified && dbUser) {
         await s.updateUserVerificationStatus(dbUser.id, true);
@@ -826,12 +1043,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         channelName: channelConfig.channelName,
         groupName: channelConfig.groupName
       });
-    } catch (error) {
-      console.error('❌ Membership check error:', error);
+    } catch (error: any) {
+      console.error(
+        `❌ [membership/check] Unhandled error:`,
+        error?.message ?? String(error),
+        error?.stack ?? '',
+      );
       const channelConfig = getChannelConfig();
+      // Fail OPEN on unhandled error so a server bug doesn't permanently block users
       res.json({ 
-        success: false, 
-        message: 'Failed to check membership',
+        success: true, 
         isVerified: true,
         channelMember: true,
         groupMember: true,
