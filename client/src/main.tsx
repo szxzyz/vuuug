@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import TurnstileGate from "./components/TurnstileGate";
 import "./index.css";
 
 // Telegram environment check — allow if Telegram WebApp SDK is present
@@ -76,5 +77,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.body.style.webkitTouchCallout = "none";
 });
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <TurnstileGate>
+    <App />
+  </TurnstileGate>,
+);
 }
