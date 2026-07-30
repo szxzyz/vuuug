@@ -750,6 +750,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── End Turnstile endpoints ──────────────────────────────────────────────────
 
+  // ── Per-action Turnstile verification helper ──────────────────────────────
+  // Used by reward-bearing endpoints (ad watch, withdrawal, promo redeem).
+  // Expects `turnstileToken` in req.body (or `x-turnstile-token` header).
+  // Returns true and continues when token is valid; false after sending a 403.
+  // Logs every attempt (success/fail/missing) with IP, UA, userId, timestamp.
+  // ──────────────────────────────────────────────────────────────────────────
+  async function checkActionTurnstile(req: any, res: any, action: string): Promise<boolean> {
+    const secretKey = (process.env.TURNSTILE_SECRET ?? process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY ?? '').trim();
+    const ip =
+      (typeof req.headers['x-forwarded-for'] === 'string'
+        ? req.headers['x-forwarded-for'].split(',')[0].trim()
+        : req.headers['x-real-ip']) ||
+      req.socket?.remoteAddress || 'unknown';
+    const ua = (req.headers['user-agent'] || '').slice(0, 120);
+    const userId = req.user?.user?.id || req.session?.user?.user?.id || 'anon';
+    const ts = new Date().toISOString();
+
+    // If Turnstile is not configured, block (fail-closed — never bypass)
+    if (!secretKey) {
+      console.error(`[turnstile-action] ❌ NOT_CONFIGURED action=${action} userId=${userId} ip=${ip} ts=${ts}`);
+      res.status(503).json({
+        success: false,
+        message: 'Security verification is not configured. Contact support.',
+        errorType: 'turnstile_not_configured',
+        turnstileRequired: true,
+      });
+      return false;
+    }
+
+    const token: string | undefined = req.body?.turnstileToken || req.headers['x-turnstile-token'];
+
+    if (!token || typeof token !== 'string') {
+      console.warn(`[turnstile-action] ❌ MISSING_TOKEN action=${action} userId=${userId} ip=${ip} ts=${ts}`);
+      res.status(403).json({
+        success: false,
+        message: 'Security verification required. Please complete the challenge.',
+        errorType: 'turnstile_required',
+        turnstileRequired: true,
+      });
+      return false;
+    }
+
+    // Call Cloudflare Siteverify with a 10-second timeout
+    const formData = new URLSearchParams();
+    formData.set('secret', secretKey);
+    formData.set('response', token);
+    formData.set('remoteip', ip);
+
+    try {
+      const cfRes = await fetch(
+        'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString(),
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      const cfData: any = await cfRes.json().catch(() => ({}));
+
+      if (cfData.success) {
+        console.log(`[turnstile-action] ✅ OK action=${action} userId=${userId} ip=${ip} ts=${ts}`);
+        return true;
+      }
+
+      const codes: string[] = cfData['error-codes'] ?? [];
+      console.warn(
+        `[turnstile-action] ❌ CF_REJECTED action=${action} userId=${userId} ip=${ip}` +
+        ` codes=${JSON.stringify(codes)} ua="${ua}" ts=${ts}`,
+      );
+      res.status(403).json({
+        success: false,
+        message: codes.length
+          ? `Security verification failed: ${codes.join(', ')}. Please try again.`
+          : 'Security verification failed. Please try again.',
+        errorType: 'turnstile_failed',
+        turnstileRequired: true,
+      });
+      return false;
+
+    } catch (err: any) {
+      const isTimeout = err?.name === 'TimeoutError' || err?.code === 'ETIMEDOUT';
+      console.error(
+        `[turnstile-action] ❌ NETWORK_ERROR action=${action} userId=${userId} ip=${ip}` +
+        ` ${isTimeout ? 'timeout' : err?.message} ts=${ts}`,
+      );
+      // Fail-closed: block on network error, let client retry
+      res.status(503).json({
+        success: false,
+        message: isTimeout
+          ? 'Security verification timed out. Please retry.'
+          : 'Security service unavailable. Please retry.',
+        errorType: 'turnstile_unavailable',
+        turnstileRequired: true,
+        retryable: true,
+      });
+      return false;
+    }
+  }
+  // ── End per-action Turnstile helper ─────────────────────────────────────────
+
   // Get channel configuration for frontend
   app.get('/api/config/channel', (req: any, res) => {
     res.json(getChannelConfig());
@@ -1680,7 +1781,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/ads/watch', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
-      
+
+      // ── Require fresh per-action Turnstile token ────────────────────────────
+      if (!await checkActionTurnstile(req, res, 'ads_watch')) return;
+      // ───────────────────────────────────────────────────────────────────────
+
       // Get user to check daily ad limit
       const user = await storage.getUser(userId);
       if (!user) {
@@ -8193,6 +8298,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("⚠️ Withdrawal requested without session - skipping");
         return res.json({ success: true, skipAuth: true });
       }
+
+      // ── Require fresh per-action Turnstile token ────────────────────────────
+      if (!await checkActionTurnstile(req, res, 'withdrawal')) return;
+      // ───────────────────────────────────────────────────────────────────────
       
       const { method, starPackage, withdrawalPackage, tonWalletAddress } = req.body;
       const customAmount: number | null = req.body.amount != null ? parseFloat(req.body.amount) : null;
@@ -9591,6 +9700,11 @@ ${walletAddress}
   app.post('/api/promo-codes/redeem', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
+
+      // ── Require fresh per-action Turnstile token ────────────────────────────
+      if (!await checkActionTurnstile(req, res, 'promo_redeem')) return;
+      // ───────────────────────────────────────────────────────────────────────
+
       const { code } = req.body;
 
       if (!code || !code.trim()) {
