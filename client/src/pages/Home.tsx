@@ -52,6 +52,98 @@ interface User {
   [key: string]: any;
 }
 
+// ─── ResetCountdownBanner ────────────────────────────────────────────────────
+// Previously the reset-countdown state lived in Home, causing the entire
+// 1100-line component to re-render every second (two 1s intervals × 60/min).
+// Isolating it here means only this tiny component re-renders on each tick.
+const ResetCountdownBanner = React.memo(function ResetCountdownBanner() {
+  const [resetCountdown, setResetCountdown] = useState('');
+  const [nextResetLabel, setNextResetLabel] = useState('');
+
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      const y = now.getUTCFullYear();
+      const mo = now.getUTCMonth();
+      const d = now.getUTCDate();
+
+      const reset0630 = new Date(Date.UTC(y, mo, d, 6, 30, 0, 0));
+      const reset1830 = new Date(Date.UTC(y, mo, d, 18, 30, 0, 0));
+
+      let next: Date;
+      let label: string;
+
+      if (now < reset0630) {
+        next = reset0630;
+        label = '6:30 AM UTC';
+      } else if (now < reset1830) {
+        next = reset1830;
+        label = '6:30 PM UTC';
+      } else {
+        next = new Date(Date.UTC(y, mo, d + 1, 6, 30, 0, 0));
+        label = '6:30 AM UTC';
+      }
+
+      const total = Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      setNextResetLabel(label);
+      setResetCountdown(
+        `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
+      );
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div style={{
+      background: 'linear-gradient(90deg, #0d0d1a 0%, #1a0d3d 35%, #3d1580 65%, #6b21a8 100%)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      padding: '5px 16px',
+      borderBottom: '1px solid rgba(107,33,168,0.35)',
+    }}>
+      <Clock size={11} color="rgba(216,180,254,0.75)" strokeWidth={2.5} />
+      <span style={{
+        fontSize: 10,
+        fontWeight: 700,
+        color: 'rgba(216,180,254,0.6)',
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+      }}>
+        Reset
+      </span>
+      <div style={{ width: 1, height: 10, background: 'rgba(216,180,254,0.2)', borderRadius: 1 }} />
+      <span style={{
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'rgba(216,180,254,0.85)',
+        letterSpacing: '0.04em',
+        fontFamily: "'Space Grotesk', monospace",
+      }}>
+        {nextResetLabel || '––:–– UTC'}
+      </span>
+      <div style={{ width: 1, height: 10, background: 'rgba(216,180,254,0.2)', borderRadius: 1 }} />
+      <span style={{
+        fontSize: 12,
+        fontWeight: 800,
+        color: '#e9d5ff',
+        fontVariantNumeric: 'tabular-nums',
+        letterSpacing: '0.03em',
+        fontFamily: "'Space Grotesk', monospace",
+      }}>
+        {resetCountdown || '––h ––m ––s'}
+      </span>
+    </div>
+  );
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function Home() {
   const { user, isLoading, isFetching, dataUpdatedAt } = useAuth();
   const { isAdmin } = useAdmin();
@@ -75,8 +167,7 @@ export default function Home() {
   const [dailyCheckinStep, setDailyCheckinStep] = useState<'idle' | 'ads' | 'countdown' | 'ready' | 'claiming'>('idle');
   const [checkForUpdatesStep, setCheckForUpdatesStep] = useState<'idle' | 'opened' | 'countdown' | 'ready' | 'claiming'>('idle');
   const [checkForUpdatesCountdown, setCheckForUpdatesCountdown] = useState(3);
-  const [resetCountdown, setResetCountdown] = useState('');
-  const [nextResetLabel, setNextResetLabel] = useState('');
+
 
   const { runAdFlow } = useAdFlow();
 
@@ -172,52 +263,12 @@ export default function Home() {
     };
 
     updateTimer();
-    const interval = setInterval(updateTimer, 1000);
+    // Root cause of Issue 1: 1-second interval caused the entire 1100-line Home
+    // component to re-render 60x per minute. Claim availability only needs
+    // ~5-second precision — the button transitions idle→available, not a clock.
+    const interval = setInterval(updateTimer, 5000);
     return () => clearInterval(interval);
   }, [(user as User)?.lastStreakDate, (user as User)?.id]);
-
-  // Live countdown to next reset — alternates between 06:30 UTC and 18:30 UTC
-  useEffect(() => {
-    function tick() {
-      const now = new Date();
-      const y = now.getUTCFullYear();
-      const mo = now.getUTCMonth();
-      const d = now.getUTCDate();
-
-      // Build today's two reset candidates
-      const reset0630 = new Date(Date.UTC(y, mo, d, 6, 30, 0, 0));
-      const reset1830 = new Date(Date.UTC(y, mo, d, 18, 30, 0, 0));
-
-      let next: Date;
-      let label: string;
-
-      if (now < reset0630) {
-        // Before 06:30 → next is 06:30 today
-        next = reset0630;
-        label = '6:30 AM UTC';
-      } else if (now < reset1830) {
-        // Between 06:30 and 18:30 → next is 18:30 today
-        next = reset1830;
-        label = '6:30 PM UTC';
-      } else {
-        // After 18:30 → next is 06:30 tomorrow
-        next = new Date(Date.UTC(y, mo, d + 1, 6, 30, 0, 0));
-        label = '6:30 AM UTC';
-      }
-
-      const total = Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));
-      const h = Math.floor(total / 3600);
-      const m = Math.floor((total % 3600) / 60);
-      const s = total % 60;
-      setNextResetLabel(label);
-      setResetCountdown(
-        `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
-      );
-    }
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
 
   const convertMutation = useMutation({
     mutationFn: async ({ amount, convertTo }: { amount: number; convertTo: string }) => {
@@ -797,47 +848,7 @@ export default function Home() {
         paddingBottom: 8,
       }}>
         {/* ── Next Reset Banner ───────────────────────────────────────────── */}
-        <div style={{
-          background: 'linear-gradient(90deg, #0d0d1a 0%, #1a0d3d 35%, #3d1580 65%, #6b21a8 100%)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          padding: '5px 16px',
-          borderBottom: '1px solid rgba(107,33,168,0.35)',
-        }}>
-          <Clock size={11} color="rgba(216,180,254,0.75)" strokeWidth={2.5} />
-          <span style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: 'rgba(216,180,254,0.6)',
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-          }}>
-            Reset
-          </span>
-          <div style={{ width: 1, height: 10, background: 'rgba(216,180,254,0.2)', borderRadius: 1 }} />
-          <span style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: 'rgba(216,180,254,0.85)',
-            letterSpacing: '0.04em',
-            fontFamily: "'Space Grotesk', monospace",
-          }}>
-            {nextResetLabel || '––:–– UTC'}
-          </span>
-          <div style={{ width: 1, height: 10, background: 'rgba(216,180,254,0.2)', borderRadius: 1 }} />
-          <span style={{
-            fontSize: 12,
-            fontWeight: 800,
-            color: '#e9d5ff',
-            fontVariantNumeric: 'tabular-nums',
-            letterSpacing: '0.03em',
-            fontFamily: "'Space Grotesk', monospace",
-          }}>
-            {resetCountdown || '––h ––m ––s'}
-          </span>
-        </div>
+        <ResetCountdownBanner />
 
         <div style={{ maxWidth: 448, margin: '0 auto', paddingLeft: 16, paddingRight: 16, paddingTop: 10 }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
