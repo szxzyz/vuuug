@@ -10,6 +10,7 @@ import { useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useTonConnectUI, useTonAddress } from '@tonconnect/ui-react';
 import { useLanguage } from '@/hooks/useLanguage';
+import TurnstileActionModal from '@/components/TurnstileActionModal';
 
 interface User {
   id: string;
@@ -134,12 +135,17 @@ export default function Withdraw() {
   const parsedAmount = parseFloat(withdrawAmount) || 0;
   const amountIsValid = parsedAmount >= minWithdraw && parsedAmount <= maxWithdraw && parsedAmount <= usdBalance;
 
+  // ── Per-action Turnstile state ───────────────────────────────────────────
+  const [showWithdrawTurnstile, setShowWithdrawTurnstile] = useState(false);
+  // ──────────────────────────────────────────────────────────────────────────
+
   const withdrawMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (turnstileToken: string) => {
       const withdrawalData: any = {
         method: selectedMethod,
         amount: parsedAmount,
         tonWalletAddress: connectedAddress || undefined,
+        turnstileToken,
       };
       const response = await apiRequest('POST', '/api/withdrawals', withdrawalData);
       const data = await response.json();
@@ -174,6 +180,7 @@ export default function Withdraw() {
     },
   });
 
+  // Step 1: validate → show Turnstile
   const handleWithdraw = () => {
     if (!hasEnoughReferrals) {
       const remaining = MINIMUM_VALID_REFERRALS_REQUIRED - validReferralCount;
@@ -209,7 +216,14 @@ export default function Withdraw() {
       showNotification(t('insufficient_balance'), 'error');
       return;
     }
-    withdrawMutation.mutate();
+    // All checks passed — show Turnstile challenge
+    setShowWithdrawTurnstile(true);
+  };
+
+  // Step 2: Turnstile solved → submit with fresh token
+  const handleWithdrawTurnstileVerified = (token: string) => {
+    setShowWithdrawTurnstile(false);
+    withdrawMutation.mutate(token);
   };
 
   const paymentSystems = getPaymentSystems(appSettings);
@@ -520,6 +534,17 @@ export default function Withdraw() {
 
         </div>
       </main>
+
+      {/* Per-action Turnstile challenge before withdrawal submission */}
+      {showWithdrawTurnstile && (
+        <TurnstileActionModal
+          action="withdrawal"
+          title="Verify withdrawal"
+          description="Complete the security check to confirm your withdrawal request."
+          onVerified={handleWithdrawTurnstileVerified}
+          onCancel={() => setShowWithdrawTurnstile(false)}
+        />
+      )}
     </Layout>
   );
 }
