@@ -590,7 +590,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 the challenge entirely when Turnstile is not set up
    */
   app.get('/api/turnstile/status', (req: any, res) => {
-    const secretKey   = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY?.trim() ?? '';
+    // TURNSTILE_SECRET is the canonical name (set by the Spin skill).
+    // CLOUDFLARE_TURNSTILE_SECRET_KEY is the legacy fallback for Replit.
+    const secretKey   = (process.env.TURNSTILE_SECRET ?? process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY ?? '').trim();
     const siteKey     = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
     const configured  = !!(secretKey && siteKey);
 
@@ -618,12 +620,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *  Returns { success: boolean, message?: string, retryable?: boolean }
    */
   app.post('/api/turnstile/verify', async (req: any, res) => {
-    const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY?.trim() ?? '';
+    // TURNSTILE_SECRET is the canonical name (set by the Spin skill).
+    // CLOUDFLARE_TURNSTILE_SECRET_KEY is the legacy fallback for Replit.
+    const secretKey = (process.env.TURNSTILE_SECRET ?? process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY ?? '').trim();
     const siteKey   = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
 
     // Turnstile not configured → BLOCK. Never auto-verify without a real challenge.
     if (!secretKey || !siteKey) {
-      console.error('[turnstile] ❌ CLOUDFLARE_TURNSTILE_SECRET_KEY or VITE_TURNSTILE_SITE_KEY not set — rejecting verify request');
+      console.error('[turnstile] ❌ TURNSTILE_SECRET (or CLOUDFLARE_TURNSTILE_SECRET_KEY) / VITE_TURNSTILE_SITE_KEY not set — rejecting verify request');
       return res.status(503).json({
         success: false,
         retryable: false,
