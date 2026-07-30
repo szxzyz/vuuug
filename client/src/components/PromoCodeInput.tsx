@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
 import { FiCheck, FiExternalLink } from "react-icons/fi";
+import TurnstileActionModal from "@/components/TurnstileActionModal";
 
 declare global {
   interface Window {
@@ -38,9 +39,15 @@ export default function PromoCodeInput() {
   const [channelRequired, setChannelRequired] = useState<{ channelLink: string | null; channelName: string } | null>(null);
   const queryClient = useQueryClient();
 
+  // ── Per-action Turnstile ────────────────────────────────────────────────────
+  const [showTurnstile, setShowTurnstile] = useState(false);
+  // Holds the code to redeem once Turnstile resolves
+  const pendingCodeRef = useRef<string>("");
+  // ──────────────────────────────────────────────────────────────────────────
+
   const redeemPromoMutation = useMutation({
-    mutationFn: async (code: string) => {
-      const response = await apiRequest("POST", "/api/promo-codes/redeem", { code });
+    mutationFn: async ({ code, turnstileToken }: { code: string; turnstileToken: string }) => {
+      const response = await apiRequest("POST", "/api/promo-codes/redeem", { code, turnstileToken });
       const data = await response.json();
       if (!response.ok) {
         const err: any = new Error(data.message || "Invalid promo code");
@@ -58,6 +65,7 @@ export default function PromoCodeInput() {
       setPromoCode("");
       setInlineError(null);
       setChannelRequired(null);
+      pendingCodeRef.current = "";
       showNotification(data.message || "Promo applied successfully!", "success");
     },
     onError: (error: any) => {
@@ -74,6 +82,7 @@ export default function PromoCodeInput() {
     },
   });
 
+  // Step 1: validate + show ad → then open Turnstile
   const handleSubmit = async () => {
     const code = promoCode.trim().toUpperCase();
     if (!code) {
@@ -91,12 +100,38 @@ export default function PromoCodeInput() {
         setBusy(false);
         return;
       }
-      redeemPromoMutation.mutate(code);
+      // Ad done (or unavailable) — show Turnstile before redeeming
+      pendingCodeRef.current = code;
+      setShowTurnstile(true);
     } catch {
-      redeemPromoMutation.mutate(code);
+      // On unexpected error, still gate on Turnstile
+      pendingCodeRef.current = code;
+      setShowTurnstile(true);
     } finally {
       setBusy(false);
     }
+  };
+
+  // Step 1b: "I've Joined — Verify & Claim" button also needs Turnstile
+  const handleRetryAfterJoin = () => {
+    const code = promoCode.trim().toUpperCase();
+    if (!code) return;
+    pendingCodeRef.current = code;
+    setShowTurnstile(true);
+  };
+
+  // Step 2: Turnstile solved → submit with fresh token
+  const handleTurnstileVerified = (token: string) => {
+    setShowTurnstile(false);
+    const code = pendingCodeRef.current;
+    if (code) {
+      redeemPromoMutation.mutate({ code, turnstileToken: token });
+    }
+  };
+
+  const handleTurnstileCancel = () => {
+    setShowTurnstile(false);
+    pendingCodeRef.current = "";
   };
 
   const handleJoinChannel = () => {
@@ -116,127 +151,141 @@ export default function PromoCodeInput() {
   const isLoading  = busy || redeemPromoMutation.isPending;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {inlineError && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171', letterSpacing: '0.04em' }}>{inlineError}</span>
-      )}
+    <>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {inlineError && (
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171', letterSpacing: '0.04em' }}>{inlineError}</span>
+        )}
 
-      {/* Channel required message */}
-      {channelRequired && (
-        <div style={{
-          background: "rgba(251,113,133,0.10)",
-          border: "1px solid rgba(251,113,133,0.25)",
-          borderRadius: 10,
-          padding: "10px 12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171' }}>
-            You must join <strong>{channelRequired.channelName}</strong> before claiming this promo code.
-          </span>
-          {channelRequired.channelLink && (
+        {/* Channel required message */}
+        {channelRequired && (
+          <div style={{
+            background: "rgba(251,113,133,0.10)",
+            border: "1px solid rgba(251,113,133,0.25)",
+            borderRadius: 10,
+            padding: "10px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171' }}>
+              You must join <strong>{channelRequired.channelName}</strong> before claiming this promo code.
+            </span>
+            {channelRequired.channelLink && (
+              <button
+                onClick={handleJoinChannel}
+                style={{
+                  height: 34,
+                  borderRadius: 8,
+                  border: "none",
+                  background: "rgba(251,113,133,0.20)",
+                  color: "#f87171",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}
+              >
+                <FiExternalLink size={12} />
+                Join {channelRequired.channelName}
+              </button>
+            )}
+            {/* After joining: trigger Turnstile before claiming */}
             <button
-              onClick={handleJoinChannel}
+              onClick={handleRetryAfterJoin}
+              disabled={isLoading}
               style={{
                 height: 34,
                 borderRadius: 8,
                 border: "none",
-                background: "rgba(251,113,133,0.20)",
-                color: "#f87171",
+                background: isLoading ? "rgba(255,255,255,0.04)" : "rgba(34,197,94,0.15)",
+                color: isLoading ? "rgba(255,255,255,0.2)" : "#22c55e",
                 fontSize: 12,
                 fontWeight: 700,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
+                cursor: isLoading ? "not-allowed" : "pointer",
               }}
             >
-              <FiExternalLink size={12} />
-              Join {channelRequired.channelName}
+              {isLoading ? "Verifying…" : "✓ I've Joined — Verify & Claim"}
             </button>
-          )}
-          <button
-            onClick={() => redeemPromoMutation.mutate(promoCode.trim().toUpperCase())}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            value={promoCode}
+            onChange={e => { setPromoCode(e.target.value.toUpperCase()); setInlineError(null); setChannelRequired(null); }}
+            onKeyDown={e => e.key === "Enter" && !isDisabled && handleSubmit()}
+            placeholder="Enter promo code"
             disabled={isLoading}
             style={{
-              height: 34,
-              borderRadius: 8,
+              flex: 1,
+              height: 42,
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.09)",
+              borderRadius: 10,
+              padding: "0 12px",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 600,
+              outline: "none",
+              letterSpacing: "0.05em",
+              transition: "border-color 0.15s",
+            }}
+            onFocus={e => (e.target.style.borderColor = "rgba(255,255,255,0.25)")}
+            onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.09)")}
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={isDisabled}
+            style={{
+              height: 42,
+              padding: "0 16px",
+              borderRadius: 10,
               border: "none",
-              background: isLoading ? "rgba(255,255,255,0.04)" : "rgba(34,197,94,0.15)",
-              color: isLoading ? "rgba(255,255,255,0.2)" : "#22c55e",
+              background: isDisabled ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.10)",
+              color: isDisabled ? "rgba(255,255,255,0.2)" : "#fff",
               fontSize: 12,
               fontWeight: 700,
-              cursor: isLoading ? "not-allowed" : "pointer",
+              cursor: isDisabled ? "not-allowed" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              flexShrink: 0,
+              letterSpacing: "0.04em",
+              whiteSpace: "nowrap",
+              transition: "all 0.15s ease",
             }}
+            className={isDisabled ? "" : "active:scale-95 transition-transform"}
           >
-            {isLoading ? "Verifying…" : "✓ I've Joined — Verify & Claim"}
+            {isLoading ? (
+              <span style={{
+                width: 12, height: 12, borderRadius: "50%",
+                border: "2px solid rgba(255,255,255,0.2)",
+                borderTopColor: "#fff",
+                display: "inline-block",
+                animation: "spin 0.7s linear infinite",
+              }} />
+            ) : (
+              <FiCheck size={13} />
+            )}
+            {isLoading ? "Loading…" : "APPLY"}
           </button>
         </div>
-      )}
-
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <input
-          value={promoCode}
-          onChange={e => { setPromoCode(e.target.value.toUpperCase()); setInlineError(null); setChannelRequired(null); }}
-          onKeyDown={e => e.key === "Enter" && !isDisabled && handleSubmit()}
-          placeholder="Enter promo code"
-          disabled={isLoading}
-          style={{
-            flex: 1,
-            height: 42,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.09)",
-            borderRadius: 10,
-            padding: "0 12px",
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 600,
-            outline: "none",
-            letterSpacing: "0.05em",
-            transition: "border-color 0.15s",
-          }}
-          onFocus={e => (e.target.style.borderColor = "rgba(255,255,255,0.25)")}
-          onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.09)")}
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={isDisabled}
-          style={{
-            height: 42,
-            padding: "0 16px",
-            borderRadius: 10,
-            border: "none",
-            background: isDisabled ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.10)",
-            color: isDisabled ? "rgba(255,255,255,0.2)" : "#fff",
-            fontSize: 12,
-            fontWeight: 700,
-            cursor: isDisabled ? "not-allowed" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            flexShrink: 0,
-            letterSpacing: "0.04em",
-            whiteSpace: "nowrap",
-            transition: "all 0.15s ease",
-          }}
-          className={isDisabled ? "" : "active:scale-95 transition-transform"}
-        >
-          {isLoading ? (
-            <span style={{
-              width: 12, height: 12, borderRadius: "50%",
-              border: "2px solid rgba(255,255,255,0.2)",
-              borderTopColor: "#fff",
-              display: "inline-block",
-              animation: "spin 0.7s linear infinite",
-            }} />
-          ) : (
-            <FiCheck size={13} />
-          )}
-          {isLoading ? "Loading…" : "APPLY"}
-        </button>
       </div>
-    </div>
+
+      {/* Per-action Turnstile challenge before promo redemption */}
+      {showTurnstile && (
+        <TurnstileActionModal
+          action="promo_redeem"
+          title="Verify to redeem"
+          description="Complete the quick security check to claim your promo code reward."
+          onVerified={handleTurnstileVerified}
+          onCancel={handleTurnstileCancel}
+        />
+      )}
+    </>
   );
 }
