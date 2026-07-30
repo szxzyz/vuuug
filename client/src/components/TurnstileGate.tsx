@@ -83,9 +83,9 @@ type State =
 export default function TurnstileGate({ children }: { children: React.ReactNode }) {
   const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)?.trim() ?? "";
 
-  // If the site key is not configured at build time, skip the overlay entirely.
-  // No API call, no flash — children render immediately.
-  const [state, setState] = useState<State>(siteKey ? "checking" : "done");
+  // Always start in "checking" — never skip the gate regardless of site-key presence.
+  // A missing site key means misconfiguration and must block access, not grant it.
+  const [state, setState] = useState<State>("checking");
   const [msg, setMsg] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
@@ -105,17 +105,38 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
     return () => { alive.current = false; dropWidget(); };
   }, [dropWidget]);
 
-  // ── step 1 — check session (only when Turnstile is configured) ─────────────
+  // ── step 1 — check session ────────────────────────────────────────────────
   const checkStatus = useCallback(async () => {
-    if (!siteKey) return; // not configured — already "done"
+    // Missing site key means misconfiguration — block, never grant access.
+    if (!siteKey) {
+      console.error('[Turnstile] ❌ VITE_TURNSTILE_SITE_KEY is not set — access blocked');
+      setMsg("Security verification is not properly configured. Contact support.");
+      setState("unavailable");
+      return;
+    }
     setState("checking");
+    console.log('[Turnstile] 🔄 Checking session status...');
     try {
       const r = await fetch("/api/turnstile/status", { credentials: "include", cache: "no-store" });
       const d = await r.json() as { verified: boolean; configured: boolean };
       if (!alive.current) return;
-      setState(d.verified || !d.configured ? "done" : "widget");
+      if (d.verified) {
+        console.log('[Turnstile] ✅ Session already verified — skipping challenge');
+        setState("done");
+      } else if (!d.configured) {
+        // Server keys missing — this is a misconfiguration, not a pass-through.
+        console.error('[Turnstile] ❌ Server reports Turnstile not configured — access blocked');
+        setMsg("Security verification is not configured on the server. Contact support.");
+        setState("unavailable");
+      } else {
+        console.log('[Turnstile] ℹ️ Not yet verified — showing challenge widget');
+        setState("widget");
+      }
     } catch {
-      if (alive.current) setState("widget");
+      if (alive.current) {
+        console.warn('[Turnstile] ⚠️ Status check failed — showing widget as fallback');
+        setState("widget");
+      }
     }
   }, [siteKey]);
 
@@ -135,13 +156,21 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
   // ── step 2 — render widget ─────────────────────────────────────────────────
   useEffect(() => {
     if (state !== "widget") return;
-    if (!siteKey) { setState("done"); return; }
+    // Missing site key means misconfiguration — block, never grant access.
+    if (!siteKey) {
+      console.error('[Turnstile] ❌ Site key missing — cannot render widget, blocking access');
+      setMsg("Security verification is not properly configured. Contact support.");
+      setState("unavailable");
+      return;
+    }
 
     let cancelled = false;
     (async () => {
       try {
+        console.log('[Turnstile] 🔄 Loading Cloudflare Turnstile script...');
         await loadScript();
         if (cancelled || !alive.current) return;
+        console.log('[Turnstile] ✅ Cloudflare script loaded successfully');
         const el = containerRef.current;
         if (!el) return;
         dropWidget();
@@ -150,15 +179,22 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
           sitekey: siteKey,
           theme: "dark",
           size: "normal",
-          callback: (token) => { if (alive.current) submit(token); },
+          callback: (token) => {
+            if (alive.current) {
+              console.log('[Turnstile] ✅ Token received from widget — starting backend verification');
+              submit(token);
+            }
+          },
           "expired-callback": () => {
             const a = cf();
             if (widgetId.current !== null && a) {
+              console.log('[Turnstile] ℹ️ Token expired — resetting widget');
               try { a.reset(widgetId.current); } catch { /* ignore */ }
             }
           },
           "error-callback": (code) => {
             if (!alive.current) return;
+            console.error('[Turnstile] ❌ Widget error, code:', code);
             const net = !code || code.startsWith("110") || code === "crashed";
             setMsg(net
               ? "Cloudflare could not load. Check your connection and retry."
@@ -167,8 +203,10 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
           },
         });
         widgetId.current = id;
-      } catch {
+        console.log('[Turnstile] ✅ Widget rendered successfully, id:', id);
+      } catch (err) {
         if (!alive.current) return;
+        console.error('[Turnstile] ❌ Failed to load Cloudflare script:', err);
         setMsg("Failed to load verification widget. Please retry.");
         setState("unavailable");
       }
@@ -187,6 +225,7 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
 
   async function submit(token: string, attempt = 0): Promise<void> {
     setState("submitting");
+    console.log(`[Turnstile] 🔄 Backend verification started (attempt ${attempt + 1})`);
     try {
       const r = await fetch("/api/turnstile/verify", {
         method: "POST",
@@ -198,11 +237,13 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
       if (!alive.current) return;
 
       if (d.success) {
+        console.log('[Turnstile] ✅ Backend verification success — access granted');
         setState("success");
         setTimeout(() => { if (alive.current) setState("done"); }, 700);
         return;
       }
 
+      console.warn(`[Turnstile] ❌ Backend verification failed: ${d.message ?? 'unknown'} retryable=${d.retryable}`);
       const isTransient = r.status === 503 || d.retryable === true;
       if (isTransient && attempt < MAX_FETCH_RETRIES) {
         // Back-off and retry the same token — the server is warming up
@@ -220,8 +261,9 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
         setMsg(d.message ?? "Verification failed. Please try again.");
         setState("error");
       }
-    } catch {
+    } catch (err) {
       if (!alive.current) return;
+      console.error(`[Turnstile] ❌ Network error during verification (attempt ${attempt + 1}):`, err);
       // Network error — retry silently before surfacing anything.
       // Root-cause scenario: server is still starting when Cloudflare
       // auto-solves the challenge, so the POST fires before the API is ready.
