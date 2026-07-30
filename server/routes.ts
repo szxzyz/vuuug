@@ -748,6 +748,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  /** POST /api/turnstile/invalidate
+   *  Called on fresh app launch to clear the session Turnstile stamp so the
+   *  gate always challenges the user when they reopen the app.
+   *  Returns { success: true } unconditionally (idempotent).
+   */
+  app.post('/api/turnstile/invalidate', (req: any, res) => {
+    if (req.session) {
+      req.session.turnstileVerified   = false;
+      req.session.turnstileVerifiedAt = undefined;
+      req.session.save((err: any) => {
+        if (err) console.warn('[turnstile] invalidate session-save error (non-critical):', err);
+      });
+    }
+    console.log('[turnstile] 🔄 Session invalidated — fresh launch detected');
+    return res.json({ success: true });
+  });
+
   // ── End Turnstile endpoints ──────────────────────────────────────────────────
 
   // ── Per-action Turnstile verification helper ──────────────────────────────
@@ -1737,6 +1754,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
    // ── Pre-register ad session with server-authoritative adType ─────────────────
+  /** GET /api/ads/turnstile-status
+   *  Returns { required: boolean } — whether the NEXT ad claim requires a fresh
+   *  Turnstile token.  Based on backend-authoritative adsTurnstileCount vs threshold.
+   */
+  app.get('/api/ads/turnstile-status', authenticateTelegram, async (req: any, res) => {
+    try {
+      const userId = req.user.user.id;
+      const rows = await db.execute(sql`
+        SELECT ads_turnstile_count, ads_turnstile_threshold
+        FROM users WHERE id = ${userId} LIMIT 1
+      `);
+      const row = (rows as any)?.[0] ?? (rows as any)?.rows?.[0];
+      const count     = Number(row?.ads_turnstile_count     ?? 0);
+      const threshold = Number(row?.ads_turnstile_threshold ?? 0);
+      // Required only when threshold is set (>0) and counter has reached it
+      const required  = threshold > 0 && count >= threshold;
+      console.log(`[ads-turnstile-status] userId=${userId} count=${count} threshold=${threshold} required=${required}`);
+      return res.json({ required });
+    } catch (err) {
+      console.error('[ads-turnstile-status] error:', err);
+      // Fail-safe: do not expose internals; client treats false as "not required"
+      return res.json({ required: false });
+    }
+  });
+
   // Client calls this BEFORE showing any ad SDK. The server stores the adType so
   // the /api/ads/watch claim endpoint never trusts the client-supplied field.
   app.post('/api/ads/register-session', authenticateTelegram, async (req: any, res) => {
@@ -1782,9 +1824,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.user.id;
 
-      // ── Require fresh per-action Turnstile token ────────────────────────────
-      if (!await checkActionTurnstile(req, res, 'ads_watch')) return;
+      // ── Conditional Turnstile — required after every N completed ads (N is a
+      //    random threshold 5–10, stored server-side so clients cannot bypass it
+      //    by refreshing).  Every attempt (pass/fail/missing) is logged for fraud
+      //    detection.  If the threshold has been reached and no valid token is
+      //    provided the request is rejected before any session is consumed.
       // ───────────────────────────────────────────────────────────────────────
+      {
+        const tsRows = await db.execute(sql`
+          SELECT ads_turnstile_count, ads_turnstile_threshold
+          FROM users WHERE id = ${userId} LIMIT 1
+        `);
+        const tsRow       = (tsRows as any)?.[0] ?? (tsRows as any)?.rows?.[0];
+        const tsCount     = Number(tsRow?.ads_turnstile_count     ?? 0);
+        const tsThreshold = Number(tsRow?.ads_turnstile_threshold ?? 0);
+        const tsTrigger   = tsThreshold > 0 && tsCount >= tsThreshold;
+
+        const ip  = (typeof req.headers['x-forwarded-for'] === 'string'
+          ? req.headers['x-forwarded-for'].split(',')[0].trim()
+          : req.headers['x-real-ip']) || req.socket?.remoteAddress || 'unknown';
+        const ts  = new Date().toISOString();
+
+        if (tsTrigger) {
+          const token = req.body?.turnstileToken || req.headers?.['x-turnstile-token'];
+          if (!token || typeof token !== 'string') {
+            // Log missing token — fraud signal
+            console.warn(`[turnstile-ads] ❌ MISSING_TOKEN userId=${userId} count=${tsCount} threshold=${tsThreshold} ip=${ip} ts=${ts}`);
+            return res.status(403).json({
+              success: false,
+              message: 'Security verification required. Please complete the challenge.',
+              errorType: 'turnstile_required',
+              turnstileRequired: true,
+            });
+          }
+          // Verify with Cloudflare — logs pass/fail automatically inside checkActionTurnstile
+          if (!await checkActionTurnstile(req, res, 'ads_watch')) return;
+          // ✅ Verified — reset counter and pick new random threshold (5–10)
+          const newThreshold = 5 + Math.floor(Math.random() * 6);
+          await db.execute(sql`
+            UPDATE users SET
+              ads_turnstile_count     = 0,
+              ads_turnstile_threshold = ${newThreshold},
+              updated_at              = NOW()
+            WHERE id = ${userId}
+          `);
+          console.log(`[turnstile-ads] ✅ Counter reset userId=${userId} newThreshold=${newThreshold} ip=${ip} ts=${ts}`);
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────────
 
       // Get user to check daily ad limit
       const user = await storage.getUser(userId);
@@ -2068,6 +2155,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             WHERE id = ${userId}
           `);
         }
+
+        // ── Increment Turnstile counter (backend-authoritative) ──────────────
+        // Initialise threshold on first-ever claim (random 5–10 ads).
+        // Counter is NOT reset here — it was reset when Turnstile was verified
+        // above.  We only ever increment it; the reset happens upon verification.
+        await db.execute(sql`
+          UPDATE users SET
+            ads_turnstile_count = COALESCE(ads_turnstile_count, 0) + 1,
+            ads_turnstile_threshold = CASE
+              WHEN COALESCE(ads_turnstile_threshold, 0) = 0
+              THEN FLOOR(RANDOM() * 6 + 5)::integer
+              ELSE ads_turnstile_threshold
+            END,
+            updated_at = NOW()
+          WHERE id = ${userId}
+        `);
+        // ────────────────────────────────────────────────────────────────────
 
         // Stars system — increment weeklyStars when monthly contest is active
         try {

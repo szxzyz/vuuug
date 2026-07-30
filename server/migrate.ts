@@ -549,6 +549,8 @@ export async function ensureDatabaseSchema(): Promise<void> {
           ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_message_sent BOOLEAN DEFAULT false;
           ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_stars INTEGER DEFAULT 0;
           ALTER TABLE users ADD COLUMN IF NOT EXISTS last_task_reminder_date TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS ads_turnstile_count INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS ads_turnstile_threshold INTEGER NOT NULL DEFAULT 0;
         END $$
       `);
       console.log('✅ [MIGRATION] User columns ensured');
