@@ -14,38 +14,52 @@ interface NotificationData {
 let notificationQueue: NotificationData[] = [];
 let isDisplaying = false;
 let recentNotifications: Map<string, number> = new Map();
+// Module-level setter refs so the visibilitychange handler can call them
+// without capturing stale closures from the initial useEffect run.
+let _setMessage: ((m: string) => void) | null = null;
+let _setType: ((t: NotificationType) => void) | null = null;
+let _setIsVisible: ((v: boolean) => void) | null = null;
 
 const DUPLICATE_PREVENTION_WINDOW = 2000; // 2 seconds
+
+function showNextNotification() {
+  if (notificationQueue.length === 0 || isDisplaying) return;
+  // Root cause of Issue 3: when the Telegram mini-app is backgrounded (user
+  // watching an ad), the notification timer fires and the toast appears and
+  // disappears while the screen is off. On return the user sees nothing.
+  // Fix: defer display until the document is visible again.
+  if (document.hidden) return;
+
+  isDisplaying = true;
+  const notification = notificationQueue.shift()!;
+
+  _setMessage?.(notification.message);
+  _setType?.(notification.type || "success");
+  _setIsVisible?.(true);
+
+  const displayDuration = notification.duration || 1500;
+
+  setTimeout(() => {
+    _setIsVisible?.(false);
+    setTimeout(() => {
+      isDisplaying = false;
+      showNextNotification();
+    }, 300);
+  }, displayDuration);
+}
 
 export default function AppNotification() {
   const [isVisible, setIsVisible] = useState(false);
   const [message, setMessage] = useState("");
   const [type, setType] = useState<NotificationType>("success");
 
-  const showNextNotification = () => {
-    if (notificationQueue.length === 0 || isDisplaying) {
-      return;
-    }
-
-    isDisplaying = true;
-    const notification = notificationQueue.shift()!;
-    
-    setMessage(notification.message);
-    setType(notification.type || "success");
-    setIsVisible(true);
-
-    const displayDuration = notification.duration || 1500;
-
-    setTimeout(() => {
-      setIsVisible(false);
-      setTimeout(() => {
-        isDisplaying = false;
-        showNextNotification();
-      }, 300);
-    }, displayDuration);
-  };
-
   useEffect(() => {
+    // Expose setters to module scope so showNextNotification (now module-level)
+    // can call them without stale closure issues.
+    _setMessage = setMessage;
+    _setType = setType;
+    _setIsVisible = setIsVisible;
+
     const handleNotification = (event: CustomEvent<NotificationData>) => {
       const { message: msg, type: notifType, amount, duration } = event.detail;
       
@@ -60,11 +74,9 @@ export default function AppNotification() {
       const lastShown = recentNotifications.get(notificationKey);
       
       if (lastShown && (now - lastShown) < DUPLICATE_PREVENTION_WINDOW) {
-        // Skip duplicate notification within the prevention window
         return;
       }
       
-      // Track this notification
       recentNotifications.set(notificationKey, now);
       
       // Clean up old entries (older than 5 seconds)
@@ -78,10 +90,23 @@ export default function AppNotification() {
       showNextNotification();
     };
 
+    // When the user returns from background (e.g. after watching an ad), drain
+    // any queued notifications that were deferred because the doc was hidden.
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        showNextNotification();
+      }
+    };
+
     window.addEventListener('appNotification', handleNotification as EventListener);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
       window.removeEventListener('appNotification', handleNotification as EventListener);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      _setMessage = null;
+      _setType = null;
+      _setIsVisible = null;
     };
   }, []);
 

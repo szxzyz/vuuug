@@ -39,10 +39,14 @@ function StatCard({ label, value, isLoading }: { label: string; value: string; i
 
 export default function IncomeStatistics() {
   const { t } = useLanguage();
+  // Root cause of Issue 4: staleTime:0 means every navigation to a page that
+  // renders IncomeStatistics triggered a fresh server request, causing a flash
+  // of loading state on every tab switch. Use 30s staleTime and rely on
+  // query invalidation from mutations to get fresh data after ad watches.
   const { data: stats, isLoading } = useQuery<UserStats>({
     queryKey: ['/api/user/stats'],
     retry: false,
-    staleTime: 0,
+    staleTime: 30_000,
     refetchOnMount: true,
   });
 

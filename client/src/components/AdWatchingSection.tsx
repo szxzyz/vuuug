@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, memo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { FiShield, FiZap } from "react-icons/fi";
@@ -32,7 +32,7 @@ const AD_CARDS = [
 ];
 
 
-export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
+function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
   const { t } = useLanguage();
@@ -81,18 +81,40 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       return r.json();
     },
     onSuccess: (data: any) => {
+      const rewardPAD = data?.rewardPOW ?? 0;
+
+      // ── Instant optimistic update for user balance + ad count ──────────────
       queryClient.setQueryData(["/api/auth/user"], (old: any) => {
         if (!old) return old;
         const adType = currentAdTypeRef.current;
         const updates: any = {
-          balance:     data?.newBalance     !== undefined ? String(data.newBalance) : old.balance,
+          balance: data?.newBalance !== undefined ? String(data.newBalance) : old.balance,
         };
         if      (adType === "adsgram") updates.adsWatchedToday          = (old.adsWatchedToday          || 0) + 1;
         else if (adType === "monetag") updates.monetagAdsWatchedToday   = (old.monetagAdsWatchedToday   || 0) + 1;
         else if (adType === "gigapub") updates.gigapubAdsWatchedToday   = (old.gigapubAdsWatchedToday   || 0) + 1;
         return { ...old, ...updates };
       });
-      showNotification(t("pow_earned_notification").replace("{n}", String(data?.rewardPOW ?? 0)), "success");
+
+      // ── Instant optimistic update for IncomeStatistics ─────────────────────
+      // Previously only invalidated (triggered a refetch flash). Now also
+      // setQueryData so dashboard/statistics panels update instantly.
+      queryClient.setQueryData(["/api/user/stats"], (old: any) => {
+        if (!old) return old;
+        const add = (val: string | undefined) =>
+          String(Math.round(parseFloat(val || '0') + rewardPAD));
+        return {
+          ...old,
+          todayEarnings:  add(old.todayEarnings),
+          weekEarnings:   add(old.weekEarnings),
+          monthEarnings:  add(old.monthEarnings),
+          totalEarnings:  add(old.totalEarnings),
+        };
+      });
+
+      showNotification(t("pow_earned_notification").replace("{n}", String(rewardPAD)), "success");
+
+      // Background refetch to reconcile optimistic data with server truth
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
@@ -447,3 +469,8 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     </>
   );
 }
+
+// Wrap with React.memo so AdWatchingSection only re-renders when `user` prop
+// actually changes — previously it re-rendered every second because Home.tsx
+// has two setInterval(tick, 1000) calls that update state every second.
+export default memo(AdWatchingSection);
