@@ -73,7 +73,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     mutationFn: async (payload: {
       adType: string; sessionId: string;
       backgroundDuration: number; backgroundEntered: boolean; sessionStart: number;
-      turnstileToken: string;
+      turnstileToken?: string;
     }) => {
       // apiRequest throws (with errorType/secsLeft/etc. preserved on the Error)
       // if the response isn't OK, so by this point r.ok is always true.
@@ -108,6 +108,9 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
       else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
       else if (error.limitType  === "daily")                  showNotification(t("daily_limit_reached_tomorrow"), "error");
+      // turnstile_required returned unexpectedly (race condition) — surface a clear message
+      else if (error.errorType === "turnstile_required" || error.turnstileRequired)
+                                                              showNotification("Security verification required. Please try watching again.", "error");
       else if (error.message)                                 showNotification(`${t("error")}: ${error.message}`, "error");
       else                                                    showNotification(t("something_went_wrong"), "error");
     },
@@ -186,19 +189,35 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
       if (!result.success)    { endSession(); cancelSession(); return; }
 
-      // Wait for the user to return to the foreground before showing Turnstile
+      // Wait for the user to return to the foreground
       setCurrentAdStep("verifying");
       await waitForForeground();
 
-      // ── Require Turnstile verification before claiming reward ───────────────
-      const turnstileToken = await waitForAdTurnstile();
-      if (!turnstileToken) {
-        // User cancelled or Turnstile unavailable — do not reward
-        cancelSession();
-        showNotification(t("something_went_wrong"), "error");
-        return;
+      // ── Conditionally require Turnstile based on backend counter ──────────
+      // The server tracks how many ads the user has completed since the last
+      // Turnstile challenge.  We ask the server whether a challenge is needed
+      // NOW — if so we show the modal; otherwise we proceed immediately.
+      // The server enforces this check independently (fail-closed), so the
+      // client-side check here is for UX only (avoids a round-trip rejection).
+      let turnstileToken: string | undefined = undefined;
+      try {
+        const tsRes  = await apiRequest("GET", "/api/ads/turnstile-status");
+        const tsData = await tsRes.json() as { required: boolean };
+        if (tsData.required) {
+          setCurrentAdStep("verifying");
+          const token = await waitForAdTurnstile();
+          if (!token) {
+            // User cancelled verification — block reward, do not consume session
+            cancelSession();
+            showNotification("Verification cancelled. Ad reward not claimed.", "error");
+            return;
+          }
+          turnstileToken = token;
+        }
+      } catch {
+        // Status check failed — proceed without token; server will decide
       }
-      // ───────────────────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
 
       const session = endSession();
       if (!sessionRewardedRef.current) {

@@ -80,6 +80,12 @@ type State =
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+// ── Fresh-launch detection key stored in sessionStorage ──────────────────────
+// sessionStorage is cleared when the Telegram Mini App is closed (tab close).
+// A page refresh within the same session preserves the key, so the user is
+// not re-challenged on refresh — only on a genuine app close + reopen.
+const LAUNCH_VERIFIED_KEY = "ts_launch_verified";
+
 export default function TurnstileGate({ children }: { children: React.ReactNode }) {
   const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)?.trim() ?? "";
 
@@ -106,6 +112,11 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
   }, [dropWidget]);
 
   // ── step 1 — check session ────────────────────────────────────────────────
+  // On a FRESH launch (no sessionStorage flag), we always require a new
+  // Turnstile challenge regardless of the backend session state.  We also
+  // invalidate the backend session so protected routes re-require verification.
+  // On a page REFRESH the flag is still set, so the existing backend session
+  // check runs normally and the user is not interrupted unnecessarily.
   const checkStatus = useCallback(async () => {
     // Missing site key means misconfiguration — block, never grant access.
     if (!siteKey) {
@@ -114,8 +125,24 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
       setState("unavailable");
       return;
     }
+
+    const launchVerified = sessionStorage.getItem(LAUNCH_VERIFIED_KEY) === "1";
+
+    if (!launchVerified) {
+      // ── Fresh app launch — invalidate any stale backend session and force challenge ──
+      console.log('[Turnstile] 🆕 Fresh launch detected — clearing backend session and requiring challenge');
+      // Fire-and-forget invalidation; we don't block on it
+      fetch("/api/turnstile/invalidate", {
+        method: "POST",
+        credentials: "include",
+      }).catch(() => { /* non-critical */ });
+      setState("widget");
+      return;
+    }
+
+    // ── Subsequent refresh within same launch — trust backend session ──────
     setState("checking");
-    console.log('[Turnstile] 🔄 Checking session status...');
+    console.log('[Turnstile] 🔄 Checking session status (same launch)...');
     try {
       const r = await fetch("/api/turnstile/status", { credentials: "include", cache: "no-store" });
       const d = await r.json() as { verified: boolean; configured: boolean };
@@ -238,6 +265,8 @@ export default function TurnstileGate({ children }: { children: React.ReactNode 
 
       if (d.success) {
         console.log('[Turnstile] ✅ Backend verification success — access granted');
+        // Mark this launch as verified so page refreshes skip the challenge
+        try { sessionStorage.setItem(LAUNCH_VERIFIED_KEY, "1"); } catch { /* ignore */ }
         setState("success");
         setTimeout(() => { if (alive.current) setState("done"); }, 700);
         return;
