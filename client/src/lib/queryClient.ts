@@ -53,6 +53,8 @@ export { getTelegramInitData };
 // No sensitive data — only browser environment metadata.
 
 let _cachedDeviceId: string | null = null;
+let _cachedFingerprint: string | null = null;
+let _cachedPlatform: string | null = null;
 
 function getDeviceId(): string {
   if (_cachedDeviceId) return _cachedDeviceId;
@@ -74,6 +76,9 @@ function getDeviceId(): string {
 }
 
 function buildDeviceFingerprint(): string {
+  // Cache after first build — device properties don't change mid-session.
+  // Previously rebuilt on every request (~100 bytes of JSON + Intl API call each time).
+  if (_cachedFingerprint) return _cachedFingerprint;
   try {
     const tg = (window as any).Telegram?.WebApp;
     const fp: Record<string, unknown> = {
@@ -95,17 +100,23 @@ function buildDeviceFingerprint(): string {
       tgColorScheme: tg?.colorScheme,
       tgIsExpanded: tg?.isExpanded,
     };
-    return JSON.stringify(fp);
+    _cachedFingerprint = JSON.stringify(fp);
+    return _cachedFingerprint;
   } catch {
-    return JSON.stringify({ userAgent: navigator.userAgent, platform: navigator.platform });
+    _cachedFingerprint = JSON.stringify({ userAgent: navigator.userAgent, platform: navigator.platform });
+    return _cachedFingerprint;
   }
 }
 
 function getTelegramPlatform(): string {
+  // Cache platform string — it never changes during a session.
+  if (_cachedPlatform) return _cachedPlatform;
   try {
-    return (window as any).Telegram?.WebApp?.platform || 'unknown';
+    _cachedPlatform = (window as any).Telegram?.WebApp?.platform || 'unknown';
+    return _cachedPlatform;
   } catch {
-    return 'unknown';
+    _cachedPlatform = 'unknown';
+    return _cachedPlatform;
   }
 }
 
