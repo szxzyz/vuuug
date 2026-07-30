@@ -590,7 +590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 the challenge entirely when Turnstile is not set up
    */
   app.get('/api/turnstile/status', (req: any, res) => {
-    const secretKey   = process.env.TURNSTILE_SECRET_KEY?.trim() ?? '';
+    const secretKey   = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY?.trim() ?? '';
     const siteKey     = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
     const configured  = !!(secretKey && siteKey);
 
@@ -618,19 +618,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *  Returns { success: boolean, message?: string, retryable?: boolean }
    */
   app.post('/api/turnstile/verify', async (req: any, res) => {
-    const secretKey = process.env.TURNSTILE_SECRET_KEY?.trim() ?? '';
+    const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY?.trim() ?? '';
     const siteKey   = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
 
-    // Turnstile not configured → accept immediately (no-op gate)
+    // Turnstile not configured → BLOCK. Never auto-verify without a real challenge.
     if (!secretKey || !siteKey) {
-      console.log('[turnstile] Not configured — stamping session without challenge');
-      req.session.turnstileVerified   = true;
-      req.session.turnstileVerifiedAt = Date.now();
-      return req.session.save((saveErr: any) => {
-        if (saveErr) {
-          console.error('[turnstile] Session save error (not-configured path):', saveErr);
-        }
-        return res.json({ success: true });
+      console.error('[turnstile] ❌ CLOUDFLARE_TURNSTILE_SECRET_KEY or VITE_TURNSTILE_SITE_KEY not set — rejecting verify request');
+      return res.status(503).json({
+        success: false,
+        retryable: false,
+        message: 'Security verification is not configured on the server. Contact support.',
       });
     }
 
