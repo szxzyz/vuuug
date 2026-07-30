@@ -7,6 +7,7 @@ import { useAdSession } from "@/hooks/useAdSession";
 import AdFailurePopup from "@/components/AdFailurePopup";
 import { useLanguage } from "@/hooks/useLanguage";
 import { useAdFlow } from "@/hooks/useAdFlow";
+import TurnstileActionModal from "@/components/TurnstileActionModal";
 
 declare global {
   interface Window {
@@ -47,9 +48,11 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const [isShowingAds,   setIsShowingAds]   = useState(false);
   const [currentAdStep,  setCurrentAdStep]  = useState<"idle" | "loading" | "verifying">("idle");
   const [showFailurePopup, setShowFailurePopup] = useState(false);
-  const [failureReason, setFailureReason] = useState<"instructions" | "ad_not_counted">("instructions");
-  const [pendingAdStart,   setPendingAdStart]   = useState(false);
-  const [pendingCardId,    setPendingCardId]    = useState<number>(1);
+
+  // ── Per-action Turnstile state ─────────────────────────────────────────────
+  const [showAdTurnstile, setShowAdTurnstile] = useState(false);
+  const adTurnstileResolveRef = useRef<((token: string | null) => void) | null>(null);
+  // ──────────────────────────────────────────────────────────────────────────
 
   const sessionRewardedRef = useRef(false);
   const currentAdTypeRef   = useRef<string>("adsgram");
@@ -70,6 +73,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     mutationFn: async (payload: {
       adType: string; sessionId: string;
       backgroundDuration: number; backgroundEntered: boolean; sessionStart: number;
+      turnstileToken: string;
     }) => {
       // apiRequest throws (with errorType/secsLeft/etc. preserved on the Error)
       // if the response isn't OK, so by this point r.ok is always true.
@@ -97,7 +101,9 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     onError: (error: any) => {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      if      (error.errorType === "insufficient_background") { setFailureReason("ad_not_counted"); setShowFailurePopup(true); }
+      // Show "ad not counted" popup ONLY when the backend confirms the ad was
+      // watched but the background/foreground check failed — not at any other time.
+      if      (error.errorType === "insufficient_background") { setShowFailurePopup(true); }
       else if (error.errorType === "duplicate_session")       showNotification(t("error") + ": Session already used.", "error");
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
       else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
@@ -119,6 +125,26 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         resolve({ success: false, unavailable: true });
       }
     });
+
+  // ─── Turnstile Promise helpers ─────────────────────────────────────────────
+  const waitForAdTurnstile = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      adTurnstileResolveRef.current = resolve;
+      setShowAdTurnstile(true);
+    });
+
+  const handleAdTurnstileVerified = (token: string) => {
+    setShowAdTurnstile(false);
+    adTurnstileResolveRef.current?.(token);
+    adTurnstileResolveRef.current = null;
+  };
+
+  const handleAdTurnstileCancel = () => {
+    setShowAdTurnstile(false);
+    adTurnstileResolveRef.current?.(null);
+    adTurnstileResolveRef.current = null;
+  };
+  // ──────────────────────────────────────────────────────────────────────────
 
   // ─── Run ad for a specific card ────────────────────────────────────────────
   const runAdFlowForCard = async (cardId: number) => {
@@ -158,14 +184,22 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }
 
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
-      if (!result.success)    { endSession(); setFailureReason("instructions"); setShowFailurePopup(true); return; }
+      if (!result.success)    { endSession(); cancelSession(); return; }
 
-      // Only claim the reward once the user has genuinely come back to the
-      // app in the foreground — firing the request while still minimized/
-      // backgrounded undercounts backgroundDuration and confusingly claims
-      // the reward before the user has actually "returned".
+      // Wait for the user to return to the foreground before showing Turnstile
       setCurrentAdStep("verifying");
       await waitForForeground();
+
+      // ── Require Turnstile verification before claiming reward ───────────────
+      const turnstileToken = await waitForAdTurnstile();
+      if (!turnstileToken) {
+        // User cancelled or Turnstile unavailable — do not reward
+        cancelSession();
+        showNotification(t("something_went_wrong"), "error");
+        return;
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
       const session = endSession();
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
@@ -175,6 +209,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
           backgroundDuration: session.backgroundDuration,
           backgroundEntered:  session.backgroundEntered,
           sessionStart:       session.sessionStart,
+          turnstileToken,
         });
       }
     } catch {
@@ -186,25 +221,13 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
     }
   };
 
+  // All ad types now run directly — no pre-ad instruction popup
   const handleStartEarning = (cardId: number) => {
     const card      = AD_CARDS.find(c => c.id === cardId)!;
     const cardIndex = AD_CARDS.indexOf(card);
     if (isShowingAds || isCardLimitReached(card.adType)) return;
     if (cardIndex !== activeIndex) { setActiveIndex(cardIndex); return; }
-    // Monetag and Gigapub go straight to the ad — no pre-ad instruction popup
-    if (card.adType === 'monetag' || card.adType === 'gigapub') {
-      runAdFlowForCard(cardId);
-      return;
-    }
-    setPendingCardId(cardId);
-    setPendingAdStart(true);
-    setFailureReason("instructions");
-    setShowFailurePopup(true);
-  };
-
-  const handlePopupClose = () => {
-    setShowFailurePopup(false);
-    if (pendingAdStart) { setPendingAdStart(false); runAdFlowForCard(pendingCardId); }
+    runAdFlowForCard(cardId);
   };
 
   // ─── Per-card limit helpers ────────────────────────────────────────────────
@@ -340,7 +363,7 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
                     </div>
                   </div>
 
-                  {/* Get POW button — replaces the old full-width button */}
+                  {/* Get POW button */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -384,7 +407,24 @@ export default function AdWatchingSection({ user }: AdWatchingSectionProps) {
         </div>
       </div>
 
-      {showFailurePopup && <AdFailurePopup onClose={handlePopupClose} reason={failureReason} />}
+      {/* ── Ad not counted popup (only when reward counting fails) ────────── */}
+      {showFailurePopup && (
+        <AdFailurePopup
+          onClose={() => setShowFailurePopup(false)}
+          reason="ad_not_counted"
+        />
+      )}
+
+      {/* ── Per-action Turnstile challenge (after watching ad) ────────────── */}
+      {showAdTurnstile && (
+        <TurnstileActionModal
+          action="ads_watch"
+          title="Verify to claim reward"
+          description="Complete the quick security check to receive your POW reward."
+          onVerified={handleAdTurnstileVerified}
+          onCancel={handleAdTurnstileCancel}
+        />
+      )}
     </>
   );
 }
