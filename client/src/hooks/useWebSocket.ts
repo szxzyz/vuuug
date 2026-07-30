@@ -77,10 +77,19 @@ export function useWebSocket() {
               break;
               
             case 'ad_reward':
-              // Notification is already handled in AdWatchingSection
-              // Just invalidate queries to update the balance
-              queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-              queryClient.invalidateQueries({ queryKey: ['/api/user/stats'] });
+              // Root cause of Issue 2: the server sends this WS message as part of
+              // processing POST /api/ads/watch — it arrives BEFORE the HTTP response
+              // returns to the client. Calling invalidateQueries here triggers a
+              // background refetch that races the mutation's onSuccess handler.
+              // If the refetch completes before onSuccess runs, it overwrites the
+              // optimistic setQueryData update with stale DB data (pre-reward count).
+              //
+              // Fix: mark as stale but do NOT trigger an immediate refetch (refetchType:'none').
+              // The mutation's own onSuccess already does setQueryData (instant) and then
+              // invalidateQueries (scheduled refetch after response). The WS mark-stale
+              // ensures that on the next natural refetch the server data wins.
+              queryClient.invalidateQueries({ queryKey: ['/api/auth/user'], refetchType: 'none' });
+              queryClient.invalidateQueries({ queryKey: ['/api/user/stats'], refetchType: 'none' });
               break;
               
             case 'withdrawal_requested':
