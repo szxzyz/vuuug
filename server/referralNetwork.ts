@@ -65,42 +65,52 @@ export interface NetworkAnalysis {
   clusters: FraudCluster[];
 }
 
-// ─── Referral Tree Builder ─────────────────────────────────────────────────────
+// ─── Referral Tree Builder ────────────────────────────────────────────────────
 
 /**
- * Recursively build the full referral tree for a given user.
- * Returns the tree rooted at userId, going down all levels.
+ * Recursively build the referral tree for a user.
+ * Returns null if user not found or on DB error (e.g. invalid UUID format).
  */
 export async function buildReferralTree(
   userId: string,
   depth = 0,
   visited = new Set<string>(),
 ): Promise<ReferralNode | null> {
-  if (visited.has(userId) || depth > 8) return null;
+  if (!userId || visited.has(userId) || depth > 8) return null;
   visited.add(userId);
 
-  // Fetch user data
-  const result = await pool.query(
-    `SELECT u.id, u.personal_code, u.username, u.telegram_id, u.banned, u.under_review,
-            u.rewards_frozen, u.suspicion_score, u.balance, u.total_earned,
-            u.device_id, u.last_login_ip, u.browser_fingerprint, u.ton_wallet_address,
-            u.registered_at,
-            (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id) AS referral_count
-     FROM users u WHERE u.id = $1 LIMIT 1`,
-    [userId],
-  );
-  if (!result.rows[0]) return null;
+  let u: any;
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.personal_code, u.username, u.telegram_id, u.banned, u.under_review,
+              u.rewards_frozen, u.suspicion_score, u.balance, u.total_earned,
+              u.device_id, u.last_login_ip, u.browser_fingerprint, u.ton_wallet_address,
+              u.registered_at,
+              (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id) AS referral_count
+       FROM users u WHERE u.id = $1 LIMIT 1`,
+      [userId],
+    );
+    if (!result.rows[0]) return null;
+    u = result.rows[0];
+  } catch (err: any) {
+    // Common cause: non-UUID search input → "invalid input syntax for type uuid"
+    console.warn(`[referralNetwork] buildReferralTree(${userId}) DB error:`, err?.message);
+    return null;
+  }
 
-  const u = result.rows[0];
-
-  // Fetch direct referrals (people this user referred)
-  const refResult = await pool.query(
-    `SELECT referee_id FROM referrals WHERE referrer_id = $1`,
-    [userId],
-  );
+  let childRows: any[] = [];
+  try {
+    const refResult = await pool.query(
+      `SELECT referee_id FROM referrals WHERE referrer_id = $1`,
+      [userId],
+    );
+    childRows = refResult.rows;
+  } catch (err: any) {
+    console.warn(`[referralNetwork] fetchChildren(${userId}) error:`, err?.message);
+  }
 
   const children: ReferralNode[] = [];
-  for (const ref of refResult.rows) {
+  for (const ref of childRows) {
     const child = await buildReferralTree(ref.referee_id, depth + 1, visited);
     if (child) children.push(child);
   }
@@ -135,65 +145,79 @@ export function flattenTree(node: ReferralNode | null): string[] {
 
 /** Get only direct referrals of a user */
 export async function getDirectReferrals(userId: string): Promise<string[]> {
-  const result = await pool.query(
-    `SELECT referee_id FROM referrals WHERE referrer_id = $1`,
-    [userId],
-  );
-  return result.rows.map((r: any) => r.referee_id);
+  try {
+    const result = await pool.query(
+      `SELECT referee_id FROM referrals WHERE referrer_id = $1`,
+      [userId],
+    );
+    return result.rows.map((r: any) => r.referee_id);
+  } catch (err: any) {
+    console.warn(`[referralNetwork] getDirectReferrals(${userId}) error:`, err?.message);
+    return [];
+  }
 }
 
 // ─── Fraud Cluster Detector ───────────────────────────────────────────────────
 
-/**
- * Find all accounts sharing key signals with the target user.
- * Returns clusters grouped by signal type.
- */
 export async function detectFraudClusters(userId: string): Promise<FraudCluster[]> {
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
-  if (!user) return [];
+  if (!userId) return [];
+
+  let user: any;
+  try {
+    const [row] = await db.select().from(users).where(eq(users.id, userId));
+    if (!row) return [];
+    user = row;
+  } catch (err: any) {
+    console.warn(`[referralNetwork] detectFraudClusters user lookup error:`, err?.message);
+    return [];
+  }
 
   const clusters: FraudCluster[] = [];
 
-  // Helper to fetch users sharing a value
   async function clusterFor(
     type: FraudCluster['clusterType'],
     column: string,
     value: string | null | undefined,
   ): Promise<void> {
     if (!value) return;
-    const res = await pool.query(
-      `SELECT id, personal_code, username, telegram_id, banned, under_review
-       FROM users WHERE ${column} = $1 AND id != $2`,
-      [value, userId],
-    );
-    if (res.rows.length === 0) return;
-    clusters.push({
-      clusterType: type,
-      sharedValue: value,
-      userIds: res.rows.map((r: any) => r.id),
-      users: res.rows.map((r: any) => ({
-        userId: r.id,
-        uid: r.personal_code,
-        username: r.username,
-        telegramId: r.telegram_id,
-        banned: r.banned ?? false,
-        underReview: r.under_review ?? false,
-      })),
-    });
+    try {
+      const res = await pool.query(
+        `SELECT id, personal_code, username, telegram_id, banned, under_review
+         FROM users WHERE ${column} = $1 AND id != $2`,
+        [value, userId],
+      );
+      if (res.rows.length === 0) return;
+      clusters.push({
+        clusterType: type,
+        sharedValue: value,
+        userIds: res.rows.map((r: any) => r.id),
+        users: res.rows.map((r: any) => ({
+          userId: r.id,
+          uid: r.personal_code,
+          username: r.username,
+          telegramId: r.telegram_id,
+          banned: r.banned ?? false,
+          underReview: r.under_review ?? false,
+        })),
+      });
+    } catch (err: any) {
+      // A missing column (e.g. browser_fingerprint) should not abort all clusters
+      console.warn(`[referralNetwork] clusterFor(${type}) error:`, err?.message);
+    }
   }
 
-  await Promise.all([
-    clusterFor('device', 'device_id', user.deviceId),
-    clusterFor('ip', 'last_login_ip', user.lastLoginIp),
-    clusterFor('fingerprint', 'browser_fingerprint', user.browserFingerprint),
-    clusterFor('wallet', 'ton_wallet_address', user.tonWalletAddress),
-    clusterFor('telegram', 'telegram_id', user.telegram_id),
+  await Promise.allSettled([
+    clusterFor('device',      'device_id',          (user as any).deviceId),
+    clusterFor('ip',          'last_login_ip',       (user as any).lastLoginIp),
+    clusterFor('fingerprint', 'browser_fingerprint', (user as any).browserFingerprint),
+    clusterFor('wallet',      'ton_wallet_address',  (user as any).tonWalletAddress),
+    clusterFor('telegram',    'telegram_id',         (user as any).telegram_id),
   ]);
 
   return clusters;
 }
 
-// ─── Moderation Log ──────────────────────────────────────────────────────────
+// ─── Moderation Log ───────────────────────────────────────────────────────────
 
 export async function logModerationAction(data: {
   adminId?: string;
@@ -224,372 +248,257 @@ export async function logModerationAction(data: {
       metadata: (data.metadata ?? {}) as any,
     });
   } catch (err) {
-    console.error('Failed to write moderation log:', err);
+    console.error('[referralNetwork] Failed to write moderation log:', err);
+    // Non-critical — don't rethrow; the moderation action itself already succeeded
   }
 }
 
 // ─── Core Moderation Actions ──────────────────────────────────────────────────
 
-/**
- * Permanently ban a single user account.
- * - Sets banned = true
- * - Freezes rewards
- * - Rejects pending withdrawals
- * - Blacklists device/fingerprint/IP via ban_log
- */
 export async function banUserFully(
-  targetUserId: string,
+  userId: string,
   reason: string,
-  adminId: string,
+  adminId?: string,
   adminName?: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message: string; affectedUsers: string[] }> {
   try {
-    const [user] = await db.select().from(users).where(eq(users.id, targetUserId));
-    if (!user) return { success: false, error: 'User not found' };
-    if ((user as any).role === 'admin') return { success: false, error: 'Cannot ban admin accounts' };
+    await db.execute(sql`
+      UPDATE users SET
+        banned         = true,
+        banned_reason  = ${reason},
+        rewards_frozen = true,
+        updated_at     = NOW()
+      WHERE id = ${userId}
+    `);
 
-    // Ban + freeze
-    await db.update(users)
-      .set({
-        banned: true,
-        bannedReason: reason,
-        bannedAt: new Date(),
-        rewardsFrozen: true,
-        frozenAt: new Date(),
-        underReview: false,
-        reviewReason: null,
-        updatedAt: new Date(),
-      } as any)
-      .where(eq(users.id, targetUserId));
+    // Reject pending withdrawals
+    try {
+      await db.execute(sql`
+        UPDATE withdrawals SET status = 'rejected', admin_notes = ${`Auto-rejected: account banned — ${reason}`}
+        WHERE user_id = ${userId} AND LOWER(status) = 'pending'
+      `);
+    } catch (wErr: any) {
+      console.warn('[referralNetwork] banUserFully withdrawal rejection error:', wErr?.message);
+    }
 
-    // Freeze pending withdrawals
-    await pool.query(
-      `UPDATE withdrawals SET status = 'rejected', rejection_reason = $1, updated_at = NOW()
-       WHERE user_id = $2 AND status = 'pending'`,
-      [`Account banned: ${reason}`, targetUserId],
-    );
+    // Ban log
+    try {
+      await createBanLog({
+        bannedUserId: userId, reason, adminId, banType: 'manual',
+        metadata: { source: 'fraud_network', adminName },
+      });
+    } catch (logErr: any) {
+      console.warn('[referralNetwork] banUserFully banLog error:', logErr?.message);
+    }
 
-    // Ban log for device/IP blacklisting
-    await createBanLog({
-      bannedUserId: targetUserId,
-      bannedUserUid: user.personalCode || user.referralCode || undefined,
-      ip: user.lastLoginIp || undefined,
-      deviceId: user.deviceId || undefined,
-      userAgent: user.lastLoginUserAgent || undefined,
-      fingerprint: user.deviceFingerprint || undefined,
-      reason,
-      banType: 'manual',
-      bannedBy: adminId,
-      telegramId: user.telegram_id || undefined,
-      browserFingerprint: (user as any).browserFingerprint || undefined,
-    });
-
-    await logModerationAction({
-      adminId,
-      adminName,
-      targetUserId,
-      action: 'ban_user',
-      scope: 'user',
-      reason,
-      affectedUserIds: [targetUserId],
-    });
-
-    console.log(`🚫 [Fraud] User ${targetUserId} permanently banned by ${adminId}: ${reason}`);
-    return { success: true };
+    await logModerationAction({ adminId, adminName, targetUserId: userId, action: 'ban_user', reason, affectedUserIds: [userId] });
+    return { success: true, message: `User ${userId} banned successfully`, affectedUsers: [userId] };
   } catch (err: any) {
-    console.error('banUserFully error:', err);
-    return { success: false, error: err.message };
+    console.error('[referralNetwork] banUserFully error:', err);
+    return { success: false, message: err?.message || 'Ban failed', affectedUsers: [] };
   }
 }
 
-/**
- * Mark a user as "Under Review" — does NOT ban.
- * Freezes referral rewards until admin completes review.
- */
 export async function markUnderReview(
-  targetUserId: string,
+  userId: string,
   reason: string,
-  adminId: string,
+  adminId?: string,
   adminName?: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message: string; affectedUsers: string[] }> {
   try {
-    const [user] = await db.select().from(users).where(eq(users.id, targetUserId));
-    if (!user) return { success: false, error: 'User not found' };
-
-    await db.update(users)
-      .set({
-        underReview: true,
-        reviewReason: reason,
-        rewardsFrozen: true,
-        frozenAt: new Date(),
-        updatedAt: new Date(),
-      } as any)
-      .where(eq(users.id, targetUserId));
-
-    await logModerationAction({
-      adminId,
-      adminName,
-      targetUserId,
-      action: 'mark_review',
-      reason,
-      affectedUserIds: [targetUserId],
-    });
-
-    console.log(`🔍 [Fraud] User ${targetUserId} marked Under Review by ${adminId}: ${reason}`);
-    return { success: true };
+    await db.execute(sql`
+      UPDATE users SET
+        under_review   = true,
+        review_reason  = ${reason},
+        rewards_frozen = true,
+        frozen_at      = NOW(),
+        updated_at     = NOW()
+      WHERE id = ${userId}
+    `);
+    await logModerationAction({ adminId, adminName, targetUserId: userId, action: 'mark_review', reason, affectedUserIds: [userId] });
+    return { success: true, message: `User ${userId} marked under review`, affectedUsers: [userId] };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    console.error('[referralNetwork] markUnderReview error:', err);
+    return { success: false, message: err?.message || 'Failed', affectedUsers: [] };
   }
 }
 
-/**
- * Scoped ban: 'user' | 'direct' | 'network'
- *
- * - 'user'    → ban only the target
- * - 'direct'  → ban target + direct referrals
- * - 'network' → ban entire referral tree (all depths)
- *
- * Referrals are always marked "Under Review" first; only the root is permanently banned
- * unless scope = 'network' with explicit admin intent.
- */
 export async function banWithScope(
-  targetUserId: string,
-  scope: 'user' | 'direct' | 'network',
+  userId: string,
+  scope: 'direct' | 'network',
   reason: string,
-  adminId: string,
+  adminId?: string,
   adminName?: string,
-): Promise<{ success: boolean; bannedCount: number; reviewCount: number; error?: string }> {
+): Promise<{ success: boolean; message: string; bannedCount: number; reviewCount: number }> {
   try {
-    // Always ban the root user fully
-    const rootResult = await banUserFully(targetUserId, reason, adminId, adminName);
-    if (!rootResult.success) return { success: false, bannedCount: 0, reviewCount: 0, error: rootResult.error };
+    // Ban the root user
+    await db.execute(sql`
+      UPDATE users SET banned = true, banned_reason = ${reason}, rewards_frozen = true, updated_at = NOW()
+      WHERE id = ${userId}
+    `);
 
-    let bannedCount = 1;
-    let reviewCount = 0;
-    const affectedIds: string[] = [targetUserId];
+    let reviewIds: string[] = [];
 
     if (scope === 'direct') {
-      const directRefs = await getDirectReferrals(targetUserId);
-      for (const refId of directRefs) {
-        await markUnderReview(refId, `Direct referral of banned user (${reason})`, adminId, adminName);
-        reviewCount++;
-        affectedIds.push(refId);
-      }
-    } else if (scope === 'network') {
-      const tree = await buildReferralTree(targetUserId);
-      const allIds = flattenTree(tree).filter(id => id !== targetUserId);
-      for (const refId of allIds) {
-        // In network scope: mark ALL as under review, let admin decide per-user bans
-        await markUnderReview(refId, `Part of fraud network (root: ${targetUserId}, reason: ${reason})`, adminId, adminName);
-        reviewCount++;
-        affectedIds.push(refId);
+      reviewIds = await getDirectReferrals(userId);
+    } else {
+      const tree = await buildReferralTree(userId);
+      reviewIds = flattenTree(tree).filter(id => id !== userId);
+    }
+
+    // Mark referrals under review (don't auto-ban — policy requires admin review)
+    for (const refId of reviewIds) {
+      try {
+        await db.execute(sql`
+          UPDATE users SET under_review = true, review_reason = ${`Referred by banned user (${userId}): ${reason}`},
+            rewards_frozen = true, frozen_at = NOW(), updated_at = NOW()
+          WHERE id = ${refId} AND banned = false
+        `);
+      } catch (rErr: any) {
+        console.warn(`[referralNetwork] banWithScope mark review(${refId}) error:`, rErr?.message);
       }
     }
 
-    // Log the full scoped action
     await logModerationAction({
-      adminId,
-      adminName,
-      targetUserId,
-      action: `ban_${scope}` as any,
-      scope,
-      reason,
-      affectedUserIds: affectedIds,
-      metadata: { bannedCount, reviewCount },
+      adminId, adminName, targetUserId: userId, action: `ban_${scope}`, scope, reason,
+      affectedUserIds: [userId, ...reviewIds],
     });
 
-    return { success: true, bannedCount, reviewCount };
+    return { success: true, message: `Banned ${userId}, ${reviewIds.length} referrals marked under review`, bannedCount: 1, reviewCount: reviewIds.length };
   } catch (err: any) {
-    return { success: false, bannedCount: 0, reviewCount: 0, error: err.message };
+    console.error('[referralNetwork] banWithScope error:', err);
+    return { success: false, message: err?.message || 'Failed', bannedCount: 0, reviewCount: 0 };
   }
 }
 
-/**
- * Freeze rewards for a user without banning them.
- */
 export async function freezeUserRewards(
-  targetUserId: string,
+  userId: string,
   reason: string,
-  adminId: string,
+  adminId?: string,
   adminName?: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message: string }> {
   try {
-    await db.update(users)
-      .set({
-        rewardsFrozen: true,
-        frozenAt: new Date(),
-        updatedAt: new Date(),
-      } as any)
-      .where(eq(users.id, targetUserId));
-
-    await logModerationAction({
-      adminId,
-      adminName,
-      targetUserId,
-      action: 'freeze',
-      reason,
-      affectedUserIds: [targetUserId],
-    });
-
-    return { success: true };
+    await db.execute(sql`
+      UPDATE users SET rewards_frozen = true, frozen_at = NOW(), updated_at = NOW()
+      WHERE id = ${userId}
+    `);
+    await logModerationAction({ adminId, adminName, targetUserId: userId, action: 'freeze', reason, affectedUserIds: [userId] });
+    return { success: true, message: `Rewards frozen for ${userId}` };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    console.error('[referralNetwork] freezeUserRewards error:', err);
+    return { success: false, message: err?.message || 'Failed' };
   }
 }
 
-/**
- * Unfreeze rewards.
- */
 export async function unfreezeUserRewards(
-  targetUserId: string,
+  userId: string,
   reason: string,
-  adminId: string,
+  adminId?: string,
   adminName?: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message: string }> {
   try {
-    await db.update(users)
-      .set({
-        rewardsFrozen: false,
-        frozenAt: null,
-        updatedAt: new Date(),
-      } as any)
-      .where(eq(users.id, targetUserId));
-
-    await logModerationAction({
-      adminId,
-      adminName,
-      targetUserId,
-      action: 'unfreeze',
-      reason,
-      affectedUserIds: [targetUserId],
-    });
-
-    return { success: true };
+    await db.execute(sql`
+      UPDATE users SET rewards_frozen = false, frozen_at = NULL, updated_at = NOW()
+      WHERE id = ${userId}
+    `);
+    await logModerationAction({ adminId, adminName, targetUserId: userId, action: 'unfreeze', reason, affectedUserIds: [userId] });
+    return { success: true, message: `Rewards unfrozen for ${userId}` };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    console.error('[referralNetwork] unfreezeUserRewards error:', err);
+    return { success: false, message: err?.message || 'Failed' };
   }
 }
 
-/**
- * Remove all referral earnings from a user.
- * Deducts referral-sourced balance and marks referral records as voided.
- */
 export async function removeReferralEarnings(
-  targetUserId: string,
+  userId: string,
   reason: string,
-  adminId: string,
+  adminId?: string,
   adminName?: string,
-): Promise<{ success: boolean; removedAmount: number; error?: string }> {
+): Promise<{ success: boolean; message: string; amountRemoved: string }> {
   try {
-    // Sum referral earnings
-    const earningsRes = await pool.query(
-      `SELECT COALESCE(SUM(amount), 0) AS total FROM earnings
-       WHERE user_id = $1 AND source IN ('referral', 'referral_bonus', 'referral_commission')`,
-      [targetUserId],
-    );
-    const totalReferralEarnings = parseFloat(earningsRes.rows[0]?.total ?? '0');
+    const result = await db.execute(sql`
+      SELECT COALESCE(SUM(amount::numeric), 0) AS total
+      FROM earnings
+      WHERE user_id = ${userId} AND source IN ('referral_commission', 'referral', 'referral_commission_l2')
+    `);
+    const total = (result as any)?.rows?.[0]?.total ?? '0';
 
-    if (totalReferralEarnings > 0) {
-      // Deduct balance (floor at 0)
-      await pool.query(
-        `UPDATE users SET balance = GREATEST(0, balance - $1), total_earned = GREATEST(0, total_earned - $1), updated_at = NOW() WHERE id = $2`,
-        [totalReferralEarnings, targetUserId],
-      );
+    await db.execute(sql`
+      DELETE FROM earnings
+      WHERE user_id = ${userId} AND source IN ('referral_commission', 'referral', 'referral_commission_l2')
+    `);
 
-      // Mark earning records as voided
-      await pool.query(
-        `UPDATE earnings SET source = 'referral_voided', description = COALESCE(description, '') || ' [voided: ${reason}]'
-         WHERE user_id = $1 AND source IN ('referral', 'referral_bonus', 'referral_commission')`,
-        [targetUserId],
-      );
-    }
-
-    // Cancel pending referral records
-    await pool.query(
-      `UPDATE referrals SET status = 'voided' WHERE referrer_id = $1 AND status = 'pending'`,
-      [targetUserId],
-    );
-    await pool.query(
-      `UPDATE referrals SET status = 'voided' WHERE referee_id = $1 AND status = 'pending'`,
-      [targetUserId],
-    );
+    // Subtract from balance (don't go below 0)
+    await db.execute(sql`
+      UPDATE users SET
+        balance    = GREATEST(0, COALESCE(balance::numeric, 0) - ${String(total)})::text,
+        updated_at = NOW()
+      WHERE id = ${userId}
+    `);
 
     await logModerationAction({
-      adminId,
-      adminName,
-      targetUserId,
-      action: 'remove_earnings',
-      reason,
-      affectedUserIds: [targetUserId],
-      metadata: { removedAmount: totalReferralEarnings },
+      adminId, adminName, targetUserId: userId, action: 'remove_earnings', reason,
+      affectedUserIds: [userId], metadata: { amountRemoved: total },
     });
-
-    return { success: true, removedAmount: totalReferralEarnings };
+    return { success: true, message: `Removed ${total} PAD referral earnings from ${userId}`, amountRemoved: String(total) };
   } catch (err: any) {
-    return { success: false, removedAmount: 0, error: err.message };
+    console.error('[referralNetwork] removeReferralEarnings error:', err);
+    return { success: false, message: err?.message || 'Failed', amountRemoved: '0' };
   }
 }
 
-/**
- * Restore a reviewed/banned account to good standing.
- */
 export async function restoreAccount(
-  targetUserId: string,
+  userId: string,
   reason: string,
-  adminId: string,
+  adminId?: string,
   adminName?: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message: string }> {
   try {
-    await db.update(users)
-      .set({
-        banned: false,
-        bannedReason: null,
-        bannedAt: null,
-        underReview: false,
-        reviewReason: null,
-        rewardsFrozen: false,
-        frozenAt: null,
-        flagged: false,
-        flagReason: null,
-        updatedAt: new Date(),
-      } as any)
-      .where(eq(users.id, targetUserId));
-
-    await logModerationAction({
-      adminId,
-      adminName,
-      targetUserId,
-      action: 'restore',
-      reason,
-      affectedUserIds: [targetUserId],
-    });
-
-    console.log(`✅ [Fraud] User ${targetUserId} restored by ${adminId}: ${reason}`);
-    return { success: true };
+    await db.execute(sql`
+      UPDATE users SET
+        banned         = false,
+        banned_reason  = NULL,
+        under_review   = false,
+        review_reason  = NULL,
+        rewards_frozen = false,
+        frozen_at      = NULL,
+        updated_at     = NOW()
+      WHERE id = ${userId}
+    `);
+    await logModerationAction({ adminId, adminName, targetUserId: userId, action: 'restore', reason, affectedUserIds: [userId] });
+    return { success: true, message: `Account ${userId} restored successfully` };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    console.error('[referralNetwork] restoreAccount error:', err);
+    return { success: false, message: err?.message || 'Failed' };
   }
 }
 
-// ─── Network Analysis ────────────────────────────────────────────────────────
+// ─── analyzeNetwork ───────────────────────────────────────────────────────────
 
-/**
- * Full network analysis: build tree + detect clusters.
- */
 export async function analyzeNetwork(userId: string): Promise<NetworkAnalysis> {
-  const [tree, clusters] = await Promise.all([
-    buildReferralTree(userId),
-    detectFraudClusters(userId),
-  ]);
+  const empty: NetworkAnalysis = { rootUser: null, treeSize: 0, maxDepth: 0, bannedCount: 0, underReviewCount: 0, frozenCount: 0, clusters: [] };
+  if (!userId) return empty;
 
-  const allNodes = collectNodes(tree);
-  const treeSize = allNodes.length;
-  const maxDepth = allNodes.reduce((m, n) => Math.max(m, n.depth), 0);
-  const bannedCount = allNodes.filter(n => n.banned).length;
-  const underReviewCount = allNodes.filter(n => n.underReview).length;
-  const frozenCount = allNodes.filter(n => n.rewardsFrozen).length;
+  try {
+    const [tree, clusters] = await Promise.all([
+      buildReferralTree(userId),
+      detectFraudClusters(userId),
+    ]);
 
-  return { rootUser: tree, treeSize, maxDepth, bannedCount, underReviewCount, frozenCount, clusters };
+    const allNodes = collectNodes(tree);
+    return {
+      rootUser: tree,
+      treeSize: allNodes.length,
+      maxDepth: allNodes.reduce((m, n) => Math.max(m, n.depth), 0),
+      bannedCount: allNodes.filter(n => n.banned).length,
+      underReviewCount: allNodes.filter(n => n.underReview).length,
+      frozenCount: allNodes.filter(n => n.rewardsFrozen).length,
+      clusters,
+    };
+  } catch (err: any) {
+    console.error('[referralNetwork] analyzeNetwork error:', err);
+    return empty;
+  }
 }
 
 function collectNodes(node: ReferralNode | null): ReferralNode[] {
@@ -600,25 +509,35 @@ function collectNodes(node: ReferralNode | null): ReferralNode[] {
 // ─── Review Queue ─────────────────────────────────────────────────────────────
 
 export async function getReviewQueue(): Promise<any[]> {
-  const result = await pool.query(
-    `SELECT u.id, u.personal_code, u.username, u.telegram_id, u.balance, u.total_earned,
-            u.review_reason, u.frozen_at, u.suspicion_score, u.referred_by,
-            u.last_login_ip, u.device_id, u.created_at,
-            (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id) AS referral_count,
-            (SELECT COUNT(*) FROM referrals r WHERE r.referee_id = u.id) AS referred_by_count
-     FROM users u
-     WHERE u.under_review = true AND u.banned = false
-     ORDER BY u.frozen_at DESC NULLS LAST, u.created_at DESC
-     LIMIT 200`,
-  );
-  return result.rows;
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.personal_code, u.username, u.telegram_id, u.balance, u.total_earned,
+              u.review_reason, u.frozen_at, u.suspicion_score, u.referred_by,
+              u.last_login_ip, u.device_id, u.created_at,
+              (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id) AS referral_count,
+              (SELECT COUNT(*) FROM referrals r WHERE r.referee_id = u.id) AS referred_by_count
+       FROM users u
+       WHERE u.under_review = true AND u.banned = false
+       ORDER BY u.frozen_at DESC NULLS LAST, u.created_at DESC
+       LIMIT 200`,
+    );
+    return result.rows;
+  } catch (err: any) {
+    console.error('[referralNetwork] getReviewQueue error:', err?.message);
+    return [];
+  }
 }
 
 export async function getModerationLogs(limit = 100, targetUserId?: string): Promise<any[]> {
-  const baseQuery = targetUserId
-    ? `SELECT * FROM moderation_logs WHERE target_user_id = $1 ORDER BY created_at DESC LIMIT $2`
-    : `SELECT * FROM moderation_logs ORDER BY created_at DESC LIMIT $1`;
-  const params = targetUserId ? [targetUserId, limit] : [limit];
-  const result = await pool.query(baseQuery, params);
-  return result.rows;
+  try {
+    const baseQuery = targetUserId
+      ? `SELECT * FROM moderation_logs WHERE target_user_id = $1 ORDER BY created_at DESC LIMIT $2`
+      : `SELECT * FROM moderation_logs ORDER BY created_at DESC LIMIT $1`;
+    const params = targetUserId ? [targetUserId, limit] : [limit];
+    const result = await pool.query(baseQuery, params);
+    return result.rows;
+  } catch (err: any) {
+    console.error('[referralNetwork] getModerationLogs error:', err?.message);
+    return [];
+  }
 }
