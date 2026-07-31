@@ -15,6 +15,7 @@ import {
   Snowflake, Trash2, RotateCcw, Eye, AlertTriangle, Clock,
   ChevronDown, ChevronRight, Cpu, Wifi, Fingerprint, Wallet,
   MessageCircle, CheckCircle2, XCircle, Ban, RefreshCw, FileText,
+  WifiOff,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,6 +55,25 @@ interface NetworkAnalysis {
   underReviewCount: number;
   frozenCount: number;
   clusters: FraudCluster[];
+}
+
+// ─── Offline / error banner ───────────────────────────────────────────────────
+
+function NetworkOfflineBanner({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex items-center gap-3 bg-red-900/20 border border-red-600/30 rounded-lg p-3 text-sm text-red-300">
+      <WifiOff size={15} className="flex-shrink-0 text-red-400" />
+      <span className="flex-1">Ref Network is unreachable. The rest of the app is working normally.</span>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onRetry}
+        className="h-7 text-xs border-red-600/40 text-red-300 hover:bg-red-900/30 flex-shrink-0"
+      >
+        <RefreshCw size={11} className="mr-1" /> Retry
+      </Button>
+    </div>
+  );
 }
 
 // ─── Action Dialog ─────────────────────────────────────────────────────────────
@@ -247,13 +267,32 @@ function ReviewQueueTab({ onInspect }: { onInspect: (userId: string) => void }) 
   const [action, setAction] = useState<{ userId: string; username: string; action: string } | null>(null);
   const qc = useQueryClient();
 
-  const { data, isLoading } = useQuery<{ success: boolean; queue: any[] }>({
+  const { data, isLoading, isError, error, refetch } = useQuery<{ success: boolean; queue: any[] }>({
     queryKey: ["/api/admin/fraud/review-queue"],
-    queryFn: () => apiRequest("GET", "/api/admin/fraud/review-queue"),
+    queryFn: async () => {
+      console.log('[FraudNetwork] Fetching review queue...');
+      const res = await apiRequest("GET", "/api/admin/fraud/review-queue");
+      const json = await res.json();
+      console.log('[FraudNetwork] Review queue response:', json.success ? `${json.queue?.length ?? 0} items` : 'error');
+      return json;
+    },
     refetchInterval: 30_000,
+    retry: 2,
+    retryDelay: 3_000,
   });
 
   const queue = data?.queue ?? [];
+
+  if (isError) {
+    return (
+      <div className="space-y-3">
+        <NetworkOfflineBanner onRetry={() => refetch()} />
+        <p className="text-xs text-gray-500 text-center pt-2">
+          Error: {(error as any)?.message || 'Failed to load review queue'}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -263,7 +302,7 @@ function ReviewQueueTab({ onInspect }: { onInspect: (userId: string) => void }) 
           <span className="text-sm font-medium text-white">Accounts Under Review</span>
           <Badge className="bg-yellow-600/20 text-yellow-400 border-yellow-600/30 text-xs">{queue.length}</Badge>
         </div>
-        <Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["/api/admin/fraud/review-queue"] })} className="h-7 text-xs border-white/10">
+        <Button variant="outline" size="sm" onClick={() => refetch()} className="h-7 text-xs border-white/10">
           <RefreshCw size={11} className="mr-1"/> Refresh
         </Button>
       </div>
@@ -340,10 +379,18 @@ function NetworkInspectorTab({ initialUserId }: { initialUserId?: string }) {
   const [action, setAction] = useState<{ userId: string; username: string; action: string } | null>(null);
   const qc = useQueryClient();
 
-  const { data, isLoading, isFetching } = useQuery<{ success: boolean } & NetworkAnalysis>({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery<{ success: boolean } & NetworkAnalysis>({
     queryKey: ["/api/admin/fraud/network", activeUserId],
-    queryFn: () => apiRequest("GET", `/api/admin/fraud/network/${activeUserId}`),
+    queryFn: async () => {
+      console.log('[FraudNetwork] Fetching network analysis for:', activeUserId);
+      const res = await apiRequest("GET", `/api/admin/fraud/network/${activeUserId}`);
+      const json = await res.json();
+      console.log('[FraudNetwork] Network analysis response: treeSize=', json.treeSize, 'clusters=', json.clusters?.length);
+      return json;
+    },
     enabled: !!activeUserId,
+    retry: 1,
+    retryDelay: 3_000,
   });
 
   const handleSearch = () => {
@@ -383,14 +430,25 @@ function NetworkInspectorTab({ initialUserId }: { initialUserId?: string }) {
         </Button>
       </div>
 
-      {(isLoading || isFetching) && activeUserId && (
+      {isError && activeUserId && (
+        <NetworkOfflineBanner onRetry={() => refetch()} />
+      )}
+
+      {isError && activeUserId && (
+        <p className="text-xs text-gray-500 text-center">
+          Error: {(error as any)?.message || 'Failed to load network data'}
+        </p>
+      )}
+
+      {(isLoading || isFetching) && activeUserId && !isError && (
         <div className="text-center py-8">
           <div className="w-6 h-6 border-2 border-[#4cd3ff] border-t-transparent rounded-full animate-spin mx-auto mb-2"/>
           <p className="text-sm text-gray-500">Building referral tree...</p>
+          <p className="text-xs text-gray-600 mt-1">This may take a few seconds for large networks</p>
         </div>
       )}
 
-      {data && !isLoading && (
+      {data && !isLoading && !isError && (
         <div className="space-y-4">
           {/* Network Stats */}
           <div className="grid grid-cols-3 gap-2">
@@ -507,11 +565,21 @@ function ModerationLogTab() {
   const [filterUserId, setFilterUserId] = useState("");
   const [activeFilter, setActiveFilter] = useState("");
 
-  const { data, isLoading, refetch } = useQuery<{ success: boolean; logs: any[] }>({
+  const { data, isLoading, isError, error, refetch } = useQuery<{ success: boolean; logs: any[] }>({
     queryKey: ["/api/admin/fraud/moderation-logs", activeFilter],
-    queryFn: () =>
-      apiRequest("GET", `/api/admin/fraud/moderation-logs?limit=100${activeFilter ? `&userId=${activeFilter}` : ''}`),
+    queryFn: async () => {
+      console.log('[FraudNetwork] Fetching moderation logs, filter:', activeFilter || 'none');
+      const res = await apiRequest(
+        "GET",
+        `/api/admin/fraud/moderation-logs?limit=100${activeFilter ? `&userId=${activeFilter}` : ''}`,
+      );
+      const json = await res.json();
+      console.log('[FraudNetwork] Moderation logs response:', json.logs?.length ?? 0, 'entries');
+      return json;
+    },
     refetchInterval: 60_000,
+    retry: 2,
+    retryDelay: 3_000,
   });
 
   const logs = data?.logs ?? [];
@@ -559,7 +627,17 @@ function ModerationLogTab() {
         </Button>
       </div>
 
-      {isLoading ? (
+      {isError && (
+        <NetworkOfflineBanner onRetry={() => refetch()} />
+      )}
+
+      {isError && (
+        <p className="text-xs text-gray-500 text-center">
+          Error: {(error as any)?.message || 'Failed to load moderation logs'}
+        </p>
+      )}
+
+      {!isError && (isLoading ? (
         <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-14 bg-[#1a1a1a] rounded-lg animate-pulse"/>)}</div>
       ) : logs.length === 0 ? (
         <div className="text-center py-8 text-gray-500 text-sm">
@@ -605,7 +683,7 @@ function ModerationLogTab() {
             </TableBody>
           </Table>
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -615,16 +693,22 @@ function ModerationLogTab() {
 export default function FraudNetworkPanel() {
   const [inspectUserId, setInspectUserId] = useState<string | undefined>();
   const [activeTab, setActiveTab] = useState("review");
+  const qc = useQueryClient();
 
   const handleInspect = (userId: string) => {
     setInspectUserId(userId);
     setActiveTab("inspect");
   };
 
-  const { data: queueData } = useQuery<{ success: boolean; queue: any[] }>({
+  const { data: queueData, isError: queueError, refetch: refetchQueue } = useQuery<{ success: boolean; queue: any[] }>({
     queryKey: ["/api/admin/fraud/review-queue"],
-    queryFn: () => apiRequest("GET", "/api/admin/fraud/review-queue"),
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/admin/fraud/review-queue");
+      return res.json();
+    },
     refetchInterval: 60_000,
+    retry: 2,
+    retryDelay: 3_000,
   });
   const queueCount = queueData?.queue?.length ?? 0;
 
@@ -637,7 +721,18 @@ export default function FraudNetworkPanel() {
         {queueCount > 0 && (
           <Badge className="bg-yellow-600/30 text-yellow-400 border-yellow-600/40 text-xs">{queueCount} pending</Badge>
         )}
+        {queueError && (
+          <Badge className="bg-red-600/20 text-red-400 border-red-600/30 text-xs flex items-center gap-1">
+            <WifiOff size={10}/> Offline
+          </Badge>
+        )}
       </div>
+
+      {queueError && (
+        <NetworkOfflineBanner onRetry={() => {
+          qc.invalidateQueries({ queryKey: ["/api/admin/fraud"] });
+        }} />
+      )}
 
       <div className="bg-[#0d0d0d] border border-amber-600/20 rounded-lg p-3 text-xs text-amber-300/80 flex items-start gap-2">
         <AlertTriangle size={13} className="flex-shrink-0 mt-0.5 text-amber-400"/>
