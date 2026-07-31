@@ -14,8 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2, Award, Handshake, Database, Download, RotateCcw, AlertTriangle, RefreshCw, GitBranch } from "lucide-react";
-import FraudNetworkPanel from "@/components/FraudNetworkPanel";
+import { Crown, BarChart2, ClipboardList, Users, Tag, Wallet, ShieldOff, Settings, Shield, Star, CheckCircle2, XCircle, Plus, Minus, Wrench, Target, ShieldAlert, Eye, Trash2, Award, Handshake, Database, Download, RotateCcw, AlertTriangle, RefreshCw } from "lucide-react";
 import { showNotification } from "@/components/AppNotification";
 
 function formatLargeNumber(num: number): string {
@@ -250,7 +249,6 @@ export default function AdminPage() {
               { value: 'ambassadors', icon: <Award size={13}/>, label: 'Ambassadors' },
               { value: 'partner',     icon: <Handshake size={13}/>, label: 'Partner Tasks' },
               { value: 'backups',     icon: <Database size={13}/>,  label: 'Backups' },
-              { value: 'fraud',       icon: <GitBranch size={13}/>, label: 'Fraud Network' },
             ] as { value: string; icon: React.ReactNode; label: string }[]).map(tab => (
               <TabsTrigger key={tab.value} value={tab.value} className="flex-shrink-0 text-xs px-3 py-1.5 whitespace-nowrap flex items-center gap-1">
                 {tab.icon}{tab.label}
@@ -391,10 +389,6 @@ export default function AdminPage() {
 
           <TabsContent value="backups" className="mt-0">
             <BackupSection />
-          </TabsContent>
-
-          <TabsContent value="fraud" className="mt-0">
-            <FraudNetworkPanel />
           </TabsContent>
         </Tabs>
       </main>
