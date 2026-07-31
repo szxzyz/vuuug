@@ -51,33 +51,6 @@ const LOADER_FRAMES = [
 // How long each frame stays (ms) — last frame stays until app is ready
 const FRAME_DURATIONS = [500, 350, 350, 350, 350, 350, 999999];
 
-// Hard safety cap: if any async init step doesn't resolve in this time,
-// we force the app to render anyway so the user is never stuck on a black screen.
-const INIT_HARD_TIMEOUT_MS = 10_000;
-
-// Wraps fetch with an AbortController timeout. On timeout or any network error
-// the promise resolves to null instead of hanging forever.
-async function fetchWithTimeout(
-  input: RequestInfo,
-  init: RequestInit = {},
-  timeoutMs = 8_000,
-): Promise<Response | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-    console.warn(`[fetchWithTimeout] Request timed out after ${timeoutMs}ms:`, input);
-  }, timeoutMs);
-  try {
-    const res = await fetch(input, { ...init, signal: controller.signal });
-    return res;
-  } catch (err) {
-    console.warn(`[fetchWithTimeout] Request failed:`, input, err);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 const PageLoader = memo(function PageLoader() {
   const [frame, setFrame] = useState(0);
   const [showDots, setShowDots] = useState(false);
@@ -273,21 +246,6 @@ function App() {
     return () => clearTimeout(t);
   }, []);
 
-  // Hard safety timeout: if init takes longer than INIT_HARD_TIMEOUT_MS for any
-  // reason (Ref Network down, server hang, network error), force the app open.
-  // This is the last-resort guard against a permanent black screen.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      console.warn('[App] Hard init timeout reached — forcing app to render. Some init steps may have hung.');
-      setIsCheckingCountry(false);
-      setIsAuthenticating(false);
-      setIsCheckingMembership(false);
-      if (isChannelVerified === null) setIsChannelVerified(true);
-    }, INIT_HARD_TIMEOUT_MS);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const checkCountry = useCallback(async () => {
     try {
       const headers: Record<string, string> = {};
@@ -305,20 +263,11 @@ function App() {
         } catch {}
       }
       
-      console.log('[App] Starting country check...');
-      const response = await fetchWithTimeout('/api/check-country', { 
+      const response = await fetch('/api/check-country', { 
         cache: 'no-store',
         headers
-      }, 8_000);
-
-      if (!response) {
-        // Timeout or network error — fail open, don't block the app
-        console.warn('[App] Country check failed/timed out — proceeding without block');
-        return;
-      }
-
+      });
       const data = await response.json();
-      console.log('[App] Country check result:', data);
       
       if (data.country) {
         setUserCountryCode(data.country.toUpperCase());
@@ -330,7 +279,7 @@ function App() {
         setIsCountryBlocked(false);
       }
     } catch (err) {
-      console.error('[App] Country check error:', err);
+      console.error("Country check error:", err);
     } finally {
       setIsCheckingCountry(false);
     }
@@ -375,21 +324,11 @@ function App() {
         headers['x-telegram-data'] = tg.initData;
       }
 
-      console.log('[App] Starting membership check for', userTelegramId);
-      const response = await fetchWithTimeout('/api/check-membership', {
+      const response = await fetch('/api/check-membership', {
         cache: 'no-store',
         headers,
-      }, 8_000);
-
-      if (!response) {
-        // Timeout or network error — fail open, don't leave user on loading screen
-        console.warn('[App] Membership check failed/timed out — proceeding as verified');
-        setIsChannelVerified(true);
-        return;
-      }
-
+      });
       const data = await response.json();
-      console.log('[App] Membership check result:', data);
 
       if (data.banned) {
         setIsBanned(true);
@@ -400,8 +339,8 @@ function App() {
 
       setIsChannelVerified(data.isVerified === true);
     } catch (err) {
-      // Fail open on any error
-      console.error('[App] Membership check error:', err);
+      // Fail open on network error
+      console.error("Membership check error:", err);
       setIsChannelVerified(true);
     } finally {
       setIsCheckingMembership(false);
@@ -468,32 +407,20 @@ function App() {
           } catch {}
         }
       }
-
-      console.log('[App] Starting Telegram auth...');
+      
       getTurnstileToken("telegram-auth")
         .then((turnstileToken) => {
           if (turnstileToken) {
             headers["x-turnstile-token"] = turnstileToken;
           }
-          return fetchWithTimeout("/api/auth/telegram", {
+          return fetch("/api/auth/telegram", {
             method: "POST",
             headers,
             body: JSON.stringify(body),
-          }, 9_000);
+          });
         })
-        .then(res => {
-          if (!res) {
-            // Timeout or network failure — fail open so app loads
-            console.warn('[App] Telegram auth timed out/failed — proceeding without full auth');
-            setIsAuthenticating(false);
-            setIsChannelVerified(true);
-            return null;
-          }
-          return res.json();
-        })
+        .then(res => res.json())
         .then(data => {
-          if (!data) return;
-          console.log('[App] Telegram auth result:', data.banned ? 'banned' : 'ok');
           if (data.referralProcessed) {
             localStorage.removeItem("tg_start_param");
           }
@@ -512,8 +439,7 @@ function App() {
             setIsChannelVerified(true);
           }
         })
-        .catch((err) => {
-          console.error('[App] Telegram auth chain error:', err);
+        .catch(() => {
           setIsAuthenticating(false);
           setIsChannelVerified(true);
         });
