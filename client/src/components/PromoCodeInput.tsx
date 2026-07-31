@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-const PROMO_BLOCK_ID = "int-35652";
+const PROMO_BLOCK_ID = "40631";
 
 function showAdsgramAd(): Promise<{ success: boolean; unavailable: boolean }> {
   return new Promise((resolve) => {
