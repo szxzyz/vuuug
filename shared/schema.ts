@@ -320,6 +320,21 @@ export const banLogs = pgTable("ban_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Moderation logs table - stores admin moderation actions (bans, unbans, warnings, etc.)
+export const moderationLogs = pgTable("moderation_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: varchar("admin_id"),
+  adminName: text("admin_name"),
+  targetUserId: varchar("target_user_id").references(() => users.id).notNull(),
+  targetUserUid: text("target_user_uid"),
+  action: varchar("action").notNull(),
+  scope: varchar("scope"),
+  reason: text("reason").notNull(),
+  affectedUserIds: jsonb("affected_user_ids"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Spin data table - tracks user spin state for the Free Spin feature
 export const spinData = pgTable("spin_data", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
