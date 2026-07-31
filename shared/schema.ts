@@ -110,11 +110,6 @@ export const users = pgTable("users", {
   dailyLoginStreak: integer("daily_login_streak").default(0),
   lastDailyLoginDate: text("last_daily_login_date"),
   language: varchar("language", { length: 5 }).default("en"),
-  // Anti-fraud review system
-  underReview: boolean("under_review").default(false),
-  reviewReason: text("review_reason"),
-  rewardsFrozen: boolean("rewards_frozen").default(false),
-  frozenAt: timestamp("frozen_at"),
   // Risk scoring & platform detection
   suspicionScore: integer("suspicion_score").default(0),
   platform: varchar("platform", { length: 20 }),        // android/ios/tdesktop/web/unknown/script
@@ -409,24 +404,6 @@ export const adminRoles = pgTable("admin_roles", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
-
-// Moderation logs — audit trail for every admin action on users
-export const moderationLogs = pgTable("moderation_logs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  adminId: varchar("admin_id"),            // telegram_id or user id of admin who acted
-  adminName: varchar("admin_name"),
-  targetUserId: varchar("target_user_id").references(() => users.id).notNull(),
-  targetUserUid: text("target_user_uid"),
-  action: varchar("action").notNull(),     // ban_user | ban_direct | ban_network | freeze | unfreeze | remove_earnings | restore | mark_review
-  scope: varchar("scope"),                 // user | direct | network
-  reason: text("reason").notNull(),
-  affectedUserIds: jsonb("affected_user_ids"), // array of all affected IDs
-  metadata: jsonb("metadata"),             // extra data (cluster info, tree depth, etc.)
-  createdAt: timestamp("created_at").defaultNow(),
-});
-export const insertModerationLogSchema = createInsertSchema(moderationLogs).omit({ id: true, createdAt: true });
-export type ModerationLog = typeof moderationLogs.$inferSelect;
-export type InsertModerationLog = z.infer<typeof insertModerationLogSchema>;
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
