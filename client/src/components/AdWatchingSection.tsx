@@ -142,7 +142,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
     new Promise((resolve) => {
       if (window.Adsgram) {
-        window.Adsgram.init({ blockId: "34708" })
+        window.Adsgram.init({ blockId: "40629" })
           .show()
           .then(() => resolve({ success: true,  unavailable: false }))
           .catch(() => resolve({ success: false, unavailable: false }));
