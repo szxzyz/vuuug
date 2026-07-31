@@ -782,7 +782,57 @@ export async function ensureDatabaseSchema(): Promise<void> {
     } catch { /* already exists */ }
 
     console.log('✅ [MIGRATION] All tables and indexes created successfully');
-    
+
+    // ─── Anti-Fraud Referral Network: moderation_logs table ───────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS moderation_logs (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        admin_id VARCHAR,
+        admin_name VARCHAR,
+        target_user_id VARCHAR NOT NULL REFERENCES users(id),
+        target_user_uid TEXT,
+        action VARCHAR NOT NULL,
+        scope VARCHAR,
+        reason TEXT NOT NULL,
+        affected_user_ids JSONB,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    try {
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_moderation_logs_target ON moderation_logs(target_user_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_moderation_logs_created ON moderation_logs(created_at)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_moderation_logs_action ON moderation_logs(action)`);
+    } catch { /* already exists */ }
+
+    // Anti-fraud columns on users table
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS under_review BOOLEAN DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS review_reason TEXT;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS rewards_frozen BOOLEAN DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS frozen_at TIMESTAMP;
+        END $$
+      `);
+      console.log('✅ [MIGRATION] Anti-fraud columns ensured on users table');
+    } catch (err) {
+      console.log('ℹ️ [MIGRATION] Anti-fraud columns already exist:', String(err).slice(0, 100));
+    }
+
+    // referrals: add voided status support (no-op if status column already exists)
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          ALTER TABLE referrals ADD COLUMN IF NOT EXISTS voided_reason TEXT;
+        END $$
+      `);
+    } catch { /* already exists */ }
+
+    console.log('✅ [MIGRATION] Anti-fraud tables and columns ready');
+
   } catch (error) {
     console.error('⚠️ [MIGRATION] Migration error (server will still start):', error instanceof Error ? error.message : error);
   } finally {

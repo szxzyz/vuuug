@@ -13528,6 +13528,138 @@ ${walletAddress}
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ANTI-FRAUD REFERRAL NETWORK — Admin API
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    const {
+      buildReferralTree,
+      detectFraudClusters,
+      analyzeNetwork,
+      banUserFully,
+      markUnderReview,
+      banWithScope,
+      freezeUserRewards,
+      unfreezeUserRewards,
+      removeReferralEarnings,
+      restoreAccount,
+      getReviewQueue,
+      getModerationLogs,
+    } = await import('./referralNetwork');
+
+    // GET /api/admin/fraud/referral-tree/:userId
+    app.get('/api/admin/fraud/referral-tree/:userId', authenticateAdmin, async (req: any, res) => {
+      try {
+        const { userId } = req.params;
+        const tree = await buildReferralTree(userId);
+        if (!tree) return res.status(404).json({ success: false, message: 'User not found' });
+        res.json({ success: true, tree });
+      } catch (err: any) {
+        console.error('referral-tree error:', err);
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // GET /api/admin/fraud/clusters/:userId
+    app.get('/api/admin/fraud/clusters/:userId', authenticateAdmin, async (req: any, res) => {
+      try {
+        const { userId } = req.params;
+        const clusters = await detectFraudClusters(userId);
+        res.json({ success: true, clusters });
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // GET /api/admin/fraud/network/:userId  — full analysis (tree + clusters)
+    app.get('/api/admin/fraud/network/:userId', authenticateAdmin, async (req: any, res) => {
+      try {
+        const { userId } = req.params;
+        const analysis = await analyzeNetwork(userId);
+        res.json({ success: true, ...analysis });
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // GET /api/admin/fraud/review-queue
+    app.get('/api/admin/fraud/review-queue', authenticateAdmin, async (req: any, res) => {
+      try {
+        const queue = await getReviewQueue();
+        res.json({ success: true, queue });
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // GET /api/admin/fraud/moderation-logs
+    app.get('/api/admin/fraud/moderation-logs', authenticateAdmin, async (req: any, res) => {
+      try {
+        const limit = parseInt(String(req.query.limit ?? '100'));
+        const targetUserId = req.query.userId as string | undefined;
+        const logs = await getModerationLogs(limit, targetUserId);
+        res.json({ success: true, logs });
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // POST /api/admin/fraud/action
+    // body: { userId, action, scope?, reason }
+    // action: ban_user | ban_direct | ban_network | freeze | unfreeze | remove_earnings | restore | mark_review
+    app.post('/api/admin/fraud/action', authenticateAdmin, async (req: any, res) => {
+      try {
+        const admin = req.user;
+        const adminId = admin?.telegram_id || admin?.id || 'unknown';
+        const adminName = admin?.username || admin?.firstName || 'Admin';
+        const { userId, action, scope, reason } = req.body;
+
+        if (!userId || !action || !reason) {
+          return res.status(400).json({ success: false, message: 'userId, action, and reason are required' });
+        }
+
+        let result: any;
+
+        switch (action) {
+          case 'ban_user':
+            result = await banUserFully(userId, reason, adminId, adminName);
+            break;
+          case 'ban_direct':
+            result = await banWithScope(userId, 'direct', reason, adminId, adminName);
+            break;
+          case 'ban_network':
+            result = await banWithScope(userId, 'network', reason, adminId, adminName);
+            break;
+          case 'freeze':
+            result = await freezeUserRewards(userId, reason, adminId, adminName);
+            break;
+          case 'unfreeze':
+            result = await unfreezeUserRewards(userId, reason, adminId, adminName);
+            break;
+          case 'remove_earnings':
+            result = await removeReferralEarnings(userId, reason, adminId, adminName);
+            break;
+          case 'restore':
+            result = await restoreAccount(userId, reason, adminId, adminName);
+            break;
+          case 'mark_review':
+            result = await markUnderReview(userId, reason, adminId, adminName);
+            break;
+          default:
+            return res.status(400).json({ success: false, message: `Unknown action: ${action}` });
+        }
+
+        res.json(result);
+      } catch (err: any) {
+        console.error('fraud/action error:', err);
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+  }
+  // ═══════════════════════════════════════════════════════════════════════════
+  // END ANTI-FRAUD REFERRAL NETWORK
+  // ═══════════════════════════════════════════════════════════════════════════
+
   // ── Admin: Reset weekly stars ─────────────────────────────────────────────────
   app.post('/api/admin/reset-stars', authenticateAdmin, async (req: any, res) => {
     try {
