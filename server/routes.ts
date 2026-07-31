@@ -34,6 +34,16 @@ import { eq, sql, desc, and, gte } from "drizzle-orm";
 import crypto from "crypto";
 import { sendTelegramMessage, sendUserTelegramNotification, sendWelcomeMessage, handleTelegramMessage, setupTelegramWebhook, verifyChannelMembership, sendSharePhotoToChat, withdrawalAdminMessages } from "./telegram";
 import { authenticateTelegram, requireAuth } from "./auth";
+import {
+  requireVerifiedSession,
+  requireStrictAuth,
+  securityLog,
+  authRateLimit,
+  adWatchRateLimit,
+  withdrawRateLimit,
+  walletMutationRateLimit,
+  taskRateLimit,
+} from "./securityMiddleware";
 import { isAuthenticated } from "./replitAuth";
 import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
@@ -264,10 +274,12 @@ const authenticateAdmin = async (req: any, res: any, next: any) => {
     const telegramData = req.headers['x-telegram-data'] || req.query.tgData;
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
-    // ── 2. Development mode shortcut (no Telegram data in browser testing)
-    if (process.env.NODE_ENV === 'development' && !telegramData) {
+    // ── 2. Development mode shortcut (only when TELEGRAM_BOT_TOKEN is not configured).
+    //       Once a bot token is set the admin panel requires real Telegram auth, even
+    //       in development, so this bypass never fires in production deployments.
+    if (process.env.NODE_ENV === 'development' && !process.env.TELEGRAM_BOT_TOKEN && !telegramData) {
       const devAdminId = (process.env.TELEGRAM_ADMIN_ID || process.env.SUPER_ADMIN_ID || process.env.TELEGRAM_ADMIN_IDS || '123456789').split(',')[0].trim();
-      console.log('🔧 Dev mode: granting admin access');
+      console.log('🔧 Dev mode (no bot token): granting admin access');
       req.user = { telegramUser: { id: devAdminId, username: 'testuser', first_name: 'Test', last_name: 'Admin' } };
       return next();
     }
@@ -1205,7 +1217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Debug route to check database columns
-  app.get('/api/debug/db-schema', async (req: any, res) => {
+  app.get('/api/debug/db-schema', authenticateAdmin, async (req: any, res) => {
     try {
       const { pool } = await import('./db');
       
@@ -1307,10 +1319,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // New Telegram WebApp authentication route
-  app.post('/api/auth/telegram', async (req: any, res) => {
+  app.post('/api/auth/telegram', authRateLimit, async (req: any, res) => {
     try {
       const { initData, startParam } = req.body;
-      
+      const clientIp = (typeof req.headers['x-forwarded-for'] === 'string'
+        ? req.headers['x-forwarded-for'].split(',')[0].trim()
+        : req.headers['x-real-ip']) || req.socket?.remoteAddress || 'unknown';
+
       const refererUrl = req.headers['referer'] || req.headers['referrer'] || '';
       console.log(`🔐 Auth request received - initData: ${initData ? 'YES' : 'NO'}, startParam: ${startParam || 'NONE'}, referer: ${refererUrl}`);
       
@@ -1326,20 +1341,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (!initData) {
-        console.log('⚠️ No initData provided - checking for cached user_id in headers');
-        const cachedUserId = req.headers['x-user-id'];
-        
-        if (cachedUserId) {
-          console.log('✅ Using cached user_id from headers:', cachedUserId);
-          
-          // NOTE: Late referral binding for existing users is intentionally disabled.
-          // Referrals are only created when a brand-new account is registered via a ref link.
-          // Allowing existing users to be bound post-join is a spam/cheating vector.
-          return res.json({ success: true, user: cachedUserId, referralProcessed: false });
+        // ── SECURITY: x-user-id header bypass removed ──────────────────────
+        // Previously this endpoint accepted an x-user-id header and returned
+        // success without any authentication.  That allowed attackers to impersonate
+        // any user by supplying an arbitrary UUID header.  Removed.
+        //
+        // If the session already contains an authenticated user, allow the call
+        // to succeed as a lightweight session-existence check.
+        if (req.session?.user?.user?.id) {
+          const sessionUserId = req.session.user.user.id;
+          console.log(`🔄 Auth check — valid session for user ${sessionUserId} ip=${clientIp}`);
+          return res.json({ success: true, user: sessionUserId, referralProcessed: false });
         }
-        
-        console.log('ℹ️ No cached user_id found - returning skipAuth response');
-        return res.status(200).json({ success: true, skipAuth: true });
+
+        console.log(`⚠️ Auth request without initData and no session ip=${clientIp}`);
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required. Please open this app from Telegram.',
+          telegram_required: true,
+          error_code: 'NO_INIT_DATA',
+        });
       }
       
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -1515,7 +1536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Balance refresh endpoint - used after conversion to sync frontend
-  app.get('/api/user/balance/refresh', async (req: any, res) => {
+  app.get('/api/user/balance/refresh', authenticateTelegram, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -1781,7 +1802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Client calls this BEFORE showing any ad SDK. The server stores the adType so
   // the /api/ads/watch claim endpoint never trusts the client-supplied field.
-  app.post('/api/ads/register-session', authenticateTelegram, async (req: any, res) => {
+  app.post('/api/ads/register-session', authenticateTelegram, adWatchRateLimit, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
       const { sessionId, adType, context } = req.body as { sessionId?: string; adType?: string; context?: string };
@@ -1820,7 +1841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Ad watching endpoint - configurable daily limit and reward amount
-  app.post('/api/ads/watch', authenticateTelegram, async (req: any, res) => {
+  app.post('/api/ads/watch', authenticateTelegram, adWatchRateLimit, async (req: any, res) => {
     try {
       const userId = req.user.user.id;
 
@@ -2837,7 +2858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Referral stats endpoint - auth removed to prevent popup spam on affiliates page
-  app.get('/api/referrals/stats', async (req: any, res) => {
+  app.get('/api/referrals/stats', authenticateTelegram, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -2959,8 +2980,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Claim referral bonus endpoint - auth removed to prevent popup spam on affiliates page
-  app.post('/api/referrals/claim', async (req: any, res) => {
+  // Claim referral bonus endpoint
+  app.post('/api/referrals/claim', authenticateTelegram, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -3000,7 +3021,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Withdrawal eligibility - check if user has watched enough ads for this withdrawal
-  app.get('/api/withdrawal-eligibility', async (req: any, res) => {
+  app.get('/api/withdrawal-eligibility', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -3194,7 +3215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Debug endpoint for referral issues - auth removed to prevent popup spam
-  app.get('/api/debug/referrals', async (req: any, res) => {
+  app.get('/api/debug/referrals', authenticateAdmin, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -3250,7 +3271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Production database fix endpoint - run once to fix referrals
-  app.post('/api/fix-production-referrals', async (req: any, res) => {
+  app.post('/api/fix-production-referrals', authenticateAdmin, async (req: any, res) => {
     try {
       console.log('🔧 Fixing production referral system...');
       
@@ -3525,7 +3546,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // New simplified task completion endpoints with daily tracking
-  app.post('/api/tasks/complete/share', async (req: any, res) => {
+  app.post('/api/tasks/complete/share', authenticateTelegram, taskRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -3666,7 +3687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/tasks/complete/channel', async (req: any, res) => {
+  app.post('/api/tasks/complete/channel', authenticateTelegram, taskRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       const telegramUserId = req.user?.telegramUser?.id?.toString();
@@ -3913,7 +3934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/tasks/complete/community', async (req: any, res) => {
+  app.post('/api/tasks/complete/community', authenticateTelegram, taskRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       const telegramUserId = req.user?.telegramUser?.id?.toString();
@@ -4283,7 +4304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // CRITICAL: Public referral data repair endpoint (no auth needed for emergency fix)
-  app.post('/api/emergency-fix-referrals', async (req: any, res) => {
+  app.post('/api/emergency-fix-referrals', authenticateAdmin, async (req: any, res) => {
     try {
       console.log('🚨 EMERGENCY: Running referral data repair...');
       
@@ -4360,7 +4381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // One-time production database fix endpoint
-  app.get('/api/fix-production-db', async (req: any, res) => {
+  app.get('/api/fix-production-db', authenticateAdmin, async (req: any, res) => {
     try {
       const { fixProductionDatabase } = await import('../server/fix-production-db.js');
       console.log('🔧 Running production database fix...');
@@ -4381,7 +4402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Auto-setup webhook endpoint (automatically determines URL)
-  app.get('/api/telegram/auto-setup', async (req: any, res) => {
+  app.get('/api/telegram/auto-setup', authenticateAdmin, async (req: any, res) => {
     try {
       // Get the current domain from the request
       const protocol = req.headers['x-forwarded-proto'] || 'https';
@@ -5896,7 +5917,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============ End Admin Task Management ============
 
   // Database setup endpoint for free plan deployments (call once after deployment)
-  app.post('/api/setup-database', async (req: any, res) => {
+  app.post('/api/setup-database', authenticateAdmin, async (req: any, res) => {
     try {
       // Only allow this in production and with a setup key for security
       const { setupKey } = req.body;
@@ -6189,7 +6210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Wallet management endpoints
   
   // Get user's saved wallet details - auth removed to prevent popup spam
-  app.get('/api/wallet/details', async (req: any, res) => {
+  app.get('/api/wallet/details', authenticateTelegram, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -6238,8 +6259,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Save user's wallet details - auth removed to prevent popup spam
-  app.post('/api/wallet/save', async (req: any, res) => {
+  // Save user's wallet details
+  app.post('/api/wallet/save', authenticateTelegram, walletMutationRateLimit, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -6279,8 +6300,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Save Cwallet ID endpoint - auth removed to prevent popup spam
-  app.post('/api/wallet/cwallet', async (req: any, res) => {
+  // Save Cwallet ID endpoint
+  app.post('/api/wallet/cwallet', authenticateTelegram, walletMutationRateLimit, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -6370,7 +6391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Alternative Cwallet save endpoint for compatibility - /api/set-wallet
-  app.post('/api/set-wallet', async (req: any, res) => {
+  app.post('/api/set-wallet', authenticateTelegram, walletMutationRateLimit, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -6462,7 +6483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Change wallet endpoint - requires dynamic PAD fee from admin settings
-  app.post('/api/wallet/change', async (req: any, res) => {
+  app.post('/api/wallet/change', authenticateTelegram, requireVerifiedSession, walletMutationRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -6646,7 +6667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PAD conversion endpoint (supports USD, TON, BUG)
-  app.post('/api/convert-to-usd', async (req: any, res) => {
+  app.post('/api/convert-to-usd', authenticateTelegram, requireVerifiedSession, walletMutationRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -6774,7 +6795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PAD to TON conversion endpoint
-  app.post('/api/convert-to-ton', async (req: any, res) => {
+  app.post('/api/convert-to-ton', authenticateTelegram, requireVerifiedSession, walletMutationRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -6902,7 +6923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Setup USDT wallet (Optimism network only)
-  app.post('/api/wallet/usdt', async (req: any, res) => {
+  app.post('/api/wallet/usdt', authenticateTelegram, requireVerifiedSession, walletMutationRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -7041,7 +7062,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Setup Telegram Stars username
-  app.post('/api/wallet/telegram-stars', async (req: any, res) => {
+  app.post('/api/wallet/telegram-stars', authenticateTelegram, requireVerifiedSession, walletMutationRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -8305,7 +8326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User withdrawal endpoints
   
   // Get user's withdrawal history - auth removed to prevent popup spam
-  app.get('/api/withdrawals', async (req: any, res) => {
+  app.get('/api/withdrawals', authenticateTelegram, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -8348,7 +8369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user's deposit history (PDZ top-ups)
-  app.get('/api/deposits/history', async (req: any, res) => {
+  app.get('/api/deposits/history', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -8392,8 +8413,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new withdrawal request - auth removed to prevent popup spam
-  app.post('/api/withdrawals', async (req: any, res) => {
+  // Create new withdrawal request
+  app.post('/api/withdrawals', authenticateTelegram, requireVerifiedSession, withdrawRateLimit, async (req: any, res) => {
     try {
       // Get userId from session or req.user (lenient check)
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
@@ -9119,7 +9140,7 @@ ${walletAddress}
   });
 
   // Alternative withdrawal history endpoint - /api/withdraw/history
-  app.get('/api/withdraw/history', async (req: any, res) => {
+  app.get('/api/withdraw/history', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       
@@ -12258,7 +12279,7 @@ ${walletAddress}
   });
 
   // ── My Referrals: list all referrals with their status ───────────────────────
-  app.get('/api/referrals/my-referrals', async (req: any, res) => {
+  app.get('/api/referrals/my-referrals', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.session?.user?.user?.id || req.user?.user?.id;
       if (!userId) return res.json({ referrals: [] });

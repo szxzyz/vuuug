@@ -144,9 +144,11 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
       return next();
     }
     
-    // Development mode - allow test users (only in development, not production)
-    if (!telegramData && (process.env.NODE_ENV === 'development' || process.env.REPL_ID)) {
-      console.log('🔧 Development mode: Using test user authentication');
+    // Development mode - allow test users ONLY when TELEGRAM_BOT_TOKEN is not configured.
+    // IMPORTANT: REPL_ID is NOT used here. Even on Replit, if the bot token is set this
+    // bypass is disabled so production deployments are always fully authenticated.
+    if (!telegramData && process.env.NODE_ENV === 'development' && !process.env.TELEGRAM_BOT_TOKEN) {
+      console.log('🔧 Development mode (no bot token): Using test user authentication');
       
       const devAdminId = (process.env.TELEGRAM_ADMIN_IDS || process.env.TELEGRAM_ADMIN_ID || '123456789').split(',')[0].trim();
       const testUser = {
@@ -406,20 +408,15 @@ export const requireAuth: RequestHandler = (req: any, res, next) => {
   next();
 };
 
-// Lenient authentication middleware - doesn't block, just logs
-// Used for wallet/withdraw routes to prevent auth popup spam
-export const optionalAuth: RequestHandler = (req: any, res, next) => {
-  try {
-    const user = req.session?.user || req.user;
-    if (!user) {
-      console.log("⚠️ No Telegram user found in session - allowing request to proceed");
-      // Return success with skipAuth flag instead of blocking
-      return res.status(200).json({ success: true, skipAuth: true });
-    }
-    next();
-  } catch (err) {
-    console.error("Optional auth middleware error:", err);
-    // Don't block on error - just skip auth
-    return res.status(200).json({ success: true, skipAuth: true });
-  }
+// optionalAuth is DEPRECATED and intentionally broken to fail-closed.
+// All previously "optional" routes now use authenticateTelegram directly.
+// Kept here only so old imports don't crash — it always returns 401.
+export const optionalAuth: RequestHandler = (req: any, res, _next) => {
+  console.error(`⚠️ [SECURITY] optionalAuth called on ${req.method} ${req.path} — this middleware is deprecated. Route must use authenticateTelegram instead.`);
+  return res.status(401).json({
+    success: false,
+    message: "Authentication required.",
+    errorType: "auth_required",
+    telegram_required: true,
+  });
 };
