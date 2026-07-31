@@ -172,7 +172,7 @@ function AppContent() {
 
   const isDevMode = import.meta.env.DEV || import.meta.env.MODE === 'development';
 
-  // Show AdsGram interstitial popup ONCE when app opens (blockId int-34709)
+  // Show AdsGram interstitial popup ONCE when app opens (blockId int-40630)
   useEffect(() => {
     if (isDevMode) return;
     if (adsgramOpenShown.current) return;
@@ -180,7 +180,7 @@ function AppContent() {
 
     const t = setTimeout(() => {
       if (window.Adsgram) {
-        window.Adsgram.init({ blockId: "int-34709" }).show().catch(() => {});
+        window.Adsgram.init({ blockId: "int-40630" }).show().catch(() => {});
       }
     }, 3000);
 
