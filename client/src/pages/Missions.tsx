@@ -144,7 +144,7 @@ function AdIcon({ platform, done }: { platform: string; done: boolean }) {
     );
   }
   return (
-    <img src={src} alt={platform} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
+    <img src={src} alt={platform} loading="lazy" decoding="async" style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
       onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
   );
 }
@@ -303,6 +303,8 @@ function TaskAvatar({ task }: { task: Task }) {
           key={src}
           src={src}
           alt=""
+          loading="lazy"
+          decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => setImgOk(false)}
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: loaded ? 'block' : 'none' }}

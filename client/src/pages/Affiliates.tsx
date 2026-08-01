@@ -115,6 +115,14 @@ export default function Affiliates() {
 
   const myReferrals: any[] = myReferralsData?.referrals ?? [];
 
+  // Render referrals in pages of 40 instead of dumping the whole list into
+  // the DOM at once — power users can accumulate hundreds/thousands of
+  // referrals, and unbounded rows there was a real scroll-jank risk.
+  const REFERRALS_PAGE_SIZE = 40;
+  const [visibleReferralsCount, setVisibleReferralsCount] = useState(REFERRALS_PAGE_SIZE);
+  const visibleReferrals = myReferrals.slice(0, visibleReferralsCount);
+  const hasMoreReferrals = visibleReferralsCount < myReferrals.length;
+
   return (
     <Layout>
       <main className="max-w-md mx-auto px-4 pt-4 bg-black">
@@ -240,7 +248,13 @@ export default function Affiliates() {
       </main>
 
       {/* My Referrals Bottom Drawer */}
-      <Drawer open={referralsOpen} onOpenChange={setReferralsOpen}>
+      <Drawer
+        open={referralsOpen}
+        onOpenChange={(open) => {
+          setReferralsOpen(open);
+          if (!open) setVisibleReferralsCount(REFERRALS_PAGE_SIZE);
+        }}
+      >
         <DrawerContent className="bg-[#111] border-none max-h-[80vh]">
           <DrawerHeader className="flex items-center justify-between pb-2">
             <DrawerTitle className="text-white font-bold text-lg">My Referrals</DrawerTitle>
@@ -271,7 +285,7 @@ export default function Affiliates() {
                 </div>
                 {/* Referral rows */}
                 <div className="space-y-2">
-                  {myReferrals.map((ref: any) => (
+                  {visibleReferrals.map((ref: any) => (
                     <div key={ref.id} className="grid grid-cols-2 gap-2 items-center py-2 border-b border-white/5">
                       <div className="min-w-0">
                         <p className="text-white text-sm font-medium truncate">
@@ -295,6 +309,14 @@ export default function Affiliates() {
                     </div>
                   ))}
                 </div>
+                {hasMoreReferrals && (
+                  <button
+                    onClick={() => setVisibleReferralsCount(c => c + REFERRALS_PAGE_SIZE)}
+                    className="w-full mt-3 py-2 rounded-lg text-xs font-medium text-white/70 bg-white/5 hover:bg-white/10 transition-colors"
+                  >
+                    Load more
+                  </button>
+                )}
                 <p className="text-[#666] text-xs mt-4 text-center">
                   {myReferrals.length} referral{myReferrals.length !== 1 ? 's' : ''}
                 </p>
