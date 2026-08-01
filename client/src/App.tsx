@@ -38,50 +38,29 @@ declare global {
   }
 }
 
-// 7 frames — user-provided images showing letter-by-letter reveal
-const LOADER_FRAMES = [
-  '/pa-frame1.jpg',
-  '/pa-frame2.jpg',
-  '/pa-frame3.jpg',
-  '/pa-frame4.jpg',
-  '/pa-frame5.jpg',
-  '/pa-frame6.jpg',
-  '/pa-frame7.jpg',
-];
-// How long each frame stays (ms) — last frame stays until app is ready
-const FRAME_DURATIONS = [500, 350, 350, 350, 350, 350, 999999];
+// Single lightweight logo — replaces the old 7-image frame sequence (~243KB → ~13KB, no blocking preloads)
+const LOGO_SRC = '/app-logo.jpg';
 
 const PageLoader = memo(function PageLoader() {
-  const [frame, setFrame] = useState(0);
   const [showDots, setShowDots] = useState(false);
 
   useEffect(() => {
-    let current = 0;
-    let timer: ReturnType<typeof setTimeout>;
-
-    function advance() {
-      current += 1;
-      if (current < LOADER_FRAMES.length) {
-        setFrame(current);
-        if (current === LOADER_FRAMES.length - 1) {
-          // Last frame reached — show bouncing dots
-          setTimeout(() => setShowDots(true), 200);
-        } else {
-          timer = setTimeout(advance, FRAME_DURATIONS[current]);
-        }
-      }
-    }
-
-    timer = setTimeout(advance, FRAME_DURATIONS[0]);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setShowDots(true), 300);
+    return () => clearTimeout(t);
   }, []);
 
   return (
     <div style={{
       position: 'fixed', inset: 0,
       background: '#000',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
     }}>
       <style>{`
+        @keyframes logoPulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50%      { transform: scale(1.06); opacity: 0.85; }
+        }
         @keyframes dotBounce {
           0%,80%,100%{ transform:translateY(0); opacity:0.3; }
           40%        { transform:translateY(-8px); opacity:1; }
@@ -92,24 +71,18 @@ const PageLoader = memo(function PageLoader() {
         }
       `}</style>
 
-      {/* All frames stacked — only the active one is visible, NO remount = NO blink */}
-      {LOADER_FRAMES.map((src, i) => (
-        <img
-          key={src}
-          src={src}
-          alt=""
-          style={{
-            position: 'absolute', inset: 0,
-            width: '100%', height: '100%',
-            objectFit: 'contain',
-            opacity: i === frame ? 1 : 0,
-            transition: i === frame ? 'none' : 'none',
-            pointerEvents: 'none',
-          }}
-        />
-      ))}
+      <img
+        src={LOGO_SRC}
+        alt=""
+        style={{
+          width: 96, height: 96,
+          objectFit: 'contain',
+          animation: 'logoPulse 1.4s ease-in-out infinite',
+          pointerEvents: 'none',
+        }}
+      />
 
-      {/* Bouncing dots — appear on last frame */}
+      {/* Bouncing dots */}
       {showDots && (
         <div style={{
           position: 'absolute', bottom: 60, left: 0, right: 0,
