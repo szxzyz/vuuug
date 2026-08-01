@@ -355,7 +355,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
                     display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
                     {card.image
-                      ? <img src={card.image} alt={card.title}
+                      ? <img src={card.image} alt={card.title} loading="lazy" decoding="async"
                           style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       : <span style={{ fontSize: 20 }}>📢</span>
                     }
