@@ -1048,19 +1048,47 @@ export class DatabaseStorage implements IStorage {
   // Bonuses are normally auto-credited, but this handles any leftover pendingReferralBonus.
   async claimReferralBonus(userId: string): Promise<{ success: boolean; message: string; amount?: string }> {
     try {
-      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-      if (!user) {
-        return { success: false, message: 'User not found' };
-      }
+      // FIX: entire check-clear-credit sequence now runs inside a single
+      // transaction with a row lock (FOR UPDATE), so concurrent/duplicate
+      // requests can no longer both read pendingReferralBonus > 0 before
+      // either one clears it (previous version allowed double/triple-claim
+      // via simultaneous requests).
+      const pendingAmount = await db.transaction(async (tx) => {
+        const [user] = await tx
+          .select({ pendingReferralBonus: users.pendingReferralBonus })
+          .from(users)
+          .where(eq(users.id, userId))
+          .for('update');
 
-      const pendingAmount = parseFloat(user.pendingReferralBonus || '0');
+        if (!user) {
+          throw new Error('USER_NOT_FOUND');
+        }
+
+        const amount = parseFloat(user.pendingReferralBonus || '0');
+        if (amount <= 0) {
+          return 0;
+        }
+
+        // Atomically clear the pending amount FIRST, while still holding the lock,
+        // so a concurrent request can never see a stale positive value.
+        await tx
+          .update(users)
+          .set({
+            pendingReferralBonus: '0',
+            totalClaimedReferralBonus: sql`COALESCE(${users.totalClaimedReferralBonus}, 0) + ${amount}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId));
+
+        return amount;
+      });
 
       if (pendingAmount <= 0) {
         // Bonuses are auto-credited on activation — nothing extra to claim
         return { success: true, message: 'No pending bonus to claim. Bonuses are credited automatically when your friends complete their first ad.', amount: '0' };
       }
 
-      // Credit the pending bonus to the user's balance
+      // Credit the pending bonus to the user's balance (slot is already locked/cleared above)
       await this.addEarning({
         userId,
         amount: String(pendingAmount),
@@ -1068,19 +1096,12 @@ export class DatabaseStorage implements IStorage {
         description: 'Referral bonus claimed',
       });
 
-      // Clear the pending amount and accumulate total claimed
-      await db
-        .update(users)
-        .set({
-          pendingReferralBonus: '0',
-          totalClaimedReferralBonus: sql`COALESCE(${users.totalClaimedReferralBonus}, 0) + ${pendingAmount}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, userId));
-
       console.log(`✅ Referral bonus claimed: ${pendingAmount} PAD for user ${userId}`);
       return { success: true, message: `Successfully claimed ${pendingAmount} PAD referral bonus`, amount: String(pendingAmount) };
     } catch (error) {
+      if (error instanceof Error && error.message === 'USER_NOT_FOUND') {
+        return { success: false, message: 'User not found' };
+      }
       console.error('Error claiming referral bonus:', error);
       return { success: false, message: 'Failed to claim referral bonus' };
     }
@@ -1338,68 +1359,107 @@ export class DatabaseStorage implements IStorage {
     return promoCode;
   }
 
-  async usePromoCode(code: string, userId: string): Promise<{ success: boolean; message: string; reward?: string; rewardType?: string; rewardCurrency?: string; promoCodeId?: string; errorType?: string }> {
-    // Step 1: Validate only — do NOT record usage yet
-    const promoCode = await this.getPromoCode(code);
+  async usePromoCode(code: string, userId: string): Promise<{ success: boolean; message: string; reward?: string; rewardType?: string; rewardCurrency?: string; promoCodeId?: string; usageId?: string; errorType?: string }> {
+    // FIX: validation + usage-reservation now happen atomically inside a
+    // transaction that locks the promo_codes row (FOR UPDATE). Previously,
+    // validation ran with no lock and usage wasn't recorded until AFTER the
+    // reward was given — a window where N concurrent requests (same user,
+    // or different users on a limited-use code) could all pass validation
+    // before any of them recorded usage, allowing the per-user limit and/or
+    // the global usage limit to be bypassed (duplicate/over redemption).
+    // The usage row is now inserted (reserved) here, while still holding the
+    // lock, before returning success — if the caller fails to actually give
+    // the reward afterward, it should call releasePromoCodeUsage() to undo
+    // this reservation.
+    return await db.transaction(async (tx) => {
+      const [promoCode] = await tx
+        .select()
+        .from(promoCodes)
+        .where(eq(promoCodes.code, code))
+        .for('update');
 
-    if (!promoCode) {
-      return { success: false, message: "Invalid promo code", errorType: "invalid" };
-    }
+      if (!promoCode) {
+        return { success: false, message: "Invalid promo code", errorType: "invalid" as const };
+      }
 
-    // Check per-user limit (already applied)
-    const userUsageCount = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(promoCodeUsage)
-      .where(and(
-        eq(promoCodeUsage.promoCodeId, promoCode.id),
-        eq(promoCodeUsage.userId, userId)
-      ));
+      // Check if expired
+      if (promoCode.expiresAt && new Date() > new Date(promoCode.expiresAt)) {
+        return { success: false, message: "Promo code has expired", errorType: "expired" as const };
+      }
 
-    if (Number(userUsageCount[0]?.count) >= (promoCode.perUserLimit || 1)) {
-      return { success: false, message: "Promo code already applied", errorType: "already_applied" };
-    }
+      // Check if active
+      if (!promoCode.isActive) {
+        return { success: false, message: "Promo code not active", errorType: "not_active" as const };
+      }
 
-    // Check if expired
-    if (promoCode.expiresAt && new Date() > new Date(promoCode.expiresAt)) {
-      return { success: false, message: "Promo code has expired", errorType: "expired" };
-    }
+      // Check global usage limit
+      if (promoCode.usageLimit && (promoCode.usageCount || 0) >= promoCode.usageLimit) {
+        return { success: false, message: "Promo code limit reached", errorType: "limit_reached" as const };
+      }
 
-    // Check if active
-    if (!promoCode.isActive) {
-      return { success: false, message: "Promo code not active", errorType: "not_active" };
-    }
+      // Check per-user limit (already applied) — safe now, still under the row lock
+      const userUsageCount = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(promoCodeUsage)
+        .where(and(
+          eq(promoCodeUsage.promoCodeId, promoCode.id),
+          eq(promoCodeUsage.userId, userId)
+        ));
 
-    // Check global usage limit
-    if (promoCode.usageLimit && (promoCode.usageCount || 0) >= promoCode.usageLimit) {
-      return { success: false, message: "Promo code limit reached", errorType: "limit_reached" };
-    }
+      if (Number(userUsageCount[0]?.count) >= (promoCode.perUserLimit || 1)) {
+        return { success: false, message: "Promo code already applied", errorType: "already_applied" as const };
+      }
 
-    // Return validated info — usage will be recorded by routes.ts AFTER reward is given
-    return {
-      success: true,
-      message: `Promo code redeemed! You earned ${promoCode.rewardAmount} ${promoCode.rewardCurrency || 'PAD'}`,
-      reward: promoCode.rewardAmount,
-      rewardType: promoCode.rewardType || 'PAD',
-      rewardCurrency: promoCode.rewardCurrency || 'PAD',
-      promoCodeId: promoCode.id,
-    };
+      // Reserve the slot atomically while still holding the lock
+      const [usageRow] = await tx.insert(promoCodeUsage).values({
+        promoCodeId: promoCode.id,
+        userId,
+        rewardAmount: promoCode.rewardAmount,
+      }).returning({ id: promoCodeUsage.id });
+
+      await tx
+        .update(promoCodes)
+        .set({
+          usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(promoCodes.id, promoCode.id));
+
+      return {
+        success: true,
+        message: `Promo code redeemed! You earned ${promoCode.rewardAmount} ${promoCode.rewardCurrency || 'PAD'}`,
+        reward: promoCode.rewardAmount,
+        rewardType: promoCode.rewardType || 'PAD',
+        rewardCurrency: promoCode.rewardCurrency || 'PAD',
+        promoCodeId: promoCode.id,
+        usageId: usageRow.id,
+      };
+    });
   }
 
-  async confirmPromoCodeUsage(promoCodeId: string, userId: string, rewardAmount: string): Promise<void> {
-    // Record usage AFTER reward is successfully given
-    await db.insert(promoCodeUsage).values({
-      promoCodeId,
-      userId,
-      rewardAmount,
-    });
+  // Usage is now recorded inside usePromoCode() itself (see fix above). This is kept
+  // as a safe no-op / legacy no-arg-mismatch guard in case any old call site still
+  // invokes it — it intentionally does nothing, since a second insert here would
+  // double-count usage.
+  async confirmPromoCodeUsage(_promoCodeId: string, _userId: string, _rewardAmount: string): Promise<void> {
+    return;
+  }
 
-    await db
-      .update(promoCodes)
-      .set({
-        usageCount: sql`COALESCE(${promoCodes.usageCount}, 0) + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(promoCodes.id, promoCodeId));
+  // Call this if reward-crediting fails AFTER usePromoCode() already reserved the slot,
+  // so the user doesn't lose their attempt and the usage/limit counters stay accurate.
+  async releasePromoCodeUsage(usageId: string, promoCodeId: string): Promise<void> {
+    try {
+      await db.delete(promoCodeUsage).where(eq(promoCodeUsage.id, usageId));
+      await db
+        .update(promoCodes)
+        .set({
+          usageCount: sql`GREATEST(COALESCE(${promoCodes.usageCount}, 0) - 1, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(promoCodes.id, promoCodeId));
+    } catch (error) {
+      console.error('Error releasing promo code usage reservation:', error);
+    }
   }
 
   // Process referral commission (10% of user's earnings)

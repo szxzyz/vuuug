@@ -9002,141 +9002,6 @@ ${walletAddress}
       message: 'TON balance can only be used to create advertising tasks. Withdrawal is not available.'
     });
 
-    try {
-      // Get userId from session or req.user (lenient check)
-      const userId = req.session?.user?.user?.id || req.user?.user?.id;
-      
-      if (!userId) {
-        console.log("⚠️ Withdrawal (/api/withdraw) requested without session - skipping");
-        return res.json({ success: true, skipAuth: true });
-      }
-      
-      const { walletAddress, comment } = req.body;
-
-      console.log('📝 Withdrawal via /api/withdraw (withdrawing all TON balance):', { userId });
-
-      // Check for pending withdrawals
-      const pendingWithdrawals = await db
-        .select({ id: withdrawals.id })
-        .from(withdrawals)
-        .where(and(
-          eq(withdrawals.userId, userId),
-          eq(withdrawals.status, 'pending')
-        ))
-        .limit(1);
-
-      if (pendingWithdrawals.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot create new request until current one is processed'
-        });
-      }
-
-      // Use transaction for atomicity
-      const result = await db.transaction(async (tx) => {
-        // Lock user row and get TON balance, ban status, and device info
-        const [user] = await tx
-          .select({ 
-            tonBalance: users.tonBalance,
-            banned: users.banned,
-            bannedReason: users.bannedReason,
-            deviceId: users.deviceId
-          })
-          .from(users)
-          .where(eq(users.id, userId))
-          .for('update');
-        
-        if (!user) {
-          throw new Error('User not found');
-        }
-
-        // CRITICAL: Check if user is banned
-        if (user.banned) {
-          throw new Error(`Account is banned: ${user.bannedReason || 'Multi-account violation'}`);
-        }
-
-        // CRITICAL: Check for duplicate accounts on same device
-        if (user.deviceId) {
-          const duplicateAccounts = await tx
-            .select({ id: users.id, isPrimaryAccount: users.isPrimaryAccount })
-            .from(users)
-            .where(and(
-              eq(users.deviceId, user.deviceId),
-              sql`${users.id} != ${userId}`
-            ));
-
-          if (duplicateAccounts.length > 0) {
-            // Determine if current user is the primary account
-            const [currentUserFull] = await tx
-              .select({ isPrimaryAccount: users.isPrimaryAccount })
-              .from(users)
-              .where(eq(users.id, userId));
-            
-            const isPrimary = currentUserFull?.isPrimaryAccount === true;
-            
-            if (!isPrimary) {
-              // Ban this duplicate account only
-              const { banUserForMultipleAccounts, sendWarningToMainAccount } = await import('./deviceTracking');
-              await banUserForMultipleAccounts(
-                userId,
-                'Duplicate account attempted withdrawal - only one account per device is allowed'
-              );
-              
-              // Send warning to primary account
-              const primaryAccount = duplicateAccounts.find(u => u.isPrimaryAccount === true) || duplicateAccounts[0];
-              if (primaryAccount) {
-                await sendWarningToMainAccount(primaryAccount.id);
-              }
-              
-              throw new Error('Withdrawal blocked - multiple accounts detected on this device. This account has been banned.');
-            }
-          }
-        }
-
-        const currentTonBalance = parseFloat(user.tonBalance || '0');
-        
-        if (currentTonBalance < 0.001) {
-          throw new Error('You need at least 0.001 TON');
-        }
-
-        // Deduct balance instantly
-        await tx
-          .update(users)
-          .set({ tonBalance: '0', updatedAt: new Date() })
-          .where(eq(users.id, userId));
-
-        // Create withdrawal with deducted flag
-        const [withdrawal] = await tx.insert(withdrawals).values({
-          userId,
-          amount: currentTonBalance.toFixed(8),
-          method: 'ton_coin',
-          status: 'pending',
-          deducted: true,
-          refunded: false,
-          details: { walletAddress: walletAddress || '', comment: comment || '' }
-        }).returning();
-        
-        return { withdrawal, withdrawnAmount: currentTonBalance };
-      });
-
-      console.log(`✅ Withdrawal via /api/withdraw: ${result.withdrawnAmount} TON`);
-
-      // Send real-time update
-      sendRealtimeUpdate(userId, {
-        type: 'balance_update',
-        tonBalance: '0'
-      });
-
-      res.json({
-        success: true,
-        message: 'You have sent a withdrawal request'
-      });
-
-    } catch (error) {
-      console.error('❌ Error in /api/withdraw:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to process withdrawal';
-      res.status(500).json({ success: false, message: errorMessage });
-    }
   });
 
   // Alternative withdrawal history endpoint - /api/withdraw/history
@@ -9823,6 +9688,11 @@ ${walletAddress}
   // Promo code endpoints
   // Redeem promo code
   app.post('/api/promo-codes/redeem', authenticateTelegram, async (req: any, res) => {
+    // Declared here (not inside try) so the catch block can safely check
+    // whether a usage slot was already reserved before the failure, and
+    // release it if so — see releasePromoCodeUsage() below.
+    let promoCodeIdForRollback: string | undefined;
+    let usageIdForRollback: string | undefined;
     try {
       const userId = req.user.user.id;
 
@@ -9886,12 +9756,18 @@ ${walletAddress}
       // Pull validated values from result (no second DB fetch needed)
       const rewardAmount  = result.reward || '0';
       const promoCodeId   = result.promoCodeId!;
+      const usageId       = result.usageId!;
+      promoCodeIdForRollback = promoCodeId;
+      usageIdForRollback = usageId;
       let   rewardType    = (result.rewardType || 'PAD').toUpperCase();
       // Normalize aliases
       if (rewardType === 'PDZ')  rewardType = 'TON';
       if (rewardType === 'POW')  rewardType = 'PAD';
 
-      // STEP 2: Give the reward — if this throws, usage is NOT recorded
+      // STEP 2: Give the reward. Usage was already reserved atomically inside
+      // usePromoCode() above — if giving the reward throws, the outer catch
+      // block below releases that reservation so the user/code aren't
+      // penalized for a failed attempt.
       if (rewardType === 'PAD') {
         const rewardPow = parseInt(rewardAmount);
         await storage.addEarning({
@@ -9915,9 +9791,12 @@ ${walletAddress}
         });
 
       } else if (rewardType === 'TON') {
-        const [currentUser] = await db.select({ tonBalance: users.tonBalance }).from(users).where(eq(users.id, userId));
-        const newTonBalance = (parseFloat(currentUser?.tonBalance || '0') + parseFloat(rewardAmount)).toFixed(8);
-        await db.update(users).set({ tonBalance: newTonBalance, updatedAt: new Date() }).where(eq(users.id, userId));
+        // FIX: atomic increment (was read-then-write, which could lose an update
+        // if the same user redeemed two different TON-reward codes concurrently)
+        await db.update(users).set({
+          tonBalance: sql`COALESCE(${users.tonBalance}, 0) + ${rewardAmount}`,
+          updatedAt: new Date(),
+        }).where(eq(users.id, userId));
         await storage.logTransaction({ userId, amount: rewardAmount, type: 'credit', source: 'promo_code', description: `Redeemed promo code: ${cleanCode}`, metadata: { code: cleanCode, rewardType: 'TON' } });
 
         await storage.confirmPromoCodeUsage(promoCodeId, userId, rewardAmount);
@@ -9969,6 +9848,16 @@ ${walletAddress}
 
     } catch (error) {
       console.error("Error redeeming promo code:", error);
+      // If a usage slot was already reserved (validation succeeded) but crediting
+      // the reward threw before we responded, release the reservation so the
+      // user isn't permanently locked out and the code's usage count stays accurate.
+      if (promoCodeIdForRollback && usageIdForRollback) {
+        try {
+          await storage.releasePromoCodeUsage(usageIdForRollback, promoCodeIdForRollback);
+        } catch (rollbackError) {
+          console.error("Error rolling back promo code usage reservation:", rollbackError);
+        }
+      }
       res.status(500).json({ success: false, message: "Failed to redeem promo code. Please try again." });
     }
   });
