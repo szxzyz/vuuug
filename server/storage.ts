@@ -611,46 +611,47 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserStreak(userId: string): Promise<{ newStreak: number; rewardEarned: string; isBonusDay: boolean }> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const now = new Date();
-    const lastStreakDate = user.lastStreakDate;
-    let newStreak = (user.currentStreak || 0) + 1;
-    let rewardEarned = "1";
-    let isBonusDay = false;
-
-    if (lastStreakDate) {
-      const lastClaim = new Date(lastStreakDate);
-      const minutesSinceLastClaim = (now.getTime() - lastClaim.getTime()) / (1000 * 60);
-      
-      if (minutesSinceLastClaim < 5) {
-        return { newStreak: user.currentStreak || 0, rewardEarned: "0", isBonusDay: false };
-      }
-    }
-
-    await db
+    // FIX: previously read lastStreakDate, checked the 5-minute cooldown in JS,
+    // then updated afterward — classic check-then-write race. Firing several
+    // concurrent requests let every one of them see "cooldown passed" before
+    // any of them recorded the new lastStreakDate, so a user could claim the
+    // bonus far more often than once per 5 minutes (unlimited POW farming via
+    // concurrency). Now the cooldown check and the update happen in a single
+    // atomic conditional UPDATE — it only matches (and only then do we award
+    // anything) if lastStreakDate is still null or more than 5 minutes old at
+    // the moment the database applies it, so concurrent requests can no longer
+    // all pass at once.
+    const [updated] = await db
       .update(users)
       .set({
-        currentStreak: newStreak,
-        lastStreakDate: now,
+        currentStreak: sql`COALESCE(${users.currentStreak}, 0) + 1`,
+        lastStreakDate: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(users.id, userId));
+      .where(and(
+        eq(users.id, userId),
+        sql`(${users.lastStreakDate} IS NULL OR ${users.lastStreakDate} <= NOW() - INTERVAL '5 minutes')`,
+      ))
+      .returning({ currentStreak: users.currentStreak });
 
-    if (parseFloat(rewardEarned) > 0) {
-      await this.addEarning({
-        userId,
-        amount: rewardEarned,
-        source: 'bonus_claim',
-        description: `Bonus claim - earned 1 POW`,
-      });
+    if (!updated) {
+      // Either user doesn't exist, or the 5-minute cooldown hasn't passed yet.
+      const [user] = await db.select({ currentStreak: users.currentStreak }).from(users).where(eq(users.id, userId));
+      if (!user) {
+        throw new Error("User not found");
+      }
+      return { newStreak: user.currentStreak || 0, rewardEarned: "0", isBonusDay: false };
     }
 
-    return { newStreak, rewardEarned, isBonusDay };
+    const rewardEarned = "1";
+    await this.addEarning({
+      userId,
+      amount: rewardEarned,
+      source: 'bonus_claim',
+      description: `Bonus claim - earned 1 POW`,
+    });
+
+    return { newStreak: updated.currentStreak, rewardEarned, isBonusDay: false };
   }
 
   async incrementExtraAdsWatched(userId: string): Promise<void> {
@@ -1737,18 +1738,35 @@ export class DatabaseStorage implements IStorage {
       const currency = 'USD';
       const userBalance = parseFloat(user.usdBalance || '0');
 
-      // Handle balance deduction with support for legacy withdrawals
-      // Legacy withdrawals (created before the fix) already had balance deducted at request time
-      // New withdrawals have balance deducted only on approval
-      if (userBalance >= totalToDeduct) {
-        // User has sufficient balance - this is a NEW withdrawal (or user earned more since request)
+      // FIX: the old logic here was "if balance >= amount, deduct; otherwise ASSUME
+      // this is a legacy pre-fix withdrawal that was already deducted at request
+      // time, and approve without deducting anything." That assumption is not
+      // actually verified anywhere — it's inferred purely from the balance being
+      // insufficient right now. That's dangerous: if a user ever ends up with two
+      // pending withdrawals whose combined total exceeds their balance (e.g. they
+      // fired two withdrawal requests close together — balance is only deducted
+      // on approval, not on request, so this is possible), approving the first one
+      // correctly deducts the balance, and approving the second one would then
+      // hit the "insufficient balance" branch and get approved FOR FREE, since it
+      // silently skips the deduction. That's a real path to draining funds.
+      //
+      // The `deducted` flag on the withdrawal row is the actual, explicit record
+      // of whether this specific withdrawal already had its balance taken out —
+      // that's what should gate the legacy case, not an inferred balance check.
+      // If it's not flagged as already-deducted and the user doesn't have enough
+      // balance, we refuse to approve rather than silently giving money away; an
+      // admin can investigate and, if it's genuinely a known-legacy record, adjust
+      // the `deducted` flag directly before retrying.
+      if (withdrawal.deducted) {
+        console.log(`⚠️ Withdrawal ${withdrawalId} already flagged as deducted — approving without deducting again.`);
+      } else if (userBalance >= totalToDeduct) {
         // Deduct USD balance now on approval
         console.log(`💰 Deducting USD balance now for approved withdrawal`);
         console.log(`💰 Net amount: $${withdrawalAmount}, Total to deduct (with fee): $${totalToDeduct}`);
         console.log(`💰 Previous USD balance: ${userBalance}, New balance: ${(userBalance - totalToDeduct).toFixed(10)}`);
 
         const newUsdBalance = (userBalance - totalToDeduct).toFixed(10);
-        
+
         await db
           .update(users)
           .set({
@@ -1758,11 +1776,12 @@ export class DatabaseStorage implements IStorage {
           .where(eq(users.id, withdrawal.userId));
         console.log(`✅ USD balance deducted: ${userBalance} → ${newUsdBalance}`);
       } else {
-        // User doesn't have sufficient balance - this is a LEGACY withdrawal
-        // Balance was already deducted at request time (old flow), so just approve without deducting again
-        console.log(`⚠️ Legacy withdrawal detected - balance was already deducted at request time`);
-        console.log(`💰 Current USD balance: ${userBalance}, Required: ${totalToDeduct}`);
-        console.log(`✅ Approving without additional balance deduction (legacy flow)`);
+        // Insufficient balance AND not already deducted — refuse to approve.
+        // Silently approving here would pay the user out for free.
+        return {
+          success: false,
+          message: `Cannot approve: user's balance ($${userBalance.toFixed(2)}) is less than this withdrawal's total ($${totalToDeduct.toFixed(2)}) and it isn't flagged as already-deducted. This likely means a duplicate or stale withdrawal request — please investigate before approving.`,
+        };
       }
 
       // Record withdrawal in earnings history for proper stats tracking
@@ -3465,11 +3484,6 @@ export class DatabaseStorage implements IStorage {
         return { success: false, message: "You have already completed this task" };
       }
 
-      // Check if task has reached its click limit
-      if (task.currentClicks >= task.totalClicksRequired) {
-        return { success: false, message: "Task has reached its click limit" };
-      }
-
       // Get reward amount from admin settings based on task type and verification tier
       let rewardPOW: number;
       if (task.taskType === 'partner') {
@@ -3489,46 +3503,80 @@ export class DatabaseStorage implements IStorage {
         rewardPOW = parseInt(noVerifySetting[0]?.settingValue || '2000');
       }
 
-      // Insert click record
-      await db.insert(taskClicks).values({
-        taskId: taskId,
-        publisherId: publisherId,
-        rewardAmount: rewardPOW.toString(),
+      // FIX: previously "check if already clicked" and "check click limit" were
+      // separate reads with no lock, and the actual increment/insert happened
+      // afterward — classic check-then-write race. Two concurrent requests
+      // (same user double-clicking, or many different users clicking near the
+      // limit) could both pass validation before either one recorded anything,
+      // letting a user bypass the one-click-per-task rule and/or letting a
+      // task collect more paid clicks than the advertiser purchased
+      // (totalClicksRequired). Now the whole check+increment+insert sequence
+      // runs inside one transaction that locks the task row (FOR UPDATE), so
+      // concurrent requests are serialized and only one can ever win the
+      // last available click slot; the taskClicks unique constraint is a
+      // second line of defense against per-user duplicates.
+      const claimResult = await db.transaction(async (tx) => {
+        const [lockedTask] = await tx
+          .select({ currentClicks: advertiserTasks.currentClicks, totalClicksRequired: advertiserTasks.totalClicksRequired })
+          .from(advertiserTasks)
+          .where(eq(advertiserTasks.id, taskId))
+          .for('update');
+
+        if (!lockedTask) {
+          return { success: false as const, message: "Task not found" };
+        }
+
+        const existingClick = await tx
+          .select({ id: taskClicks.id })
+          .from(taskClicks)
+          .where(and(
+            eq(taskClicks.taskId, taskId),
+            eq(taskClicks.publisherId, publisherId)
+          ))
+          .limit(1);
+
+        if (existingClick.length > 0) {
+          return { success: false as const, message: "You have already completed this task" };
+        }
+
+        if (lockedTask.currentClicks >= lockedTask.totalClicksRequired) {
+          return { success: false as const, message: "Task has reached its click limit" };
+        }
+
+        const newClickCount = lockedTask.currentClicks + 1;
+        const isCompleted = newClickCount >= lockedTask.totalClicksRequired;
+
+        await tx.insert(taskClicks).values({
+          taskId,
+          publisherId,
+          rewardAmount: rewardPOW.toString(),
+        });
+
+        await tx
+          .update(advertiserTasks)
+          .set({
+            currentClicks: newClickCount,
+            status: isCompleted ? 'completed' : 'running',
+            completedAt: isCompleted ? new Date() : undefined,
+            updatedAt: new Date(),
+          })
+          .where(eq(advertiserTasks.id, taskId));
+
+        return { success: true as const, currentClicks: newClickCount, isCompleted };
       });
 
-      // Increment current clicks on the task
-      const newClickCount = task.currentClicks + 1;
-      const isCompleted = newClickCount >= task.totalClicksRequired;
+      if (!claimResult.success) {
+        return { success: false, message: claimResult.message };
+      }
 
-      await db
-        .update(advertiserTasks)
-        .set({
-          currentClicks: newClickCount,
-          status: isCompleted ? 'completed' : 'running',
-          completedAt: isCompleted ? new Date() : undefined,
-          updatedAt: new Date()
-        })
-        .where(eq(advertiserTasks.id, taskId));
-
-      // Add reward to user's balance
-      const [publisher] = await db
-        .select({ balance: users.balance })
-        .from(users)
-        .where(eq(users.id, publisherId));
-
-      const currentBalance = parseInt(publisher?.balance || '0');
-      const newBalance = currentBalance + rewardPOW;
-
-      await db
-        .update(users)
-        .set({
-          balance: newBalance.toString(),
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, publisherId));
-
-      // Record the earning
-      await db.insert(earnings).values({
+      // FIX: previously this block read users.balance, computed the new value in
+      // JS, and wrote it back (classic lost-update race with any other concurrent
+      // balance-affecting request) — AND it inserted into `earnings` directly,
+      // skipping the canonical `user_balances` table entirely (see addEarning()),
+      // so task-click rewards could silently fail to show up in the user's real
+      // wallet balance. addEarning() does both atomically and keeps everything
+      // in sync, the same way every other reward path in this codebase does.
+      await this.addEarning({
         userId: publisherId,
         amount: rewardPOW.toString(),
         source: 'task_completion',
@@ -3543,8 +3591,8 @@ export class DatabaseStorage implements IStorage {
         reward: rewardPOW,
         task: {
           ...task,
-          currentClicks: newClickCount,
-          status: isCompleted ? 'completed' : 'running'
+          currentClicks: claimResult.currentClicks,
+          status: claimResult.isCompleted ? 'completed' : 'running'
         }
       };
     } catch (error: any) {

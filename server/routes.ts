@@ -2614,118 +2614,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return `${year}-W${String(week).padStart(2, '0')}`;
   }
 
-  // Daily login streak reward tiers (in POW = PAD units, 1 USD = 10,000,000 POW)
-  function getDailyStreakReward(streakDay: number): { usd: number; pow: number } {
-    if (streakDay <= 10)  return { usd: 0.0005, pow: 5000 };
-    if (streakDay <= 20)  return { usd: 0.001,  pow: 10000 };
-    if (streakDay <= 30)  return { usd: 0.0015, pow: 15000 };
-    if (streakDay <= 40)  return { usd: 0.002,  pow: 20000 };
-    return                       { usd: 0.0025, pow: 25000 };
-  }
-
-  app.get('/api/daily-streak/status', authenticateTelegram, async (req: any, res) => {
-    try {
-      const userId = req.user.user.id;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: 'User not found' });
-
-      const today = getDailyResetDateStr();
-      const lastLogin = (user as any).lastDailyLoginDate;
-      const streak = (user as any).dailyLoginStreak || 0;
-      const claimedToday = lastLogin === today;
-
-      // Compute what the current (or next) day streak would be
-      // Reset at 18:30 UTC = 12:00 AM IST
-      const yesterday = (() => {
-        const now = new Date();
-        const pastReset = now.getUTCHours() > 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() >= 30);
-        const d = new Date(now);
-        d.setUTCDate(d.getUTCDate() - (pastReset ? 1 : 2));
-        return d.toISOString().split('T')[0];
-      })();
-
-      let nextStreakDay = streak + 1;
-      if (claimedToday) {
-        nextStreakDay = streak; // already claimed, show current streak
-      } else if (lastLogin && lastLogin !== yesterday) {
-        nextStreakDay = 1; // streak will reset
-      }
-
-      const now = new Date();
-      const nextReset = new Date();
-      nextReset.setUTCHours(18, 30, 0, 0);
-      if (now.getUTCHours() > 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() >= 30)) nextReset.setUTCDate(nextReset.getUTCDate() + 1);
-
-      const reward = getDailyStreakReward(nextStreakDay);
-
-      res.json({
-        streak,
-        nextStreakDay,
-        claimedToday,
-        reward,
-        nextResetAt: nextReset.toISOString(),
-        lastDailyLoginDate: lastLogin,
-      });
-    } catch (error) {
-      console.error('Daily streak status error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  app.post('/api/daily-streak/claim', authenticateTelegram, async (req: any, res) => {
-    try {
-      const userId = req.user.user.id;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: 'User not found' });
-
-      const today = getDailyResetDateStr();
-      const lastLogin = (user as any).lastDailyLoginDate;
-      const currentStreak = (user as any).dailyLoginStreak || 0;
-
-      if (lastLogin === today) {
-        return res.status(400).json({ message: 'Already claimed today', alreadyClaimed: true });
-      }
-
-      // Determine next streak day — reset at 18:30 UTC = 12:00 AM IST
-      const yesterday = (() => {
-        const now = new Date();
-        const d = new Date(now);
-        const pastReset = now.getUTCHours() > 18 || (now.getUTCHours() === 18 && now.getUTCMinutes() >= 30);
-        d.setUTCDate(d.getUTCDate() - (pastReset ? 1 : 2));
-        return d.toISOString().split('T')[0];
-      })();
-
-      let newStreak: number;
-      if (!lastLogin || lastLogin !== yesterday) {
-        newStreak = 1; // missed a day or first time
-      } else {
-        newStreak = currentStreak + 1;
-      }
-
-      const reward = getDailyStreakReward(newStreak);
-
-      // Give POW reward to user balance
-      await storage.addEarning({
-        userId,
-        amount: String(reward.pow),
-        source: 'daily_streak',
-        description: `Daily streak reward — Day ${newStreak}`,
-      });
-
-      // Update streak fields
-      await db.update(users).set({
-        dailyLoginStreak: newStreak,
-        lastDailyLoginDate: today,
-        updatedAt: new Date(),
-      } as any).where(eq(users.id, userId));
-
-      res.json({ success: true, newStreak, reward });
-    } catch (error) {
-      console.error('Daily streak claim error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
   // Check channel membership endpoint
   app.get('/api/streak/check-membership', authenticateTelegram, async (req: any, res) => {
     try {
@@ -8509,6 +8397,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (!user) {
           throw new Error('User not found');
+        }
+
+        // FIX: the "does this user already have a pending withdrawal" check
+        // above happens BEFORE this transaction/lock is acquired, so two
+        // near-simultaneous requests could both pass it before either one had
+        // inserted a row — letting a user end up with two pending withdrawal
+        // requests at once, even though balance is only deducted at admin
+        // approval time (not at request time). Re-checking here, after the
+        // row lock, closes that window: concurrent requests are serialized
+        // by the lock, so the second one will now correctly see the first
+        // one's row and be rejected.
+        const pendingWithdrawalsRecheck = await tx
+          .select({ id: withdrawals.id })
+          .from(withdrawals)
+          .where(and(
+            eq(withdrawals.userId, userId),
+            eq(withdrawals.status, 'pending')
+          ))
+          .limit(1);
+        if (pendingWithdrawalsRecheck.length > 0) {
+          throw new Error('Cannot create new request until current one is processed');
         }
 
         // CRITICAL: Check if user is banned - prevent banned accounts from withdrawing
