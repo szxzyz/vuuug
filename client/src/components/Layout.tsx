@@ -126,14 +126,22 @@ export default function Layout({ children }: LayoutProps) {
               onClick={handleHomeClick}
               whileTap={{ scale: 0.82 }}
               transition={{ type: "spring", stiffness: 400, damping: 17 }}
-              className={`flex flex-col items-center justify-center gap-1 ${
-                isHomeActive || location.startsWith("/admin")
-                  ? "text-white"
-                  : "text-[#6E6E73]"
-              }`}
+              className="relative flex flex-col items-center justify-center gap-1"
             >
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all relative bg-[#2a2a2a] ${
+              {(isHomeActive || location.startsWith("/admin")) && (
+                <motion.div
+                  layoutId="nav-active-pill"
+                  className="absolute -inset-x-3 -inset-y-1.5 rounded-2xl bg-white/10"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+              <motion.div
+                animate={{
+                  scale: isHomeActive || location.startsWith("/admin") ? 1.08 : 1,
+                  y: isHomeActive || location.startsWith("/admin") ? -1 : 0,
+                }}
+                transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center bg-[#2a2a2a] ${
                   isHomeActive || location.startsWith("/admin") ? "ring-2 ring-white" : "ring-1 ring-white/20"
                 }`}
               >
@@ -170,13 +178,16 @@ export default function Layout({ children }: LayoutProps) {
                     }`}
                   />
                 )}
-              </div>
-              <span
-                className="text-[9px] font-medium leading-none tracking-wide"
-                style={{ color: isHomeActive || location.startsWith("/admin") ? "#fff" : "#6E6E73" }}
+              </motion.div>
+              <motion.span
+                animate={{
+                  color: isHomeActive || location.startsWith("/admin") ? "#ffffff" : "#6E6E73",
+                }}
+                transition={{ duration: 0.2 }}
+                className="relative z-10 text-[9px] font-medium leading-none tracking-wide"
               >
                 Home
-              </span>
+              </motion.span>
             </motion.button>
 
             {/* Other nav items */}
@@ -189,20 +200,36 @@ export default function Layout({ children }: LayoutProps) {
                   <motion.button
                     whileTap={{ scale: 0.82 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                    className={`flex flex-col items-center justify-center gap-1 ${
-                      isActive ? "text-white" : "text-[#6E6E73]"
-                    }`}
+                    className="relative flex flex-col items-center justify-center gap-1"
                   >
-                    <Icon
-                      className="w-8 h-8 transition-all"
-                      strokeWidth={isActive ? 2.5 : 2}
-                    />
-                    <span
-                      className="text-[9px] font-medium leading-none tracking-wide"
-                      style={{ color: isActive ? "#fff" : "#6E6E73" }}
+                    {isActive && (
+                      <motion.div
+                        layoutId="nav-active-pill"
+                        className="absolute -inset-x-3 -inset-y-1.5 rounded-2xl bg-white/10"
+                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                      />
+                    )}
+                    <motion.div
+                      animate={{
+                        scale: isActive ? 1.12 : 1,
+                        y: isActive ? -1 : 0,
+                      }}
+                      transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                      className="relative z-10"
+                    >
+                      <Icon
+                        className="w-8 h-8"
+                        style={{ color: isActive ? "#ffffff" : "#6E6E73" }}
+                        strokeWidth={isActive ? 2.5 : 2}
+                      />
+                    </motion.div>
+                    <motion.span
+                      animate={{ color: isActive ? "#ffffff" : "#6E6E73" }}
+                      transition={{ duration: 0.2 }}
+                      className="relative z-10 text-[9px] font-medium leading-none tracking-wide"
                     >
                       {item.label}
-                    </span>
+                    </motion.span>
                   </motion.button>
                 </Link>
               );
