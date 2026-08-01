@@ -20,6 +20,7 @@ if (existsSync('.env')) {
 }
 
 import express, { type Request, Response, NextFunction } from "express";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
@@ -48,6 +49,9 @@ await ensureDatabaseSchema();
 console.log('✅ Database schema verified, starting server setup...');
 
 const app = express();
+// Compress every response (API JSON + static assets) — was previously
+// unset, so every payload went over the wire uncompressed.
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
