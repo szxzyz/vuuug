@@ -73,9 +73,10 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const navItems = [
-    { href: "/affiliates", icon: HeartHandshake, label: "Friends" },
+    { href: "/leaderboard", icon: Trophy, label: "Contest" },
     { href: "/missions", icon: ListTodo, label: "Mission" },
-    { href: "/leaderboard", icon: Trophy, label: "Rank" },
+    { href: "/affiliates", icon: HeartHandshake, label: "Invite" },
+    { href: "/ambassador", icon: Star, label: "Ambassador" },
   ];
 
   const telegramPhotoUrl =
@@ -116,81 +117,71 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {!showSeasonEnd && (
-        <div className="fixed bottom-6 left-0 right-0 z-50 flex items-center justify-center gap-3 px-4">
+        <div className="fixed bottom-6 left-0 right-0 z-50 flex items-center justify-between gap-2.5 px-4">
 
-          {/* Original-style nav pill — restored size, added text labels */}
-          <nav className="flex justify-center items-center h-16 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[40px] shadow-2xl px-7 gap-8">
-
-            {/* Home button — double-tap for admin panel */}
-            <motion.button
-              onClick={handleHomeClick}
-              whileTap={{ scale: 0.82 }}
-              transition={{ type: "spring", stiffness: 400, damping: 17 }}
-              className="relative flex flex-col items-center justify-center gap-1"
+          {/* Home — isolated circular button, own bg, avatar untouched */}
+          <motion.button
+            onClick={handleHomeClick}
+            whileTap={{ scale: 0.88 }}
+            transition={{ type: "spring", stiffness: 400, damping: 17 }}
+            className="relative flex items-center justify-center rounded-full flex-shrink-0"
+            style={{
+              width: "64px",
+              height: "64px",
+              background: "rgba(28,28,30,0.9)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+            }}
+            aria-label="Home"
+          >
+            <motion.div
+              animate={{
+                scale: isHomeActive || location.startsWith("/admin") ? 1.08 : 1,
+              }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              className={`w-9 h-9 rounded-full flex items-center justify-center relative bg-[#2a2a2a] ${
+                isHomeActive || location.startsWith("/admin") ? "ring-2 ring-white" : "ring-1 ring-white/20"
+              }`}
             >
-              {(isHomeActive || location.startsWith("/admin")) && (
-                <motion.div
-                  layoutId="nav-active-pill"
-                  className="absolute -inset-x-3 -inset-y-1.5 rounded-2xl bg-white/10"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              {/* Admin flash overlay */}
+              <AnimatePresence>
+                {adminFlash && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 1.3 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className="absolute inset-0 rounded-full flex items-center justify-center z-10"
+                    style={{ background: "rgba(28,28,30,0.92)" }}
+                  >
+                    <ShieldCheck className="w-5 h-5" style={{ color: "#ffffff", strokeWidth: 2 }} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {(!photoLoaded || photoError) && !adminFlash && (
+                <User className="w-5 h-5 text-[#6E6E73]" />
+              )}
+              {userPhotoUrl && !photoError && (
+                <img
+                  src={userPhotoUrl}
+                  alt="Profile"
+                  onLoad={() => setPhotoLoaded(true)}
+                  onError={() => {
+                    setPhotoError(true);
+                    setPhotoLoaded(false);
+                  }}
+                  className={`absolute inset-0 w-full h-full rounded-full object-cover transition-opacity duration-200 ${
+                    photoLoaded ? "opacity-100" : "opacity-0"
+                  }`}
                 />
               )}
-              <motion.div
-                animate={{
-                  scale: isHomeActive || location.startsWith("/admin") ? 1.08 : 1,
-                  y: isHomeActive || location.startsWith("/admin") ? -1 : 0,
-                }}
-                transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center bg-[#2a2a2a] ${
-                  isHomeActive || location.startsWith("/admin") ? "ring-2 ring-white" : "ring-1 ring-white/20"
-                }`}
-              >
-                {/* Admin flash overlay */}
-                <AnimatePresence>
-                  {adminFlash && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.5 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 1.3 }}
-                      transition={{ duration: 0.25, ease: "easeOut" }}
-                      className="absolute inset-0 rounded-full flex items-center justify-center z-10"
-                      style={{ background: "rgba(28,28,30,0.92)" }}
-                    >
-                      <ShieldCheck className="w-5 h-5" style={{ color: "#ffffff", strokeWidth: 2 }} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+            </motion.div>
+          </motion.button>
 
-                {(!photoLoaded || photoError) && !adminFlash && (
-                  <User className="w-5 h-5 text-[#6E6E73]" />
-                )}
-                {userPhotoUrl && !photoError && (
-                  <img
-                    src={userPhotoUrl}
-                    alt="Profile"
-                    onLoad={() => setPhotoLoaded(true)}
-                    onError={() => {
-                      setPhotoError(true);
-                      setPhotoLoaded(false);
-                    }}
-                    className={`absolute inset-0 w-full h-full rounded-full object-cover transition-opacity duration-200 ${
-                      photoLoaded ? "opacity-100" : "opacity-0"
-                    }`}
-                  />
-                )}
-              </motion.div>
-              <motion.span
-                animate={{
-                  color: isHomeActive || location.startsWith("/admin") ? "#ffffff" : "#6E6E73",
-                }}
-                transition={{ duration: 0.2 }}
-                className="relative z-10 text-[9px] font-medium leading-none tracking-wide"
-              >
-                Home
-              </motion.span>
-            </motion.button>
-
-            {/* Other nav items */}
+          {/* Pill nav — Contest, Mission, Invite, Ambassador */}
+          <nav className="flex-1 flex justify-around items-center h-16 bg-[#1C1C1E]/90 backdrop-blur-md rounded-[32px] shadow-2xl px-2 min-w-0">
             {navItems.map((item) => {
               const isActive = location === item.href;
               const Icon = item.icon;
@@ -200,12 +191,12 @@ export default function Layout({ children }: LayoutProps) {
                   <motion.button
                     whileTap={{ scale: 0.82 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                    className="relative flex flex-col items-center justify-center gap-1"
+                    className="relative flex flex-col items-center justify-center gap-1 px-1"
                   >
                     {isActive && (
                       <motion.div
                         layoutId="nav-active-pill"
-                        className="absolute -inset-x-3 -inset-y-1.5 rounded-2xl bg-white/10"
+                        className="absolute -inset-x-2 -inset-y-1.5 rounded-2xl bg-white/10"
                         transition={{ type: "spring", stiffness: 380, damping: 30 }}
                       />
                     )}
@@ -218,7 +209,7 @@ export default function Layout({ children }: LayoutProps) {
                       className="relative z-10"
                     >
                       <Icon
-                        className="w-8 h-8"
+                        className="w-6 h-6"
                         style={{ color: isActive ? "#ffffff" : "#6E6E73" }}
                         strokeWidth={isActive ? 2.5 : 2}
                       />
@@ -226,7 +217,7 @@ export default function Layout({ children }: LayoutProps) {
                     <motion.span
                       animate={{ color: isActive ? "#ffffff" : "#6E6E73" }}
                       transition={{ duration: 0.2 }}
-                      className="relative z-10 text-[9px] font-medium leading-none tracking-wide"
+                      className="relative z-10 text-[9px] font-medium leading-none tracking-wide whitespace-nowrap"
                     >
                       {item.label}
                     </motion.span>
@@ -236,42 +227,40 @@ export default function Layout({ children }: LayoutProps) {
             })}
           </nav>
 
-          {/* Floating "+" circular button — shown for all users */}
-          {(
-            <motion.button
-              onClick={handlePlusClick}
-              whileTap={{ scale: 0.88 }}
-              whileHover={{ scale: 1.06 }}
-              animate={{ rotate: panelOpen ? 45 : 0 }}
-              transition={{ type: "spring", stiffness: 380, damping: 22 }}
-              className="flex items-center justify-center rounded-full flex-shrink-0"
+          {/* Plus — isolated circular button, same style as Home, opens Create panel directly */}
+          <motion.button
+            onClick={handlePlusClick}
+            whileTap={{ scale: 0.88 }}
+            whileHover={{ scale: 1.06 }}
+            animate={{ rotate: panelOpen ? 45 : 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 22 }}
+            className="flex items-center justify-center rounded-full flex-shrink-0"
+            style={{
+              width: "64px",
+              height: "64px",
+              background: panelOpen
+                ? "rgba(255,255,255,0.14)"
+                : "rgba(28,28,30,0.9)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              border: panelOpen
+                ? "1px solid rgba(255,255,255,0.18)"
+                : "none",
+              boxShadow: panelOpen
+                ? "0 0 0 6px rgba(255,255,255,0.05)"
+                : "0 8px 24px rgba(0,0,0,0.45)",
+            }}
+            aria-label="Create"
+          >
+            <Plus
               style={{
-                width: "56px",
-                height: "56px",
-                background: panelOpen
-                  ? "rgba(255,255,255,0.14)"
-                  : "rgba(28,28,30,0.9)",
-                backdropFilter: "blur(16px)",
-                WebkitBackdropFilter: "blur(16px)",
-                border: panelOpen
-                  ? "1px solid rgba(255,255,255,0.18)"
-                  : "none",
-                boxShadow: panelOpen
-                  ? "0 0 0 6px rgba(255,255,255,0.05)"
-                  : "0 8px 24px rgba(0,0,0,0.45)",
+                width: "24px",
+                height: "24px",
+                color: "rgba(255,255,255,0.9)",
+                strokeWidth: 2.2,
               }}
-              aria-label="Create"
-            >
-              <Plus
-                style={{
-                  width: "24px",
-                  height: "24px",
-                  color: "rgba(255,255,255,0.9)",
-                  strokeWidth: 2.2,
-                }}
-              />
-            </motion.button>
-          )}
+            />
+          </motion.button>
         </div>
       )}
 
