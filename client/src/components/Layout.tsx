@@ -97,7 +97,7 @@ export default function Layout({ children }: LayoutProps) {
       {isHomeActive && <Header />}
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden"
-        style={{ paddingBottom: "96px", paddingTop: "0px" }}
+        style={{ paddingBottom: "104px", paddingTop: "0px" }}
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
@@ -118,94 +118,78 @@ export default function Layout({ children }: LayoutProps) {
 
       {!showSeasonEnd && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-50 flex items-end justify-center gap-2.5 px-3"
-          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 14px)" }}
+          className="fixed bottom-0 left-0 right-0 z-50 bg-[#101012] border-t border-white/10 rounded-t-[28px]"
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
         >
-          {/* Home — standalone circular dock button, avatar/photo logic untouched */}
-          <button
-            onClick={handleHomeClick}
-            aria-label="Home"
-            className="relative flex-shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-[#161618] border transition-all duration-200"
-            style={{
-              borderColor:
-                isHomeActive || location.startsWith("/admin")
-                  ? "rgba(168,85,247,0.55)"
-                  : "rgba(255,255,255,0.08)",
-              boxShadow:
-                isHomeActive || location.startsWith("/admin")
-                  ? "0 0 0 1px rgba(168,85,247,0.25), 0 4px 18px rgba(168,85,247,0.35)"
-                  : "none",
-            }}
-          >
-            {(isHomeActive || location.startsWith("/admin")) && (
-              <div
-                className="absolute inset-0 rounded-full pointer-events-none"
-                style={{
-                  background:
-                    "linear-gradient(135deg, rgba(236,72,153,0.25), rgba(139,92,246,0.25))",
-                }}
-              />
-            )}
+          <nav className="flex items-stretch justify-around w-full" style={{ height: "88px" }}>
 
-            <div className="relative w-7 h-7 rounded-full flex items-center justify-center">
-              {/* Admin flash overlay */}
-              <AnimatePresence>
-                {adminFlash && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.5 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 1.3 }}
-                    transition={{ duration: 0.25, ease: "easeOut" }}
-                    className="absolute inset-0 -m-1 rounded-full flex items-center justify-center z-10 bg-[#1C1C1E]"
-                  >
-                    <ShieldCheck className="w-5 h-5" style={{ color: "#ffffff", strokeWidth: 2 }} />
-                  </motion.div>
+            {/* Home — avatar/photo logic untouched, just restyled to match the row */}
+            <button
+              onClick={handleHomeClick}
+              className="flex-1 flex flex-col items-center justify-center gap-1.5"
+              aria-label="Home"
+            >
+              <div className="relative w-7 h-7 rounded-full flex items-center justify-center">
+                {/* Admin flash overlay */}
+                <AnimatePresence>
+                  {adminFlash && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 1.3 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
+                      className="absolute inset-0 -m-1 rounded-full flex items-center justify-center z-10 bg-[#1C1C1E]"
+                    >
+                      <ShieldCheck className="w-5 h-5" style={{ color: "#ffffff", strokeWidth: 2 }} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {(!photoLoaded || photoError) && !adminFlash && (
+                  <HomeIcon
+                    className="w-7 h-7"
+                    style={{ color: isHomeActive || location.startsWith("/admin") ? "#ffffff" : "#6E6E73" }}
+                    strokeWidth={isHomeActive || location.startsWith("/admin") ? 2.5 : 2}
+                  />
                 )}
-              </AnimatePresence>
+                {userPhotoUrl && !photoError && (
+                  <img
+                    src={userPhotoUrl}
+                    alt="Profile"
+                    onLoad={() => setPhotoLoaded(true)}
+                    onError={() => {
+                      setPhotoError(true);
+                      setPhotoLoaded(false);
+                    }}
+                    className={`absolute inset-0 w-full h-full rounded-full object-cover transition-opacity duration-200 ${
+                      photoLoaded ? "opacity-100" : "opacity-0"
+                    } ${isHomeActive || location.startsWith("/admin") ? "ring-2 ring-white" : "ring-1 ring-white/20"}`}
+                  />
+                )}
+              </div>
+              <span
+                className="text-[10.5px] font-medium leading-none tracking-wide transition-colors duration-150"
+                style={{ color: isHomeActive || location.startsWith("/admin") ? "#ffffff" : "#6E6E73" }}
+              >
+                Home
+              </span>
+            </button>
 
-              {(!photoLoaded || photoError) && !adminFlash && (
-                <HomeIcon
-                  className="w-7 h-7"
-                  style={{ color: isHomeActive || location.startsWith("/admin") ? "#ffffff" : "#9E9EA3" }}
-                  strokeWidth={isHomeActive || location.startsWith("/admin") ? 2.5 : 2}
-                />
-              )}
-              {userPhotoUrl && !photoError && (
-                <img
-                  src={userPhotoUrl}
-                  alt="Profile"
-                  onLoad={() => setPhotoLoaded(true)}
-                  onError={() => {
-                    setPhotoError(true);
-                    setPhotoLoaded(false);
-                  }}
-                  className={`absolute inset-0 w-full h-full rounded-full object-cover transition-opacity duration-200 ${
-                    photoLoaded ? "opacity-100" : "opacity-0"
-                  } ${isHomeActive || location.startsWith("/admin") ? "ring-2 ring-white" : "ring-1 ring-white/20"}`}
-                />
-              )}
-            </div>
-          </button>
-
-          {/* Contest, Mission, Invite, Ambassador, Advertise — pill-shaped dock */}
-          <nav
-            className="flex items-stretch bg-[#161618] rounded-full border border-white/[0.08] px-1.5"
-            style={{ height: "64px" }}
-          >
+            {/* Contest, Mission, Invite, Ambassador */}
             {navItems.map((item) => {
               const isActive = location === item.href;
               const Icon = item.icon;
 
               return (
-                <Link key={item.href} href={item.href}>
-                  <button className="h-full flex flex-col items-center justify-center gap-1 px-3">
+                <Link key={item.href} href={item.href} className="flex-1">
+                  <button className="w-full h-full flex flex-col items-center justify-center gap-1.5">
                     <Icon
-                      className="w-6 h-6 transition-colors duration-150"
+                      className="w-7 h-7 transition-colors duration-150"
                       style={{ color: isActive ? "#ffffff" : "#6E6E73" }}
                       strokeWidth={isActive ? 2.5 : 2}
                     />
                     <span
-                      className="text-[10px] font-medium leading-none tracking-wide transition-colors duration-150"
+                      className="text-[10.5px] font-medium leading-none tracking-wide transition-colors duration-150"
                       style={{ color: isActive ? "#ffffff" : "#6E6E73" }}
                     >
                       {item.label}
@@ -218,16 +202,16 @@ export default function Layout({ children }: LayoutProps) {
             {/* Advertise — opens Create panel directly on the advertise form */}
             <button
               onClick={handlePlusClick}
-              className="h-full flex flex-col items-center justify-center gap-1 px-3"
+              className="flex-1 flex flex-col items-center justify-center gap-1.5"
               aria-label="Advertise"
             >
               <Radio
-                className="w-6 h-6 transition-colors duration-150"
+                className="w-7 h-7 transition-colors duration-150"
                 style={{ color: panelOpen ? "#ffffff" : "#6E6E73" }}
                 strokeWidth={panelOpen ? 2.5 : 2}
               />
               <span
-                className="text-[10px] font-medium leading-none tracking-wide transition-colors duration-150"
+                className="text-[10.5px] font-medium leading-none tracking-wide transition-colors duration-150"
                 style={{ color: panelOpen ? "#ffffff" : "#6E6E73" }}
               >
                 Advertise
