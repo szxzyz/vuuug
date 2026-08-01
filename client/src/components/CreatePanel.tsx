@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -84,6 +84,18 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
     setFlow(f);
     onFlowChange?.(f);
   }, [onFlowChange]);
+
+  // The + button now opens the Create panel directly on the Advertise form —
+  // no more Advertise/Ambassador pill-menu step (Ambassador already lives in the bottom nav).
+  // Synced during render (not an effect) so there's no menu flash before the form appears.
+  const prevOpenRef = useRef(open);
+  if (open !== prevOpenRef.current) {
+    prevOpenRef.current = open;
+    if (open && flow === null) {
+      setFlow("advertise");
+      onFlowChange?.("advertise");
+    }
+  }
 
   const reset = useCallback(() => {
     setFlowWithNotify(null); setCategory("channel"); setVerifyType("verification");
