@@ -2505,19 +2505,24 @@ ${walletAddress}
         });
         try {
           const { db: dbConn } = await import('./db');
-          const { eq, sql: sqlFn } = await import('drizzle-orm');
+          const { eq } = await import('drizzle-orm');
           const { channelPenaltyCases: cpcT } = await import('../shared/schema');
           const [penCase] = await dbConn.select().from(cpcT).where(eq(cpcT.id, caseId)).limit(1);
           if (!penCase) { await sendUserTelegramNotification(chatId, '❌ Penalty case not found.'); return true; }
           if (penCase.status === 'resolved') { await sendUserTelegramNotification(chatId, '✅ Your POW has already been restored!'); return true; }
           if (penCase.status === 'permanent') { await sendUserTelegramNotification(chatId, '❌ The 24-hour window has passed. This penalty is now permanent.'); return true; }
           if (penCase.status !== 'penalized') { await sendUserTelegramNotification(chatId, '❌ No active penalty for this case.'); return true; }
+          if (!TELEGRAM_BOT_TOKEN) return true;
+
+          // Detect the still-not-a-member case up front so we can show a
+          // helpful "not subscribed yet" message with time remaining.
           if (penCase.deadlineAt && new Date() > new Date(penCase.deadlineAt)) {
-            await dbConn.update(cpcT).set({ status: 'permanent', resolvedAt: new Date() }).where(eq(cpcT.id, caseId));
             await sendUserTelegramNotification(chatId, '❌ The 24-hour window has passed. This penalty is now permanent.');
+            // processPenaltyCase will flip it to 'permanent' on its next pass;
+            // do it inline too so the status is correct immediately.
+            await processPenaltyCase(caseId, TELEGRAM_BOT_TOKEN);
             return true;
           }
-          if (!TELEGRAM_BOT_TOKEN) return true;
           const isMember = await verifyChannelMembership(parseInt(chatId), penCase.channelId, TELEGRAM_BOT_TOKEN);
           if (!isMember) {
             const hoursLeft = penCase.deadlineAt ? Math.max(0, Math.ceil((new Date(penCase.deadlineAt).getTime() - Date.now()) / 3600000)) : 0;
@@ -2525,11 +2530,17 @@ ${walletAddress}
               `❌ <b>Not subscribed yet.</b>\n\nPlease subscribe to the channel first, then tap "Return POW".\n\n⏰ Time remaining: <b>${hoursLeft}h</b>`);
             return true;
           }
-          // Restore original reward
-          await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${penCase.originalReward})::text, updated_at = NOW() WHERE id = ${penCase.userId}`);
-          await dbConn.update(cpcT).set({ status: 'resolved', resolvedAt: new Date() }).where(eq(cpcT.id, caseId));
-          await sendUserTelegramNotification(chatId,
-            `✅ <b>POW Restored!</b>\n\n<b>${penCase.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
+
+          // Restore original reward — atomic (WHERE status='penalized'), so this
+          // can never double-credit if the poller resolves the case at the same time.
+          await processPenaltyCase(caseId, TELEGRAM_BOT_TOKEN);
+          const [afterCase] = await dbConn.select({ status: cpcT.status }).from(cpcT).where(eq(cpcT.id, caseId)).limit(1);
+          if (afterCase?.status === 'resolved') {
+            await sendUserTelegramNotification(chatId,
+              `✅ <b>POW Restored!</b>\n\n<b>${penCase.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
+          } else {
+            await sendUserTelegramNotification(chatId, '✅ Your POW has already been restored!');
+          }
         } catch (err) {
           console.error('❌ return_pow error:', err);
           await sendUserTelegramNotification(chatId, '❌ An error occurred. Please try again.');
@@ -4054,11 +4065,112 @@ export async function retryPendingTonDeposits(): Promise<void> {
   }
 }
 
+// ── Channel Penalty Case Processing ───────────────────────────────────────────
+// Status machine: watching → suspected → penalized → resolved | permanent
+//                     ↑___________|  (member again while only "suspected")
+//
+// A single "not a member" reading is NEVER enough to penalize — Telegram's
+// getChatMember can glitch transiently even after verifyChannelMembership's
+// own internal retries (rate limits, propagation lag right after a user
+// joins, etc). We only penalize once a SECOND, separate check — at least
+// MIN_CONFIRM_GAP_MS after the first — also comes back "not a member".
+// This is what prevents users who never left from getting a false
+// "Unsubscribed" penalty.
+//
+// Every state transition below is a single conditional UPDATE ... WHERE
+// status = <expected current status> ... RETURNING. This makes the
+// transition atomic: if the poller and a client-triggered check (or the
+// Telegram "Return POW" button) race on the same case, only one of them
+// wins the UPDATE and only the winner is allowed to touch the user's
+// balance. This is what prevents double penalties / double refunds and
+// the "already handled" errors on the Restore button.
+const MIN_CONFIRM_GAP_MS = 60_000; // don't confirm within the same poll pass
+
+/** Process a single penalty case forward by one step. Safe to call from the
+ *  scheduled poller, the per-user client-triggered check, and the Telegram
+ *  "Return POW" callback — all three call this so the logic never diverges. */
+export async function processPenaltyCase(caseId: string, botToken: string): Promise<void> {
+  const { db: dbConn } = await import('./db');
+  const { channelPenaltyCases: cpcT } = await import('../shared/schema');
+  const now = new Date();
+
+  const [p] = await dbConn.select().from(cpcT).where(eq(cpcT.id, caseId)).limit(1);
+  if (!p || !p.telegramId) return;
+
+  if (p.status === 'watching' || p.status === 'suspected') {
+    const isMember = await verifyChannelMembership(parseInt(p.telegramId), p.channelId, botToken);
+
+    if (isMember) {
+      if (p.status === 'suspected') {
+        // False alarm — user was a member all along (or rejoined fast). Clear it.
+        await dbConn.update(cpcT).set({ status: 'watching', leftAt: null })
+          .where(and(eq(cpcT.id, p.id), eq(cpcT.status, 'suspected')));
+      }
+      return;
+    }
+
+    if (p.status === 'watching') {
+      // First "not a member" reading — flag it, but do NOT penalize yet.
+      await dbConn.update(cpcT).set({ status: 'suspected', leftAt: now })
+        .where(and(eq(cpcT.id, p.id), eq(cpcT.status, 'watching')));
+      return;
+    }
+
+    // status === 'suspected': require a real gap since the first reading so
+    // we're not just re-confirming the same transient blip milliseconds later.
+    if (p.leftAt && now.getTime() - new Date(p.leftAt).getTime() < MIN_CONFIRM_GAP_MS) return;
+
+    const penalty = p.originalReward * 2;
+    const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const confirmed = await dbConn.update(cpcT)
+      .set({ status: 'penalized', leftAt: now, deadlineAt: deadline, penaltyDeducted: penalty })
+      .where(and(eq(cpcT.id, p.id), eq(cpcT.status, 'suspected')))
+      .returning({ id: cpcT.id });
+    if (!confirmed.length) return; // another process already handled this case
+
+    await dbConn.execute(sql`UPDATE users SET balance = GREATEST(CAST(balance AS BIGINT) - ${penalty}, 0)::text, updated_at = NOW() WHERE id = ${p.userId}`);
+    const warnMsg =
+      `<tg-emoji emoji-id="4956611513369494230">⚠️</tg-emoji> <b>Unsubscribed Too Early</b>\n\n` +
+      `<tg-emoji emoji-id="5883997563639567521">😡</tg-emoji> <b>${penalty.toLocaleString()} $POW has been deducted.</b>\n\n` +
+      `<tg-emoji emoji-id="4956371914323920049">🔄</tg-emoji> Re-subscribe within <b>24 hours</b> to get your coins back.`;
+    await sendUserTelegramNotification(p.telegramId, warnMsg, {
+      inline_keyboard: [
+        [{ text: '👉 Subscribe 👈', url: p.channelLink }],
+        [{ text: '💰 Return POW', callback_data: `return_pow_${p.id}` }],
+      ]
+    });
+    console.log(`⚠️ [Penalty] ${p.userId} confirmed left ${p.channelId} — deducted ${penalty} POW`);
+    return;
+  }
+
+  if (p.status === 'penalized') {
+    if (p.deadlineAt && now > new Date(p.deadlineAt)) {
+      await dbConn.update(cpcT).set({ status: 'permanent', resolvedAt: now })
+        .where(and(eq(cpcT.id, p.id), eq(cpcT.status, 'penalized')));
+      return;
+    }
+
+    const isMember = await verifyChannelMembership(parseInt(p.telegramId), p.channelId, botToken);
+    if (!isMember) return;
+
+    // Rejoined before the deadline — restore automatically. Atomic guard
+    // means this can never fire twice (e.g. poller + Return POW button racing).
+    const resolved = await dbConn.update(cpcT).set({ status: 'resolved', resolvedAt: now })
+      .where(and(eq(cpcT.id, p.id), eq(cpcT.status, 'penalized')))
+      .returning({ id: cpcT.id });
+    if (!resolved.length) return;
+
+    await dbConn.execute(sql`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${p.originalReward})::text, updated_at = NOW() WHERE id = ${p.userId}`);
+    await sendUserTelegramNotification(p.telegramId,
+      `✅ <b>POW Restored!</b>\n\n<b>${p.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
+    console.log(`✅ [Penalty] Restored ${p.originalReward} POW for ${p.userId}`);
+  }
+}
+
 // ── Channel Penalty Poller ────────────────────────────────────────────────────
 // 1. Creates "watching" cases for recent verified channel task completions
-// 2. If user left channel: deduct 2× reward, set 24-h rejoin window, send warning
-// 3. If penalized user rejoined: restore original reward, mark resolved
-// 4. If 24-h deadline passed without rejoin: mark permanent
+// 2. Advances every open case one step via processPenaltyCase (see above for
+//    the watching → suspected → penalized → resolved/permanent state machine)
 export async function checkChannelPenalties(): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN) return;
   try {
@@ -4092,47 +4204,19 @@ export async function checkChannelPenalties(): Promise<void> {
       }).onConflictDoNothing();
     }
 
-    // ── Step 2: check watching cases — detect channel leaves ──
-    const watching = await dbConn.select().from(cpcT).where(eq(cpcT.status, 'watching'));
-    for (const p of watching) {
-      if (!p.telegramId) continue;
-      const isMember = await verifyChannelMembership(parseInt(p.telegramId), p.channelId, botToken);
-      if (!isMember) {
-        const penalty = p.originalReward * 2;
-        const deadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-        await dbConn.execute(sqlFn`UPDATE users SET balance = GREATEST(CAST(balance AS BIGINT) - ${penalty}, 0)::text, updated_at = NOW() WHERE id = ${p.userId}`);
-        await dbConn.update(cpcT).set({ status: 'penalized', leftAt: now, deadlineAt: deadline, penaltyDeducted: penalty }).where(eq(cpcT.id, p.id));
-        // Send Telegram warning with inline buttons
-        const warnMsg =
-          `<tg-emoji emoji-id="4956611513369494230">⚠️</tg-emoji> <b>Unsubscribed Too Early</b>\n\n` +
-          `<tg-emoji emoji-id="5883997563639567521">😡</tg-emoji> <b>${penalty.toLocaleString()} $POW has been deducted.</b>\n\n` +
-          `<tg-emoji emoji-id="4956371914323920049">🔄</tg-emoji> Re-subscribe within <b>24 hours</b> to get your coins back.`;
-        await sendUserTelegramNotification(p.telegramId, warnMsg, {
-          inline_keyboard: [
-            [{ text: '👉 Subscribe 👈', url: p.channelLink }],
-            [{ text: '💰 Return POW', callback_data: `return_pow_${p.id}` }],
-          ]
-        });
-        console.log(`⚠️ [PenaltyPoller] ${p.userId} left ${p.channelId} — deducted ${penalty} POW`);
-      }
-    }
-
-    // ── Step 3: check penalized cases — resolve or make permanent ──
-    const penalized = await dbConn.select().from(cpcT).where(eq(cpcT.status, 'penalized'));
-    for (const p of penalized) {
-      if (!p.telegramId) continue;
-      if (p.deadlineAt && now > new Date(p.deadlineAt)) {
-        await dbConn.update(cpcT).set({ status: 'permanent', resolvedAt: now }).where(eq(cpcT.id, p.id));
-        console.log(`🔒 [PenaltyPoller] Penalty permanent for ${p.userId}`);
-        continue;
-      }
-      const isMember = await verifyChannelMembership(parseInt(p.telegramId), p.channelId, botToken);
-      if (isMember) {
-        await dbConn.execute(sqlFn`UPDATE users SET balance = (GREATEST(CAST(balance AS BIGINT), 0) + ${p.originalReward})::text, updated_at = NOW() WHERE id = ${p.userId}`);
-        await dbConn.update(cpcT).set({ status: 'resolved', resolvedAt: now }).where(eq(cpcT.id, p.id));
-        await sendUserTelegramNotification(p.telegramId,
-          `✅ <b>POW Restored!</b>\n\n<b>${p.originalReward.toLocaleString()} $POW</b> has been returned to your balance.\n\nThank you for staying subscribed! 🎉`);
-        console.log(`✅ [PenaltyPoller] Restored ${p.originalReward} POW for ${p.userId}`);
+    // ── Step 2 & 3: advance every open case one step ──
+    // "watching"/"suspected" cases get re-checked for a channel leave (with
+    // two-strike confirmation before penalizing); "penalized" cases get
+    // checked for rejoin-before-deadline or expiry. processPenaltyCase does
+    // all state transitions atomically so this is safe to run concurrently
+    // with client-triggered checks and the Telegram "Return POW" button.
+    const openCases = await dbConn.select({ id: cpcT.id }).from(cpcT)
+      .where(sqlFn`${cpcT.status} IN ('watching', 'suspected', 'penalized')`);
+    for (const c of openCases) {
+      try {
+        await processPenaltyCase(c.id, botToken);
+      } catch (e) {
+        console.warn(`⚠️ [PenaltyPoller] Failed to process case ${c.id}:`, e);
       }
     }
   } catch (err) {

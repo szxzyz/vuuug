@@ -3720,7 +3720,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Check and apply 7-day channel-leave penalties
+  // Check and apply channel-leave penalties (24-hour rejoin window)
   app.post('/api/tasks/check-channel-penalties', authenticateTelegram, async (req: any, res) => {
     try {
       const userId = req.user?.user?.id || req.session?.user?.user?.id;
@@ -3744,6 +3744,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sql`${taskClicks.clickedAt} > ${cutoff24h}`
         ));
 
+      // Delegate to the same processPenaltyCase state machine the scheduled
+      // poller uses (watching → suspected → penalized → resolved/permanent,
+      // with two-strike confirmation and atomic WHERE-status-guarded
+      // transitions). Reimplementing this logic separately here is what
+      // previously let this route and the poller race on the same case —
+      // e.g. both deducting a penalty, or one crediting a restore the other
+      // had already applied — which could surface to the user as a false
+      // "Unsubscribed" penalty or an error on the Restore button.
+      const { processPenaltyCase } = await import('./telegram');
       let penaltiesApplied = 0;
 
       for (const task of completedTasks) {
@@ -3752,63 +3761,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (m) channelId = `@${m[1]}`;
 
         try {
-          const isMember = await verifyChannelMembership(parseInt(String(telegramUserId)), channelId, botToken);
-          if (!isMember) {
+          // Ensure a case exists for this completed task (mirrors the
+          // poller's seeding step) so processPenaltyCase has something to act on.
+          const existing = await db.select({ id: channelPenaltyCases.id, status: channelPenaltyCases.status })
+            .from(channelPenaltyCases)
+            .where(and(eq(channelPenaltyCases.userId, userId), eq(channelPenaltyCases.taskId, task.taskId)))
+            .limit(1);
+
+          let caseId: string;
+          if (existing.length) {
+            caseId = existing[0].id;
+          } else {
             const originalReward = parseInt(task.rewardAmount || '0');
-            const penaltyAmount  = originalReward * 2;
-            const deadline       = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            const [inserted] = await db.insert(channelPenaltyCases).values({
+              userId, telegramId: String(telegramUserId),
+              taskId: task.taskId, channelId, channelLink: task.link || '',
+              originalReward, penaltyDeducted: 0,
+              claimedAt: task.clickedAt || new Date(), status: 'watching',
+            }).onConflictDoNothing().returning({ id: channelPenaltyCases.id });
+            if (!inserted) continue; // lost the insert race — another process already seeded it
+            caseId = inserted.id;
+          }
 
-            // Check if a penalty case already exists (avoid double-penalizing)
-            const existing = await db.select({ id: channelPenaltyCases.id, status: channelPenaltyCases.status })
-              .from(channelPenaltyCases)
-              .where(and(eq(channelPenaltyCases.userId, userId), eq(channelPenaltyCases.taskId, task.taskId)))
-              .limit(1);
-
-            if (existing.length && existing[0].status !== 'watching') {
-              // Already penalized / resolved / permanent — skip
-              continue;
-            }
-
-            await db.transaction(async (tx) => {
-              // Deduct 2× reward from balance
-              await tx.execute(sql`UPDATE users SET balance = GREATEST(balance::numeric - ${penaltyAmount}::numeric, 0), updated_at = NOW() WHERE id = ${userId}`);
-
-              if (existing.length) {
-                // Update existing watching case
-                await tx.update(channelPenaltyCases)
-                  .set({ status: 'penalized', leftAt: new Date(), deadlineAt: deadline, penaltyDeducted: penaltyAmount })
-                  .where(eq(channelPenaltyCases.id, existing[0].id));
-              } else {
-                // Create new penalty case
-                const [u] = await tx.select({ tgId: users.telegram_id }).from(users).where(eq(users.id, userId)).limit(1);
-                await tx.insert(channelPenaltyCases).values({
-                  userId, telegramId: u?.tgId || String(telegramUserId),
-                  taskId: task.taskId, channelId, channelLink: task.link || '',
-                  originalReward, penaltyDeducted: penaltyAmount,
-                  claimedAt: task.clickedAt || new Date(),
-                  leftAt: new Date(), deadlineAt: deadline, status: 'penalized',
-                }).onConflictDoNothing();
-              }
-            });
-
-            // Send warning via Telegram
-            const tgId = String(telegramUserId);
-            const [caseRow] = await db.select({ id: channelPenaltyCases.id }).from(channelPenaltyCases)
-              .where(and(eq(channelPenaltyCases.userId, userId), eq(channelPenaltyCases.taskId, task.taskId))).limit(1);
-            if (caseRow && botToken) {
-              const { sendUserTelegramNotification: sendTgNotif } = await import('./telegram');
-              const warnMsg =
-                `<tg-emoji emoji-id="4956611513369494230">⚠️</tg-emoji> <b>Unsubscribed Too Early</b>\n\n` +
-                `<tg-emoji emoji-id="5883997563639567521">😡</tg-emoji> <b>${penaltyAmount.toLocaleString()} $POW has been deducted.</b>\n\n` +
-                `<tg-emoji emoji-id="4956371914323920049">🔄</tg-emoji> Re-subscribe within <b>24 hours</b> to get your coins back.`;
-              await sendTgNotif(tgId, warnMsg, {
-                inline_keyboard: [
-                  [{ text: '👉 Subscribe 👈', url: task.link || '' }],
-                  [{ text: '💰 Return POW', callback_data: `return_pow_${caseRow.id}` }],
-                ]
-              }).catch(() => {});
-            }
-            penaltiesApplied++;
+          const statusBefore = existing.length ? existing[0].status : 'watching';
+          await processPenaltyCase(caseId, botToken);
+          if (statusBefore !== 'penalized') {
+            const [after] = await db.select({ status: channelPenaltyCases.status }).from(channelPenaltyCases)
+              .where(eq(channelPenaltyCases.id, caseId)).limit(1);
+            if (after?.status === 'penalized') penaltiesApplied++;
           }
         } catch (e) {
           console.warn(`Could not check membership for task ${task.taskId}:`, e);
