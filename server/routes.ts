@@ -6807,6 +6807,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // USDT balance to TON conversion endpoint — lets users who accidentally
+  // accumulated USDT balance convert it into TON (e.g. to fund advertiser
+  // campaigns, which are paid in TON) without needing to withdraw first.
+  app.post('/api/convert-usd-to-ton', authenticateTelegram, requireVerifiedSession, walletMutationRateLimit, async (req: any, res) => {
+    try {
+      const userId = req.session?.user?.user?.id || req.user?.user?.id;
+
+      if (!userId) {
+        console.log("⚠️ USDT→TON conversion requested without session - skipping");
+        return res.json({ success: true, skipAuth: true });
+      }
+
+      const { usdAmount } = req.body;
+
+      console.log('💱 USDT to TON conversion request:', { userId, usdAmount });
+
+      const convertAmount = parseFloat(usdAmount);
+      if (!usdAmount || isNaN(convertAmount) || convertAmount <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please enter a valid USDT amount'
+        });
+      }
+
+      // Get minimum conversion from admin settings (defaults to $0.10)
+      const minConvertSetting = await storage.getAppSetting('minimum_convert_usd_to_ton', '0.10');
+      const minimumConvertUSD = parseFloat(minConvertSetting);
+
+      if (convertAmount < minimumConvertUSD) {
+        return res.status(400).json({
+          success: false,
+          message: `Minimum $${minimumConvertUSD.toFixed(2)} USDT required for TON conversion`
+        });
+      }
+
+      // Use live market price — USDT → TON
+      const { getLiveTonPriceUSD } = await import('./tonPriceService');
+      const priceResult = await getLiveTonPriceUSD();
+      const tonUsdPrice = priceResult.price;
+      const tonAmount = convertAmount / tonUsdPrice;
+
+      console.log(`📊 [/api/convert-usd-to-ton] Live rate: 1 TON = $${tonUsdPrice.toFixed(4)} | source: ${priceResult.source}`);
+
+      // Use transaction to ensure atomicity
+      const result = await db.transaction(async (tx) => {
+        const [user] = await tx
+          .select({
+            usdBalance: users.usdBalance,
+            tonBalance: users.tonBalance,
+          })
+          .from(users)
+          .where(eq(users.id, userId))
+          .for('update');
+
+        if (!user) {
+          throw new Error('User not found');
+        }
+
+        const currentUsdBalance = parseFloat(user.usdBalance || '0');
+        const currentTonBalance = parseFloat(user.tonBalance || '0');
+
+        if (currentUsdBalance < convertAmount) {
+          throw new Error('Insufficient USDT balance');
+        }
+
+        const newUsdBalance = currentUsdBalance - convertAmount;
+        const newTonBalance = currentTonBalance + tonAmount;
+
+        await tx
+          .update(users)
+          .set({
+            usdBalance: newUsdBalance.toFixed(10),
+            tonBalance: newTonBalance.toFixed(10),
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, userId));
+
+        // Log the conversion as a transaction record
+        await tx.insert(transactions).values({
+          userId,
+          amount: String(-convertAmount),
+          type: 'debit',
+          source: 'convert',
+          description: `Swapped $${convertAmount.toFixed(4)} USDT to ${tonAmount.toFixed(6)} TON`,
+        });
+
+        console.log(`✅ USDT to TON conversion successful: $${convertAmount} USDT → ${tonAmount.toFixed(6)} TON`);
+
+        return {
+          usdAmount: convertAmount,
+          tonAmount,
+          newUsdBalance,
+          newTonBalance
+        };
+      });
+
+      sendRealtimeUpdate(userId, {
+        type: 'balance_update',
+        usdBalance: result.newUsdBalance.toFixed(10),
+        tonBalance: result.newTonBalance.toFixed(10)
+      });
+
+      res.json({
+        success: true,
+        message: 'Swap to TON successful!',
+        ...result
+      });
+
+    } catch (error) {
+      console.error('❌ Error converting USDT to TON:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to convert';
+
+      res.status(errorMessage === 'Insufficient USDT balance' ? 400 : 500).json({
+        success: false,
+        message: errorMessage
+      });
+    }
+  });
+
   // Setup USDT wallet (Optimism network only)
   app.post('/api/wallet/usdt', authenticateTelegram, requireVerifiedSession, walletMutationRateLimit, async (req: any, res) => {
     try {
