@@ -242,6 +242,14 @@ app.use((req, res, next) => {
       console.error('❌ Error starting ambassador scheduler:', error);
     }
 
+    // Database backup scheduler — daily automatic backup at 03:00 UTC, last 7 kept
+    try {
+      const { startBackupScheduler } = await import('./backup');
+      startBackupScheduler();
+    } catch (error) {
+      console.error('❌ Error starting backup scheduler:', error);
+    }
+
     // TON pending deposit poller — retries unconfirmed deposits every 2 minutes
     try {
       const { startTonDepositPoller } = await import('./telegram');

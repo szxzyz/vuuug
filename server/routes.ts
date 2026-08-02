@@ -47,6 +47,7 @@ import {
 import { isAuthenticated } from "./replitAuth";
 import { computeRiskScore, analyzeAdBehavior, checkRateLimit, checkKnownBotSignature } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
+import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupPath } from "./backup";
 
 // Store WebSocket connections for real-time updates
 // Map: sessionId -> { socket: WebSocket, userId: string }
@@ -5372,6 +5373,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/admin/users/:id — fetch a single user in the same shape as the
+  // list endpoint above, so any admin-panel list that references a user by
+  // id (e.g. clicking a referral in the Friends tab) can open their profile.
+  app.get('/api/admin/users/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const result = await db.execute(sql`
+        SELECT
+          u.id, u.telegram_id, u.username, u.first_name, u.last_name,
+          u.balance, u.usd_balance, u.ton_balance, u.total_earned, u.friends_invited,
+          u.referral_code, u.personal_code, u.cwallet_id, u.usdt_wallet_address,
+          u.telegram_stars_username, u.referred_by,
+          u.banned, u.banned_reason, u.banned_at,
+          u.ads_watched, u.ads_watched_today, u.daily_ads_watched,
+          u.monetag_ads_watched_today, u.gigapub_ads_watched_today, u.last_ad_watch,
+          u.platform, u.created_at, u.last_login_at
+        FROM users u
+        WHERE u.id = ${id}
+        LIMIT 1
+      `);
+
+      const u = (result.rows as any[])[0];
+      if (!u) return res.status(404).json({ success: false, message: 'User not found' });
+
+      res.json({
+        success: true,
+        user: {
+          id: u.id,
+          telegramId: u.telegram_id,
+          telegram_id: u.telegram_id,
+          username: u.username,
+          firstName: u.first_name,
+          lastName: u.last_name,
+          balance: u.balance?.toString() || '0',
+          usdBalance: u.usd_balance?.toString() || '0',
+          tonBalance: u.ton_balance?.toString() || '0',
+          totalEarned: u.total_earned?.toString() || '0',
+          friendsInvited: u.friends_invited || 0,
+          referralCode: u.referral_code,
+          personalCode: u.personal_code,
+          cwalletId: u.cwallet_id,
+          usdtWalletAddress: u.usdt_wallet_address,
+          telegramStarsUsername: u.telegram_stars_username,
+          referrerUid: u.referred_by,
+          banned: u.banned || false,
+          bannedReason: u.banned_reason,
+          bannedAt: u.banned_at,
+          adsWatched: u.ads_watched || 0,
+          adsWatchedToday: u.ads_watched_today || 0,
+          dailyAdsWatched: u.daily_ads_watched || 0,
+          monetagAdsWatchedToday: u.monetag_ads_watched_today || 0,
+          gigapubAdsWatchedToday: u.gigapub_ads_watched_today || 0,
+          lastAdWatch: u.last_ad_watch,
+          platform: u.platform || null,
+          createdAt: u.created_at,
+          lastLoginAt: u.last_login_at,
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error fetching admin user:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch user' });
+    }
+  });
+
   // Admin banned users endpoint
   app.get('/api/admin/banned-users', authenticateAdmin, async (req: any, res) => {
     try {
@@ -5873,6 +5938,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============ End Admin Task Management ============
+
+  // ============ Admin Database Backups ============
+
+  // GET /api/admin/backups — list available backups
+  app.get('/api/admin/backups', authenticateAdmin, async (req: any, res) => {
+    try {
+      const backups = await listBackups();
+      res.json({ success: true, backups });
+    } catch (error) {
+      console.error('❌ Error listing backups:', error);
+      res.status(500).json({ success: false, message: 'Failed to list backups' });
+    }
+  });
+
+  // POST /api/admin/backups — create a manual backup now
+  app.post('/api/admin/backups', authenticateAdmin, async (req: any, res) => {
+    try {
+      const backup = await createBackup('manual');
+      console.log(`🗄️ Manual backup created by admin: ${backup.filename} (${backup.sizeHuman})`);
+      res.json({ success: true, backup });
+    } catch (error) {
+      console.error('❌ Error creating backup:', error);
+      res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to create backup' });
+    }
+  });
+
+  // GET /api/admin/backups/:filename/download — download a backup file
+  app.get('/api/admin/backups/:filename/download', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { filename } = req.params;
+      const filePath = getBackupPath(filename);
+      res.download(filePath, filename, (err) => {
+        if (err && !res.headersSent) {
+          console.error('❌ Error downloading backup:', err);
+          res.status(404).json({ success: false, message: 'Backup file not found' });
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error downloading backup:', error);
+      res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'Invalid backup file' });
+    }
+  });
+
+  // POST /api/admin/backups/:filename/restore — restore the database from a backup
+  app.post('/api/admin/backups/:filename/restore', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { filename } = req.params;
+      const result = await restoreBackup(filename);
+      console.log(`♻️ Database restored from ${filename} by admin — ${result.tablesRestored} tables, ${result.rowsRestored} rows`);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error('❌ Error restoring backup:', error);
+      res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to restore backup' });
+    }
+  });
+
+  // DELETE /api/admin/backups/:filename — delete a backup
+  app.delete('/api/admin/backups/:filename', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { filename } = req.params;
+      await deleteBackup(filename);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('❌ Error deleting backup:', error);
+      res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'Failed to delete backup' });
+    }
+  });
+
+  // ============ End Admin Database Backups ============
 
   // Database setup endpoint for free plan deployments (call once after deployment)
   app.post('/api/setup-database', authenticateAdmin, async (req: any, res) => {
@@ -11516,14 +11650,14 @@ ${walletAddress}
       const { action, currency, amount, reason } = req.body;
 
       if (!['add', 'deduct', 'set'].includes(action)) return res.status(400).json({ error: 'Invalid action. Use add|deduct|set' });
-      if (!['pow', 'usd'].includes(currency)) return res.status(400).json({ error: 'Invalid currency. Use pow|usd' });
+      if (!['pow', 'usd', 'ton'].includes(currency)) return res.status(400).json({ error: 'Invalid currency. Use pow|usd|ton' });
       const amt = parseFloat(amount);
       if (isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Invalid amount' });
 
       const targetUser = await storage.getUser(id);
       if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
-      let fieldKey = currency === 'pow' ? 'balance' : 'usdBalance';
+      let fieldKey = currency === 'pow' ? 'balance' : currency === 'usd' ? 'usdBalance' : 'tonBalance';
       const current = parseFloat((targetUser as any)[fieldKey]?.toString() || '0');
 
       let newVal: number;
@@ -12083,18 +12217,72 @@ ${walletAddress}
           id: taskClicks.id,
           title: advertiserTasks.title,
           taskType: advertiserTasks.taskType,
-          completedAt: taskClicks.completedAt,
+          completedAt: taskClicks.clickedAt,
           reward: taskClicks.rewardAmount,
         })
         .from(taskClicks)
         .leftJoin(advertiserTasks, eq(taskClicks.taskId, advertiserTasks.id))
         .where(eq(taskClicks.publisherId, id))
-        .orderBy(desc(taskClicks.completedAt))
+        .orderBy(desc(taskClicks.clickedAt))
         .limit(200);
       res.json({ success: true, tasks: completedTasks });
     } catch (error) {
       console.error('❌ Error fetching user completed tasks:', error);
       res.status(500).json({ success: false, message: 'Failed to fetch completed tasks' });
+    }
+  });
+
+  // Ad-watching stats for a user (admin) — the frontend's Ads tab was calling
+  // this endpoint, but it never existed on the backend, so the tab always
+  // fell back to partial data from the users-list row.
+  app.get('/api/admin/user-ads/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const targetUser = await storage.getUser(id);
+      if (!targetUser) return res.status(404).json({ success: false, message: 'User not found' });
+
+      // Ads watched since the user's last completed withdrawal (mirrors the
+      // same calculation used for withdrawal eligibility).
+      const lastWithdrawal = await db
+        .select({ createdAt: withdrawals.createdAt })
+        .from(withdrawals)
+        .where(and(
+          eq(withdrawals.userId, id),
+          sql`LOWER(CAST(${withdrawals.status} AS TEXT)) IN ('completed', 'approved')`
+        ))
+        .orderBy(desc(withdrawals.createdAt))
+        .limit(1);
+
+      let adsWatchedSinceLastWithdrawal: number;
+      if (lastWithdrawal.length === 0) {
+        adsWatchedSinceLastWithdrawal = (targetUser as any).adsWatched || 0;
+      } else {
+        const adsCountResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(earnings)
+          .where(and(
+            eq(earnings.userId, id),
+            eq(earnings.source, 'ad_watch'),
+            gte(earnings.createdAt, lastWithdrawal[0].createdAt as Date)
+          ));
+        adsWatchedSinceLastWithdrawal = Number(adsCountResult[0]?.count || 0);
+      }
+
+      res.json({
+        success: true,
+        ads: {
+          adsWatched: (targetUser as any).adsWatched || 0,
+          adsWatchedToday: (targetUser as any).adsWatchedToday || 0,
+          dailyAdsWatched: (targetUser as any).dailyAdsWatched || 0,
+          monetagAdsWatchedToday: (targetUser as any).monetagAdsWatchedToday || 0,
+          gigapubAdsWatchedToday: (targetUser as any).gigapubAdsWatchedToday || 0,
+          adsWatchedSinceLastWithdrawal,
+          lastAdWatch: (targetUser as any).lastAdWatch || null,
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error fetching user ad stats:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch ad stats' });
     }
   });
 
