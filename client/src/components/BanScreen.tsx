@@ -27,7 +27,7 @@ export default function BanScreen({ reason }: BanScreenProps) {
   const t = getTranslation;
 
   const handleContactSupport = () => {
-    window.open('https://t.me/szxzyz', '_blank');
+    window.open('https://t.me/PaidAdsSupportbot', '_blank');
   };
 
   const handleSelfUnban = async () => {
