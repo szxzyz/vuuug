@@ -2438,6 +2438,8 @@ function SettingsSection() {
     minimumAdsForWithdrawal: '100',
     withdrawalInviteRequirementEnabled: true,
     minimumInvitesForWithdrawal: '3',
+    withdrawalTaskRequirementEnabled: true,
+    minimumTasksForWithdrawal: '10',
     // Daily task rewards
     streakReward: '100',
     shareTaskReward: '1000',
@@ -2496,6 +2498,8 @@ function SettingsSection() {
         minimumAdsForWithdrawal: settingsData.minimumAdsForWithdrawal?.toString() || '100',
         withdrawalInviteRequirementEnabled: settingsData.withdrawalInviteRequirementEnabled !== false,
         minimumInvitesForWithdrawal: settingsData.minimumInvitesForWithdrawal?.toString() || '3',
+        withdrawalTaskRequirementEnabled: settingsData.withdrawalTaskRequirementEnabled !== false,
+        minimumTasksForWithdrawal: settingsData.minimumTasksForWithdrawal?.toString() || '10',
         // Daily task rewards
         streakReward: settingsData.streakReward?.toString() || '100',
         shareTaskReward: settingsData.shareTaskReward?.toString() || '1000',
@@ -2620,6 +2624,8 @@ function SettingsSection() {
         minimumAdsForWithdrawal: parseInt(settings.minimumAdsForWithdrawal) || 100,
         withdrawalInviteRequirementEnabled: settings.withdrawalInviteRequirementEnabled,
         minimumInvitesForWithdrawal: parseInt(settings.minimumInvitesForWithdrawal) || 3,
+        withdrawalTaskRequirementEnabled: settings.withdrawalTaskRequirementEnabled,
+        minimumTasksForWithdrawal: parseInt(settings.minimumTasksForWithdrawal) || 10,
         streakReward: parseInt(settings.streakReward) || 100,
         shareTaskReward: parseInt(settings.shareTaskReward) || 1000,
         communityTaskReward: parseInt(settings.communityTaskReward) || 1000,
@@ -3151,6 +3157,48 @@ function SettingsSection() {
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   Current: {settingsData?.minimumInvitesForWithdrawal || 3} valid invites (friends who watched 1+ ads)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 p-3 border rounded-lg bg-purple-50/5 border-purple-500/20 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">
+                  <i className="fas fa-clipboard-check mr-2 text-purple-500"></i>
+                  Withdrawal Task Requirement
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setSettings({ ...settings, withdrawalTaskRequirementEnabled: !settings.withdrawalTaskRequirementEnabled })}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    settings.withdrawalTaskRequirementEnabled ? 'bg-purple-500' : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                      settings.withdrawalTaskRequirementEnabled ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {settings.withdrawalTaskRequirementEnabled 
+                  ? 'Users must complete a minimum number of advertiser tasks before withdrawing' 
+                  : 'Task requirement disabled - users can withdraw without completing tasks'}
+              </p>
+              <div className="mt-2">
+                <Label className="text-xs">Minimum Tasks Required</Label>
+                <Input
+                  type="number"
+                  value={settings.minimumTasksForWithdrawal}
+                  onChange={(e) => setSettings({ ...settings, minimumTasksForWithdrawal: e.target.value })}
+                  placeholder="10"
+                  min="0"
+                  disabled={!settings.withdrawalTaskRequirementEnabled}
+                  className={`h-8 mt-1 ${!settings.withdrawalTaskRequirementEnabled ? 'opacity-50' : ''}`}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Current: {settingsData?.minimumTasksForWithdrawal || 10} tasks (lifetime total, does not reset)
                 </p>
               </div>
             </div>

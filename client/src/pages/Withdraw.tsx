@@ -93,12 +93,14 @@ export default function Withdraw() {
   const MINIMUM_ADS_FOR_WITHDRAWAL = appSettings?.minimumAdsForWithdrawal ?? 100;
   const withdrawalInviteRequirementEnabled = appSettings?.withdrawalInviteRequirementEnabled === true;
   const MINIMUM_VALID_REFERRALS_REQUIRED = appSettings?.minimumInvitesForWithdrawal ?? 3;
+  const withdrawalTaskRequirementEnabled = appSettings?.withdrawalTaskRequirementEnabled === true;
+  const MINIMUM_TASKS_FOR_WITHDRAWAL = appSettings?.minimumTasksForWithdrawal ?? 10;
 
   const minWithdraw: number = parseFloat(appSettings?.minimumWithdrawAmount ?? '0.20');
   const maxWithdraw: number = parseFloat(appSettings?.maximumWithdrawAmount ?? '0.50');
   const maxWithdrawalsPerDay: number = appSettings?.maxWithdrawalsPerDay ?? 1;
 
-  const { data: withdrawalEligibility, isLoading: isLoadingEligibility, isFetched: isEligibilityFetched } = useQuery<{ adsWatchedSinceLastWithdrawal: number; canWithdraw: boolean }>({
+  const { data: withdrawalEligibility, isLoading: isLoadingEligibility, isFetched: isEligibilityFetched } = useQuery<{ adsWatchedSinceLastWithdrawal: number; canWithdraw: boolean; tasksCompleted?: number }>({
     queryKey: ['/api/withdrawal-eligibility'],
     retry: false,
     staleTime: 60000,
@@ -108,13 +110,16 @@ export default function Withdraw() {
   });
 
   const adsWatchedSinceLastWithdrawal = withdrawalEligibility?.adsWatchedSinceLastWithdrawal ?? (user as any)?.adsWatchedSinceLastWithdrawal ?? 0;
+  const tasksCompleted = withdrawalEligibility?.tasksCompleted ?? 0;
 
   const isLoadingAdRequirement = withdrawalAdRequirementEnabled && (!isEligibilityFetched || isLoadingEligibility);
+  const isLoadingTaskRequirement = withdrawalTaskRequirementEnabled && (!isEligibilityFetched || isLoadingEligibility);
   const isLoadingInviteRequirement = withdrawalInviteRequirementEnabled && (!isReferralsFetched || isLoadingReferrals);
-  const isLoadingRequirements = isLoadingAdRequirement || isLoadingInviteRequirement;
+  const isLoadingRequirements = isLoadingAdRequirement || isLoadingInviteRequirement || isLoadingTaskRequirement;
 
   const hasWatchedEnoughAds = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
   const hasEnoughReferrals = !withdrawalInviteRequirementEnabled || validReferralCount >= MINIMUM_VALID_REFERRALS_REQUIRED;
+  const hasCompletedEnoughTasks = !withdrawalTaskRequirementEnabled || tasksCompleted >= MINIMUM_TASKS_FOR_WITHDRAWAL;
 
   const withdrawalsData = withdrawalsResponse?.withdrawals || [];
   const hasPendingWithdrawal = withdrawalsData.some(w => w.status === 'pending');
@@ -192,6 +197,10 @@ export default function Withdraw() {
       showNotification(`${t('watch')} ${remaining} ${t('ads_count')}`, 'error');
       return;
     }
+    if (!hasCompletedEnoughTasks) {
+      showNotification(`You must complete at least ${MINIMUM_TASKS_FOR_WITHDRAWAL} tasks before making a withdrawal.`, 'error');
+      return;
+    }
     if (hasPendingWithdrawal) {
       showNotification(t('pending_withdrawal_warning'), 'error');
       return;
@@ -265,7 +274,7 @@ export default function Withdraw() {
     if (parsedAmount < minWithdraw) return `${t('minimum')} $${minWithdraw.toFixed(2)}`;
     if (parsedAmount > maxWithdraw) return `Maximum $${maxWithdraw.toFixed(2)}`;
     if (parsedAmount > usdBalance) return t('insufficient_balance');
-    if (!hasEnoughReferrals || !hasWatchedEnoughAds) return t('requirements_not_met');
+    if (!hasEnoughReferrals || !hasWatchedEnoughAds || !hasCompletedEnoughTasks) return t('requirements_not_met');
     return `${t('withdraw')} $${parsedAmount.toFixed(2)} ${t('via')} ${selectedMethod}`;
   };
 
@@ -275,7 +284,8 @@ export default function Withdraw() {
     hasDailyLimitReached ||
     !amountIsValid ||
     !hasEnoughReferrals ||
-    !hasWatchedEnoughAds;
+    !hasWatchedEnoughAds ||
+    !hasCompletedEnoughTasks;
 
   const selectedPaymentSystem = paymentSystems.find(s => s.id === selectedMethod);
   const feePercent = selectedPaymentSystem?.fee ?? 5;
@@ -448,6 +458,34 @@ export default function Withdraw() {
                             style={{ width: `${Math.min(100, (adsWatchedSinceLastWithdrawal / MINIMUM_ADS_FOR_WITHDRAWAL) * 100)}%` }}
                           />
                         </div>
+                      </div>
+                    )}
+
+                    {withdrawalTaskRequirementEnabled && (
+                      <div className="space-y-1.5">
+                        <div className={`flex items-center justify-between text-xs ${hasCompletedEnoughTasks ? 'text-green-400' : 'text-orange-400'}`}>
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                            <span className="font-semibold">
+                              {tasksCompleted}/{MINIMUM_TASKS_FOR_WITHDRAWAL} tasks completed
+                            </span>
+                          </div>
+                          {hasCompletedEnoughTasks
+                            ? <Check className="w-3.5 h-3.5" />
+                            : <span className="text-gray-400">{MINIMUM_TASKS_FOR_WITHDRAWAL - tasksCompleted} more to go</span>
+                          }
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${hasCompletedEnoughTasks ? 'bg-green-400' : 'bg-orange-400'}`}
+                            style={{ width: `${Math.min(100, (tasksCompleted / MINIMUM_TASKS_FOR_WITHDRAWAL) * 100)}%` }}
+                          />
+                        </div>
+                        {!hasCompletedEnoughTasks && (
+                          <p className="text-[11px] text-red-400 leading-relaxed">
+                            You must complete at least {MINIMUM_TASKS_FOR_WITHDRAWAL} tasks before making a withdrawal.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
