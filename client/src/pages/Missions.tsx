@@ -356,7 +356,7 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
         {task.taskType === 'channel' && task.verificationRequired && (
           <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ fontSize: 9 }}>⚠️</span>
-            <span style={{ color: 'rgba(251,191,36,0.65)', fontSize: 10, fontWeight: 600 }}>7-day penalty applies</span>
+            <span style={{ color: 'rgba(251,191,36,0.65)', fontSize: 10, fontWeight: 600 }}>24-hour penalty window applies</span>
           </div>
         )}
       </div>
