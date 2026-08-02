@@ -8,15 +8,26 @@ import { useLanguage } from "@/hooks/useLanguage";
 
 const BLUE_ACCENT = "#4cd3ff";
 
+/** Returns true only for public t.me/username links the avatar proxy can resolve. */
+function hasTelegramAvatar(link: string): boolean {
+  if (!link) return false;
+  const m = link.match(/t\.me\/([^/?]+)/);
+  if (!m) return false;
+  const seg = m[1];
+  // Invite-hash links (+hash) and joinchat paths have no public username.
+  return !seg.startsWith('+') && seg !== 'joinchat';
+}
+
 function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
-  const [imgOk, setImgOk] = useState(true);
+  const canFetch = hasTelegramAvatar(task.link);
+  const [imgOk, setImgOk] = useState(canFetch);
   const [loaded, setLoaded] = useState(false);
-  const src = `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}`;
+  const src = canFetch ? `/api/advertiser-tasks/avatar?link=${encodeURIComponent(task.link)}` : '';
 
   // Reset load state whenever the underlying task/link changes — otherwise a
   // failed load for one task permanently hides the image for every task after it.
   useEffect(() => {
-    setImgOk(true);
+    setImgOk(hasTelegramAvatar(task.link));
     setLoaded(false);
   }, [task.link]);
 
