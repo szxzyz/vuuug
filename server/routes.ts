@@ -1664,6 +1664,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const minimumAdsForWithdrawal = parseInt(getSetting('minimum_ads_for_withdrawal', '100'));
       const withdrawalInviteRequirementEnabled = getSetting('withdrawal_invite_requirement_enabled', 'true') === 'true';
       const minimumInvitesForWithdrawal = parseInt(getSetting('minimum_invites_for_withdrawal', '3'));
+      const withdrawalTaskRequirementEnabled = getSetting('withdrawal_task_requirement_enabled', 'true') === 'true';
+      const minimumTasksForWithdrawal = parseInt(getSetting('minimum_tasks_for_withdrawal', '10'));
       
       // BUG currency settings
       const minimumConvertPadToTon = parseInt(getSetting('minimum_convert_pad_to_ton', '10000'));
@@ -1742,6 +1744,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumAdsForWithdrawal,
         withdrawalInviteRequirementEnabled,
         minimumInvitesForWithdrawal,
+        withdrawalTaskRequirementEnabled,
+        minimumTasksForWithdrawal,
         // BUG currency settings
         minimumConvertPadToTon,
         padToTonRate,
@@ -2982,13 +2986,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adsWatchedSinceLastWithdrawal = adsCountResult[0]?.count || 0;
       }
       
-      const canWithdraw = !withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL;
+      // Task-completion requirement — lifetime count of advertiser tasks completed
+      const withdrawalTaskRequirementEnabled = getSetting('withdrawal_task_requirement_enabled', 'true') === 'true';
+      const MINIMUM_TASKS_FOR_WITHDRAWAL = parseInt(getSetting('minimum_tasks_for_withdrawal', '10'));
+      const tasksCompletedResult = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(taskClicks)
+        .where(eq(taskClicks.publisherId, userId));
+      const tasksCompleted = tasksCompletedResult[0]?.count || 0;
+      
+      const canWithdraw =
+        (!withdrawalAdRequirementEnabled || adsWatchedSinceLastWithdrawal >= MINIMUM_ADS_FOR_WITHDRAWAL) &&
+        (!withdrawalTaskRequirementEnabled || tasksCompleted >= MINIMUM_TASKS_FOR_WITHDRAWAL);
       
       res.json({ 
         adsWatchedSinceLastWithdrawal,
         canWithdraw,
         requiredAds: MINIMUM_ADS_FOR_WITHDRAWAL,
-        adRequirementEnabled: withdrawalAdRequirementEnabled
+        adRequirementEnabled: withdrawalAdRequirementEnabled,
+        tasksCompleted,
+        requiredTasks: MINIMUM_TASKS_FOR_WITHDRAWAL,
+        taskRequirementEnabled: withdrawalTaskRequirementEnabled
       });
     } catch (error) {
       console.error("Error checking withdrawal eligibility:", error);
@@ -4644,6 +4662,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minimumAdsForWithdrawal: parseInt(getSetting('minimum_ads_for_withdrawal', '100')),
         withdrawalInviteRequirementEnabled: getSetting('withdrawal_invite_requirement_enabled', 'true') === 'true',
         minimumInvitesForWithdrawal: parseInt(getSetting('minimum_invites_for_withdrawal', '3')),
+        withdrawalTaskRequirementEnabled: getSetting('withdrawal_task_requirement_enabled', 'true') === 'true',
+        minimumTasksForWithdrawal: parseInt(getSetting('minimum_tasks_for_withdrawal', '10')),
         // Withdrawal packages
         withdrawalPackages: JSON.parse(getSetting('withdrawal_packages', '[{"usd":0.2,"bug":2000},{"usd":0.4,"bug":4000},{"usd":0.8,"bug":8000}]')),
         // Legacy fields for backwards compatibility
@@ -8734,6 +8754,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
 
+        // ✅ Check if user has completed enough tasks (based on admin settings)
+        const [taskRequirementEnabledSetting] = await tx
+          .select({ settingValue: adminSettings.settingValue })
+          .from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'withdrawal_task_requirement_enabled'))
+          .limit(1);
+        const withdrawalTaskRequirementEnabled = (taskRequirementEnabledSetting?.settingValue || 'true') === 'true';
+
+        const [minimumTasksSetting] = await tx
+          .select({ settingValue: adminSettings.settingValue })
+          .from(adminSettings)
+          .where(eq(adminSettings.settingKey, 'minimum_tasks_for_withdrawal'))
+          .limit(1);
+        const minimumTasksForWithdrawal = parseInt(minimumTasksSetting?.settingValue || '10');
+
+        // Only check task requirement if it's enabled in admin settings
+        if (withdrawalTaskRequirementEnabled) {
+          const tasksCompletedResult = await tx
+            .select({ count: sql<number>`count(*)` })
+            .from(taskClicks)
+            .where(eq(taskClicks.publisherId, userId));
+          const tasksCompleted = tasksCompletedResult[0]?.count || 0;
+
+          if (tasksCompleted < minimumTasksForWithdrawal) {
+            throw new Error(`You must complete at least ${minimumTasksForWithdrawal} tasks before making a withdrawal.`);
+          }
+        }
+
         // ✅ Get withdrawal packages from admin settings
         const [withdrawalPackagesSetting] = await tx
           .select({ settingValue: adminSettings.settingValue })
@@ -9072,7 +9120,9 @@ ${walletAddress}
         errorMessage.includes('Cannot create new request') ||
         errorMessage.includes('Star package') ||
         errorMessage.includes('Invalid') ||
-        errorMessage.includes('banned');
+        errorMessage.includes('banned') ||
+        errorMessage.includes('complete at least') ||
+        errorMessage.includes('more ad');
       
       if (isValidationError) {
         return res.status(400).json({ 
