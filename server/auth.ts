@@ -14,10 +14,10 @@ import {
   createBanLog,
   type DeviceInfo 
 } from "./deviceTracking";
-import { computeRiskScore, persistRiskScore, checkRateLimit } from "./fraudDetection";
+import { computeRiskScore, persistRiskScore, checkRateLimit, checkKnownBotSignature } from "./fraudDetection";
 import { users } from "../shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 // Helper to extract client IP from request
 function getClientIP(req: any): string {
@@ -143,7 +143,44 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
         userAgent,
       };
     }
-    
+
+    // ── Known-bot signature — hard block, checked before EVERYTHING else ────
+    // Placed here (not further down) so it can never be skipped by the
+    // session-reuse shortcut, the dev-mode bypass, or the "same device,
+    // different account → redirect to primary" logic below, all of which
+    // return/next() early and would otherwise let a matching request through
+    // without ever reaching the risk-scoring block.
+    {
+      const knownBot = checkKnownBotSignature(deviceInfo?.deviceId, deviceInfo?.fingerprint);
+      if (knownBot.isKnownBot) {
+        console.log(`🚫 Blocked at auth entry — known bot signature: ${knownBot.label} (deviceId=${deviceInfo?.deviceId})`);
+        // Fire-and-forget: ban every existing account already using this
+        // device/fingerprint, not just whichever one is logging in right now.
+        setImmediate(async () => {
+          try {
+            await db.execute(sql`
+              UPDATE users SET
+                banned = true,
+                banned_reason = ${`Known bot signature: ${knownBot.label}`},
+                banned_at = NOW(),
+                suspicion_score = 100,
+                flagged = true,
+                flag_reason = 'Known bot signature match (auth entry block)',
+                updated_at = NOW()
+              WHERE device_id = ${deviceInfo?.deviceId}
+            `);
+          } catch (e) {
+            console.error('⚠️ Failed to ban known-bot device on auth entry:', e);
+          }
+        });
+        return res.status(403).json({
+          banned: true,
+          message: "Your account has been banned due to suspicious multi-account activity",
+          reason: "Automated access detected",
+        });
+      }
+    }
+
     // Check for existing session first (before requiring Telegram data)
     if (!telegramData && req.session?.user?.user?.id) {
       console.log('🔄 Using existing session for user:', req.session.user.user.id);
