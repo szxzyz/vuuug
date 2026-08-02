@@ -10,6 +10,7 @@ import {
 import { showNotification } from "@/components/AppNotification";
 import { useLocation } from "wouter";
 import TopUpPopup from "@/components/TopUpPopup";
+import SwapUsdtToTonPopup from "@/components/SwapUsdtToTonPopup";
 import { useLanguage } from "@/hooks/useLanguage";
 
 // ─── Pricing ───────────────────────────────────────────────────
@@ -64,6 +65,8 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
   const [chError,      setChError]      = useState("");
   const [advTab,       setAdvTab]       = useState<"add" | "mine">("add");
   const [topUpOpen,    setTopUpOpen]    = useState(false);
+  const [addTonMenuOpen, setAddTonMenuOpen] = useState(false);
+  const [swapUsdtOpen,   setSwapUsdtOpen]   = useState(false);
   const [addClicksTaskId, setAddClicksTaskId] = useState<string | null>(null);
   const [addClicksValue,  setAddClicksValue]  = useState("500");
 
@@ -73,6 +76,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
   });
   const tonBalance   = parseFloat(authUser?.tonBalance || "0");
   const tonFormatted = tonBalance >= 1000 ? (tonBalance / 1000).toFixed(1) + "k" : tonBalance.toFixed(2);
+  const usdBalance   = parseFloat(authUser?.usdBalance || "0");
 
   const isVerif     = verifyType === "verification";
   const pkgData     = PACKAGES.find(p => p.clicks === selectedPkg);
@@ -102,6 +106,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
     setTaskName(""); setChannelLink(""); setBotUser(""); setBotStart("");
     setSelectedPkg(null); setChState("idle"); setChError("");
     setAdvTab("add"); setTopUpOpen(false); setAddClicksTaskId(null); setAddClicksValue("500");
+    setAddTonMenuOpen(false); setSwapUsdtOpen(false);
   }, [setFlowWithNotify]);
 
   const handleClose = useCallback(() => {
@@ -614,7 +619,7 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
                       <img src="/images/ton.png" alt="TON" style={{ width: 20, height: 20, objectFit: "cover", borderRadius: "50%", flexShrink: 0 }} />
                       <span style={{ color: "#fff", fontSize: 13, fontWeight: 800, letterSpacing: "0.01em", whiteSpace: "nowrap" }}>{tonFormatted}</span>
                       <motion.button
-                        onClick={() => setTopUpOpen(true)}
+                        onClick={() => setAddTonMenuOpen(true)}
                         whileTap={{ scale: 0.82 }}
                         transition={{ type: "spring", stiffness: 400, damping: 17 }}
                         style={{
@@ -678,6 +683,76 @@ export default function CreatePanel({ open, onClose, onFlowChange }: Props) {
               )}
 
               <TopUpPopup open={topUpOpen} onOpenChange={setTopUpOpen} />
+              <SwapUsdtToTonPopup open={swapUsdtOpen} onOpenChange={setSwapUsdtOpen} usdBalance={usdBalance} />
+
+              {/* ── Add TON choice menu (Deposit vs Swap USDT → TON) ── */}
+              <AnimatePresence>
+                {addTonMenuOpen && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="fixed inset-0 z-[290]"
+                      style={{ background: "rgba(0,0,0,0.6)" }}
+                      onClick={() => setAddTonMenuOpen(false)}
+                    />
+                    <motion.div
+                      initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                      transition={{ type: "spring", damping: 32, stiffness: 340 }}
+                      className="fixed inset-x-0 bottom-0 z-[291]"
+                      style={{
+                        background: "#111114",
+                        borderTop: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: "20px 20px 0 0",
+                        padding: "14px 16px 32px",
+                        maxWidth: 480, margin: "0 auto",
+                      }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div style={{ width: 32, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.2)", margin: "0 auto 16px" }} />
+                      <p style={{ color: "#fff", fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Add TON</p>
+
+                      <button
+                        onClick={() => { setAddTonMenuOpen(false); setTopUpOpen(true); }}
+                        className="w-full flex items-center gap-3 active:scale-[0.98] transition-transform"
+                        style={{
+                          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: 14, padding: "13px 14px", marginBottom: 10, cursor: "pointer",
+                        }}
+                      >
+                        <img src="/images/ton.png" alt="TON" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover" }} />
+                        <div style={{ textAlign: "left" }}>
+                          <p style={{ color: "#fff", fontSize: 13.5, fontWeight: 700 }}>Deposit TON</p>
+                          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 11.5, marginTop: 1 }}>Send TON from your wallet</p>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => { setAddTonMenuOpen(false); setSwapUsdtOpen(true); }}
+                        disabled={usdBalance <= 0}
+                        className="w-full flex items-center gap-3 active:scale-[0.98] transition-transform"
+                        style={{
+                          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: 14, padding: "13px 14px",
+                          cursor: usdBalance > 0 ? "pointer" : "not-allowed",
+                          opacity: usdBalance > 0 ? 1 : 0.45,
+                        }}
+                      >
+                        <span style={{
+                          width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+                          background: "rgba(76,211,255,0.14)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+                        }}>💵</span>
+                        <div style={{ textAlign: "left" }}>
+                          <p style={{ color: "#fff", fontSize: 13.5, fontWeight: 700 }}>Swap USDT → TON</p>
+                          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 11.5, marginTop: 1 }}>
+                            Convert your ${usdBalance.toFixed(2)} USDT balance
+                          </p>
+                        </div>
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
 
             </motion.div>
           </>
