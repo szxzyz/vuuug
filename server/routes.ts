@@ -72,6 +72,91 @@ const AVATAR_NEGATIVE_TTL = 5 * 60 * 1000; // 5 minutes
 // once) into a single Telegram round-trip instead of one per task.
 const _avatarInFlight = new Map<string, Promise<{ buf: Buffer; contentType: string } | null>>();
 
+const AVATAR_TG_TIMEOUT = 6_000; // 6s per external call — fail fast instead of hanging the request.
+
+// ── Path 1: official Bot API (getChat → getFile → download) ─────────────────
+// Works for public CHANNELS and GROUPS/SUPERGROUPS, whose photo the Bot API
+// exposes directly. It does NOT work for BOTS: the Bot API's getChat only
+// resolves chats the bot itself is part of (or public channels/supergroups),
+// and returns "Bad Request: chat not found" for an arbitrary *other* bot's
+// username — there is no Bot API method for one bot to read another bot's
+// profile. That gap is the reason bot avatars were never loading.
+async function fetchAvatarViaBotApi(username: string, botToken: string): Promise<{ buf: Buffer; contentType: string } | null> {
+  const chatRes = await fetch(
+    `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent('@' + username)}`,
+    { signal: AbortSignal.timeout(AVATAR_TG_TIMEOUT) }
+  );
+  const chatData = await chatRes.json();
+  if (!chatData.ok) {
+    console.warn(`⚠️ [avatar] getChat failed for @${username}: ${chatData?.description || chatRes.status}`);
+    return null;
+  }
+  const fileId = chatData?.result?.photo?.small_file_id;
+  if (!fileId) {
+    console.warn(`⚠️ [avatar] @${username} has no chat photo set via Bot API`);
+    return null;
+  }
+
+  const fileRes = await fetch(
+    `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`,
+    { signal: AbortSignal.timeout(AVATAR_TG_TIMEOUT) }
+  );
+  const fileData = await fileRes.json();
+  const filePath = fileData?.result?.file_path;
+  if (!fileData.ok || !filePath) {
+    console.warn(`⚠️ [avatar] getFile failed for @${username}: ${fileData?.description || fileRes.status}`);
+    return null;
+  }
+
+  const imgRes = await fetch(
+    `https://api.telegram.org/file/bot${botToken}/${filePath}`,
+    { signal: AbortSignal.timeout(AVATAR_TG_TIMEOUT) }
+  );
+  if (!imgRes.ok || !imgRes.body) {
+    console.warn(`⚠️ [avatar] file download failed for @${username}: HTTP ${imgRes.status}`);
+    return null;
+  }
+
+  const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+  const buf = Buffer.from(await imgRes.arrayBuffer());
+  return { buf, contentType };
+}
+
+// ── Path 2: public t.me preview page (og:image) ──────────────────────────────
+// Telegram renders a public, unauthenticated preview page at t.me/<username>
+// for every CHANNEL, GROUP *and* BOT, and stamps the entity's real profile
+// photo into the <meta property="og:image"> tag when one is set. This works
+// uniformly across all three entity types (including bots, where Path 1 is
+// impossible), so it's used as the fallback whenever the Bot API can't help.
+async function fetchAvatarViaOgImage(username: string): Promise<{ buf: Buffer; contentType: string } | null> {
+  const pageRes = await fetch(`https://t.me/${encodeURIComponent(username)}`, {
+    signal: AbortSignal.timeout(AVATAR_TG_TIMEOUT),
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TelegramBot-AvatarFetch/1.0)' },
+  });
+  if (!pageRes.ok) {
+    console.warn(`⚠️ [avatar] t.me preview page failed for @${username}: HTTP ${pageRes.status}`);
+    return null;
+  }
+  const html = await pageRes.text();
+  const match = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+  const imageUrl = match?.[1];
+  // Telegram omits the og:image tag entirely when the entity has no photo, so
+  // a missing match means "genuinely no avatar" rather than a fetch failure.
+  if (!imageUrl) {
+    console.warn(`⚠️ [avatar] @${username} has no og:image on its t.me preview page`);
+    return null;
+  }
+
+  const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(AVATAR_TG_TIMEOUT) });
+  if (!imgRes.ok || !imgRes.body) {
+    console.warn(`⚠️ [avatar] og:image download failed for @${username}: HTTP ${imgRes.status}`);
+    return null;
+  }
+  const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+  const buf = Buffer.from(await imgRes.arrayBuffer());
+  return { buf, contentType };
+}
+
 // ── Bot username cache ────────────────────────────────────────────────────────
 // getBotUsername() makes a live Telegram Bot API call. Cache it for 5 minutes
 // so the /api/auth/user endpoint (called every 30 s by every active user)
@@ -8293,13 +8378,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const match = link.match(/t\.me\/([^/?]+)/);
       const username = match?.[1];
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (!botToken) {
-        console.error('❌ [avatar] TELEGRAM_BOT_TOKEN not configured — cannot fetch chat photos');
+      if (!username || username.startsWith('+') || username === 'joinchat') {
+        // Private invite links (+hash / joinchat) have no public username and
+        // no public preview page — neither avatar path can resolve these.
+        console.warn(`⚠️ [avatar] link did not match a public t.me/<username> pattern: ${link}`);
         return res.status(404).end();
       }
-      if (!username) {
-        console.warn(`⚠️ [avatar] link did not match t.me/<username> pattern: ${link}`);
-        return res.status(404).end();
+      if (!botToken) {
+        // Path 1 (Bot API) is unavailable without a token, but Path 2 (og:image
+        // scrape) needs no token at all, so we can still serve an avatar.
+        console.warn('⚠️ [avatar] TELEGRAM_BOT_TOKEN not configured — falling back to t.me preview scraping only');
       }
 
       // ── Serve from in-memory cache if fresh (avoids Telegram API round-trips) ─
@@ -8326,50 +8414,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let inFlight = _avatarInFlight.get(username);
       if (!inFlight) {
         inFlight = (async () => {
-          // 6s timeout per Telegram call — every other external call in this
-          // file (e.g. TON price checks) uses AbortSignal.timeout; this route
-          // was the one place that didn't, so a slow/unreachable Telegram API
-          // could hang a request indefinitely instead of failing fast.
-          const TG_TIMEOUT = 6_000;
-
-          const chatRes = await fetch(
-            `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent('@' + username)}`,
-            { signal: AbortSignal.timeout(TG_TIMEOUT) }
-          );
-          const chatData = await chatRes.json();
-          const fileId = chatData?.result?.photo?.small_file_id;
-          if (!chatData.ok) {
-            console.warn(`⚠️ [avatar] getChat failed for @${username}: ${chatData?.description || chatRes.status}`);
-            return null;
-          }
-          if (!fileId) {
-            console.warn(`⚠️ [avatar] @${username} has no chat photo set`);
-            return null;
+          // Path 1: Bot API. Reliable for channels/groups; always fails for
+          // bots (see fetchAvatarViaBotApi comment) — that failure is expected
+          // and just means we move on to Path 2, not a real error.
+          if (botToken) {
+            try {
+              const viaBotApi = await fetchAvatarViaBotApi(username, botToken);
+              if (viaBotApi) return viaBotApi;
+            } catch (err) {
+              console.warn(`⚠️ [avatar] Bot API path threw for @${username}, falling back to og:image:`, err instanceof Error ? err.message : err);
+            }
           }
 
-          const fileRes = await fetch(
-            `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`,
-            { signal: AbortSignal.timeout(TG_TIMEOUT) }
-          );
-          const fileData = await fileRes.json();
-          const filePath = fileData?.result?.file_path;
-          if (!fileData.ok || !filePath) {
-            console.warn(`⚠️ [avatar] getFile failed for @${username}: ${fileData?.description || fileRes.status}`);
-            return null;
+          // Path 2: public t.me preview page og:image. Covers bots (where
+          // Path 1 can never work) and acts as a safety net for channels/groups
+          // whenever getChat fails for any other reason.
+          try {
+            const viaOgImage = await fetchAvatarViaOgImage(username);
+            if (viaOgImage) return viaOgImage;
+          } catch (err) {
+            console.warn(`⚠️ [avatar] og:image path threw for @${username}:`, err instanceof Error ? err.message : err);
           }
 
-          const imgRes = await fetch(
-            `https://api.telegram.org/file/bot${botToken}/${filePath}`,
-            { signal: AbortSignal.timeout(TG_TIMEOUT) }
-          );
-          if (!imgRes.ok || !imgRes.body) {
-            console.warn(`⚠️ [avatar] file download failed for @${username}: HTTP ${imgRes.status}`);
-            return null;
-          }
-
-          const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-          const buf = Buffer.from(await imgRes.arrayBuffer());
-          return { buf, contentType };
+          return null;
         })().finally(() => _avatarInFlight.delete(username));
 
         _avatarInFlight.set(username, inFlight);
