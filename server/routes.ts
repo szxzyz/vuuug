@@ -9284,7 +9284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feePercent = newWithdrawal.feePercent;
 
       // (1) Post to the withdrawal group chat with Approve / Reject buttons
-      const { sendWithdrawalRequestToGroup } = await import('./telegram');
+      const { sendWithdrawalRequestToGroup, sendWithdrawalSubmittedNotification } = await import('./telegram');
       sendWithdrawalRequestToGroup({
         withdrawalId: newWithdrawal.withdrawal.id,
         userTelegramId,
@@ -9295,6 +9295,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fee: feeAmount,
         feePercent
       }).catch(err => console.error('❌ Group withdrawal request post failed:', err));
+
+      // (1b) DM the user their own "submitted" confirmation
+      sendWithdrawalSubmittedNotification(userTelegramId, {
+        amount: newWithdrawal.withdrawnAmount,
+        walletAddress,
+        withdrawalId: newWithdrawal.withdrawal.id
+      }).catch(err => console.error('❌ Withdrawal-submitted DM to user failed:', err));
 
       // (2) Also DM each individual admin with the same message + buttons
       if (process.env.TELEGRAM_BOT_TOKEN) {

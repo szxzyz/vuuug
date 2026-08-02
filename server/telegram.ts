@@ -729,6 +729,51 @@ export async function sendWithdrawalRequestToGroup(withdrawalData: {
   }
 }
 
+// DM the user themselves right after they submit a withdrawal request — distinct
+// from sendWithdrawalRequestToGroup (posts to the admin group) and from the
+// approved/rejected notifications (sent once admin acts on it).
+// Uses <tg-emoji> HTML entities for premium animated emoji; non-Premium users
+// just see the fallback emoji character right after each tag, so this degrades
+// gracefully either way.
+export async function sendWithdrawalSubmittedNotification(
+  userTelegramId: string,
+  data: { amount: number | string; walletAddress: string; withdrawalId: string }
+): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.error('❌ Telegram bot token not configured for withdrawal submitted notification');
+    return false;
+  }
+  if (!userTelegramId) {
+    console.warn('⚠️ [withdrawal-submitted] no telegram id for user — skipping DM');
+    return false;
+  }
+
+  try {
+    const amountStr = typeof data.amount === 'number' ? data.amount.toFixed(2) : data.amount;
+    const safeAddress = escapeHtml(data.walletAddress || 'N/A');
+    const safeId = escapeHtml(data.withdrawalId);
+
+    const message = `<tg-emoji emoji-id="5445355530111437729">📤</tg-emoji> <b>Withdrawal Request Submitted</b>
+
+Your withdrawal is now pending review by our team.
+
+<tg-emoji emoji-id="5197434882321567830">💵</tg-emoji> <b>Amount</b>: ${escapeHtml(amountStr)} USDT
+<tg-emoji emoji-id="5197269100878907942">✍️</tg-emoji> <b>Address</b>: ${safeAddress}
+<tg-emoji emoji-id="5444856076954520455">🧾</tg-emoji> <b>ID</b>: ${safeId}
+
+You will receive a notification once it has been processed. <tg-emoji emoji-id="6267008582294705964">✅</tg-emoji>`;
+
+    const result = await sendUserTelegramNotification(userTelegramId, message, undefined, 'HTML');
+    if (!result) {
+      console.error(`❌ Failed to send withdrawal-submitted DM to ${userTelegramId}`);
+    }
+    return result;
+  } catch (error) {
+    console.error('❌ Error sending withdrawal submitted notification:', error);
+    return false;
+  }
+}
+
 export async function sendWithdrawalApprovedNotification(withdrawal: any): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN) {
     console.error('❌ Telegram bot token not configured for withdrawal approval notification');
