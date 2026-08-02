@@ -8374,21 +8374,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // there's no user data to protect — so it's safe to serve unauthenticated.
   app.get('/api/advertiser-tasks/avatar', async (req: any, res) => {
     try {
-      const link = String(req.query.link || '');
-      const match = link.match(/t\.me\/([^/?]+)/);
-      const username = match?.[1];
+      const link = String(req.query.link || '').trim();
+      // Advertisers type this field freehand, so accept every shape it's
+      // realistically entered in: a full t.me/telegram.me/telegram.dog URL,
+      // a bare "@username", or just "username" with no link at all.
+      const domainMatch = link.match(/(?:t\.me|telegram\.me|telegram\.dog)\/([^/?#]+)/i);
+      const bareMatch = !domainMatch ? link.match(/^@?([a-zA-Z0-9_]{5,32})$/) : null;
+      const username = domainMatch?.[1] || bareMatch?.[1];
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       if (!username || username.startsWith('+') || username === 'joinchat') {
         // Private invite links (+hash / joinchat) have no public username and
         // no public preview page — neither avatar path can resolve these.
-        console.warn(`⚠️ [avatar] link did not match a public t.me/<username> pattern: ${link}`);
+        console.warn(`⚠️ [avatar] link did not resolve to a public username: "${link}"`);
         return res.status(404).end();
       }
+      console.log(`🔎 [avatar] request for link="${link}" → resolved username="${username}"`);
       if (!botToken) {
         // Path 1 (Bot API) is unavailable without a token, but Path 2 (og:image
         // scrape) needs no token at all, so we can still serve an avatar.
         console.warn('⚠️ [avatar] TELEGRAM_BOT_TOKEN not configured — falling back to t.me preview scraping only');
       }
+
 
       // ── Serve from in-memory cache if fresh (avoids Telegram API round-trips) ─
       const cached = _avatarCache.get(username);
@@ -8444,10 +8450,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const result = await inFlight;
       if (!result) {
+        console.warn(`❌ [avatar] both paths failed for @${username} — no photo available (or Telegram unreachable from this server)`);
         _avatarNegativeCache.set(username, { at: Date.now() });
         return res.status(404).end();
       }
 
+      console.log(`✅ [avatar] served @${username} (${result.buf.length} bytes, ${result.contentType})`);
       _avatarCache.set(username, { buf: result.buf, contentType: result.contentType, at: Date.now() });
       res.setHeader('Content-Type', result.contentType);
       res.setHeader('Cache-Control', 'public, max-age=3600');
