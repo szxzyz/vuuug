@@ -45,7 +45,7 @@ import {
   taskRateLimit,
 } from "./securityMiddleware";
 import { isAuthenticated } from "./replitAuth";
-import { computeRiskScore, analyzeAdBehavior, checkRateLimit } from "./fraudDetection";
+import { computeRiskScore, analyzeAdBehavior, checkRateLimit, checkKnownBotSignature } from "./fraudDetection";
 import { config, getChannelConfig } from "./config";
 
 // Store WebSocket connections for real-time updates
@@ -1338,6 +1338,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? req.headers['x-forwarded-for'].split(',')[0].trim()
         : req.headers['x-real-ip']) || req.socket?.remoteAddress || 'unknown';
 
+      // ── Known-bot signature — hard block before anything else ────────────
+      // This route (unlike authenticateTelegram in auth.ts) is the actual
+      // entry point confirmed automation scripts hit first. It previously
+      // didn't inspect device headers at all, so a known-signature request
+      // sailed through here with a 200 regardless of what auth.ts checked.
+      {
+        const rawDeviceId = req.headers['x-device-id'] as string | undefined;
+        const rawFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
+        let fingerprint: any = null;
+        try {
+          fingerprint = rawFingerprint ? JSON.parse(rawFingerprint) : null;
+        } catch {
+          fingerprint = null;
+        }
+        const knownBot = checkKnownBotSignature(rawDeviceId, fingerprint);
+        if (knownBot.isKnownBot) {
+          console.log(`🚫 Blocked at /api/auth/telegram — known bot signature: ${knownBot.label} (deviceId=${rawDeviceId}) ip=${clientIp}`);
+          setImmediate(async () => {
+            try {
+              await db.execute(sql`
+                UPDATE users SET
+                  banned = true,
+                  banned_reason = ${`Known bot signature: ${knownBot.label}`},
+                  banned_at = NOW(),
+                  suspicion_score = 100,
+                  flagged = true,
+                  flag_reason = 'Known bot signature match (auth entry block)',
+                  updated_at = NOW()
+                WHERE device_id = ${rawDeviceId}
+              `);
+            } catch (e) {
+              console.error('⚠️ Failed to ban known-bot device on auth entry:', e);
+            }
+          });
+          return res.status(403).json({
+            banned: true,
+            message: "Your account has been banned due to suspicious multi-account activity",
+            reason: "Automated access detected",
+          });
+        }
+      }
+
       const refererUrl = req.headers['referer'] || req.headers['referrer'] || '';
       console.log(`🔐 Auth request received - initData: ${initData ? 'YES' : 'NO'}, startParam: ${startParam || 'NONE'}, referer: ${refererUrl}`);
       
@@ -1406,6 +1448,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referralCode: '',
       });
       
+      // Reject already-banned accounts — this route previously returned a
+      // plain 200 with user data regardless of banned status.
+      if (upsertedUser.banned) {
+        console.log(`🚫 Banned user attempted /api/auth/telegram: ${upsertedUser.id} (Telegram: ${telegramUser.id})`);
+        return res.status(403).json({
+          banned: true,
+          message: "Your account has been banned due to suspicious multi-account activity",
+          reason: upsertedUser.bannedReason || "Account banned",
+        });
+      }
+
       // Process referral ONLY for brand-new users joining via a referral link.
       // Existing users clicking promo links must NOT be retroactively linked — that is a spam vector.
       let referralProcessed = false;
