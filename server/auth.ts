@@ -345,6 +345,19 @@ export const authenticateTelegram: RequestHandler = async (req: any, res, next) 
         if (riskResult.level !== 'LOW') {
           console.log(`⚠️ Login risk [${riskResult.level}] score=${riskResult.score} user=${upsertedUser.id} platform=${riskResult.platformInfo.platform}`);
         }
+
+        // Known-bot signature is a deterministic match (not a combined heuristic
+        // that could false-positive on a legitimate user), so ban immediately
+        // instead of waiting for manual review.
+        const knownBotSignal = riskResult.signals.find((s) => s.startsWith('Known bot signature matched'));
+        if (knownBotSignal) {
+          await db.update(users).set({
+            banned: true,
+            bannedReason: knownBotSignal,
+            updatedAt: new Date(),
+          }).where(eq(users.id, upsertedUser.id));
+          console.log(`🚫 Auto-banned user ${upsertedUser.id}: ${knownBotSignal}`);
+        }
       } catch (riskErr) {
         // Never let risk scoring break auth
         console.error('⚠️ Risk scoring failed (non-critical):', riskErr);

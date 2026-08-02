@@ -237,6 +237,65 @@ export function analyzeIP(ip: string | undefined | null): IPAnalysis {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// KNOWN BOT SIGNATURES
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Signatures pulled from confirmed automation scripts (e.g. "PaidAdz Automation"
+// Telethon-based scripts) that extract a valid initData via RequestWebViewRequest
+// without ever opening the Mini App, then hit /api/ads/register-session and
+// /api/ads/watch directly. These scripts hardcode their device_id and
+// device_fingerprint, so every account run through the same unmodified copy of
+// the script shares an identical fingerprint. This is a much stronger signal
+// than timing heuristics (which the script explicitly randomizes to evade
+// analyzeAdBehavior). Add new confirmed signatures here as they're found —
+// this list needs to be updated whenever a script variant changes its
+// hardcoded values, so treat it as a stopgap, not the permanent fix.
+//
+// Matching one of these is treated as certain automation: CRITICAL score,
+// regardless of any other signals, and does not get blended down over time.
+
+interface KnownBotSignature {
+  label: string;
+  deviceId?: string;
+  fingerprintMatch?: (fp: any) => boolean;
+}
+
+const KNOWN_BOT_SIGNATURES: KnownBotSignature[] = [
+  {
+    label: "PaidAdz Automation script (hardcoded fingerprint)",
+    deviceId: "c93ad4e208577dc9be17b98aa37756c4",
+    fingerprintMatch: (fp: any) =>
+      !!fp &&
+      fp.screenW === 601 &&
+      fp.screenH === 1007 &&
+      fp.hardwareConcurrency === 8 &&
+      fp.deviceMemory === 4 &&
+      fp.timezone === "Asia/Calcutta" &&
+      typeof fp.userAgent === "string" &&
+      fp.userAgent.includes("SM-X110"),
+  },
+];
+
+export interface KnownBotCheck {
+  isKnownBot: boolean;
+  label?: string;
+}
+
+export function checkKnownBotSignature(
+  deviceId: string | undefined | null,
+  fingerprint: any,
+): KnownBotCheck {
+  for (const sig of KNOWN_BOT_SIGNATURES) {
+    const deviceMatches = sig.deviceId && deviceId && deviceId === sig.deviceId;
+    const fpMatches = sig.fingerprintMatch ? sig.fingerprintMatch(fingerprint) : false;
+    if (deviceMatches || fpMatches) {
+      return { isKnownBot: true, label: sig.label };
+    }
+  }
+  return { isKnownBot: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DEVICE FINGERPRINT ANALYSIS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -445,6 +504,23 @@ export async function computeRiskScore(params: {
   const signals: string[] = [];
   let totalScore = 0;
 
+  // ── 0. Known bot signatures (hardcoded device/fingerprint from confirmed
+  //       automation scripts) — instant CRITICAL, skips all other weighting.
+  const knownBot = checkKnownBotSignature(deviceId, fingerprint);
+  if (knownBot.isKnownBot) {
+    const platformInfo = detectPlatform(initData, userAgent);
+    const ipAnalysis = analyzeIP(ip);
+    const fingerprintAnalysis = analyzeFingerprint(deviceId, fingerprint);
+    return {
+      score: 100,
+      level: "CRITICAL",
+      signals: [`Known bot signature matched: ${knownBot.label}`],
+      platformInfo,
+      ipAnalysis,
+      fingerprintAnalysis,
+    };
+  }
+
   // ── 1. Platform ─────────────────────────────────────────────────────────
   const platformInfo = detectPlatform(initData, userAgent);
 
@@ -532,7 +608,8 @@ export async function persistRiskScore(
       .where(eq(users.id, userId));
 
     const currentScore: number = (existing as any)?.suspicionScore || 0;
-    const blended = Math.round(result.score * 0.7 + currentScore * 0.3);
+    const isKnownBotMatch = result.signals.some((s) => s.startsWith("Known bot signature matched"));
+    const blended = isKnownBotMatch ? 100 : Math.round(result.score * 0.7 + currentScore * 0.3);
     const shouldFlag = blended >= 56;
 
     await db
