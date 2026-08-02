@@ -593,11 +593,21 @@ function BanUserButton({ user, onSuccess }: { user: any; onSuccess: () => void }
 
 type UserProfileTab = 'overview' | 'tasks' | 'ads' | 'referrals' | 'withdrawals' | 'bans' | 'balance' | 'deposits' | 'createdTasks' | 'swaps';
 
-function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) {
+function UserProfileTabs({ user, onClose, onSelectUser }: { user: any; onClose: () => void; onSelectUser?: (user: any) => void }) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<UserProfileTab>('overview');
   const [balanceForm, setBalanceForm] = useState({ action: 'add', currency: 'pow', amount: '', reason: '' });
   const [isAdjusting, setIsAdjusting] = useState(false);
+
+  // Opens a referral's own profile in this same dialog when clicked in the Friends tab
+  const openUserMutation = useMutation({
+    mutationFn: (userId: string) => apiRequest('GET', `/api/admin/users/${userId}`).then(res => res.json()),
+    onSuccess: (data: any) => {
+      if (data?.user && onSelectUser) onSelectUser(data.user);
+      else showNotification('User not found', 'error');
+    },
+    onError: () => showNotification('Failed to load user profile', 'error'),
+  });
 
   const { data: userTasks } = useQuery({
     queryKey: ["/api/admin/user-tasks", user.id],
@@ -878,7 +888,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           <div className="grid grid-cols-2 gap-2 mb-3">
             <div className="bg-white/5 p-2 rounded text-center">
               <p className="text-xs text-muted-foreground">Total Ads</p>
-              <p className="font-bold text-xl">{user.adsWatched || 0}</p>
+              <p className="font-bold text-xl">{userAds?.ads?.adsWatched ?? user.adsWatched ?? 0}</p>
             </div>
             <div className="bg-white/5 p-2 rounded text-center">
               <p className="text-xs text-muted-foreground">Today</p>
@@ -897,7 +907,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           </div>
           <div className="bg-white/5 p-2 rounded">
             <p className="text-xs text-muted-foreground">Since Last Withdrawal</p>
-            <p className="font-bold">{user.adsWatchedSinceLastWithdrawal ?? 0}</p>
+            <p className="font-bold">{userAds?.ads?.adsWatchedSinceLastWithdrawal ?? 0}</p>
           </div>
         </div>
       )}
@@ -934,7 +944,13 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
           {userReferrals?.referrals?.length > 0 ? (
             <div className="space-y-2 max-h-[280px] overflow-y-auto">
               {userReferrals.referrals.map((ref: any) => (
-                <div key={ref.id} className="bg-white/5 p-2 rounded border border-white/10">
+                <button
+                  key={ref.id}
+                  type="button"
+                  disabled={!ref.refereeId || openUserMutation.isPending}
+                  onClick={() => ref.refereeId && openUserMutation.mutate(ref.refereeId)}
+                  className="w-full text-left bg-white/5 p-2 rounded border border-white/10 hover:bg-white/10 hover:border-[#4cd3ff]/30 transition-colors disabled:cursor-default disabled:hover:bg-white/5"
+                >
                   <div className="flex justify-between items-start">
                     <p className="text-sm font-mono text-[#4cd3ff]">{ref.refereeName || ref.refereeCode || ref.refereeId?.slice(0, 8) || 'N/A'}</p>
                     {ref.rewardAmount && parseFloat(ref.rewardAmount) > 0 && (
@@ -944,7 +960,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
                   <p className="text-xs text-muted-foreground font-mono">{ref.refereeCode || 'N/A'}</p>
                   <p className="text-xs text-muted-foreground">Status: <span className={ref.status === 'active' ? 'text-green-400' : 'text-yellow-400'}>{ref.status}</span></p>
                   <p className="text-xs text-muted-foreground">Joined: {ref.createdAt ? new Date(ref.createdAt).toLocaleDateString() : 'N/A'}</p>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -1173,8 +1189,8 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
                 </Button>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-1">
-              {(['pow', 'usd'] as const).map(c => (
+            <div className="grid grid-cols-3 gap-1">
+              {(['pow', 'usd', 'ton'] as const).map(c => (
                 <Button key={c} size="sm" variant={balanceForm.currency === c ? 'default' : 'outline'}
                   onClick={() => setBalanceForm(f => ({ ...f, currency: c }))}
                   className="h-7 text-xs">
@@ -1183,6 +1199,7 @@ function UserProfileTabs({ user, onClose }: { user: any; onClose: () => void }) 
               ))}
             </div>
             <Input type="number" placeholder="Amount" value={balanceForm.amount} min="0"
+              step={balanceForm.currency === 'ton' ? '0.0001' : '1'}
               onChange={e => setBalanceForm(f => ({ ...f, amount: e.target.value }))} className="h-8 text-sm" />
             <Input placeholder="Reason (optional)" value={balanceForm.reason}
               onChange={e => setBalanceForm(f => ({ ...f, reason: e.target.value }))} className="h-8 text-sm" />
@@ -1428,7 +1445,7 @@ function UserManagementSection({ usersData: _unused }: { usersData: any }) {
               UID: {selectedUser?.referralCode || selectedUser?.personalCode || 'N/A'}
             </DialogTitle>
           </DialogHeader>
-          {selectedUser && <UserProfileTabs user={selectedUser} onClose={() => setSelectedUser(null)} />}
+          {selectedUser && <UserProfileTabs user={selectedUser} onClose={() => setSelectedUser(null)} onSelectUser={(u) => setSelectedUser(u)} />}
         </DialogContent>
       </Dialog>
     </>
