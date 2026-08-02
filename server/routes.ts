@@ -59,6 +59,18 @@ const connectedUsers = new Map<string, { socket: WebSocket; userId: string }>();
 const _avatarCache = new Map<string, { buf: Buffer; contentType: string; at: number }>();
 const AVATAR_TTL = 60 * 60 * 1000; // 1 hour
 
+// Negative cache: a username with no photo, or a failed Telegram lookup,
+// would otherwise be re-fetched (with no timeout) on every single page load —
+// this was the main cause of the Missions page feeling slow. Short TTL so a
+// photo added later still appears reasonably promptly.
+const _avatarNegativeCache = new Map<string, { at: number }>();
+const AVATAR_NEGATIVE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// In-flight request map: coalesces concurrent lookups for the same username
+// (e.g. several tasks pointing at the same channel rendered on the page at
+// once) into a single Telegram round-trip instead of one per task.
+const _avatarInFlight = new Map<string, Promise<{ buf: Buffer; contentType: string } | null>>();
+
 // ── Bot username cache ────────────────────────────────────────────────────────
 // getBotUsername() makes a live Telegram Bot API call. Cache it for 5 minutes
 // so the /api/auth/user endpoint (called every 30 s by every active user)
@@ -7964,7 +7976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).end();
       }
 
-      // ── Serve from in-memory cache if fresh (avoids 2 Telegram API round-trips) ─
+      // ── Serve from in-memory cache if fresh (avoids Telegram API round-trips) ─
       const cached = _avatarCache.get(username);
       if (cached && Date.now() - cached.at < AVATAR_TTL) {
         res.setHeader('Content-Type', cached.contentType);
@@ -7972,42 +7984,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.end(cached.buf);
       }
 
-      // ── Cache miss — fetch from Telegram ─────────────────────────────────────
-      const chatRes = await fetch(
-        `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent('@' + username)}`
-      );
-      const chatData = await chatRes.json();
-      const fileId = chatData?.result?.photo?.small_file_id;
-      if (!chatData.ok) {
-        console.warn(`⚠️ [avatar] getChat failed for @${username}: ${chatData?.description || chatRes.status}`);
-        return res.status(404).end();
-      }
-      if (!fileId) {
-        console.warn(`⚠️ [avatar] @${username} has no chat photo set`);
+      // ── Negative cache — a username with no photo, or a failed lookup, gets
+      // re-tried on EVERY page load otherwise (this was a big contributor to
+      // the Missions page feeling slow: N tasks × 2-3 unbounded Telegram calls
+      // each, every single time). Short TTL so a photo added later still shows
+      // up reasonably quickly.
+      const negCached = _avatarNegativeCache.get(username);
+      if (negCached && Date.now() - negCached.at < AVATAR_NEGATIVE_TTL) {
         return res.status(404).end();
       }
 
-      const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
-      const fileData = await fileRes.json();
-      const filePath = fileData?.result?.file_path;
-      if (!fileData.ok || !filePath) {
-        console.warn(`⚠️ [avatar] getFile failed for @${username}: ${fileData?.description || fileRes.status}`);
+      // ── Coalesce concurrent requests for the same username — several tasks
+      // can reference the same channel/bot and would otherwise each fire their
+      // own redundant round-trip to Telegram at the same time.
+      let inFlight = _avatarInFlight.get(username);
+      if (!inFlight) {
+        inFlight = (async () => {
+          // 6s timeout per Telegram call — every other external call in this
+          // file (e.g. TON price checks) uses AbortSignal.timeout; this route
+          // was the one place that didn't, so a slow/unreachable Telegram API
+          // could hang a request indefinitely instead of failing fast.
+          const TG_TIMEOUT = 6_000;
+
+          const chatRes = await fetch(
+            `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent('@' + username)}`,
+            { signal: AbortSignal.timeout(TG_TIMEOUT) }
+          );
+          const chatData = await chatRes.json();
+          const fileId = chatData?.result?.photo?.small_file_id;
+          if (!chatData.ok) {
+            console.warn(`⚠️ [avatar] getChat failed for @${username}: ${chatData?.description || chatRes.status}`);
+            return null;
+          }
+          if (!fileId) {
+            console.warn(`⚠️ [avatar] @${username} has no chat photo set`);
+            return null;
+          }
+
+          const fileRes = await fetch(
+            `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`,
+            { signal: AbortSignal.timeout(TG_TIMEOUT) }
+          );
+          const fileData = await fileRes.json();
+          const filePath = fileData?.result?.file_path;
+          if (!fileData.ok || !filePath) {
+            console.warn(`⚠️ [avatar] getFile failed for @${username}: ${fileData?.description || fileRes.status}`);
+            return null;
+          }
+
+          const imgRes = await fetch(
+            `https://api.telegram.org/file/bot${botToken}/${filePath}`,
+            { signal: AbortSignal.timeout(TG_TIMEOUT) }
+          );
+          if (!imgRes.ok || !imgRes.body) {
+            console.warn(`⚠️ [avatar] file download failed for @${username}: HTTP ${imgRes.status}`);
+            return null;
+          }
+
+          const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+          const buf = Buffer.from(await imgRes.arrayBuffer());
+          return { buf, contentType };
+        })().finally(() => _avatarInFlight.delete(username));
+
+        _avatarInFlight.set(username, inFlight);
+      }
+
+      const result = await inFlight;
+      if (!result) {
+        _avatarNegativeCache.set(username, { at: Date.now() });
         return res.status(404).end();
       }
 
-      const imgRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`);
-      if (!imgRes.ok || !imgRes.body) {
-        console.warn(`⚠️ [avatar] file download failed for @${username}: HTTP ${imgRes.status}`);
-        return res.status(404).end();
-      }
-
-      const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-      const buf = Buffer.from(await imgRes.arrayBuffer());
-      _avatarCache.set(username, { buf, contentType, at: Date.now() });
-
-      res.setHeader('Content-Type', contentType);
+      _avatarCache.set(username, { buf: result.buf, contentType: result.contentType, at: Date.now() });
+      res.setHeader('Content-Type', result.contentType);
       res.setHeader('Cache-Control', 'public, max-age=3600');
-      res.end(buf);
+      res.end(result.buf);
     } catch (err) {
       // Redact — Telegram fetch errors can embed the bot token in the failed URL.
       const safe = err instanceof Error ? err.message.replace(/bot\d+:[\w-]+/g, 'bot[REDACTED]') : 'unknown error';
