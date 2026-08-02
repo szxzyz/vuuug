@@ -1720,6 +1720,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         partnerTaskReward,
         channelTaskReward: channelTaskRewardPOW,
         botTaskReward: botTaskRewardPOW,
+        // Tiered task rewards used by the Missions page (bug: these were computed
+        // above but never included in the response, so the client always fell back
+        // to its hardcoded defaults regardless of what the admin configured)
+        taskRewardNoVerify: channelTaskRewardPOW,
+        taskRewardWithVerify,
         // Withdrawal requirement settings
         withdrawalAdRequirementEnabled,
         minimumAdsForWithdrawal,
@@ -7934,13 +7939,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Proxy a Telegram channel/bot's profile photo — never expose the bot token
   // (Telegram's file download URL embeds it) to the client, so we stream the
   // image bytes back through our own server instead of returning a raw URL.
-  app.get('/api/advertiser-tasks/avatar', authenticateTelegram, async (req: any, res) => {
+  //
+  // NOTE: intentionally NOT behind authenticateTelegram. This is rendered via
+  // plain <img src="..."> tags, which cannot attach the x-telegram-data header
+  // the rest of the app relies on — they can only send cookies. That made this
+  // route silently 401 (and every mission image fall back to a placeholder
+  // icon) whenever the session cookie didn't survive a cross-origin request
+  // (the frontend fetch() calls use credentials:"include" for exactly this
+  // reason, but the session cookie has no `sameSite: 'none'`, so browsers drop
+  // it cross-site). The response here is just a public Telegram chat photo —
+  // there's no user data to protect — so it's safe to serve unauthenticated.
+  app.get('/api/advertiser-tasks/avatar', async (req: any, res) => {
     try {
       const link = String(req.query.link || '');
       const match = link.match(/t\.me\/([^/?]+)/);
       const username = match?.[1];
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      if (!username || !botToken) return res.status(404).end();
+      if (!botToken) {
+        console.error('❌ [avatar] TELEGRAM_BOT_TOKEN not configured — cannot fetch chat photos');
+        return res.status(404).end();
+      }
+      if (!username) {
+        console.warn(`⚠️ [avatar] link did not match t.me/<username> pattern: ${link}`);
+        return res.status(404).end();
+      }
 
       // ── Serve from in-memory cache if fresh (avoids 2 Telegram API round-trips) ─
       const cached = _avatarCache.get(username);
@@ -7956,15 +7978,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       const chatData = await chatRes.json();
       const fileId = chatData?.result?.photo?.small_file_id;
-      if (!chatData.ok || !fileId) return res.status(404).end();
+      if (!chatData.ok) {
+        console.warn(`⚠️ [avatar] getChat failed for @${username}: ${chatData?.description || chatRes.status}`);
+        return res.status(404).end();
+      }
+      if (!fileId) {
+        console.warn(`⚠️ [avatar] @${username} has no chat photo set`);
+        return res.status(404).end();
+      }
 
       const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
       const fileData = await fileRes.json();
       const filePath = fileData?.result?.file_path;
-      if (!fileData.ok || !filePath) return res.status(404).end();
+      if (!fileData.ok || !filePath) {
+        console.warn(`⚠️ [avatar] getFile failed for @${username}: ${fileData?.description || fileRes.status}`);
+        return res.status(404).end();
+      }
 
       const imgRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`);
-      if (!imgRes.ok || !imgRes.body) return res.status(404).end();
+      if (!imgRes.ok || !imgRes.body) {
+        console.warn(`⚠️ [avatar] file download failed for @${username}: HTTP ${imgRes.status}`);
+        return res.status(404).end();
+      }
 
       const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
       const buf = Buffer.from(await imgRes.arrayBuffer());
@@ -7973,10 +8008,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=3600');
       res.end(buf);
-    } catch {
-      // Never log the raw error here — it may embed the bot token via the
-      // Telegram request URL (fetch errors often include the failed URL).
-      console.error('Error fetching chat avatar');
+    } catch (err) {
+      // Redact — Telegram fetch errors can embed the bot token in the failed URL.
+      const safe = err instanceof Error ? err.message.replace(/bot\d+:[\w-]+/g, 'bot[REDACTED]') : 'unknown error';
+      console.error('❌ [avatar] Error fetching chat avatar:', safe);
       res.status(404).end();
     }
   });

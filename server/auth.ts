@@ -53,6 +53,13 @@ export function getSession() {
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
+      // 'none' is required for the session cookie to survive cross-origin
+      // requests (the client's fetch() calls use credentials: "include" for
+      // exactly this reason). Browsers require secure:true whenever
+      // sameSite:'none' is used, so only do this in production (where
+      // secure is also true) — sameSite:'none' without secure is rejected
+      // outright by modern browsers.
+      sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
       maxAge: sessionTtl,
     },
   });
