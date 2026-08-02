@@ -2738,7 +2738,7 @@ ${walletAddress}
               await sendUserTelegramNotification(
                 rejectedUser.telegram_id,
                 `❌ Your withdrawal request of <b>${rejectedAmount} USD</b> has been rejected.\n\nYour balance has been refunded. Please contact support if you have any questions.`,
-                { inline_keyboard: [[{ text: '📩 Contact Support', url: 'https://t.me/szxzyz' }]] }
+                { inline_keyboard: [[{ text: '📩 Contact Support', url: 'https://t.me/PaidAdsSupportbot' }]] }
               );
             }
             
