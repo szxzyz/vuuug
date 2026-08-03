@@ -1822,6 +1822,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const gigapubAdLimit        = parseInt(getSetting('gigapub_ad_limit',         '50'));
       const gigapubRewardPerAd    = parseInt(getSetting('gigapub_reward_per_ad',    '125'));
       const gigapubEnabled        = getSetting('gigapub_enabled', 'true') === 'true';
+      const usladsAdLimit         = parseInt(getSetting('uslads_ad_limit',          '50'));
+      const usladsRewardPerAd     = parseInt(getSetting('uslads_reward_per_ad',     '125'));
+      const usladsEnabled         = getSetting('uslads_enabled', 'true') === 'true';
+      const monetixAdLimit        = parseInt(getSetting('monetix_ad_limit',         '50'));
+      const monetixRewardPerAd    = parseInt(getSetting('monetix_reward_per_ad',    '125'));
+      const monetixEnabled        = getSetting('monetix_enabled', 'true') === 'true';
       
       // Legacy compatibility - keep old values for backwards compatibility
       const taskCostPerClick = channelTaskCostUSD; // Use channel cost as default
@@ -1916,6 +1922,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gigapubAdLimit,
         gigapubRewardPerAd,
         gigapubEnabled,
+        usladsAdLimit,
+        usladsRewardPerAd,
+        usladsEnabled,
+        monetixAdLimit,
+        monetixRewardPerAd,
+        monetixEnabled,
         // Contest settings (public — needed by leaderboard/frontend)
         weeklyReferralContestEnabled: getSetting('weekly_referral_contest_enabled', 'false') === 'true',
         weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
@@ -2293,6 +2305,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currentTypeWatched = isNewAdPeriod ? 0 : (user.adsWatchedToday || 0);
       } else if (normalizedAdType === 'monetag') {
         currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).monetagAdsWatchedToday || 0);
+      } else if (normalizedAdType === 'gigapub') {
+        currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).gigapubAdsWatchedToday || 0);
+      } else if (normalizedAdType === 'uslads') {
+        currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).usladsAdsWatchedToday || 0);
+      } else if (normalizedAdType === 'monetix') {
+        currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).monetixAdsWatchedToday || 0);
       } else {
         currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).gigapubAdsWatchedToday || 0);
       }
@@ -2325,7 +2343,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (normalizedAdType === 'adsgram') {
           await storage.incrementAdsWatched(userId); // handles period reset internally
         } else {
-          const col = normalizedAdType === 'monetag' ? 'monetag_ads_watched_today' : 'gigapub_ads_watched_today';
+          const providerColumnMap: Record<string, string> = {
+            monetag: 'monetag_ads_watched_today',
+            gigapub: 'gigapub_ads_watched_today',
+            uslads:  'uslads_ads_watched_today',
+            monetix: 'monetix_ads_watched_today',
+          };
+          const col = providerColumnMap[normalizedAdType] || 'gigapub_ads_watched_today';
           // If this is a new reset period, start counter at 1; otherwise increment
           const newProviderCount = isNewAdPeriod ? 1 : (currentTypeWatched + 1);
           await db.execute(sql`
@@ -2502,12 +2526,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedUser = user; // Fallback to original user data
       }
       // Use the per-provider column for the response counter
+      const updatedTypeWatchedMap: Record<string, number | undefined> = {
+        adsgram: updatedUser?.adsWatchedToday ?? undefined,
+        monetag: (updatedUser as any)?.monetagAdsWatchedToday,
+        gigapub: (updatedUser as any)?.gigapubAdsWatchedToday,
+        uslads:  (updatedUser as any)?.usladsAdsWatchedToday,
+        monetix: (updatedUser as any)?.monetixAdsWatchedToday,
+      };
       const updatedTypeWatched: number =
-        normalizedAdType === 'adsgram'
-          ? (updatedUser?.adsWatchedToday ?? currentTypeWatched + 1)
-          : normalizedAdType === 'monetag'
-            ? ((updatedUser as any)?.monetagAdsWatchedToday ?? currentTypeWatched + 1)
-            : ((updatedUser as any)?.gigapubAdsWatchedToday ?? currentTypeWatched + 1);
+        updatedTypeWatchedMap[normalizedAdType] ?? currentTypeWatched + 1;
       const newAdsWatched = updatedTypeWatched;
       
       // Send real-time update to user (non-blocking)
@@ -4840,6 +4867,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gigapubAdLimit: parseInt(getSetting('gigapub_ad_limit', '50')),
         gigapubRewardPerAd: parseInt(getSetting('gigapub_reward_per_ad', '125')),
         gigapubEnabled: getSetting('gigapub_enabled', 'true') === 'true',
+        usladsAdLimit: parseInt(getSetting('uslads_ad_limit', '50')),
+        usladsRewardPerAd: parseInt(getSetting('uslads_reward_per_ad', '125')),
+        usladsEnabled: getSetting('uslads_enabled', 'true') === 'true',
+        monetixAdLimit: parseInt(getSetting('monetix_ad_limit', '50')),
+        monetixRewardPerAd: parseInt(getSetting('monetix_reward_per_ad', '125')),
+        monetixEnabled: getSetting('monetix_enabled', 'true') === 'true',
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);
@@ -5568,6 +5601,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           dailyAdsWatched: u.daily_ads_watched || 0,
           monetagAdsWatchedToday: u.monetag_ads_watched_today || 0,
           gigapubAdsWatchedToday: u.gigapub_ads_watched_today || 0,
+          usladsAdsWatchedToday: u.uslads_ads_watched_today || 0,
+          monetixAdsWatchedToday: u.monetix_ads_watched_today || 0,
           lastAdWatch: u.last_ad_watch,
           platform: u.platform || null,
           createdAt: u.created_at,
@@ -12435,6 +12470,8 @@ ${walletAddress}
           dailyAdsWatched: (targetUser as any).dailyAdsWatched || 0,
           monetagAdsWatchedToday: (targetUser as any).monetagAdsWatchedToday || 0,
           gigapubAdsWatchedToday: (targetUser as any).gigapubAdsWatchedToday || 0,
+          usladsAdsWatchedToday: (targetUser as any).usladsAdsWatchedToday || 0,
+          monetixAdsWatchedToday: (targetUser as any).monetixAdsWatchedToday || 0,
           adsWatchedSinceLastWithdrawal,
           lastAdWatch: (targetUser as any).lastAdWatch || null,
         },
@@ -14131,10 +14168,12 @@ ${walletAddress}
       try {
         await db.execute(sql`
           UPDATE users SET
-            ads_watched_today         = 0,
-            monetag_ads_watched_today = 0,
-            gigapub_ads_watched_today = 0,
-            updated_at                = NOW()
+            ads_watched_today          = 0,
+            monetag_ads_watched_today  = 0,
+            gigapub_ads_watched_today  = 0,
+            uslads_ads_watched_today   = 0,
+            monetix_ads_watched_today  = 0,
+            updated_at                 = NOW()
         `);
         console.log(`✅ [Ad Reset] Twice-daily ad counters reset at ${new Date().toISOString()} (12AM/12PM IST)`);
       } catch (err) {

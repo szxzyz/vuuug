@@ -3233,7 +3233,10 @@ export class DatabaseStorage implements IStorage {
           adsWatchedToday: 0,
           monetagAdsWatchedToday: 0,
           gigapubAdsWatchedToday: 0,
+          usladsAdsWatchedToday: 0,
+          monetixAdsWatchedToday: 0,
           lastResetDate: currentDate,
+
           updatedAt: new Date(),
         } as any)
         .where(sql`${users.lastResetDate} != ${currentDateString} OR ${users.lastResetDate} IS NULL`);
