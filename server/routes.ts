@@ -1987,7 +1987,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const normalizedContext = context === 'mission_ad' ? 'mission_ad' : 'ads_watch';
       const allowedAdTypes = normalizedContext === 'mission_ad'
         ? ['monetag', 'gigapub', 'monetix']
-        : ['adsgram', 'monetag', 'gigapub'];
+        : ['adsgram', 'monetag', 'gigapub', 'uslads', 'monetix'];
       const normalizedAdType = allowedAdTypes.includes(adType ?? '') ? (adType as string) : null;
       if (!normalizedAdType) {
         return res.status(400).json({ message: "Invalid ad type", errorType: 'invalid_ad_type' });
