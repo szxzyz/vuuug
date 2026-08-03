@@ -1,12 +1,22 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 declare global {
   interface Window {
     show_11123429: (type?: string) => Promise<void>;
     showGiga: () => Promise<void>;
     showRewardAd: (callback: (res: { status: string }) => void) => void;
+    TowerAds: new (config: {
+      apiKey: string;
+      placementId: string;
+      onRewardEarned?: (reward: unknown) => void;
+      onError?: (error: unknown) => void;
+    }) => { loadAndShow: () => Promise<void> };
   }
 }
+
+// USL Ads (TowerAds SDK) credentials — provider-issued, not secret (client-side ad SDK key).
+const USL_ADS_API_KEY = "76acac885dd6513614fcdc679fe8dc77";
+const USL_ADS_PLACEMENT_ID = "plc_62da709ca69f9f97";
 
 interface AdFlowResult {
   success: boolean;
@@ -75,6 +85,64 @@ export function useAdFlow() {
     });
   }, []);
 
+  // ─── USL Ads (TowerAds SDK) ───────────────────────────────────────────────
+  // The SDK's callbacks are bound at construction time, so the client instance
+  // is created lazily once and reused for every show — this also satisfies
+  // "load the SDK only once".
+  const uslAdsInstanceRef = useRef<InstanceType<Window["TowerAds"]> | null>(null);
+
+  const showUSLAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
+    return new Promise((resolve) => {
+      const ready = typeof window.TowerAds === "function";
+      if (!ready) { resolve({ success: false, unavailable: true }); return; }
+
+      let rewardEarned = false;
+      let settled = false;
+      const settle = (result: { success: boolean; unavailable: boolean }) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+
+      try {
+        if (!uslAdsInstanceRef.current) {
+          uslAdsInstanceRef.current = new window.TowerAds({
+            apiKey: USL_ADS_API_KEY,
+            placementId: USL_ADS_PLACEMENT_ID,
+            // Reward the user only here — never anywhere else in the flow.
+            onRewardEarned: () => {
+              rewardEarned = true;
+              settle({ success: true, unavailable: false });
+            },
+            onError: (error) => {
+              console.error("USL Ads error:", error);
+              settle({ success: false, unavailable: false });
+            },
+          });
+        }
+
+        uslAdsInstanceRef.current.loadAndShow()
+          .then(() => {
+            // loadAndShow() resolving doesn't by itself mean a reward was earned
+            // (the user may have closed the ad early) — onRewardEarned is the
+            // only source of truth. Give it a brief grace window in case it
+            // fires just after the promise settles.
+            setTimeout(() => settle({ success: rewardEarned, unavailable: false }), 300);
+          })
+          .catch((error: any) => {
+            console.error("USL Ads loadAndShow error:", error);
+            const msg = String(error?.message || error || "").toLowerCase();
+            const noAds = msg.includes("no ad") || msg.includes("no fill") || msg.includes("unavailable");
+            settle({ success: false, unavailable: noAds });
+          });
+      } catch (error) {
+        console.error("USL Ads init error:", error);
+        settle({ success: false, unavailable: true });
+      }
+    });
+  }, []);
+  // ──────────────────────────────────────────────────────────────────────────
+
   const runAdFlow = useCallback(async (): Promise<AdFlowResult> => {
     setIsShowingAds(true);
     try {
@@ -97,5 +165,6 @@ export function useAdFlow() {
     showMonetagAd,
     showGigaPubAd,
     showMonetixAd,
+    showUSLAd,
   };
 }
