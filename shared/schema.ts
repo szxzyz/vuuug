@@ -85,6 +85,8 @@ export const users = pgTable("users", {
   lastHourlyReset: timestamp("last_hourly_reset"),
   monetagAdsWatchedToday: integer("monetag_ads_watched_today").default(0),
   gigapubAdsWatchedToday: integer("gigapub_ads_watched_today").default(0),
+  usladsAdsWatchedToday: integer("uslads_ads_watched_today").default(0),
+  monetixAdsWatchedToday: integer("monetix_ads_watched_today").default(0),
   // Periodic Turnstile counter for ad watching — backend-authoritative
   adsTurnstileCount: integer("ads_turnstile_count").default(0),
   adsTurnstileThreshold: integer("ads_turnstile_threshold").default(0),
