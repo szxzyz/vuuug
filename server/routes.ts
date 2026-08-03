@@ -28,6 +28,7 @@ import {
   ambassadorApplications,
   ambassadors,
   ambassadorEarnings,
+  banLogs,
 } from "../shared/schema";
 import { db } from "./db";
 import { eq, sql, desc, and, gte } from "drizzle-orm";
@@ -5231,69 +5232,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin chart analytics endpoint - get real time-series data
+  // ?range=day   → last 24 hours, grouped by hour
+  // ?range=week  → last 7 days, grouped by day (default)
+  // ?range=month → last 30 days, grouped by day
   app.get('/api/admin/analytics/chart', authenticateAdmin, async (req: any, res) => {
     try {
-      // Get data for last 7 days grouped by date
-      const last7DaysData = await db.execute(sql`
-        WITH date_series AS (
-          SELECT generate_series(
-            CURRENT_DATE - INTERVAL '6 days',
-            CURRENT_DATE,
-            INTERVAL '1 day'
-          )::date AS date
-        ),
-        daily_stats AS (
-          SELECT 
-            DATE(e.created_at) as date,
-            COUNT(DISTINCT e.user_id) as active_users,
-            COALESCE(SUM(e.amount), 0) as earnings
-          FROM ${earnings} e
-          WHERE e.created_at >= CURRENT_DATE - INTERVAL '6 days'
-          GROUP BY DATE(e.created_at)
-        ),
-        daily_withdrawals AS (
-          SELECT 
-            DATE(w.created_at) as date,
-            COALESCE(SUM(w.amount), 0) as withdrawals
-          FROM ${withdrawals} w
-          WHERE w.created_at >= CURRENT_DATE - INTERVAL '6 days'
-            AND w.status IN ('completed', 'success', 'paid', 'Approved')
-          GROUP BY DATE(w.created_at)
-        ),
-        daily_user_count AS (
-          SELECT 
-            DATE(u.created_at) as date,
-            COUNT(*) as new_users
-          FROM ${users} u
-          WHERE u.created_at >= CURRENT_DATE - INTERVAL '6 days'
-          GROUP BY DATE(u.created_at)
-        )
-        SELECT 
-          ds.date,
-          COALESCE(s.active_users, 0) as active_users,
-          COALESCE(s.earnings, 0) as earnings,
-          COALESCE(w.withdrawals, 0) as withdrawals,
-          COALESCE(u.new_users, 0) as new_users
-        FROM date_series ds
-        LEFT JOIN daily_stats s ON ds.date = s.date
-        LEFT JOIN daily_withdrawals w ON ds.date = w.date
-        LEFT JOIN daily_user_count u ON ds.date = u.date
-        ORDER BY ds.date ASC
-      `);
+      const range = (req.query.range === 'day' || req.query.range === 'month') ? req.query.range : 'week';
 
-      // Get cumulative user count for each day
-      const totalUsersBeforeWeek = await db.select({ count: sql<number>`count(*)` })
-        .from(users)
-        .where(sql`${users.createdAt} < CURRENT_DATE - INTERVAL '6 days'`);
-      
-      // Ensure initial count is a number to prevent string concatenation
-      let cumulativeUsers = Number(totalUsersBeforeWeek[0]?.count || 0);
-      
-      const chartData = last7DaysData.rows.map((row: any, index: number) => {
+      let rows: any[];
+      let cumulativeBeforeWindow: number;
+
+      if (range === 'day') {
+        const result = await db.execute(sql`
+          WITH hour_series AS (
+            SELECT generate_series(
+              date_trunc('hour', NOW() - INTERVAL '23 hours'),
+              date_trunc('hour', NOW()),
+              INTERVAL '1 hour'
+            ) AS hour
+          ),
+          hourly_stats AS (
+            SELECT date_trunc('hour', e.created_at) as hour,
+              COUNT(DISTINCT e.user_id) as active_users,
+              COALESCE(SUM(e.amount), 0) as earnings
+            FROM ${earnings} e
+            WHERE e.created_at >= NOW() - INTERVAL '24 hours'
+            GROUP BY date_trunc('hour', e.created_at)
+          ),
+          hourly_withdrawals AS (
+            SELECT date_trunc('hour', w.created_at) as hour,
+              COALESCE(SUM(w.amount), 0) as withdrawals
+            FROM ${withdrawals} w
+            WHERE w.created_at >= NOW() - INTERVAL '24 hours'
+              AND w.status IN ('completed', 'success', 'paid', 'Approved')
+            GROUP BY date_trunc('hour', w.created_at)
+          ),
+          hourly_user_count AS (
+            SELECT date_trunc('hour', u.created_at) as hour,
+              COUNT(*) as new_users
+            FROM ${users} u
+            WHERE u.created_at >= NOW() - INTERVAL '24 hours'
+            GROUP BY date_trunc('hour', u.created_at)
+          )
+          SELECT hs.hour as period_key,
+            COALESCE(s.active_users, 0) as active_users,
+            COALESCE(s.earnings, 0) as earnings,
+            COALESCE(w.withdrawals, 0) as withdrawals,
+            COALESCE(u.new_users, 0) as new_users
+          FROM hour_series hs
+          LEFT JOIN hourly_stats s ON hs.hour = s.hour
+          LEFT JOIN hourly_withdrawals w ON hs.hour = w.hour
+          LEFT JOIN hourly_user_count u ON hs.hour = u.hour
+          ORDER BY hs.hour ASC
+        `);
+        rows = result.rows;
+        const before = await db.select({ count: sql<number>`count(*)` })
+          .from(users)
+          .where(sql`${users.createdAt} < NOW() - INTERVAL '23 hours'`);
+        cumulativeBeforeWindow = Number(before[0]?.count || 0);
+      } else {
+        const daysBack = range === 'month' ? 29 : 6;
+        const result = await db.execute(sql`
+          WITH date_series AS (
+            SELECT generate_series(
+              CURRENT_DATE - ${sql.raw(`INTERVAL '${daysBack} days'`)},
+              CURRENT_DATE,
+              INTERVAL '1 day'
+            )::date AS date
+          ),
+          daily_stats AS (
+            SELECT DATE(e.created_at) as date,
+              COUNT(DISTINCT e.user_id) as active_users,
+              COALESCE(SUM(e.amount), 0) as earnings
+            FROM ${earnings} e
+            WHERE e.created_at >= CURRENT_DATE - ${sql.raw(`INTERVAL '${daysBack} days'`)}
+            GROUP BY DATE(e.created_at)
+          ),
+          daily_withdrawals AS (
+            SELECT DATE(w.created_at) as date,
+              COALESCE(SUM(w.amount), 0) as withdrawals
+            FROM ${withdrawals} w
+            WHERE w.created_at >= CURRENT_DATE - ${sql.raw(`INTERVAL '${daysBack} days'`)}
+              AND w.status IN ('completed', 'success', 'paid', 'Approved')
+            GROUP BY DATE(w.created_at)
+          ),
+          daily_user_count AS (
+            SELECT DATE(u.created_at) as date,
+              COUNT(*) as new_users
+            FROM ${users} u
+            WHERE u.created_at >= CURRENT_DATE - ${sql.raw(`INTERVAL '${daysBack} days'`)}
+            GROUP BY DATE(u.created_at)
+          )
+          SELECT ds.date as period_key,
+            COALESCE(s.active_users, 0) as active_users,
+            COALESCE(s.earnings, 0) as earnings,
+            COALESCE(w.withdrawals, 0) as withdrawals,
+            COALESCE(u.new_users, 0) as new_users
+          FROM date_series ds
+          LEFT JOIN daily_stats s ON ds.date = s.date
+          LEFT JOIN daily_withdrawals w ON ds.date = w.date
+          LEFT JOIN daily_user_count u ON ds.date = u.date
+          ORDER BY ds.date ASC
+        `);
+        rows = result.rows;
+        const before = await db.select({ count: sql<number>`count(*)` })
+          .from(users)
+          .where(sql`${users.createdAt} < CURRENT_DATE - ${sql.raw(`INTERVAL '${daysBack} days'`)}`);
+        cumulativeBeforeWindow = Number(before[0]?.count || 0);
+      }
+
+      let cumulativeUsers = cumulativeBeforeWindow;
+      const chartData = rows.map((row: any) => {
         cumulativeUsers += Number(row.new_users || 0);
+        const label = range === 'day'
+          ? new Date(row.period_key).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true })
+          : new Date(row.period_key).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         return {
-          period: new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          users: Number(cumulativeUsers), // Ensure it's a number in the output
+          period: label,
+          users: Number(cumulativeUsers),
           earnings: parseFloat(row.earnings || '0'),
           withdrawals: parseFloat(row.withdrawals || '0'),
           activeUsers: Number(row.active_users || 0)
@@ -5302,6 +5358,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         success: true,
+        range,
         data: chartData
       });
     } catch (error) {
@@ -5312,6 +5369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
 
   // Admin user tracking endpoint - search by UID/referral code OR user ID
   app.get('/api/admin/user-tracking/:uid', authenticateAdmin, async (req: any, res) => {
@@ -12220,6 +12278,25 @@ ${walletAddress}
     } catch (error) {
       console.error('❌ Error fetching user deposit history:', error);
       res.status(500).json({ success: false, message: 'Failed to fetch deposit history' });
+    }
+  });
+
+  // Complete ban history for a single user (used by the "Bans" tab on their
+  // profile). This endpoint was previously missing entirely — the frontend
+  // called it, always got a 404, and silently showed "No ban history" even
+  // for users with real ban records.
+  app.get('/api/admin/user-ban-history/:id', authenticateAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const logs = await db
+        .select()
+        .from(banLogs)
+        .where(eq(banLogs.bannedUserId, id))
+        .orderBy(desc(banLogs.createdAt));
+      res.json({ success: true, banLogs: logs });
+    } catch (error) {
+      console.error('❌ Error fetching user ban history:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch ban history' });
     }
   });
 
