@@ -400,22 +400,19 @@ export default function AdminPage() {
 function AnalyticsSection({ stats }: { stats: AdminStats | undefined }) {
   const [timeFilter, setTimeFilter] = useState<'day' | 'week' | 'month'>('week');
 
-  // Generate mock trend data (in production, fetch from API)
-  const generateTrendData = () => {
-    const points = timeFilter === 'day' ? 24 : timeFilter === 'week' ? 7 : 30;
-    const data = [];
-    for (let i = 0; i < points; i++) {
-      const multiplier = (i + 1) / points;
-      data.push({
-        label: timeFilter === 'day' ? `${i}:00` : timeFilter === 'week' ? `Day ${i + 1}` : `Day ${i + 1}`,
-        earnings: parseFloat(stats?.totalEarnings || '0') * multiplier * (0.8 + Math.random() * 0.4),
-        withdrawals: parseFloat(stats?.totalWithdrawals || '0') * multiplier * (0.7 + Math.random() * 0.5),
-      });
-    }
-    return data;
-  };
+  const { data: chartResponse, isLoading: chartLoading } = useQuery({
+    queryKey: ['/api/admin/analytics/chart', timeFilter],
+    queryFn: () => apiRequest('GET', `/api/admin/analytics/chart?range=${timeFilter}`).then(res => res.json()),
+    staleTime: 60_000,
+  });
 
-  const chartData = generateTrendData();
+  // Real per-period earnings/withdrawals from the database, replacing the
+  // previous Math.random()-based mock trend line.
+  const chartData = (chartResponse?.data || []).map((point: any) => ({
+    label: point.period,
+    earnings: point.earnings,
+    withdrawals: point.withdrawals,
+  }));
 
   return (
     <Card>
@@ -442,6 +439,15 @@ function AnalyticsSection({ stats }: { stats: AdminStats | undefined }) {
       </CardHeader>
       <CardContent>
         <div className="h-80 w-full">
+          {chartLoading ? (
+            <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+              Loading trend data...
+            </div>
+          ) : chartData.length === 0 ? (
+            <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+              No data yet for this period
+            </div>
+          ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -485,6 +491,7 @@ function AnalyticsSection({ stats }: { stats: AdminStats | undefined }) {
               />
             </LineChart>
           </ResponsiveContainer>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -2461,6 +2468,10 @@ function SettingsSection() {
     streakReward: '100',
     shareTaskReward: '1000',
     communityTaskReward: '1000',
+    shareReferralReward: '1000',
+    checkAnnouncementReward: '1000',
+    adsgramCheckinReward: '1000',
+    firstActiveReferralReward: '2500',
     monetagMissionReward: '50',
     monetagMissionLimit: '10',
     adexiumMissionReward: '50',
@@ -2521,6 +2532,10 @@ function SettingsSection() {
         streakReward: settingsData.streakReward?.toString() || '100',
         shareTaskReward: settingsData.shareTaskReward?.toString() || '1000',
         communityTaskReward: settingsData.communityTaskReward?.toString() || '1000',
+        shareReferralReward: settingsData.shareReferralReward?.toString() || '1000',
+        checkAnnouncementReward: settingsData.checkAnnouncementReward?.toString() || '1000',
+        adsgramCheckinReward: settingsData.adsgramCheckinReward?.toString() || '1000',
+        firstActiveReferralReward: settingsData.firstActiveReferralReward?.toString() || '2500',
         monetagMissionReward: settingsData.monetagMissionReward?.toString() || '50',
         monetagMissionLimit: settingsData.monetagMissionLimit?.toString() || '10',
         adexiumMissionReward: settingsData.adexiumMissionReward?.toString() || '50',
@@ -5465,8 +5480,14 @@ function PartnerTasksSection() {
   };
 
   const { data: allTasksData, isLoading } = useQuery<{ tasks: any[] }>({
+    // NOTE: this used to call GET /api/admin/tasks?filter=all, which has no
+    // matching backend route (only POST /api/admin/tasks and
+    // /api/admin/tasks/:taskId/* exist) — every request 404'd silently, so
+    // this tab never showed any partner/ad tasks even when they existed in
+    // the database. /api/admin/all-tasks returns the same { tasks } shape
+    // and is what the Tasks tab already uses successfully.
     queryKey: ["/api/admin/tasks/partner"],
-    queryFn: () => apiRequest("GET", "/api/admin/tasks?filter=all").then(r => r.json()),
+    queryFn: () => apiRequest("GET", "/api/admin/all-tasks").then(r => r.json()),
   });
   const partnerTasks: any[] = (allTasksData?.tasks ?? []).filter((t: any) => t.taskType === "partner");
 
