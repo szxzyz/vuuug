@@ -72,16 +72,38 @@ export function useAdFlow() {
     return new Promise(async (resolve) => {
       const ready = await waitForFn('showRewardAd');
       if (!ready) { resolve({ success: false, unavailable: true }); return; }
-      window.showRewardAd((res) => {
-        console.log('Monetix ad result:', res.status);
-        if (res.status === 'completed') {
-          resolve({ success: true, unavailable: false });
-        } else if (res.status === 'closed' || res.status === 'skipped') {
-          resolve({ success: false, unavailable: false });
-        } else {
-          resolve({ success: false, unavailable: false });
-        }
-      });
+
+      let settled = false;
+      const settle = (result: { success: boolean; unavailable: boolean }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        resolve(result);
+      };
+
+      // Safety net — window.showRewardAd's callback is the *only* thing that
+      // ever resolves this promise. If the SDK never calls back (no fill,
+      // the ad request silently failing, script blocked after load, etc.)
+      // the button would spin forever with nothing to catch it. Time out
+      // and treat it as "unavailable" so the UI recovers.
+      const timeoutId = setTimeout(() => {
+        console.warn('Monetix ad timed out — SDK never invoked its callback');
+        settle({ success: false, unavailable: true });
+      }, 20000);
+
+      try {
+        window.showRewardAd((res) => {
+          console.log('Monetix ad result:', res.status);
+          if (res.status === 'completed') {
+            settle({ success: true, unavailable: false });
+          } else {
+            settle({ success: false, unavailable: false });
+          }
+        });
+      } catch (error) {
+        console.error('Monetix showRewardAd threw:', error);
+        settle({ success: false, unavailable: true });
+      }
     });
   }, []);
 
