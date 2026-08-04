@@ -7,7 +7,6 @@ import { useAdSession } from "@/hooks/useAdSession";
 import AdFailurePopup from "@/components/AdFailurePopup";
 import { useLanguage } from "@/hooks/useLanguage";
 import { useAdFlow } from "@/hooks/useAdFlow";
-import TurnstileActionModal from "@/components/TurnstileActionModal";
 
 declare global {
   interface Window {
@@ -50,11 +49,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const [isShowingAds,   setIsShowingAds]   = useState(false);
   const [currentAdStep,  setCurrentAdStep]  = useState<"idle" | "loading" | "verifying">("idle");
   const [showFailurePopup, setShowFailurePopup] = useState(false);
-
-  // ── Per-action Turnstile state ─────────────────────────────────────────────
-  const [showAdTurnstile, setShowAdTurnstile] = useState(false);
-  const adTurnstileResolveRef = useRef<((token: string | null) => void) | null>(null);
-  // ──────────────────────────────────────────────────────────────────────────
 
   const sessionRewardedRef = useRef(false);
   const currentAdTypeRef   = useRef<string>("adsgram");
@@ -155,26 +149,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }
     });
 
-  // ─── Turnstile Promise helpers ─────────────────────────────────────────────
-  const waitForAdTurnstile = (): Promise<string | null> =>
-    new Promise((resolve) => {
-      adTurnstileResolveRef.current = resolve;
-      setShowAdTurnstile(true);
-    });
-
-  const handleAdTurnstileVerified = (token: string) => {
-    setShowAdTurnstile(false);
-    adTurnstileResolveRef.current?.(token);
-    adTurnstileResolveRef.current = null;
-  };
-
-  const handleAdTurnstileCancel = () => {
-    setShowAdTurnstile(false);
-    adTurnstileResolveRef.current?.(null);
-    adTurnstileResolveRef.current = null;
-  };
-  // ──────────────────────────────────────────────────────────────────────────
-
   // ─── Run ad for a specific card ────────────────────────────────────────────
   const runAdFlowForCard = async (cardId: number) => {
     if (isShowingAds) return;
@@ -225,32 +199,9 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       setCurrentAdStep("verifying");
       await waitForForeground();
 
-      // ── Conditionally require Turnstile based on backend counter ──────────
-      // The server tracks how many ads the user has completed since the last
-      // Turnstile challenge.  We ask the server whether a challenge is needed
-      // NOW — if so we show the modal; otherwise we proceed immediately.
-      // The server enforces this check independently (fail-closed), so the
-      // client-side check here is for UX only (avoids a round-trip rejection).
-      let turnstileToken: string | undefined = undefined;
-      try {
-        const tsRes  = await apiRequest("GET", "/api/ads/turnstile-status");
-        const tsData = await tsRes.json() as { required: boolean };
-        if (tsData.required) {
-          setCurrentAdStep("verifying");
-          const token = await waitForAdTurnstile();
-          if (!token) {
-            // User cancelled verification — block reward, do not consume session
-            cancelSession();
-            showNotification("Verification cancelled. Ad reward not claimed.", "error");
-            return;
-          }
-          turnstileToken = token;
-        }
-      } catch {
-        // Status check failed — proceed without token; server will decide
-      }
-      // ─────────────────────────────────────────────────────────────────────
-
+      // Cloudflare Turnstile verification has been disabled app-wide, so we
+      // no longer round-trip to /api/ads/turnstile-status or wait on a
+      // challenge modal here — go straight to claiming the reward.
       const session = endSession();
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
@@ -260,7 +211,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
           backgroundDuration: session.backgroundDuration,
           backgroundEntered:  session.backgroundEntered,
           sessionStart:       session.sessionStart,
-          turnstileToken,
         });
       }
     } catch {
@@ -481,16 +431,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         />
       )}
 
-      {/* ── Per-action Turnstile challenge (after watching ad) ────────────── */}
-      {showAdTurnstile && (
-        <TurnstileActionModal
-          action="ads_watch"
-          title="Verify to claim reward"
-          description="Complete the quick security check to receive your POW reward."
-          onVerified={handleAdTurnstileVerified}
-          onCancel={handleAdTurnstileCancel}
-        />
-      )}
     </>
   );
 }

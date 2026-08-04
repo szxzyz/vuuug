@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
 import { FiCheck, FiExternalLink } from "react-icons/fi";
-import TurnstileActionModal from "@/components/TurnstileActionModal";
 
 declare global {
   interface Window {
@@ -39,15 +38,9 @@ export default function PromoCodeInput() {
   const [channelRequired, setChannelRequired] = useState<{ channelLink: string | null; channelName: string } | null>(null);
   const queryClient = useQueryClient();
 
-  // ── Per-action Turnstile ────────────────────────────────────────────────────
-  const [showTurnstile, setShowTurnstile] = useState(false);
-  // Holds the code to redeem once Turnstile resolves
-  const pendingCodeRef = useRef<string>("");
-  // ──────────────────────────────────────────────────────────────────────────
-
   const redeemPromoMutation = useMutation({
-    mutationFn: async ({ code, turnstileToken }: { code: string; turnstileToken: string }) => {
-      const response = await apiRequest("POST", "/api/promo-codes/redeem", { code, turnstileToken });
+    mutationFn: async ({ code }: { code: string }) => {
+      const response = await apiRequest("POST", "/api/promo-codes/redeem", { code });
       const data = await response.json();
       if (!response.ok) {
         const err: any = new Error(data.message || "Invalid promo code");
@@ -65,7 +58,6 @@ export default function PromoCodeInput() {
       setPromoCode("");
       setInlineError(null);
       setChannelRequired(null);
-      pendingCodeRef.current = "";
       showNotification(data.message || "Promo applied successfully!", "success");
     },
     onError: (error: any) => {
@@ -82,7 +74,7 @@ export default function PromoCodeInput() {
     },
   });
 
-  // Step 1: validate + show ad → then open Turnstile
+  // Validate + show ad → then redeem directly (Cloudflare Turnstile challenge removed)
   const handleSubmit = async () => {
     const code = promoCode.trim().toUpperCase();
     if (!code) {
@@ -100,38 +92,19 @@ export default function PromoCodeInput() {
         setBusy(false);
         return;
       }
-      // Ad done (or unavailable) — show Turnstile before redeeming
-      pendingCodeRef.current = code;
-      setShowTurnstile(true);
     } catch {
-      // On unexpected error, still gate on Turnstile
-      pendingCodeRef.current = code;
-      setShowTurnstile(true);
+      // Ad failed unexpectedly — still allow the redeem attempt below
     } finally {
       setBusy(false);
     }
+    redeemPromoMutation.mutate({ code });
   };
 
-  // Step 1b: "I've Joined — Verify & Claim" button also needs Turnstile
+  // "I've Joined — Verify & Claim" button — redeem directly
   const handleRetryAfterJoin = () => {
     const code = promoCode.trim().toUpperCase();
     if (!code) return;
-    pendingCodeRef.current = code;
-    setShowTurnstile(true);
-  };
-
-  // Step 2: Turnstile solved → submit with fresh token
-  const handleTurnstileVerified = (token: string) => {
-    setShowTurnstile(false);
-    const code = pendingCodeRef.current;
-    if (code) {
-      redeemPromoMutation.mutate({ code, turnstileToken: token });
-    }
-  };
-
-  const handleTurnstileCancel = () => {
-    setShowTurnstile(false);
-    pendingCodeRef.current = "";
+    redeemPromoMutation.mutate({ code });
   };
 
   const handleJoinChannel = () => {
@@ -275,17 +248,6 @@ export default function PromoCodeInput() {
           </button>
         </div>
       </div>
-
-      {/* Per-action Turnstile challenge before promo redemption */}
-      {showTurnstile && (
-        <TurnstileActionModal
-          action="promo_redeem"
-          title="Verify to redeem"
-          description="Complete the quick security check to claim your promo code reward."
-          onVerified={handleTurnstileVerified}
-          onCancel={handleTurnstileCancel}
-        />
-      )}
     </>
   );
 }
