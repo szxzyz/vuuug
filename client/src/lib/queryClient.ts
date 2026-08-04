@@ -1,5 +1,4 @@
 import { QueryClient, QueryFunction, keepPreviousData } from "@tanstack/react-query";
-import { getTurnstileToken } from "./turnstile";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -151,15 +150,6 @@ export async function apiRequest(
 
   // Attach device + platform headers for server-side risk scoring
   Object.assign(headers, buildSecurityHeaders());
-  const turnstileAction: Record<string, string> = {
-    "/api/ads/register-session": "ad-session",
-    "/api/ads/watch":            "ad-watch",
-  };
-  const tsAction = turnstileAction[url];
-  if (tsAction) {
-    const turnstileToken = await getTurnstileToken(tsAction);
-    if (turnstileToken) headers["x-turnstile-token"] = turnstileToken;
-  }
 
   const res = await fetch(url, {
     method,
