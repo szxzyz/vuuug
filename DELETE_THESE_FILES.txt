@@ -1,0 +1,7 @@
+These files should be DELETED from your existing repo (they are now dead code
+after removing Cloudflare Turnstile) — they are not included in this zip:
+
+client/src/components/TurnstileGate.tsx
+client/src/components/TurnstileActionModal.tsx
+client/src/lib/turnstile.ts
+server/turnstile.ts
