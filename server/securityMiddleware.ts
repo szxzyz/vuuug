@@ -74,87 +74,19 @@ export function securityLog(event: SecurityEvent): void {
   );
 }
 
-// ── Turnstile session TTL (must match routes.ts) ──────────────────────────────
+// ── Turnstile session TTL — no longer used (Turnstile disabled app-wide) ──────
 
-const TURNSTILE_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * requireVerifiedSession
  *
- * Checks that the request's session carries a live Turnstile stamp
- * (set by POST /api/turnstile/verify).
- *
- * Fail-OPEN when Turnstile is not configured (no secret key) so the app
- * continues to work during development.  In production both env vars must
- * be set — if either is missing this middleware logs a warning and passes.
- *
- * Returns HTTP 403 when:
- *   - Turnstile IS configured AND session is not verified / expired
+ * Cloudflare Turnstile has been disabled app-wide — this is now a no-op
+ * pass-through. It previously 403'd any request whose session lacked a live
+ * Turnstile stamp, which was blocking withdrawals/wallet mutations whenever
+ * the challenge failed (common in Telegram's in-app browser) and driving the
+ * retry loops that tripped the rate limiter.
  */
-export const requireVerifiedSession: RequestHandler = (req: any, res, next) => {
-  const secretKey = (
-    process.env.TURNSTILE_SECRET ??
-    process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY ??
-    ""
-  ).trim();
-  const siteKey = (process.env.VITE_TURNSTILE_SITE_KEY ?? "").trim();
-  const configured = !!(secretKey && siteKey);
-
-  const ip = getClientIP(req);
-  const fp = fingerprintHash(req);
-  const userId: string | undefined =
-    req.user?.user?.id ?? req.session?.user?.user?.id;
-  const endpoint = `${req.method} ${req.path}`;
-  const ts = new Date().toISOString();
-
-  if (!configured) {
-    // Turnstile not set up — warn but allow (dev / unconfigured environment)
-    console.warn(
-      `[requireVerifiedSession] Turnstile not configured — skipping session check for ${endpoint}`,
-    );
-    return next();
-  }
-
-  const { turnstileVerified, turnstileVerifiedAt } = req.session ?? {};
-  const isVerified =
-    turnstileVerified === true &&
-    typeof turnstileVerifiedAt === "number" &&
-    Date.now() - turnstileVerifiedAt < TURNSTILE_SESSION_TTL_MS;
-
-  if (!isVerified) {
-    const expired =
-      turnstileVerified === true &&
-      typeof turnstileVerifiedAt === "number" &&
-      Date.now() - turnstileVerifiedAt >= TURNSTILE_SESSION_TTL_MS;
-
-    securityLog({
-      event: expired ? "session_expired" : "unverified_session",
-      endpoint,
-      userId,
-      ip,
-      fingerprintHash: fp,
-      reason: expired ? "Turnstile session expired" : "No Turnstile session",
-      ts,
-    });
-
-    return res.status(403).json({
-      success: false,
-      message:
-        "Security verification required. Please complete the challenge and try again.",
-      errorType: "turnstile_session_required",
-      turnstileRequired: true,
-    });
-  }
-
-  securityLog({
-    event: "turnstile_pass",
-    endpoint,
-    userId,
-    ip,
-    fingerprintHash: fp,
-    ts,
-  });
-
+export const requireVerifiedSession: RequestHandler = (_req: any, _res, next) => {
   next();
 };
 
@@ -316,6 +248,12 @@ export function rateLimit(opts: RateLimitOptions = {}): RequestHandler {
 // Pre-built limiters for common endpoints
 export const authRateLimit = rateLimit({ limit: 10, windowMs: 60_000, cooldownMs: 60_000 });
 export const adWatchRateLimit = rateLimit({ limit: 15, windowMs: 60_000, cooldownMs: 120_000 });
-export const withdrawRateLimit = rateLimit({ limit: 5, windowMs: 60_000, cooldownMs: 300_000 });
+// Was limit:5/60s with a 300s base cooldown (doubling per strike, so a second
+// strike within the window produced the 600s lockout users were hitting).
+// Withdrawals are already capped by the daily-limit + pending-withdrawal
+// checks in the route itself, so this only needs to stop rapid-fire spam,
+// not double as the primary defense — loosened to avoid false-positive
+// lockouts from normal double-taps/retries.
+export const withdrawRateLimit = rateLimit({ limit: 5, windowMs: 60_000, cooldownMs: 30_000, maxCooldownMs: 120_000 });
 export const walletMutationRateLimit = rateLimit({ limit: 10, windowMs: 60_000, cooldownMs: 60_000 });
 export const taskRateLimit = rateLimit({ limit: 20, windowMs: 60_000, cooldownMs: 30_000 });

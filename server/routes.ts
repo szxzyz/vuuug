@@ -680,304 +680,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Cloudflare Turnstile endpoints ──────────────────────────────────────────
-  // TURNSTILE_SECRET_KEY  — Cloudflare dashboard secret (server only, never sent to client)
-  // VITE_TURNSTILE_SITE_KEY — Cloudflare dashboard site key  (public, sent to Vite build)
-  //
-  // Session fields written here:
-  //   req.session.turnstileVerified    boolean
-  //   req.session.turnstileVerifiedAt  timestamp (ms)
-  //
-  // Verification lasts 24 h.  After expiry the status endpoint returns
-  // verified:false and the TurnstileGate re-challenges the user.
-  // ──────────────────────────────────────────────────────────────────────────
 
-  const TURNSTILE_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-  /** GET /api/turnstile/status
-   *  Returns { verified: boolean, configured: boolean }
-   *  - verified:    session has a live Turnstile stamp (not expired)
-   *  - configured:  both env vars are present; client uses this to skip
-   *                 the challenge entirely when Turnstile is not set up
-   */
-  app.get('/api/turnstile/status', (req: any, res) => {
-    // TURNSTILE_SECRET is the canonical name (set by the Spin skill).
-    // CLOUDFLARE_TURNSTILE_SECRET_KEY is the legacy fallback for Replit.
-    const secretKey   = (process.env.TURNSTILE_SECRET ?? process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY ?? '').trim();
-    const siteKey     = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
-    const configured  = !!(secretKey && siteKey);
-
-    const { turnstileVerified, turnstileVerifiedAt } = req.session ?? {};
-    const notExpired  =
-      turnstileVerified === true &&
-      typeof turnstileVerifiedAt === 'number' &&
-      Date.now() - turnstileVerifiedAt < TURNSTILE_SESSION_TTL_MS;
-
-    const verified = notExpired;
-
-    console.log(
-      `[turnstile] status — configured=${configured} verified=${verified}` +
-      (turnstileVerifiedAt
-        ? ` age=${Math.round((Date.now() - turnstileVerifiedAt) / 1000)}s`
-        : ''),
-    );
-
-    return res.json({ verified, configured });
-  });
-
-  /** POST /api/turnstile/verify
-   *  Body: { token: string }
-   *  Calls Cloudflare Siteverify, stamps the session on success.
-   *  Returns { success: boolean, message?: string, retryable?: boolean }
-   */
-  app.post('/api/turnstile/verify', async (req: any, res) => {
-    // TURNSTILE_SECRET is the canonical name (set by the Spin skill).
-    // CLOUDFLARE_TURNSTILE_SECRET_KEY is the legacy fallback for Replit.
-    const secretKey = (process.env.TURNSTILE_SECRET ?? process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY ?? '').trim();
-    const siteKey   = process.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
-
-    // Turnstile not configured → BLOCK. Never auto-verify without a real challenge.
-    if (!secretKey || !siteKey) {
-      console.error('[turnstile] ❌ TURNSTILE_SECRET (or CLOUDFLARE_TURNSTILE_SECRET_KEY) / VITE_TURNSTILE_SITE_KEY not set — rejecting verify request');
-      return res.status(503).json({
-        success: false,
-        retryable: false,
-        message: 'Security verification is not configured on the server. Contact support.',
-      });
-    }
-
-    const { token } = req.body ?? {};
-    if (!token || typeof token !== 'string') {
-      console.warn('[turnstile] verify called without token');
-      return res.status(400).json({
-        success: false,
-        message: 'Missing Turnstile token',
-      });
-    }
-
-    // Build Siteverify request
-    const formData = new URLSearchParams();
-    formData.set('secret',   secretKey);
-    formData.set('response', token);
-    // Forward the real client IP when behind a reverse proxy
-    const clientIp =
-      (typeof req.headers['x-forwarded-for'] === 'string'
-        ? req.headers['x-forwarded-for'].split(',')[0].trim()
-        : req.headers['x-real-ip']) ||
-      req.socket?.remoteAddress ||
-      '';
-    if (clientIp) formData.set('remoteip', clientIp);
-
-    let cfData: any;
-    try {
-      const cfRes = await fetch(
-        'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-        {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body:    formData.toString(),
-          signal:  AbortSignal.timeout(10_000),
-        },
-      );
-
-      const httpStatus = cfRes.status;
-      const rawBody    = await cfRes.text();
-
-      try {
-        cfData = JSON.parse(rawBody);
-      } catch {
-        console.error(
-          `[turnstile] Siteverify non-JSON response status=${httpStatus} body=${rawBody}`,
-        );
-        return res.json({
-          success:   false,
-          retryable: true,
-          message:   'Verification service returned an unexpected response. Please retry.',
-        });
-      }
-
-      if (!cfRes.ok) {
-        console.error(
-          `[turnstile] Siteverify HTTP ${httpStatus} — body=${rawBody}`,
-        );
-        return res.json({
-          success:   false,
-          retryable: true,
-          message:   'Verification service unavailable. Please retry.',
-        });
-      }
-    } catch (err: any) {
-      const isTimeout = err?.name === 'TimeoutError' || err?.code === 'ETIMEDOUT';
-      console.error(
-        `[turnstile] Siteverify fetch failed — ${isTimeout ? 'timeout' : err?.message ?? String(err)}`,
-      );
-      return res.json({
-        success:   false,
-        retryable: true,
-        message:   isTimeout
-          ? 'Verification timed out. Please retry.'
-          : 'Could not reach verification service. Please retry.',
-      });
-    }
-
-    // Log the full Cloudflare response for production diagnosis
-    console.log(
-      `[turnstile] Siteverify response — success=${cfData.success}` +
-      ` error-codes=${JSON.stringify(cfData['error-codes'] ?? [])}` +
-      ` hostname=${cfData.hostname ?? 'n/a'}` +
-      ` action=${cfData.action ?? 'n/a'}` +
-      ` cdata=${cfData.cdata ?? 'n/a'}`,
-    );
-
-    if (!cfData.success) {
-      const codes: string[] = cfData['error-codes'] ?? [];
-      // timeout-or-duplicate and invalid-input-response are non-retryable;
-      // the widget must be re-rendered to get a fresh token.
-      const nonRetryable = codes.some(c =>
-        c === 'timeout-or-duplicate' || c === 'invalid-input-response',
-      );
-      return res.json({
-        success:   false,
-        retryable: !nonRetryable,
-        message:   codes.length
-          ? `Verification failed: ${codes.join(', ')}. Please try again.`
-          : 'Verification failed. Please try again.',
-      });
-    }
-
-    // ✅ Success — stamp the session
-    req.session.turnstileVerified   = true;
-    req.session.turnstileVerifiedAt = Date.now();
-
-    req.session.save((saveErr: any) => {
-      if (saveErr) {
-        console.error('[turnstile] Session save error after successful verify:', saveErr);
-        // Return success anyway — worst case the user re-verifies on next load
-      }
-      console.log(`[turnstile] ✅ Session stamped for IP=${clientIp || 'unknown'}`);
-      return res.json({ success: true });
-    });
-  });
-
-  /** POST /api/turnstile/invalidate
-   *  Called on fresh app launch to clear the session Turnstile stamp so the
-   *  gate always challenges the user when they reopen the app.
-   *  Returns { success: true } unconditionally (idempotent).
-   */
-  app.post('/api/turnstile/invalidate', (req: any, res) => {
-    if (req.session) {
-      req.session.turnstileVerified   = false;
-      req.session.turnstileVerifiedAt = undefined;
-      req.session.save((err: any) => {
-        if (err) console.warn('[turnstile] invalidate session-save error (non-critical):', err);
-      });
-    }
-    console.log('[turnstile] 🔄 Session invalidated — fresh launch detected');
-    return res.json({ success: true });
-  });
-
-  // ── End Turnstile endpoints ──────────────────────────────────────────────────
-
-  // ── Per-action Turnstile verification helper ──────────────────────────────
-  // Used by reward-bearing endpoints (ad watch, withdrawal, promo redeem).
-  // Expects `turnstileToken` in req.body (or `x-turnstile-token` header).
-  // Returns true and continues when token is valid; false after sending a 403.
-  // Logs every attempt (success/fail/missing) with IP, UA, userId, timestamp.
-  // ──────────────────────────────────────────────────────────────────────────
-  async function checkActionTurnstile(req: any, res: any, action: string): Promise<boolean> {
-    const secretKey = (process.env.TURNSTILE_SECRET ?? process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY ?? '').trim();
-    const ip =
-      (typeof req.headers['x-forwarded-for'] === 'string'
-        ? req.headers['x-forwarded-for'].split(',')[0].trim()
-        : req.headers['x-real-ip']) ||
-      req.socket?.remoteAddress || 'unknown';
-    const ua = (req.headers['user-agent'] || '').slice(0, 120);
-    const userId = req.user?.user?.id || req.session?.user?.user?.id || 'anon';
-    const ts = new Date().toISOString();
-
-    // If Turnstile is not configured, block (fail-closed — never bypass)
-    if (!secretKey) {
-      console.error(`[turnstile-action] ❌ NOT_CONFIGURED action=${action} userId=${userId} ip=${ip} ts=${ts}`);
-      res.status(503).json({
-        success: false,
-        message: 'Security verification is not configured. Contact support.',
-        errorType: 'turnstile_not_configured',
-        turnstileRequired: true,
-      });
-      return false;
-    }
-
-    const token: string | undefined = req.body?.turnstileToken || req.headers['x-turnstile-token'];
-
-    if (!token || typeof token !== 'string') {
-      console.warn(`[turnstile-action] ❌ MISSING_TOKEN action=${action} userId=${userId} ip=${ip} ts=${ts}`);
-      res.status(403).json({
-        success: false,
-        message: 'Security verification required. Please complete the challenge.',
-        errorType: 'turnstile_required',
-        turnstileRequired: true,
-      });
-      return false;
-    }
-
-    // Call Cloudflare Siteverify with a 10-second timeout
-    const formData = new URLSearchParams();
-    formData.set('secret', secretKey);
-    formData.set('response', token);
-    formData.set('remoteip', ip);
-
-    try {
-      const cfRes = await fetch(
-        'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData.toString(),
-          signal: AbortSignal.timeout(10_000),
-        },
-      );
-      const cfData: any = await cfRes.json().catch(() => ({}));
-
-      if (cfData.success) {
-        console.log(`[turnstile-action] ✅ OK action=${action} userId=${userId} ip=${ip} ts=${ts}`);
-        return true;
-      }
-
-      const codes: string[] = cfData['error-codes'] ?? [];
-      console.warn(
-        `[turnstile-action] ❌ CF_REJECTED action=${action} userId=${userId} ip=${ip}` +
-        ` codes=${JSON.stringify(codes)} ua="${ua}" ts=${ts}`,
-      );
-      res.status(403).json({
-        success: false,
-        message: codes.length
-          ? `Security verification failed: ${codes.join(', ')}. Please try again.`
-          : 'Security verification failed. Please try again.',
-        errorType: 'turnstile_failed',
-        turnstileRequired: true,
-      });
-      return false;
-
-    } catch (err: any) {
-      const isTimeout = err?.name === 'TimeoutError' || err?.code === 'ETIMEDOUT';
-      console.error(
-        `[turnstile-action] ❌ NETWORK_ERROR action=${action} userId=${userId} ip=${ip}` +
-        ` ${isTimeout ? 'timeout' : err?.message} ts=${ts}`,
-      );
-      // Fail-closed: block on network error, let client retry
-      res.status(503).json({
-        success: false,
-        message: isTimeout
-          ? 'Security verification timed out. Please retry.'
-          : 'Security service unavailable. Please retry.',
-        errorType: 'turnstile_unavailable',
-        turnstileRequired: true,
-        retryable: true,
-      });
-      return false;
-    }
+  // ── Cloudflare Turnstile — disabled app-wide ────────────────────────────────
+  // The /api/turnstile/status, /api/turnstile/verify, and /api/turnstile/invalidate
+  // endpoints, and the Siteverify-calling body of checkActionTurnstile(), were
+  // removed. They fail-closed (blocked the request) whenever TURNSTILE_SECRET
+  // wasn't set or Cloudflare's challenge failed — which was the root cause of
+  // withdrawals repeatedly 403'ing, the client retrying, and that retry storm
+  // tripping the withdrawal rate limiter's 600s cooldown. checkActionTurnstile
+  // is kept as a no-op so the reward-bearing endpoints below don't need to be
+  // rewired one by one.
+  async function checkActionTurnstile(_req: any, _res: any, _action: string): Promise<boolean> {
+    return true;
   }
-  // ── End per-action Turnstile helper ─────────────────────────────────────────
 
   // Get channel configuration for frontend
   app.get('/api/config/channel', (req: any, res) => {
@@ -1953,24 +1668,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *  Turnstile token.  Based on backend-authoritative adsTurnstileCount vs threshold.
    */
   app.get('/api/ads/turnstile-status', authenticateTelegram, async (req: any, res) => {
-    try {
-      const userId = req.user.user.id;
-      const rows = await db.execute(sql`
-        SELECT ads_turnstile_count, ads_turnstile_threshold
-        FROM users WHERE id = ${userId} LIMIT 1
-      `);
-      const row = (rows as any)?.[0] ?? (rows as any)?.rows?.[0];
-      const count     = Number(row?.ads_turnstile_count     ?? 0);
-      const threshold = Number(row?.ads_turnstile_threshold ?? 0);
-      // Required only when threshold is set (>0) and counter has reached it
-      const required  = threshold > 0 && count >= threshold;
-      console.log(`[ads-turnstile-status] userId=${userId} count=${count} threshold=${threshold} required=${required}`);
-      return res.json({ required });
-    } catch (err) {
-      console.error('[ads-turnstile-status] error:', err);
-      // Fail-safe: do not expose internals; client treats false as "not required"
-      return res.json({ required: false });
-    }
+    // Cloudflare Turnstile verification has been disabled app-wide — never
+    // require the challenge for ad claims.
+    return res.json({ required: false });
   });
 
   // Client calls this BEFORE showing any ad SDK. The server stores the adType so
@@ -2018,54 +1718,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.user.id;
 
-      // ── Conditional Turnstile — required after every N completed ads (N is a
-      //    random threshold 5–10, stored server-side so clients cannot bypass it
-      //    by refreshing).  Every attempt (pass/fail/missing) is logged for fraud
-      //    detection.  If the threshold has been reached and no valid token is
-      //    provided the request is rejected before any session is consumed.
+      // ── Conditional Turnstile counter — disabled app-wide ──────────────────
+      // This used to require a fresh Turnstile token after every N ads
+      // (random threshold 5–10). Left in place but neutered: it no longer
+      // blocks on a missing token, since Cloudflare verification has been
+      // removed everywhere else in the app too.
       // ───────────────────────────────────────────────────────────────────────
-      {
-        const tsRows = await db.execute(sql`
-          SELECT ads_turnstile_count, ads_turnstile_threshold
-          FROM users WHERE id = ${userId} LIMIT 1
-        `);
-        const tsRow       = (tsRows as any)?.[0] ?? (tsRows as any)?.rows?.[0];
-        const tsCount     = Number(tsRow?.ads_turnstile_count     ?? 0);
-        const tsThreshold = Number(tsRow?.ads_turnstile_threshold ?? 0);
-        const tsTrigger   = tsThreshold > 0 && tsCount >= tsThreshold;
 
-        const ip  = (typeof req.headers['x-forwarded-for'] === 'string'
-          ? req.headers['x-forwarded-for'].split(',')[0].trim()
-          : req.headers['x-real-ip']) || req.socket?.remoteAddress || 'unknown';
-        const ts  = new Date().toISOString();
-
-        if (tsTrigger) {
-          const token = req.body?.turnstileToken || req.headers?.['x-turnstile-token'];
-          if (!token || typeof token !== 'string') {
-            // Log missing token — fraud signal
-            console.warn(`[turnstile-ads] ❌ MISSING_TOKEN userId=${userId} count=${tsCount} threshold=${tsThreshold} ip=${ip} ts=${ts}`);
-            return res.status(403).json({
-              success: false,
-              message: 'Security verification required. Please complete the challenge.',
-              errorType: 'turnstile_required',
-              turnstileRequired: true,
-            });
-          }
-          // Verify with Cloudflare — logs pass/fail automatically inside checkActionTurnstile
-          if (!await checkActionTurnstile(req, res, 'ads_watch')) return;
-          // ✅ Verified — reset counter and pick new random threshold (5–10)
-          const newThreshold = 5 + Math.floor(Math.random() * 6);
-          await db.execute(sql`
-            UPDATE users SET
-              ads_turnstile_count     = 0,
-              ads_turnstile_threshold = ${newThreshold},
-              updated_at              = NOW()
-            WHERE id = ${userId}
-          `);
-          console.log(`[turnstile-ads] ✅ Counter reset userId=${userId} newThreshold=${newThreshold} ip=${ip} ts=${ts}`);
-        }
-      }
-      // ────────────────────────────────────────────────────────────────────────
 
       // Get user to check daily ad limit
       const user = await storage.getUser(userId);
