@@ -1844,16 +1844,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 5. Anti-fake background/minimize check — the user must have actually left the app
-      //    (backgrounded/minimized it, e.g. to view the ad in another window/overlay) for at
-      //    least MIN_BACKGROUND_MS before returning. This is our proxy for "the ad was really shown"
-      //    since we cannot directly verify third-party ad SDK click/view events.
+      // 5. AdsGram's native overlay genuinely backgrounds the Mini App, so keep
+      //    the minimize check for AdsGram only. Monetag, GigaPub, USL and
+      //    Monetix report completion through their own SDK callbacks and must
+      //    not be rejected just because their overlay keeps the app focused.
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
       const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
       console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms (total: ${sessionAgeMs}ms)`);
 
-      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
+      if (serverAdType === 'adsgram' && (!bgEntered || bgDuration < MIN_BACKGROUND_MS)) {
         // Mark session as failed so it can't be retried/replayed, and bump the abuse score
         await db.update(adSessions)
           .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
