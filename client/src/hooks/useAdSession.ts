@@ -16,6 +16,9 @@ export function useAdSession() {
   const backgroundEnteredRef = useRef<boolean>(false);
   const isHiddenRef         = useRef<boolean>(false);
   const listenersRef        = useRef<Array<{ target: Document | Window; type: string; fn: EventListener }>>([]);
+  // Telegram WebApp events are registered/removed through a separate API,
+  // so we keep their teardown functions in their own ref.
+  const tgTeardownRef = useRef<Array<() => void>>([]);
 
   const startSession = useCallback((): string => {
     const rand = () => Math.random().toString(36).slice(2, 9);
@@ -31,11 +34,13 @@ export function useAdSession() {
     backgroundEnteredRef.current = false;
     isHiddenRef.current          = false;
 
-    // Tear down any listeners from a previous session
+    // Tear down any DOM + Telegram listeners from a previous session
     for (const { target, type, fn } of listenersRef.current) {
       target.removeEventListener(type, fn);
     }
     listenersRef.current = [];
+    for (const off of tgTeardownRef.current) off();
+    tgTeardownRef.current = [];
 
     const enterBackground = () => {
       if (isHiddenRef.current) return; // already counted
@@ -77,6 +82,22 @@ export function useAdSession() {
       { target: window,   type: 'pageshow',           fn: onPageShow },
     ];
 
+    // ── Telegram WebApp lifecycle events ───────────────────────────────────
+    // Telegram Mini App ad SDKs (Monetag, GigaPub, etc.) typically open a
+    // Telegram-native dialog (Stars payment prompt, interstitial, etc.) which
+    // deactivates the mini app without necessarily hiding the document.
+    // `visibilitychange` / `blur` may not fire in this case, so we also
+    // listen to the Telegram-specific events to capture the genuine background.
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg?.onEvent) {
+      tg.onEvent('deactivated', enterBackground);
+      tg.onEvent('activated',   exitBackground);
+      tgTeardownRef.current = [
+        () => tg.offEvent?.('deactivated', enterBackground),
+        () => tg.offEvent?.('activated',   exitBackground),
+      ];
+    }
+
     return sessionId;
   }, []);
 
@@ -85,6 +106,9 @@ export function useAdSession() {
       target.removeEventListener(type, fn);
     }
     listenersRef.current = [];
+    // Also remove Telegram WebApp listeners if registered
+    for (const off of tgTeardownRef.current) off();
+    tgTeardownRef.current = [];
   };
 
   // Resolves once the app has actually returned to the foreground (i.e. the

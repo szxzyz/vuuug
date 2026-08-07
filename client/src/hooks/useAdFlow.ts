@@ -42,13 +42,25 @@ export function useAdFlow() {
     return new Promise(async (resolve) => {
       const ready = await waitForFn('show_11123429');
       if (!ready) { resolve({ success: false, watchedFully: false, unavailable: true }); return; }
+
+      let settled = false;
+      const settle = (r: { success: boolean; watchedFully: boolean; unavailable: boolean }) => {
+        if (settled) return; settled = true; clearTimeout(timer); resolve(r);
+      };
+      // Hard timeout — if the Monetag SDK never settles (no fill, script error,
+      // etc.) the Watch button would spin forever without this guard.
+      const timer = setTimeout(() => {
+        console.warn('Monetag ad timed out after 30 s');
+        settle({ success: false, watchedFully: false, unavailable: true });
+      }, 30_000);
+
       window.show_11123429()
-        .then(() => resolve({ success: true, watchedFully: true, unavailable: false }))
+        .then(() => settle({ success: true, watchedFully: true, unavailable: false }))
         .catch((error) => {
           console.error('Monetag ad error:', error);
           const msg = String(error?.message || error || '').toLowerCase();
           const noAds = msg.includes('no ad') || msg.includes('no fill') || msg.includes('unavailable');
-          resolve({ success: false, watchedFully: false, unavailable: noAds });
+          settle({ success: false, watchedFully: false, unavailable: noAds });
         });
     });
   }, []);
@@ -57,13 +69,23 @@ export function useAdFlow() {
     return new Promise(async (resolve) => {
       const ready = await waitForFn('showGiga');
       if (!ready) { resolve({ success: false, unavailable: true }); return; }
+
+      let settled = false;
+      const settle = (r: { success: boolean; unavailable: boolean }) => {
+        if (settled) return; settled = true; clearTimeout(timer); resolve(r);
+      };
+      const timer = setTimeout(() => {
+        console.warn('GigaPub ad timed out after 30 s');
+        settle({ success: false, unavailable: true });
+      }, 30_000);
+
       window.showGiga()
-        .then(() => resolve({ success: true, unavailable: false }))
+        .then(() => settle({ success: true, unavailable: false }))
         .catch((e) => {
           console.error('GigaPub ad error:', e);
           const msg = String(e?.message || e?.error || e || '').toLowerCase();
           const noAds = msg.includes('no ad') || msg.includes('no fill') || msg.includes('unavailable') || msg.includes('empty');
-          resolve({ success: false, unavailable: noAds });
+          settle({ success: false, unavailable: noAds });
         });
     });
   }, []);
@@ -108,50 +130,72 @@ export function useAdFlow() {
   }, []);
 
   // ─── USL Ads (TowerAds SDK) ───────────────────────────────────────────────
-  // The SDK's callbacks are bound at construction time, so the client instance
-  // is created lazily once and reused for every show — this also satisfies
-  // "load the SDK only once".
-  const uslAdsInstanceRef = useRef<InstanceType<Window["TowerAds"]> | null>(null);
+  // The TowerAds SDK binds callbacks at construction time. Re-using the same
+  // instance across multiple ad invocations means the callbacks from the first
+  // construction close over that invocation's `settle`/`rewardEarned` — every
+  // subsequent invocation's callbacks would silently call the wrong resolver.
+  //
+  // Fix: route all callbacks through a mutable ref that always points to the
+  // *current* invocation's resolver. The instance is still a singleton (to
+  // avoid loading the SDK script more than once), but the effective callback
+  // target is swapped on every call.
+  const uslAdsInstanceRef   = useRef<InstanceType<Window["TowerAds"]> | null>(null);
+  const uslCurrentSettleRef = useRef<((r: { success: boolean; unavailable: boolean }) => void) | null>(null);
 
   const showUSLAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
     return new Promise((resolve) => {
       const ready = typeof window.TowerAds === "function";
       if (!ready) { resolve({ success: false, unavailable: true }); return; }
 
-      let rewardEarned = false;
       let settled = false;
       const settle = (result: { success: boolean; unavailable: boolean }) => {
         if (settled) return;
         settled = true;
+        uslCurrentSettleRef.current = null; // clear so stale callbacks can't fire twice
         resolve(result);
       };
+
+      // Point the mutable ref at THIS invocation's resolver BEFORE showing the ad.
+      uslCurrentSettleRef.current = settle;
 
       try {
         if (!uslAdsInstanceRef.current) {
           uslAdsInstanceRef.current = new window.TowerAds({
             apiKey: USL_ADS_API_KEY,
             placementId: USL_ADS_PLACEMENT_ID,
-            // Reward the user only here — never anywhere else in the flow.
+            // All callbacks route through the mutable ref so they always reach
+            // the current invocation regardless of how many times the ad runs.
             onRewardEarned: () => {
-              rewardEarned = true;
-              settle({ success: true, unavailable: false });
+              console.log("USL Ads: reward earned");
+              uslCurrentSettleRef.current?.({ success: true, unavailable: false });
             },
             onError: (error) => {
               console.error("USL Ads error:", error);
-              settle({ success: false, unavailable: false });
+              uslCurrentSettleRef.current?.({ success: false, unavailable: false });
             },
           });
         }
 
+        // Hard 30 s timeout — if loadAndShow() never resolves AND onRewardEarned /
+        // onError never fire (e.g. the ad is still playing or the SDK is stuck),
+        // the Watch button would spin forever without this guard.
+        const hardTimer = setTimeout(() => {
+          console.warn('USL Ads timed out after 30 s');
+          settle({ success: false, unavailable: true });
+        }, 30_000);
+
         uslAdsInstanceRef.current.loadAndShow()
           .then(() => {
-            // loadAndShow() resolving doesn't by itself mean a reward was earned
+            clearTimeout(hardTimer);
+            // loadAndShow() resolving does not by itself mean a reward was earned
             // (the user may have closed the ad early) — onRewardEarned is the
             // only source of truth. Give it a brief grace window in case it
-            // fires just after the promise settles.
-            setTimeout(() => settle({ success: rewardEarned, unavailable: false }), 300);
+            // fires just after the promise settles; if it hasn't fired by then,
+            // settle as not rewarded.
+            setTimeout(() => settle({ success: false, unavailable: false }), 300);
           })
           .catch((error: any) => {
+            clearTimeout(hardTimer);
             console.error("USL Ads loadAndShow error:", error);
             const msg = String(error?.message || error || "").toLowerCase();
             const noAds = msg.includes("no ad") || msg.includes("no fill") || msg.includes("unavailable");
