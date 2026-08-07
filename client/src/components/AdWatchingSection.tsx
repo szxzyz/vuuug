@@ -238,7 +238,20 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }
 
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
-      if (!result.success)    { endSession(); cancelSession(); return; }
+      if (!result.success) {
+        // Previously this returned silently — user saw the ad but got no
+        // feedback at all (no toast, no popup) when the SDK reported a
+        // non-reward outcome (skipped early / reward callback never fired /
+        // provider rejected). Surface it so the user isn't left guessing.
+        console.warn(`[AdWatch] ${card.adType} ad finished without success — result:`, result);
+        endSession();
+        cancelSession();
+        showNotification(
+          `${card.title} ad didn't complete — no reward this time. Please watch the full ad and try again.`,
+          "error",
+        );
+        return;
+      }
 
       // AdsGram must have backgrounded the Mini App at least once. There is no
       // minimum background duration; this only waits for the user to return
