@@ -14,11 +14,11 @@ import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle, ShieldChec
 
 declare global {
   interface Window {
-    Adsgram?: {
+    Adsgram: {
       init: (params: { blockId: string; debug?: boolean }) => { show: () => Promise<void>; destroy: () => void };
     };
-    show_11123429?: (type?: string) => Promise<void>;
-    showGiga?: () => Promise<void>;
+    show_11123429: (type?: string) => Promise<void>;
+    showGiga: () => Promise<void>;
   }
 }
 
@@ -691,8 +691,8 @@ export default function Missions() {
     const sessionId = startSession();
     try {
       // Pre-register the session server-side (with its adType) BEFORE the ad
-      // is shown, so the claim endpoint can verify a genuine background/
-      // resume cycle instead of trusting a client-reported "watched" flag.
+      // is shown, so the claim endpoint can verify ownership, provider type,
+      // expiry, and duplicate use instead of trusting a client claim.
       const regRes = await apiRequest('POST', '/api/ads/register-session', {
         sessionId, adType: platform, context: 'mission_ad',
       });
@@ -704,9 +704,8 @@ export default function Missions() {
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t('no_ad_available'), 'info'); return; }
       if (!result.success)    { endSession(); showNotification(t('watch_full_ad'), 'error'); return; }
 
-      // Only claim once the app has genuinely returned to the foreground —
-      // otherwise backgroundDuration would be undercounted / the ad may
-      // still be showing.
+      // Wait for any provider overlay to finish before claiming. The server
+      // validates a server-measured session duration, not a client callback.
       setAdVerifying(true);
       await waitForForeground();
       const session = endSession();
