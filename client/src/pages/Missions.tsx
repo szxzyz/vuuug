@@ -965,24 +965,59 @@ export default function Missions() {
               ))}
             </div>
 
-            <SectionLabel title={t('all_tasks_label')} />
-            {tasksLoading ? (
-              <div style={cardStyle}><LoadingRow /></div>
-            ) : allTasks.length === 0 ? (
-              <div style={cardStyle}><EmptyRow label={t('no_tasks_available')} /></div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {allTasks.map(task => (
-                  <div key={task.id} style={cardStyle}>
-                    <TaskRow
-                      task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
-                      clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
-                      onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* ── User Tasks (channel + bot) ── */}
+            {(() => {
+              const userTasks = allTasks.filter(t => t.taskType !== 'partner');
+              return (
+                <>
+                  <SectionLabel title="User Tasks" />
+                  {tasksLoading ? (
+                    <div style={cardStyle}><LoadingRow /></div>
+                  ) : userTasks.length === 0 ? (
+                    <div style={cardStyle}><EmptyRow label={t('no_tasks_available')} /></div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
+                      {userTasks.map(task => (
+                        <div key={task.id} style={cardStyle}>
+                          <TaskRow
+                            task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
+                            clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
+                            onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
+            {/* ── Partner Tasks ── */}
+            {(() => {
+              const partnerTasksList = allTasks.filter(t => t.taskType === 'partner');
+              return (
+                <>
+                  <SectionLabel title="Partner Tasks" />
+                  {tasksLoading ? (
+                    <div style={cardStyle}><LoadingRow /></div>
+                  ) : partnerTasksList.length === 0 ? (
+                    <div style={cardStyle}><EmptyRow label="No partner tasks available" /></div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {partnerTasksList.map(task => (
+                        <div key={task.id} style={cardStyle}>
+                          <TaskRow
+                            task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
+                            clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
+                            onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
 
