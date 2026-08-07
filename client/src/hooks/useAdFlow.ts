@@ -4,7 +4,6 @@ declare global {
   interface Window {
     show_11123429: (type?: string) => Promise<void>;
     showGiga: () => Promise<unknown> | unknown;
-    showRewardAd: (callback: (res: { status: string }) => void) => void;
     TowerAds: new (config: {
       apiKey: string;
       placementId: string;
@@ -94,45 +93,6 @@ export function useAdFlow() {
           const noAds = msg.includes('no ad') || msg.includes('no fill') || msg.includes('unavailable') || msg.includes('empty');
           settle({ success: false, unavailable: noAds });
         });
-    });
-  }, []);
-
-  const showMonetixAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
-    return new Promise(async (resolve) => {
-      const ready = await waitForFn('showRewardAd');
-      if (!ready) { resolve({ success: false, unavailable: true }); return; }
-
-      let settled = false;
-      const settle = (result: { success: boolean; unavailable: boolean }) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        resolve(result);
-      };
-
-      // Safety net — window.showRewardAd's callback is the *only* thing that
-      // ever resolves this promise. If the SDK never calls back (no fill,
-      // the ad request silently failing, script blocked after load, etc.)
-      // the button would spin forever with nothing to catch it. Time out
-      // and treat it as "unavailable" so the UI recovers.
-      const timeoutId = setTimeout(() => {
-        console.warn('Monetix ad timed out — SDK never invoked its callback');
-        settle({ success: false, unavailable: true });
-      }, 20000);
-
-      try {
-        window.showRewardAd((res) => {
-          console.log('Monetix ad result:', res.status);
-          if (res.status === 'completed') {
-            settle({ success: true, unavailable: false });
-          } else {
-            settle({ success: false, unavailable: false });
-          }
-        });
-      } catch (error) {
-        console.error('Monetix showRewardAd threw:', error);
-        settle({ success: false, unavailable: true });
-      }
     });
   }, []);
 
@@ -240,7 +200,6 @@ export function useAdFlow() {
     runAdFlow,
     showMonetagAd,
     showGigaPubAd,
-    showMonetixAd,
     showUSLAd,
   };
 }
