@@ -4,15 +4,15 @@ import { apiRequest } from "@/lib/queryClient";
 import { FiShield, FiZap } from "react-icons/fi";
 import { showNotification } from "@/components/AppNotification";
 import { useAdSession } from "@/hooks/useAdSession";
+import AdFailurePopup from "@/components/AdFailurePopup";
 import { useLanguage } from "@/hooks/useLanguage";
 import { useAdFlow } from "@/hooks/useAdFlow";
-import AdFailurePopup from "@/components/AdFailurePopup";
 
 declare global {
   interface Window {
     Adsgram: {
-      init: (params: { blockId: string; debug?: boolean; userId?: string }) => {
-        show: () => Promise<{ done?: boolean; error?: boolean; state?: string; description?: string }>;
+      init: (params: { blockId: string; debug?: boolean }) => {
+        show: () => Promise<void>;
         destroy: () => void;
       };
     };
@@ -29,6 +29,7 @@ const AD_CARDS = [
   { id: 2, adType: "monetag", title: "MonetaG", accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
   { id: 3, adType: "gigapub", title: "Gigapub", accentColor: "#3b82f6", image: "/gigapub-logo.jpg"  },
   { id: 4, adType: "uslads",  title: "USL Ads", accentColor: "#3b82f6", image: "/usl-logo.jpg"      },
+  { id: 5, adType: "monetix", title: "Monetix", accentColor: "#3b82f6", image: "/monetix-logo.jpg"  },
 ];
 
 
@@ -36,7 +37,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
   const { t } = useLanguage();
-  const { showMonetagAd, showGigaPubAd, showUSLAd } = useAdFlow();
+  const { showMonetagAd, showGigaPubAd, showUSLAd, showMonetixAd } = useAdFlow();
 
   const TABS = [
     { id: "daily",   label: t("daily_adz") },
@@ -48,31 +49,9 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const [isShowingAds,   setIsShowingAds]   = useState(false);
   const [currentAdStep,  setCurrentAdStep]  = useState<"idle" | "loading" | "verifying">("idle");
   const [showFailurePopup, setShowFailurePopup] = useState(false);
+
   const sessionRewardedRef = useRef(false);
   const currentAdTypeRef   = useRef<string>("adsgram");
-  const telegramUserId = String(
-    user?.telegramId ||
-    (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id ||
-    "",
-  );
-
-  const waitForAdsgram = (timeoutMs = 10_000): Promise<boolean> =>
-    new Promise(resolve => {
-      if (typeof window.Adsgram === "object" || typeof window.Adsgram === "function") {
-        resolve(true);
-        return;
-      }
-      const startedAt = Date.now();
-      const timer = window.setInterval(() => {
-        if (typeof window.Adsgram === "object" || typeof window.Adsgram === "function") {
-          window.clearInterval(timer);
-          resolve(true);
-        } else if (Date.now() - startedAt >= timeoutMs) {
-          window.clearInterval(timer);
-          resolve(false);
-        }
-      }, 200);
-    });
 
   // ─── App settings ──────────────────────────────────────────────────────────
   const { data: appSettings } = useQuery({
@@ -90,6 +69,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     mutationFn: async (payload: {
       adType: string; sessionId: string;
       backgroundDuration: number; backgroundEntered: boolean; sessionStart: number;
+      turnstileToken?: string;
     }) => {
       // apiRequest throws (with errorType/secsLeft/etc. preserved on the Error)
       // if the response isn't OK, so by this point r.ok is always true.
@@ -98,13 +78,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     },
     onSuccess: (data: any) => {
       const rewardPAD = data?.rewardPOW ?? 0;
-      if (data?.alreadyRewarded) {
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
-        showNotification("AdsGram reward already credited.", "success");
-        return;
-      }
 
       // ── Instant optimistic update for user balance + ad count ──────────────
       queryClient.setQueryData(["/api/auth/user"], (old: any) => {
@@ -117,6 +90,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         else if (adType === "monetag") updates.monetagAdsWatchedToday   = (old.monetagAdsWatchedToday   || 0) + 1;
         else if (adType === "gigapub") updates.gigapubAdsWatchedToday   = (old.gigapubAdsWatchedToday   || 0) + 1;
         else if (adType === "uslads")  updates.usladsAdsWatchedToday    = (old.usladsAdsWatchedToday    || 0) + 1;
+        else if (adType === "monetix") updates.monetixAdsWatchedToday   = (old.monetixAdsWatchedToday   || 0) + 1;
         return { ...old, ...updates };
       });
 
@@ -147,48 +121,31 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     onError: (error: any) => {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      if      (error.errorType === "insufficient_background") setShowFailurePopup(true);
+      // Show "ad not counted" popup ONLY when the backend confirms the ad was
+      // watched but the background/foreground check failed — not at any other time.
+      if      (error.errorType === "insufficient_background") { setShowFailurePopup(true); }
       else if (error.errorType === "duplicate_session")       showNotification(t("error") + ": Session already used.", "error");
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
+      else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
       else if (error.limitType  === "daily")                  showNotification(t("daily_limit_reached_tomorrow"), "error");
+      // turnstile_required returned unexpectedly (race condition) — surface a clear message
+      else if (error.errorType === "turnstile_required" || error.turnstileRequired)
+                                                              showNotification("Security verification required. Please try watching again.", "error");
       else if (error.message)                                 showNotification(`${t("error")}: ${error.message}`, "error");
       else                                                    showNotification(t("something_went_wrong"), "error");
     },
   });
 
   // ─── AdsGram SDK ───────────────────────────────────────────────────────────
-  // Hard 30 s timeout guards against the SDK never settling (script error,
-  // no network, etc.) so the Watch button never spins forever.
   const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
-    new Promise(async (resolve) => {
-      if (!(await waitForAdsgram())) { resolve({ success: false, unavailable: true }); return; }
-
-      let settled = false;
-      const settle = (r: { success: boolean; unavailable: boolean }) => {
-        if (settled) return; settled = true; clearTimeout(timer); resolve(r);
-      };
-      const timer = setTimeout(() => {
-        console.warn('AdsGram ad timed out after 30 s');
-        settle({ success: false, unavailable: true });
-      }, 30_000);
-
-      try {
-        window.Adsgram.init({ blockId: "41723", userId: telegramUserId || undefined })
+    new Promise((resolve) => {
+      if (window.Adsgram) {
+        window.Adsgram.init({ blockId: "40629" })
           .show()
-          .then((result) => {
-            // AdsGram's documented rewarded flow resolves the promise only
-            // after the ad is completed. Some SDK builds resolve with no
-            // payload, so requiring result.done rejects valid completions.
-            const completed = result?.error !== true && result?.state !== "closed";
-            console.info("AdsGram show result:", result);
-            settle({ success: completed, unavailable: false });
-          })
-          .catch((error) => {
-            console.warn("AdsGram ad did not complete:", error);
-            settle({ success: false, unavailable: false });
-          });
-      } catch {
-        settle({ success: false, unavailable: true });
+          .then(() => resolve({ success: true,  unavailable: false }))
+          .catch(() => resolve({ success: false, unavailable: false }));
+      } else {
+        resolve({ success: false, unavailable: true });
       }
     });
 
@@ -221,46 +178,30 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       let result: { success: boolean; unavailable: boolean };
 
       if (card.adType === "adsgram") {
-        // AdsGram opens a native overlay that genuinely backgrounds the app —
-        // the server's background-duration check applies for this type.
         result = await showAdsgramAd();
       } else if (card.adType === "monetag") {
-        // Popup-style SDKs may keep the app focused; the server still validates
-        // the registered session duration before granting a reward.
         const r = await showMonetagAd();
         result  = { success: r.success, unavailable: r.unavailable };
       } else if (card.adType === "gigapub") {
         result = await showGigaPubAd();
       } else if (card.adType === "uslads") {
         result = await showUSLAd();
+      } else if (card.adType === "monetix") {
+        result = await showMonetixAd();
       } else {
         result = { success: false, unavailable: true };
       }
 
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
-      if (!result.success) {
-        // Previously this returned silently — user saw the ad but got no
-        // feedback at all (no toast, no popup) when the SDK reported a
-        // non-reward outcome (skipped early / reward callback never fired /
-        // provider rejected). Surface it so the user isn't left guessing.
-        console.warn(`[AdWatch] ${card.adType} ad finished without success — result:`, result);
-        endSession();
-        cancelSession();
-        showNotification(
-          `${card.title} ad didn't complete — no reward this time. Please watch the full ad and try again.`,
-          "error",
-        );
-        return;
-      }
+      if (!result.success)    { endSession(); cancelSession(); return; }
 
-      // AdsGram must have backgrounded the Mini App at least once. There is no
-      // minimum background duration; this only waits for the user to return
-      // before the session is submitted to the server.
-      if (card.adType === "adsgram") {
-        await waitForForeground();
-      }
+      // Wait for the user to return to the foreground
       setCurrentAdStep("verifying");
+      await waitForForeground();
 
+      // Cloudflare Turnstile verification has been disabled app-wide, so we
+      // no longer round-trip to /api/ads/turnstile-status or wait on a
+      // challenge modal here — go straight to claiming the reward.
       const session = endSession();
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
@@ -281,12 +222,12 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     }
   };
 
-  // Single-click: always start the ad immediately (no two-step card selection).
+  // All ad types now run directly — no pre-ad instruction popup
   const handleStartEarning = (cardId: number) => {
     const card      = AD_CARDS.find(c => c.id === cardId)!;
     const cardIndex = AD_CARDS.indexOf(card);
     if (isShowingAds || isCardLimitReached(card.adType)) return;
-    setActiveIndex(cardIndex);
+    if (cardIndex !== activeIndex) { setActiveIndex(cardIndex); return; }
     runAdFlowForCard(cardId);
   };
 
@@ -296,6 +237,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return user?.monetagAdsWatchedToday || 0;
     if (adType === "gigapub") return user?.gigapubAdsWatchedToday || 0;
     if (adType === "uslads")  return user?.usladsAdsWatchedToday  || 0;
+    if (adType === "monetix") return user?.monetixAdsWatchedToday || 0;
     return 0;
   };
 
@@ -304,6 +246,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagAdLimit ?? 50;
     if (adType === "gigapub") return appSettings?.gigapubAdLimit ?? 50;
     if (adType === "uslads")  return appSettings?.usladsAdLimit  ?? 50;
+    if (adType === "monetix") return appSettings?.monetixAdLimit ?? 50;
     return 50;
   };
 
@@ -312,6 +255,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagRewardPerAd ?? 125;
     if (adType === "gigapub") return appSettings?.gigapubRewardPerAd ?? 125;
     if (adType === "uslads")  return appSettings?.usladsRewardPerAd  ?? 125;
+    if (adType === "monetix") return appSettings?.monetixRewardPerAd ?? 125;
     return 125;
   };
 
@@ -320,6 +264,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagEnabled ?? true;
     if (adType === "gigapub") return appSettings?.gigapubEnabled ?? true;
     if (adType === "uslads")  return appSettings?.usladsEnabled  ?? true;
+    if (adType === "monetix") return appSettings?.monetixEnabled ?? true;
     return true;
   };
 
@@ -371,7 +316,10 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
             return (
               <div key={card.id}
                 style={{ width: "100%", borderRadius: 18, overflow: "hidden", background: "#1a1a1a", cursor: "pointer" }}
-                onClick={() => handleStartEarning(card.id)}
+                onClick={() => {
+                  if (index !== activeIndex) { setActiveIndex(index); return; }
+                  handleStartEarning(card.id);
+                }}
               >
                 {/* ── Header: logo + brand name + Ad Limit counter ─────────── */}
                 <div className="flex items-center gap-3 px-3 py-2.5">
@@ -435,6 +383,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (index !== activeIndex) { setActiveIndex(index); return; }
                       handleStartEarning(card.id);
                     }}
                     disabled={isShowingAds || limitReached}
@@ -474,12 +423,14 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         </div>
       </div>
 
+      {/* ── Ad not counted popup (only when reward counting fails) ────────── */}
       {showFailurePopup && (
         <AdFailurePopup
           onClose={() => setShowFailurePopup(false)}
           reason="ad_not_counted"
         />
       )}
+
     </>
   );
 }
