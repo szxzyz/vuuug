@@ -1,16 +1,12 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { showNotification } from "@/components/AppNotification";
-import { FiCheck, FiExternalLink } from "react-icons/fi";
+import { FiCheck, FiExternalLink, FiClipboard } from "react-icons/fi";
 
-declare global {
-  interface Window {
-    Adsgram?: {
-      init: (params: { blockId: string; debug?: boolean }) => { show: () => Promise<void>; destroy: () => void };
-    };
-  }
-}
+// Window.Adsgram is declared in AdWatchingSection.tsx (same bundle); no
+// duplicate declaration needed here — the shared ambient type is picked up
+// automatically at compile time.
 
 const PROMO_BLOCK_ID = "40631";
 
@@ -36,7 +32,40 @@ export default function PromoCodeInput() {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [channelRequired, setChannelRequired] = useState<{ channelLink: string | null; channelName: string } | null>(null);
+  const [pasteBusy, setPasteBusy] = useState(false);
   const queryClient = useQueryClient();
+
+  const handlePaste = async () => {
+    try {
+      setPasteBusy(true);
+      // Try the modern Clipboard API first (works in most environments).
+      // In Telegram WebApp, clipboard read may not be available — fall through
+      // to the execCommand fallback in that case.
+      let text = "";
+      if (navigator.clipboard?.readText) {
+        text = await navigator.clipboard.readText();
+      } else {
+        // Legacy fallback: create a temporary input, paste into it, read its value
+        const tmp = document.createElement("input");
+        tmp.style.position = "fixed";
+        tmp.style.opacity = "0";
+        document.body.appendChild(tmp);
+        tmp.focus();
+        document.execCommand("paste");
+        text = tmp.value;
+        document.body.removeChild(tmp);
+      }
+      if (text) {
+        setPromoCode(text.trim().toUpperCase());
+        setInlineError(null);
+        setChannelRequired(null);
+      }
+    } catch {
+      showNotification("Paste not available — type or long-press the field to paste.", "error");
+    } finally {
+      setPasteBusy(false);
+    }
+  };
 
   const redeemPromoMutation = useMutation({
     mutationFn: async ({ code }: { code: string }) => {
@@ -186,13 +215,23 @@ export default function PromoCodeInput() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {/* Input row */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <input
             value={promoCode}
             onChange={e => { setPromoCode(e.target.value.toUpperCase()); setInlineError(null); setChannelRequired(null); }}
+            onPaste={e => {
+              // Allow native paste; the onChange handler will uppercase the result
+              setInlineError(null);
+              setChannelRequired(null);
+            }}
             onKeyDown={e => e.key === "Enter" && !isDisabled && handleSubmit()}
             placeholder="Enter promo code"
             disabled={isLoading}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="characters"
+            spellCheck={false}
             style={{
               flex: 1,
               height: 42,
@@ -210,6 +249,32 @@ export default function PromoCodeInput() {
             onFocus={e => (e.target.style.borderColor = "rgba(255,255,255,0.25)")}
             onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.09)")}
           />
+          {/* Paste button */}
+          <button
+            onClick={handlePaste}
+            disabled={isLoading || pasteBusy}
+            title="Paste from clipboard"
+            style={{
+              height: 42,
+              width: 42,
+              borderRadius: 10,
+              border: "none",
+              background: "rgba(255,255,255,0.07)",
+              color: "rgba(255,255,255,0.55)",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: isLoading || pasteBusy ? "not-allowed" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              transition: "all 0.15s ease",
+            }}
+            className={isLoading || pasteBusy ? "" : "active:scale-95 transition-transform"}
+          >
+            <FiClipboard size={15} />
+          </button>
+          {/* Apply button */}
           <button
             onClick={handleSubmit}
             disabled={isDisabled}

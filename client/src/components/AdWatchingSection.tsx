@@ -137,15 +137,28 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   });
 
   // ─── AdsGram SDK ───────────────────────────────────────────────────────────
+  // Hard 30 s timeout guards against the SDK never settling (script error,
+  // no network, etc.) so the Watch button never spins forever.
   const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
     new Promise((resolve) => {
-      if (window.Adsgram) {
+      if (!window.Adsgram) { resolve({ success: false, unavailable: true }); return; }
+
+      let settled = false;
+      const settle = (r: { success: boolean; unavailable: boolean }) => {
+        if (settled) return; settled = true; clearTimeout(timer); resolve(r);
+      };
+      const timer = setTimeout(() => {
+        console.warn('AdsGram ad timed out after 30 s');
+        settle({ success: false, unavailable: true });
+      }, 30_000);
+
+      try {
         window.Adsgram.init({ blockId: "40629" })
           .show()
-          .then(() => resolve({ success: true,  unavailable: false }))
-          .catch(() => resolve({ success: false, unavailable: false }));
-      } else {
-        resolve({ success: false, unavailable: true });
+          .then(() => settle({ success: true,  unavailable: false }))
+          .catch(() => settle({ success: false, unavailable: false }));
+      } catch {
+        settle({ success: false, unavailable: true });
       }
     });
 
@@ -178,8 +191,12 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       let result: { success: boolean; unavailable: boolean };
 
       if (card.adType === "adsgram") {
+        // AdsGram opens a native overlay that genuinely backgrounds the app —
+        // the server's background-duration check applies for this type.
         result = await showAdsgramAd();
       } else if (card.adType === "monetag") {
+        // Popup-style SDKs — server skips the background-duration gate for these
+        // types and trusts the SDK's own completion signal instead.
         const r = await showMonetagAd();
         result  = { success: r.success, unavailable: r.unavailable };
       } else if (card.adType === "gigapub") {
@@ -195,7 +212,8 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
       if (!result.success)    { endSession(); cancelSession(); return; }
 
-      // Wait for the user to return to the foreground
+      // For AdsGram, wait for the user to return to foreground before claiming.
+      // For popup-style SDKs the app was never hidden, so this resolves instantly.
       setCurrentAdStep("verifying");
       await waitForForeground();
 
@@ -222,12 +240,12 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     }
   };
 
-  // All ad types now run directly — no pre-ad instruction popup
+  // Single-click: always start the ad immediately (no two-step card selection).
   const handleStartEarning = (cardId: number) => {
     const card      = AD_CARDS.find(c => c.id === cardId)!;
     const cardIndex = AD_CARDS.indexOf(card);
     if (isShowingAds || isCardLimitReached(card.adType)) return;
-    if (cardIndex !== activeIndex) { setActiveIndex(cardIndex); return; }
+    setActiveIndex(cardIndex);
     runAdFlowForCard(cardId);
   };
 
@@ -316,10 +334,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
             return (
               <div key={card.id}
                 style={{ width: "100%", borderRadius: 18, overflow: "hidden", background: "#1a1a1a", cursor: "pointer" }}
-                onClick={() => {
-                  if (index !== activeIndex) { setActiveIndex(index); return; }
-                  handleStartEarning(card.id);
-                }}
+                onClick={() => handleStartEarning(card.id)}
               >
                 {/* ── Header: logo + brand name + Ad Limit counter ─────────── */}
                 <div className="flex items-center gap-3 px-3 py-2.5">
@@ -383,7 +398,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (index !== activeIndex) { setActiveIndex(index); return; }
                       handleStartEarning(card.id);
                     }}
                     disabled={isShowingAds || limitReached}

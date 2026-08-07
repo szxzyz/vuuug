@@ -27,9 +27,18 @@ function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
   // Reset load state whenever the underlying task/link changes — otherwise a
   // failed load for one task permanently hides the image for every task after it.
   useEffect(() => {
-    setImgOk(hasTelegramAvatar(task.link));
+    const ok = hasTelegramAvatar(task.link);
+    setImgOk(ok);
     setLoaded(false);
   }, [task.link]);
+
+  // Safety timeout: if the avatar proxy hasn't responded within 8 s, fall back
+  // to the icon instead of leaving a blank/broken state indefinitely.
+  useEffect(() => {
+    if (!imgOk || loaded) return;
+    const id = setTimeout(() => setImgOk(false), 8_000);
+    return () => clearTimeout(id);
+  }, [imgOk, loaded]);
 
   return (
     <div style={{
@@ -38,11 +47,13 @@ function TaskAvatar({ task, isBot }: { task: Task; isBot: boolean }) {
       background: "rgba(76,211,255,0.10)",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      {imgOk && (
+      {imgOk && src && (
         <img
           key={src}
           src={src}
           alt=""
+          loading="lazy"
+          decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => setImgOk(false)}
           style={{ width: "100%", height: "100%", objectFit: "cover", display: loaded ? "block" : "none" }}
