@@ -7,7 +7,6 @@ import { useLocation } from "wouter";
 import PromoCodeInput from "@/components/PromoCodeInput";
 import { useLanguage } from "@/hooks/useLanguage";
 import AdvertiserTaskSheet from "@/components/AdvertiserTaskSheet";
-import AdFailurePopup from "@/components/AdFailurePopup";
 import { useAdSession } from "@/hooks/useAdSession";
 import { apiRequest } from "@/lib/queryClient";
 import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle, ShieldCheck, ShieldOff, Zap } from "lucide-react";
@@ -15,10 +14,13 @@ import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle, ShieldChec
 declare global {
   interface Window {
     Adsgram: {
-      init: (params: { blockId: string; debug?: boolean; userId?: string }) => { show: () => Promise<void>; destroy: () => void };
+      init: (params: { blockId: string; debug?: boolean; userId?: string }) => {
+        show: () => Promise<{ done?: boolean; error?: boolean; state?: string; description?: string }>;
+        destroy: () => void;
+      };
     };
     show_11123429: (type?: string) => Promise<void>;
-    showGiga: () => Promise<void>;
+    showGiga: () => Promise<unknown> | unknown;
   }
 }
 
@@ -66,8 +68,6 @@ interface AppSettings {
   monetagMissionLimit?: number;
   gigaPubMissionReward?: number;
   gigaPubMissionLimit?: number;
-  monetixMissionReward?: number;
-  monetixMissionLimit?: number;
   shareReferralReward?: number;
   checkAnnouncementReward?: number;
   adsgramCheckinReward?: number;
@@ -124,7 +124,6 @@ function LoadingRow() {
 const PLATFORM_LOGOS: Record<string, string> = {
   monetag: '/monetag-logo.jpg',
   gigapub: '/gigapub-logo.jpg',
-  monetix: '/monetix-logo-loading.jpg',
 };
 
 function AdIcon({ platform, done }: { platform: string; done: boolean }) {
@@ -449,12 +448,10 @@ export default function Missions() {
   /* Ad platform state */
   const [adLoadingPlatform, setAdLoadingPlatform] = useState<string | null>(null);
   const [adVerifying, setAdVerifying] = useState(false);
-  const [showAdFailurePopup, setShowAdFailurePopup] = useState(false);
-  const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
+  const { startSession, endSession, cancelSession } = useAdSession();
   const [platformCounts, setPlatformCounts] = useState({
     monetag: getPlatformCount('monetag'),
     gigapub: getPlatformCount('gigapub'),
-    monetix: getPlatformCount('monetix'),
   });
 
   /* Daily mission state */
@@ -650,7 +647,7 @@ export default function Missions() {
       if (typeof window.showGiga !== 'function') {
         resolve({ success: false, unavailable: true }); return;
       }
-      window.showGiga()
+      Promise.resolve(window.showGiga())
         .then(() => resolve({ success: true, unavailable: false }))
         .catch((err: any) => {
           const msg = String(err?.message || err?.error || err || '').toLowerCase();
@@ -677,7 +674,6 @@ export default function Missions() {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
     },
     onError: (error: any) => {
-      if (error.errorType === 'insufficient_background') { setShowAdFailurePopup(true); return; }
       showNotification(error.message, 'error');
     },
   });
@@ -705,10 +701,9 @@ export default function Missions() {
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t('no_ad_available'), 'info'); return; }
       if (!result.success)    { endSession(); showNotification(t('watch_full_ad'), 'error'); return; }
 
-      // Wait for any provider overlay to finish before claiming. The server
-      // validates a server-measured session duration, not a client callback.
+      // The SDK promise has already resolved after the ad flow completed.
+      // Do not apply AdsGram's old foreground wait to Monetag/GigaPub.
       setAdVerifying(true);
-      await waitForForeground();
       const session = endSession();
       await claimMissionAdMutation.mutateAsync({
         platform,
@@ -722,7 +717,7 @@ export default function Missions() {
       setAdLoadingPlatform(null);
       setAdVerifying(false);
     }
-  }, [monetagLimit, gigaPubLimit, adLoadingPlatform, claimMissionAdMutation, startSession, endSession, cancelSession, waitForForeground, t]);
+  }, [monetagLimit, gigaPubLimit, adLoadingPlatform, claimMissionAdMutation, startSession, endSession, cancelSession, t]);
 
   /* Feed task handlers */
   const clickTaskMutation = useMutation({
@@ -1217,9 +1212,6 @@ export default function Missions() {
         }}
       />
 
-      {showAdFailurePopup && (
-        <AdFailurePopup reason="ad_not_counted" onClose={() => setShowAdFailurePopup(false)} />
-      )}
     </Layout>
   );
 }

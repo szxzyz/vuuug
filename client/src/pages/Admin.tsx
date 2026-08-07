@@ -2478,8 +2478,6 @@ function SettingsSection() {
     adexiumMissionLimit: '10',
     gigaPubMissionReward: '50',
     gigaPubMissionLimit: '10',
-    monetixMissionReward: '1500',
-    monetixMissionLimit: '25',
     // Per-provider ad card settings
     adsgramAdLimit: '510',
     adsgramRewardPerAd: '125',
@@ -2493,9 +2491,6 @@ function SettingsSection() {
     usladsAdLimit: '50',
     usladsRewardPerAd: '125',
     usladsEnabled: true,
-    monetixAdLimit: '50',
-    monetixRewardPerAd: '125',
-    monetixEnabled: true,
   });
   
   useEffect(() => {
@@ -2548,8 +2543,6 @@ function SettingsSection() {
         adexiumMissionLimit: settingsData.adexiumMissionLimit?.toString() || '10',
         gigaPubMissionReward: settingsData.gigaPubMissionReward?.toString() || '50',
         gigaPubMissionLimit: settingsData.gigaPubMissionLimit?.toString() || '10',
-        monetixMissionReward: settingsData.monetixMissionReward?.toString() || '1500',
-        monetixMissionLimit: settingsData.monetixMissionLimit?.toString() || '25',
         // Per-provider ad card settings
         adsgramAdLimit: settingsData.adsgramAdLimit?.toString() || '510',
         adsgramRewardPerAd: settingsData.adsgramRewardPerAd?.toString() || '125',
@@ -2563,9 +2556,6 @@ function SettingsSection() {
         usladsAdLimit: settingsData.usladsAdLimit?.toString() || '50',
         usladsRewardPerAd: settingsData.usladsRewardPerAd?.toString() || '125',
         usladsEnabled: settingsData.usladsEnabled !== false,
-        monetixAdLimit: settingsData.monetixAdLimit?.toString() || '50',
-        monetixRewardPerAd: settingsData.monetixRewardPerAd?.toString() || '125',
-        monetixEnabled: settingsData.monetixEnabled !== false,
       });
     }
   }, [settingsData]);
@@ -2595,9 +2585,6 @@ function SettingsSection() {
         usladsAdLimit: parseInt((settings as any).usladsAdLimit) || 50,
         usladsRewardPerAd: parseInt((settings as any).usladsRewardPerAd) || 125,
         usladsEnabled: (settings as any).usladsEnabled !== false,
-        monetixAdLimit: parseInt((settings as any).monetixAdLimit) || 50,
-        monetixRewardPerAd: parseInt((settings as any).monetixRewardPerAd) || 125,
-        monetixEnabled: (settings as any).monetixEnabled !== false,
       });
       const result = await response.json();
       if (result.success) {
@@ -2685,8 +2672,6 @@ function SettingsSection() {
         adexiumMissionLimit: parseInt(settings.adexiumMissionLimit) || 10,
         gigaPubMissionReward: parseInt(settings.gigaPubMissionReward) || 50,
         gigaPubMissionLimit: parseInt(settings.gigaPubMissionLimit) || 10,
-        monetixMissionReward: parseInt(settings.monetixMissionReward) || 1500,
-        monetixMissionLimit: parseInt(settings.monetixMissionLimit) || 25,
         shareReferralReward: parseInt((settings as any).shareReferralReward) || 1000,
         checkAnnouncementReward: parseInt((settings as any).checkAnnouncementReward) || 1000,
         adsgramCheckinReward: parseInt((settings as any).adsgramCheckinReward) || 1000,
@@ -2704,9 +2689,6 @@ function SettingsSection() {
         usladsAdLimit: parseInt((settings as any).usladsAdLimit) || 50,
         usladsRewardPerAd: parseInt((settings as any).usladsRewardPerAd) || 125,
         usladsEnabled: (settings as any).usladsEnabled !== false,
-        monetixAdLimit: parseInt((settings as any).monetixAdLimit) || 50,
-        monetixRewardPerAd: parseInt((settings as any).monetixRewardPerAd) || 125,
-        monetixEnabled: (settings as any).monetixEnabled !== false,
       });
       
       const result = await response.json();
@@ -2916,47 +2898,6 @@ function SettingsSection() {
                     <span className="text-xs text-muted-foreground">{(settings as any).usladsEnabled !== false ? 'Enabled' : 'Disabled'}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">Current: {settingsData?.usladsEnabled !== false ? '✅ Enabled' : '🔴 Disabled'}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Monetix ── */}
-            <div className="rounded-xl border border-white/10 p-3 space-y-3">
-              <p className="text-sm font-bold text-indigo-400 flex items-center gap-2">
-                <i className="fas fa-play-circle"></i> Monetix (Card 5)
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs font-semibold">
-                    <i className="fas fa-calendar-day mr-1 text-orange-500"></i> Daily Ad Limit
-                  </Label>
-                  <Input type="number" min="1" placeholder="50"
-                    value={(settings as any).monetixAdLimit}
-                    onChange={(e) => setSettings({ ...settings, monetixAdLimit: e.target.value } as any)} />
-                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetixAdLimit ?? 50}</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-semibold">
-                    <i className="fas fa-gem mr-1 text-purple-500"></i> Reward Per Ad (POW)
-                  </Label>
-                  <Input type="number" min="1" placeholder="125"
-                    value={(settings as any).monetixRewardPerAd}
-                    onChange={(e) => setSettings({ ...settings, monetixRewardPerAd: e.target.value } as any)} />
-                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetixRewardPerAd ?? 125} POW</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-semibold">
-                    <i className="fas fa-power-off mr-1 text-emerald-400"></i> Status
-                  </Label>
-                  <div className="flex items-center gap-2 h-9">
-                    <button type="button"
-                      onClick={() => setSettings({ ...settings, monetixEnabled: !(settings as any).monetixEnabled } as any)}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${(settings as any).monetixEnabled !== false ? 'bg-emerald-500' : 'bg-gray-600'}`}>
-                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${(settings as any).monetixEnabled !== false ? 'translate-x-5' : 'translate-x-1'}`} />
-                    </button>
-                    <span className="text-xs text-muted-foreground">{(settings as any).monetixEnabled !== false ? 'Enabled' : 'Disabled'}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Current: {settingsData?.monetixEnabled !== false ? '✅ Enabled' : '🔴 Disabled'}</p>
                 </div>
               </div>
             </div>
@@ -3529,38 +3470,6 @@ function SettingsSection() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">Current: {settingsData?.gigaPubMissionReward || 50} POW · {settingsData?.gigaPubMissionLimit || 10} ads/day</p>
-            </div>
-
-            {/* Monetix */}
-            <div className="space-y-2 p-3 border rounded-lg border-green-500/20 bg-green-500/5">
-              <Label className="text-sm font-semibold text-green-400">
-                <i className="fas fa-coins mr-2"></i>Monetix
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Reward (POW/ad)</Label>
-                  <Input
-                    type="number"
-                    value={settings.monetixMissionReward}
-                    onChange={(e) => setSettings({ ...settings, monetixMissionReward: e.target.value })}
-                    placeholder="1500"
-                    min="1"
-                    className="h-8"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Daily Limit</Label>
-                  <Input
-                    type="number"
-                    value={settings.monetixMissionLimit}
-                    onChange={(e) => setSettings({ ...settings, monetixMissionLimit: e.target.value })}
-                    placeholder="25"
-                    min="1"
-                    className="h-8"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Current: {settingsData?.monetixMissionReward || 1500} POW · {settingsData?.monetixMissionLimit || 25} ads/day</p>
             </div>
 
             {/* Daily Missions Divider */}
