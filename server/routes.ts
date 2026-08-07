@@ -193,28 +193,17 @@ async function getCachedBotUsername(): Promise<string> {
 // only means a brief window with weaker rate-limiting, not a reward/security
 // bypass, so the added complexity of persisting them isn't worth it here.
 const adUserCooldowns   = new Map<string, number>();  // userId     → lastRewardAt (ms)
-const adAbuseStore      = new Map<string, { score: number; lockedUntil: number; failCount: number }>();
-
 const AD_REWARD_COOLDOWN_MS = 15_000;  // 15 s minimum between rewards (was 5 s — increased to prevent rapid replay)
-const MIN_BACKGROUND_MS     = 3_000;   // Anti-fake: user must have left the app for ≥3 s (spec: 2–3 s minimum)
 const MIN_PROVIDER_SESSION_MS = 3_000; // Non-AdsGram providers need a server-measured watch window
-const AD_ABUSE_LOCK_SCORE   = 3;       // lock after 3 consecutive failures (was 5)
-const AD_ABUSE_BASE_LOCK_MS = 120_000; // 2 min base lock, doubles per extra level (was 1 min)
 // How long a pending ad_sessions row is honored before it's considered stale/abandoned.
 const AD_SESSION_MAX_AGE_MS = 15 * 60_000; // 15 minutes
 // No hard cap on per-ad reward — the admin-configured value is always used as-is.
 
-// Prune stale anti-fraud maps every 15 minutes to prevent unbounded memory growth
-// Note: adUsedSessions and adPendingSessions were migrated to the DB (ad_sessions table);
-// only the in-memory cooldown and abuse-score maps need periodic pruning here.
+// Prune stale cooldown entries every 15 minutes to prevent unbounded memory growth.
 setInterval(() => {
   const cutoff1h  = Date.now() - 60 * 60 * 1000;
   // Remove cooldown entries older than 1 hour (user hasn't watched an ad in a while)
   for (const [uid, ts] of adUserCooldowns) if (ts < cutoff1h) adUserCooldowns.delete(uid);
-  // Remove abuse entries where lock has expired and score is 0
-  for (const [uid, abuse] of adAbuseStore) {
-    if (abuse.lockedUntil < Date.now() && abuse.score === 0) adAbuseStore.delete(uid);
-  }
 }, 15 * 60 * 1000);
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1542,9 +1531,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const usladsAdLimit         = parseInt(getSetting('uslads_ad_limit',          '50'));
       const usladsRewardPerAd     = parseInt(getSetting('uslads_reward_per_ad',     '125'));
       const usladsEnabled         = getSetting('uslads_enabled', 'true') === 'true';
-      const monetixAdLimit        = parseInt(getSetting('monetix_ad_limit',         '50'));
-      const monetixRewardPerAd    = parseInt(getSetting('monetix_reward_per_ad',    '125'));
-      const monetixEnabled        = getSetting('monetix_enabled', 'true') === 'true';
       
       // Legacy compatibility - keep old values for backwards compatibility
       const taskCostPerClick = channelTaskCostUSD; // Use channel cost as default
@@ -1624,8 +1610,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
         gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1000')),
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
-        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
-        monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
         maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
         maxWithdrawalsPerDay: parseInt(getSetting('maxWithdrawalsPerDay', '1')),
@@ -1642,9 +1626,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         usladsAdLimit,
         usladsRewardPerAd,
         usladsEnabled,
-        monetixAdLimit,
-        monetixRewardPerAd,
-        monetixEnabled,
         // Contest settings (public — needed by leaderboard/frontend)
         weeklyReferralContestEnabled: getSetting('weekly_referral_contest_enabled', 'false') === 'true',
         weeklyReferralStartDate: getSetting('weekly_referral_start_date', ''),
@@ -1688,8 +1669,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const normalizedContext = context === 'mission_ad' ? 'mission_ad' : 'ads_watch';
       const allowedAdTypes = normalizedContext === 'mission_ad'
-        ? ['monetag', 'gigapub', 'monetix']
-        : ['adsgram', 'monetag', 'gigapub', 'uslads', 'monetix'];
+        ? ['monetag', 'gigapub']
+        : ['adsgram', 'monetag', 'gigapub', 'uslads'];
       const normalizedAdType = allowedAdTypes.includes(adType ?? '') ? (adType as string) : null;
       if (!normalizedAdType) {
         return res.status(400).json({ message: "Invalid ad type", errorType: 'invalid_ad_type' });
@@ -1801,15 +1782,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(200).send('OK');
       }
 
-      const [settings] = await db.select().from(adminSettings)
-        .where(eq(adminSettings.settingKey, 'adsgram_reward_per_ad'))
-        .limit(1);
-      const reward = parseInt(settings?.settingValue || '125', 10);
-      if (!Number.isFinite(reward) || reward < 0) {
-        console.error(`❌ AdsGram callback has invalid configured reward for user ${telegramId}`);
-        return res.status(500).send('Internal server error');
-      }
-
       // If the client already claimed the session, the normal ad-watch flow
       // already credited the balance. A postback is confirmation only.
       if (recentSession?.status === 'used') {
@@ -1826,37 +1798,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).send('No active ad session');
       }
 
-      const callbackKey = callbackKeyFromId || `session:${recentSession.id}`;
-      const [claimedSession] = await db.update(adSessions)
-        .set({ status: 'used', usedAt: new Date() })
-        .where(and(eq(adSessions.id, recentSession.id), eq(adSessions.status, 'pending')))
-        .returning({ id: adSessions.id });
-      if (!claimedSession) {
-        console.info(`ℹ️ AdsGram callback raced with client claim for user ${telegramId}`);
-        return res.status(200).send('OK');
-      }
-
-      await storage.addEarning({
-        userId: user.id,
-        amount: String(reward),
-        source: 'ad_watch',
-        description: 'AdsGram server-side reward',
-      });
-      await storage.incrementAdsWatched(user.id);
-      try {
-        await db.insert(adsgramRewardCallbacks).values({
-          callbackKey,
-          userId: user.id,
-          sessionId: claimedSession.id,
-          rewardAmount: String(reward),
-        });
-      } catch (ledgerError) {
-        console.error(`❌ AdsGram callback ledger write failed for user ${telegramId}:`, ledgerError);
-        // The session itself has already been atomically consumed, so a retry
-        // cannot mint a second reward even if the audit row write is delayed.
-      }
-
-      console.info(`✅ AdsGram reward credited: user=${telegramId} amount=${reward}`);
+      // Do not let the server callback bypass the client-side lifecycle proof.
+      // The client claim records backgroundEntered only after the Mini App has
+      // returned from at least one minimize/background event. The callback can
+      // arrive before that claim, so acknowledge it and let the verified client
+      // claim perform the actual credit.
+      console.info(`ℹ️ AdsGram callback awaiting verified client claim for user ${telegramId}`);
       return res.status(200).send('OK');
     } catch (error) {
       console.error('❌ AdsGram reward callback processing failed:', error);
@@ -1892,39 +1839,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Check for multi-account ad watching abuse (before processing reward)
-      if (user.deviceId) {
-        try {
-          const { detectAdWatchingAbuse, banUserForMultipleAccounts } = await import('./deviceTracking');
-          const abuseCheck = await detectAdWatchingAbuse(userId, user.deviceId);
-          
-          if (abuseCheck.isAbuse && abuseCheck.shouldBan) {
-            // Ban the user for multi-account ad watching
-            const deviceInfo = {
-              deviceId: user.deviceId,
-              ip: user.lastLoginIp || undefined,
-              userAgent: user.lastLoginUserAgent || undefined,
-              fingerprint: user.deviceFingerprint || undefined,
-            };
-            
-            await banUserForMultipleAccounts(
-              userId,
-              abuseCheck.reason || "Multiple accounts detected watching ads from the same device",
-              deviceInfo,
-              abuseCheck.relatedAccountIds
-            );
-            
-            return res.status(403).json({
-              banned: true,
-              message: "Your account has been banned due to suspicious multi-account activity",
-              reason: abuseCheck.reason
-            });
-          }
-        } catch (abuseError) {
-          console.error("⚠️ Ad watching abuse detection failed (non-critical):", abuseError);
-        }
-      }
-
       // ── Anti-Fake Session Validation ──────────────────────────────────────
       const { sessionId, backgroundDuration, backgroundEntered, sessionStart } = req.body as {
         sessionId?: string;
@@ -1933,7 +1847,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sessionStart?: number;
       };
       const userKey = String(userId);
-      const abuse   = adAbuseStore.get(userKey) || { score: 0, lockedUntil: 0, failCount: 0 };
 
       // 1. Session ID must be present and well-formed
       if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
@@ -1991,17 +1904,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // adType is authoritative from the server — ignore client-supplied value
       const serverAdType = sessionRow.adType;
 
-      // 3. Abuse lock — too many failures
-      if (abuse.lockedUntil > Date.now()) {
-        const secsLeft = Math.ceil((abuse.lockedUntil - Date.now()) / 1000);
-        return res.status(429).json({
-          message: `Too many failed attempts. Try again in ${secsLeft}s.`,
-          errorType: 'abuse_lock',
-          secsLeft,
-        });
-      }
-
-      // 4. Cooldown between rewards
+      // 3. Cooldown between rewards
       const lastRewardAt       = adUserCooldowns.get(userKey) || 0;
       const cooldownRemaining  = AD_REWARD_COOLDOWN_MS - (Date.now() - lastRewardAt);
       if (cooldownRemaining > 0) {
@@ -2012,34 +1915,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 5. AdsGram's native overlay genuinely backgrounds the Mini App, so keep
-      //    the minimize check for AdsGram only. Other providers may keep the
-      //    Mini App focused, but still need a server-measured watch window.
+      // 4. AdsGram requires one background/minimize event, but has no minimum
+      // duration. Other providers use only the server-measured session window.
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
       const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
       const serverSessionAgeMs = Date.now() - new Date(sessionRow.registeredAt as any).getTime();
       console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms (total: ${sessionAgeMs}ms)`);
 
-      if (serverAdType === 'adsgram' && (!bgEntered || bgDuration < MIN_BACKGROUND_MS)) {
-        // Mark session as failed so it can't be retried/replayed, and bump the abuse score
+      if (serverAdType === 'adsgram' && !bgEntered) {
         await db.update(adSessions)
-          .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+          .set({ status: 'failed', usedAt: new Date(), backgroundEntered: false, backgroundDurationMs: bgDuration })
           .where(eq(adSessions.id, sessionId));
-        const newFailCount = (abuse.failCount || 0) + 1;
-        const newScore      = (abuse.score || 0) + 1;
-        let lockedUntil = abuse.lockedUntil || 0;
-        if (newScore >= AD_ABUSE_LOCK_SCORE) {
-          const lockLevel = Math.floor(newScore / AD_ABUSE_LOCK_SCORE);
-          lockedUntil = Date.now() + AD_ABUSE_BASE_LOCK_MS * Math.pow(2, lockLevel - 1);
-        }
-        adAbuseStore.set(userKey, { score: newScore, lockedUntil, failCount: newFailCount });
-        console.log(`⚠️ Ad reward rejected for user ${userId}: not backgrounded long enough (entered=${bgEntered}, duration=${bgDuration}ms)`);
         return res.status(400).json({
-          message: "We couldn't confirm the ad was watched. Please try again.",
+          message: "Please minimize the Mini App once during the AdsGram ad and return to claim the reward.",
           errorType: 'insufficient_background',
         });
       }
+
       if (serverAdType !== 'adsgram' && serverSessionAgeMs < MIN_PROVIDER_SESSION_MS) {
         await db.update(adSessions)
           .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
@@ -2103,9 +1996,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       adUserCooldowns.set(userKey, Date.now());
-      if (abuse.score > 0) {
-        adAbuseStore.set(userKey, { ...abuse, score: Math.max(0, abuse.score - 0.5) });
-      }
       console.log(`✅ Ad session valid for user ${userId}: adType=${serverAdType} bgDuration=${bgDuration}ms`);
       // ─────────────────────────────────────────────────────────────────────
 
@@ -2145,8 +2035,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).gigapubAdsWatchedToday || 0);
       } else if (normalizedAdType === 'uslads') {
         currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).usladsAdsWatchedToday || 0);
-      } else if (normalizedAdType === 'monetix') {
-        currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).monetixAdsWatchedToday || 0);
       } else {
         currentTypeWatched = isNewAdPeriod ? 0 : ((user as any).gigapubAdsWatchedToday || 0);
       }
@@ -2183,7 +2071,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             monetag: 'monetag_ads_watched_today',
             gigapub: 'gigapub_ads_watched_today',
             uslads:  'uslads_ads_watched_today',
-            monetix: 'monetix_ads_watched_today',
           };
           const col = providerColumnMap[normalizedAdType] || 'gigapub_ads_watched_today';
           // If this is a new reset period, start counter at 1; otherwise increment
@@ -2367,7 +2254,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monetag: (updatedUser as any)?.monetagAdsWatchedToday,
         gigapub: (updatedUser as any)?.gigapubAdsWatchedToday,
         uslads:  (updatedUser as any)?.usladsAdsWatchedToday,
-        monetix: (updatedUser as any)?.monetixAdsWatchedToday,
       };
       const updatedTypeWatched: number =
         updatedTypeWatchedMap[normalizedAdType] ?? currentTypeWatched + 1;
@@ -4683,8 +4569,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adexiumMissionLimit: parseInt(getSetting('adexium_mission_limit', '25')),
         gigaPubMissionReward: parseInt(getSetting('giga_pub_mission_reward', '1000')),
         gigaPubMissionLimit: parseInt(getSetting('giga_pub_mission_limit', '25')),
-        monetixMissionReward: parseInt(getSetting('monetix_mission_reward', '1000')),
-        monetixMissionLimit: parseInt(getSetting('monetix_mission_limit', '25')),
         minimumWithdrawAmount: parseFloat(getSetting('minimumWithdrawAmount', '0.20')),
         maximumWithdrawAmount: parseFloat(getSetting('maximumWithdrawAmount', '0.50')),
         maxWithdrawalsPerDay: parseInt(getSetting('maxWithdrawalsPerDay', '1')),
@@ -4706,9 +4590,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         usladsAdLimit: parseInt(getSetting('uslads_ad_limit', '50')),
         usladsRewardPerAd: parseInt(getSetting('uslads_reward_per_ad', '125')),
         usladsEnabled: getSetting('uslads_enabled', 'true') === 'true',
-        monetixAdLimit: parseInt(getSetting('monetix_ad_limit', '50')),
-        monetixRewardPerAd: parseInt(getSetting('monetix_reward_per_ad', '125')),
-        monetixEnabled: getSetting('monetix_enabled', 'true') === 'true',
       });
     } catch (error) {
       console.error("Error fetching admin settings:", error);
@@ -4726,7 +4607,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         platform?: string; sessionId?: string; backgroundDuration?: number; backgroundEntered?: boolean;
       };
 
-      if (!['monetag', 'gigapub', 'monetix'].includes(platform ?? '')) {
+      if (!['monetag', 'gigapub'].includes(platform ?? '')) {
         return res.status(400).json({ success: false, message: 'Invalid platform' });
       }
 
@@ -4787,10 +4668,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         case 'gigapub':
           reward = safeInt(getSetting('giga_pub_mission_reward', '1000'), 1000);
           limit = safeInt(getSetting('giga_pub_mission_limit', '25'), 25);
-          break;
-        case 'monetix':
-          reward = safeInt(getSetting('monetix_mission_reward', '1000'), 1000);
-          limit = safeInt(getSetting('monetix_mission_limit', '25'), 25);
           break;
         default:
           reward = 1000;
