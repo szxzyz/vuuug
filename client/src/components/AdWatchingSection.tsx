@@ -53,6 +53,24 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const sessionRewardedRef = useRef(false);
   const currentAdTypeRef   = useRef<string>("adsgram");
 
+  const waitForAdsgram = (timeoutMs = 10_000): Promise<boolean> =>
+    new Promise(resolve => {
+      if (typeof window.Adsgram === "object" || typeof window.Adsgram === "function") {
+        resolve(true);
+        return;
+      }
+      const startedAt = Date.now();
+      const timer = window.setInterval(() => {
+        if (typeof window.Adsgram === "object" || typeof window.Adsgram === "function") {
+          window.clearInterval(timer);
+          resolve(true);
+        } else if (Date.now() - startedAt >= timeoutMs) {
+          window.clearInterval(timer);
+          resolve(false);
+        }
+      }, 200);
+    });
+
   // ─── App settings ──────────────────────────────────────────────────────────
   const { data: appSettings } = useQuery({
     queryKey: ["/api/app-settings"],
@@ -140,8 +158,8 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   // Hard 30 s timeout guards against the SDK never settling (script error,
   // no network, etc.) so the Watch button never spins forever.
   const showAdsgramAd = (): Promise<{ success: boolean; unavailable: boolean }> =>
-    new Promise((resolve) => {
-      if (!window.Adsgram) { resolve({ success: false, unavailable: true }); return; }
+    new Promise(async (resolve) => {
+      if (!(await waitForAdsgram())) { resolve({ success: false, unavailable: true }); return; }
 
       let settled = false;
       const settle = (r: { success: boolean; unavailable: boolean }) => {
