@@ -385,19 +385,21 @@ function TaskRow({ task, reward, loading, clickedTasks, claimReadyTasks, countdo
   );
 }
 
-type MainTab = 'all' | 'daily' | 'partner';
+type MainTab = 'all' | 'daily' | 'partner' | 'ambassador';
 
-function MainTabs({ active, onChange, allLabel, dailyLabel, partnerLabel }: {
+function MainTabs({ active, onChange, allLabel, dailyLabel, partnerLabel, ambassadorLabel }: {
   active: MainTab;
   onChange: (tab: MainTab) => void;
   allLabel: string;
   dailyLabel: string;
   partnerLabel: string;
+  ambassadorLabel: string;
 }) {
   const tabs: { id: MainTab; label: string }[] = [
     { id: 'all',     label: allLabel },
     { id: 'daily',   label: dailyLabel },
     { id: 'partner', label: partnerLabel },
+    { id: 'ambassador', label: ambassadorLabel },
   ];
   return (
     <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 14, padding: 4, marginBottom: 16, gap: 2 }}>
@@ -473,7 +475,7 @@ export default function Missions() {
     queryFn: () => apiRequest('GET', '/api/ambassadors/directory').then(r => r.json()),
     retry: 2,
     staleTime: 60000,
-    enabled: activeTab === 'partner',
+    enabled: activeTab === 'ambassador',
   });
 
   /* Derived values */
@@ -921,7 +923,14 @@ export default function Missions() {
         </div>
 
         {/* Tabs */}
-        <MainTabs active={activeTab} onChange={setActiveTab} allLabel={t('all_tab')} dailyLabel={t('daily_tab')} partnerLabel="Ambassadors" />
+        <MainTabs
+          active={activeTab}
+          onChange={setActiveTab}
+          allLabel="All"
+          dailyLabel="Daily"
+          partnerLabel="Partner"
+          ambassadorLabel="Ambassador"
+        />
 
         {/* ── ALL TAB ── */}
         {activeTab === 'all' && (
@@ -992,32 +1001,6 @@ export default function Missions() {
               );
             })()}
 
-            {/* ── Partner Tasks ── */}
-            {(() => {
-              const partnerTasksList = allTasks.filter(t => t.taskType === 'partner');
-              return (
-                <>
-                  <SectionLabel title="Partner Tasks" />
-                  {tasksLoading ? (
-                    <div style={cardStyle}><LoadingRow /></div>
-                  ) : partnerTasksList.length === 0 ? (
-                    <div style={cardStyle}><EmptyRow label="No partner tasks available" /></div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {partnerTasksList.map(task => (
-                        <div key={task.id} style={cardStyle}>
-                          <TaskRow
-                            task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
-                            clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
-                            onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
           </>
         )}
 
@@ -1065,8 +1048,32 @@ export default function Missions() {
           </>
         )}
 
-        {/* ── AMBASSADORS TAB ── */}
+        {/* ── PARTNER TAB ── */}
         {activeTab === 'partner' && (
+          <>
+            <SectionLabel title="Partner Tasks" />
+            {tasksLoading ? (
+              <div style={cardStyle}><LoadingRow /></div>
+            ) : allTasks.filter(task => task.taskType === 'partner').length === 0 ? (
+              <div style={cardStyle}><EmptyRow label="No partner tasks available" /></div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {allTasks.filter(task => task.taskType === 'partner').map(task => (
+                  <div key={task.id} style={cardStyle}>
+                    <TaskRow
+                      task={task} reward={getReward(task)} loading={loadingTaskId === task.id}
+                      clickedTasks={clickedTasks} claimReadyTasks={claimReadyTasks} countdownTasks={countdownTasks}
+                      onGo={handleTaskGo} onClaim={id => clickTaskMutation.mutate(id)} isLast={true}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── AMBASSADOR TAB ── */}
+        {activeTab === 'ambassador' && (
           <>
             <SectionLabel title="Ambassador Channels" />
 
