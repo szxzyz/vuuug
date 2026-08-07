@@ -11,8 +11,8 @@ import { useAdFlow } from "@/hooks/useAdFlow";
 declare global {
   interface Window {
     Adsgram: {
-      init: (params: { blockId: string; debug?: boolean }) => {
-        show: () => Promise<void>;
+      init: (params: { blockId: string; debug?: boolean; userId?: string }) => {
+        show: () => Promise<{ done?: boolean; error?: boolean; state?: string; description?: string }>;
         destroy: () => void;
       };
     };
@@ -52,6 +52,11 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
 
   const sessionRewardedRef = useRef(false);
   const currentAdTypeRef   = useRef<string>("adsgram");
+  const telegramUserId = String(
+    user?.telegramId ||
+    (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id ||
+    "",
+  );
 
   const waitForAdsgram = (timeoutMs = 10_000): Promise<boolean> =>
     new Promise(resolve => {
@@ -96,6 +101,13 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     },
     onSuccess: (data: any) => {
       const rewardPAD = data?.rewardPOW ?? 0;
+      if (data?.alreadyRewarded) {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
+        showNotification("AdsGram reward already credited.", "success");
+        return;
+      }
 
       // ── Instant optimistic update for user balance + ad count ──────────────
       queryClient.setQueryData(["/api/auth/user"], (old: any) => {
@@ -171,10 +183,20 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       }, 30_000);
 
       try {
-        window.Adsgram.init({ blockId: "40629" })
+        window.Adsgram.init({ blockId: "41723", userId: telegramUserId || undefined })
           .show()
-          .then(() => settle({ success: true,  unavailable: false }))
-          .catch(() => settle({ success: false, unavailable: false }));
+          .then((result) => {
+            // AdsGram can resolve the promise when a banner is destroyed or
+            // closed. A rewarded view is valid only when the SDK reports done.
+            // Never turn an early close/background interruption into a reward.
+            const completed = result?.done === true && result?.error !== true;
+            console.info("AdsGram show result:", result);
+            settle({ success: completed, unavailable: false });
+          })
+          .catch((error) => {
+            console.warn("AdsGram ad did not complete:", error);
+            settle({ success: false, unavailable: false });
+          });
       } catch {
         settle({ success: false, unavailable: true });
       }
@@ -230,10 +252,13 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
       if (!result.success)    { endSession(); cancelSession(); return; }
 
-      // For AdsGram, wait for the user to return to foreground before claiming.
-      // Other providers can stay focused; the server still validates session age.
+      // AdsGram uses the native overlay/background signal. Other providers
+      // complete inside their own SDK flow and must not inherit AdsGram's
+      // foreground wait.
       setCurrentAdStep("verifying");
-      await waitForForeground();
+      if (card.adType === "adsgram") {
+        await waitForForeground();
+      }
 
       // Cloudflare Turnstile verification has been disabled app-wide, so we
       // no longer round-trip to /api/ads/turnstile-status or wait on a
