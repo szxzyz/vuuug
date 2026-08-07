@@ -196,6 +196,7 @@ const adAbuseStore      = new Map<string, { score: number; lockedUntil: number; 
 
 const AD_REWARD_COOLDOWN_MS = 15_000;  // 15 s minimum between rewards (was 5 s — increased to prevent rapid replay)
 const MIN_BACKGROUND_MS     = 3_000;   // Anti-fake: user must have left the app for ≥3 s (spec: 2–3 s minimum)
+const MIN_PROVIDER_SESSION_MS = 3_000; // Non-AdsGram providers need a server-measured watch window
 const AD_ABUSE_LOCK_SCORE   = 3;       // lock after 3 consecutive failures (was 5)
 const AD_ABUSE_BASE_LOCK_MS = 120_000; // 2 min base lock, doubles per extra level (was 1 min)
 // How long a pending ad_sessions row is honored before it's considered stale/abandoned.
@@ -1807,6 +1808,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errorType: 'invalid_session',
         });
       }
+      if (sessionRow.context !== 'ads_watch') {
+        return res.status(400).json({
+          message: "Invalid session context. Please start a new ad session.",
+          errorType: 'invalid_session',
+        });
+      }
       if (sessionRow.status !== 'pending') {
         return res.status(400).json({
           message: "Session already used. Please watch a new ad.",
@@ -1845,12 +1852,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // 5. AdsGram's native overlay genuinely backgrounds the Mini App, so keep
-      //    the minimize check for AdsGram only. Monetag, GigaPub, USL and
-      //    Monetix report completion through their own SDK callbacks and must
-      //    not be rejected just because their overlay keeps the app focused.
+      //    the minimize check for AdsGram only. Other providers may keep the
+      //    Mini App focused, but still need a server-measured watch window.
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
       const sessionAgeMs = typeof sessionStart === 'number' ? Date.now() - sessionStart : 0;
+      const serverSessionAgeMs = Date.now() - new Date(sessionRow.registeredAt as any).getTime();
       console.log(`ℹ️ Ad session bg time for user ${userId}: entered=${bgEntered} duration=${bgDuration}ms (total: ${sessionAgeMs}ms)`);
 
       if (serverAdType === 'adsgram' && (!bgEntered || bgDuration < MIN_BACKGROUND_MS)) {
@@ -1870,6 +1877,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({
           message: "We couldn't confirm the ad was watched. Please try again.",
           errorType: 'insufficient_background',
+        });
+      }
+      if (serverAdType !== 'adsgram' && serverSessionAgeMs < MIN_PROVIDER_SESSION_MS) {
+        await db.update(adSessions)
+          .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
+          .where(eq(adSessions.id, sessionId));
+        return res.status(400).json({
+          message: "The ad session finished too quickly. Please watch the full ad and try again.",
+          errorType: 'insufficient_session_duration',
         });
       }
 
@@ -4557,10 +4573,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return res.status(404).json({ success: false, message: 'User not found' });
       if (user.banned) return res.status(403).json({ success: false, message: 'Account banned' });
 
-      // ── Background/resume verification (same requirement as the home ad-watch
-      //    flow) — the reward may only be granted after a genuine background→
-      //    resume cycle of at least MIN_BACKGROUND_MS, verified against the
-      //    server-side session row registered before the ad was shown.
+      // ── Server-authoritative session validation ───────────────────────────
+      // Mission providers may keep the Mini App focused, so they do not use
+      // AdsGram's minimize gate. They still need a server-measured watch
+      // window before a pending session can be claimed.
       if (!sessionId || typeof sessionId !== 'string' || sessionId.length < 10) {
         return res.status(400).json({ success: false, message: "Invalid session. Please start a new ad session.", errorType: 'invalid_session' });
       }
@@ -4580,14 +4596,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const bgDuration = typeof backgroundDuration === 'number' ? backgroundDuration : 0;
       const bgEntered = backgroundEntered === true;
-      if (!bgEntered || bgDuration < MIN_BACKGROUND_MS) {
+      const serverSessionAgeMs = Date.now() - new Date(missionSession.registeredAt as any).getTime();
+      if (serverSessionAgeMs < MIN_PROVIDER_SESSION_MS) {
         await db.update(adSessions)
           .set({ status: 'failed', usedAt: new Date(), backgroundEntered: bgEntered, backgroundDurationMs: bgDuration })
           .where(eq(adSessions.id, sessionId));
-        console.log(`⚠️ Mission ad reward rejected for user ${userId}: not backgrounded long enough (entered=${bgEntered}, duration=${bgDuration}ms)`);
-        return res.status(400).json({ success: false, message: "We couldn't confirm the ad was watched. Please try again.", errorType: 'insufficient_background' });
+        return res.status(400).json({
+          success: false,
+          message: "The ad session finished too quickly. Please watch the full ad and try again.",
+          errorType: 'insufficient_session_duration',
+        });
       }
-
       // Get per-platform reward from admin settings
       const settings = await db.select().from(adminSettings);
       const getSetting = (key: string, def: string) => settings.find(s => s.settingKey === key)?.settingValue || def;
