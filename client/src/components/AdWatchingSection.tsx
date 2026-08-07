@@ -213,8 +213,8 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         // the server's background-duration check applies for this type.
         result = await showAdsgramAd();
       } else if (card.adType === "monetag") {
-        // Popup-style SDKs — server skips the background-duration gate for these
-        // types and trusts the SDK's own completion signal instead.
+        // Popup-style SDKs may keep the app focused; the server still validates
+        // the registered session duration before granting a reward.
         const r = await showMonetagAd();
         result  = { success: r.success, unavailable: r.unavailable };
       } else if (card.adType === "gigapub") {
@@ -231,7 +231,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       if (!result.success)    { endSession(); cancelSession(); return; }
 
       // For AdsGram, wait for the user to return to foreground before claiming.
-      // For popup-style SDKs the app was never hidden, so this resolves instantly.
+      // Other providers can stay focused; the server still validates session age.
       setCurrentAdStep("verifying");
       await waitForForeground();
 
