@@ -15,7 +15,7 @@ import { Bot, Megaphone, Users, ExternalLink, RefreshCw, AlertCircle, ShieldChec
 declare global {
   interface Window {
     Adsgram: {
-      init: (params: { blockId: string; debug?: boolean }) => { show: () => Promise<void>; destroy: () => void };
+      init: (params: { blockId: string; debug?: boolean; userId?: string }) => { show: () => Promise<void>; destroy: () => void };
     };
     show_11123429: (type?: string) => Promise<void>;
     showGiga: () => Promise<void>;
@@ -543,7 +543,8 @@ export default function Missions() {
     new Promise(resolve => {
       if (!window.Adsgram) { resolve({ success: false, unavailable: true }); return; }
       try {
-        window.Adsgram.init({ blockId: 'int-35652' })
+        const telegramUserId = String((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id || '');
+        window.Adsgram.init({ blockId: 'int-35652', userId: telegramUserId || undefined })
           .show()
           .then(() => resolve({ success: true, unavailable: false }))
           .catch(() => resolve({ success: false, unavailable: false }));
