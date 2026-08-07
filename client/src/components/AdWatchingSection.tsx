@@ -29,6 +29,7 @@ const AD_CARDS = [
   { id: 2, adType: "monetag", title: "MonetaG", accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
   { id: 3, adType: "gigapub", title: "Gigapub", accentColor: "#3b82f6", image: "/gigapub-logo.jpg"  },
   { id: 4, adType: "uslads",  title: "USL Ads", accentColor: "#3b82f6", image: "/usl-logo.jpg"      },
+  { id: 5, adType: "monetix", title: "Monetix", accentColor: "#3b82f6", image: "/monetix-logo.jpg"  },
 ];
 
 
@@ -36,7 +37,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
   const { t } = useLanguage();
-  const { showMonetagAd, showGigaPubAd, showUSLAd } = useAdFlow();
+  const { showMonetagAd, showGigaPubAd, showUSLAd, showMonetixAd } = useAdFlow();
 
   const TABS = [
     { id: "daily",   label: t("daily_adz") },
@@ -89,6 +90,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         else if (adType === "monetag") updates.monetagAdsWatchedToday   = (old.monetagAdsWatchedToday   || 0) + 1;
         else if (adType === "gigapub") updates.gigapubAdsWatchedToday   = (old.gigapubAdsWatchedToday   || 0) + 1;
         else if (adType === "uslads")  updates.usladsAdsWatchedToday    = (old.usladsAdsWatchedToday    || 0) + 1;
+        else if (adType === "monetix") updates.monetixAdsWatchedToday   = (old.monetixAdsWatchedToday   || 0) + 1;
         return { ...old, ...updates };
       });
 
@@ -184,6 +186,8 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         result = await showGigaPubAd();
       } else if (card.adType === "uslads") {
         result = await showUSLAd();
+      } else if (card.adType === "monetix") {
+        result = await showMonetixAd();
       } else {
         result = { success: false, unavailable: true };
       }
@@ -233,6 +237,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return user?.monetagAdsWatchedToday || 0;
     if (adType === "gigapub") return user?.gigapubAdsWatchedToday || 0;
     if (adType === "uslads")  return user?.usladsAdsWatchedToday  || 0;
+    if (adType === "monetix") return user?.monetixAdsWatchedToday || 0;
     return 0;
   };
 
@@ -241,6 +246,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagAdLimit ?? 50;
     if (adType === "gigapub") return appSettings?.gigapubAdLimit ?? 50;
     if (adType === "uslads")  return appSettings?.usladsAdLimit  ?? 50;
+    if (adType === "monetix") return appSettings?.monetixAdLimit ?? 50;
     return 50;
   };
 
@@ -249,6 +255,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagRewardPerAd ?? 125;
     if (adType === "gigapub") return appSettings?.gigapubRewardPerAd ?? 125;
     if (adType === "uslads")  return appSettings?.usladsRewardPerAd  ?? 125;
+    if (adType === "monetix") return appSettings?.monetixRewardPerAd ?? 125;
     return 125;
   };
 
@@ -257,6 +264,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagEnabled ?? true;
     if (adType === "gigapub") return appSettings?.gigapubEnabled ?? true;
     if (adType === "uslads")  return appSettings?.usladsEnabled  ?? true;
+    if (adType === "monetix") return appSettings?.monetixEnabled ?? true;
     return true;
   };
 
