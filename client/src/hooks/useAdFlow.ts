@@ -3,7 +3,7 @@ import { useState, useCallback, useRef } from 'react';
 declare global {
   interface Window {
     show_11123429: (type?: string) => Promise<void>;
-    showGiga: () => Promise<void>;
+    showGiga: () => Promise<unknown> | unknown;
     showRewardAd: (callback: (res: { status: string }) => void) => void;
     TowerAds: new (config: {
       apiKey: string;
@@ -79,8 +79,15 @@ export function useAdFlow() {
         settle({ success: false, unavailable: true });
       }, 30_000);
 
-      window.showGiga()
-        .then(() => settle({ success: true, unavailable: false }))
+      // Promise.resolve handles both the documented Promise API and older
+      // GigaPub builds that return a plain/thenable value. The previous direct
+      // `.then()` call could leave the outer promise pending forever when a
+      // build returned undefined.
+      Promise.resolve(window.showGiga())
+        .then((result) => {
+          console.info('GigaPub ad completed:', result);
+          settle({ success: true, unavailable: false });
+        })
         .catch((e) => {
           console.error('GigaPub ad error:', e);
           const msg = String(e?.message || e?.error || e || '').toLowerCase();

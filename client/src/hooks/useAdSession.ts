@@ -64,9 +64,13 @@ export function useAdSession() {
     // minimize is reliably detected regardless of platform.
     const onVisibilityChange = () => { document.hidden ? enterBackground() : exitBackground(); };
     const onBlur   = () => enterBackground();
-    const onFocus  = () => exitBackground();
+    // Telegram's native ad overlay can briefly emit focus while the overlay
+    // is still open. Only treat focus as a real return when the document is
+    // actually visible; otherwise the background timer is cut short and the
+    // AdsGram server gate rejects a legitimately completed ad.
+    const onFocus  = () => { if (!document.hidden) exitBackground(); };
     const onPageHide = () => enterBackground();
-    const onPageShow = () => exitBackground();
+    const onPageShow = () => { if (!document.hidden) exitBackground(); };
 
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', onBlur);
