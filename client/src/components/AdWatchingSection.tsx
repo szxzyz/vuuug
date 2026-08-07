@@ -4,9 +4,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { FiShield, FiZap } from "react-icons/fi";
 import { showNotification } from "@/components/AppNotification";
 import { useAdSession } from "@/hooks/useAdSession";
-import AdFailurePopup from "@/components/AdFailurePopup";
 import { useLanguage } from "@/hooks/useLanguage";
 import { useAdFlow } from "@/hooks/useAdFlow";
+import AdFailurePopup from "@/components/AdFailurePopup";
 
 declare global {
   interface Window {
@@ -29,7 +29,6 @@ const AD_CARDS = [
   { id: 2, adType: "monetag", title: "MonetaG", accentColor: "#3b82f6", image: "/monetag-logo.jpg"  },
   { id: 3, adType: "gigapub", title: "Gigapub", accentColor: "#3b82f6", image: "/gigapub-logo.jpg"  },
   { id: 4, adType: "uslads",  title: "USL Ads", accentColor: "#3b82f6", image: "/usl-logo.jpg"      },
-  { id: 5, adType: "monetix", title: "Monetix", accentColor: "#3b82f6", image: "/monetix-logo.jpg"  },
 ];
 
 
@@ -37,7 +36,7 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const queryClient = useQueryClient();
   const { startSession, endSession, cancelSession, waitForForeground } = useAdSession();
   const { t } = useLanguage();
-  const { showMonetagAd, showGigaPubAd, showUSLAd, showMonetixAd } = useAdFlow();
+  const { showMonetagAd, showGigaPubAd, showUSLAd } = useAdFlow();
 
   const TABS = [
     { id: "daily",   label: t("daily_adz") },
@@ -49,7 +48,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
   const [isShowingAds,   setIsShowingAds]   = useState(false);
   const [currentAdStep,  setCurrentAdStep]  = useState<"idle" | "loading" | "verifying">("idle");
   const [showFailurePopup, setShowFailurePopup] = useState(false);
-
   const sessionRewardedRef = useRef(false);
   const currentAdTypeRef   = useRef<string>("adsgram");
   const telegramUserId = String(
@@ -92,7 +90,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     mutationFn: async (payload: {
       adType: string; sessionId: string;
       backgroundDuration: number; backgroundEntered: boolean; sessionStart: number;
-      turnstileToken?: string;
     }) => {
       // apiRequest throws (with errorType/secsLeft/etc. preserved on the Error)
       // if the response isn't OK, so by this point r.ok is always true.
@@ -120,7 +117,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         else if (adType === "monetag") updates.monetagAdsWatchedToday   = (old.monetagAdsWatchedToday   || 0) + 1;
         else if (adType === "gigapub") updates.gigapubAdsWatchedToday   = (old.gigapubAdsWatchedToday   || 0) + 1;
         else if (adType === "uslads")  updates.usladsAdsWatchedToday    = (old.usladsAdsWatchedToday    || 0) + 1;
-        else if (adType === "monetix") updates.monetixAdsWatchedToday   = (old.monetixAdsWatchedToday   || 0) + 1;
         return { ...old, ...updates };
       });
 
@@ -151,16 +147,10 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     onError: (error: any) => {
       sessionRewardedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      // Show "ad not counted" popup ONLY when the backend confirms the ad was
-      // watched but the background/foreground check failed — not at any other time.
-      if      (error.errorType === "insufficient_background") { setShowFailurePopup(true); }
+      if      (error.errorType === "insufficient_background") setShowFailurePopup(true);
       else if (error.errorType === "duplicate_session")       showNotification(t("error") + ": Session already used.", "error");
       else if (error.errorType === "cooldown")                showNotification(`${t("processing")} ${error.secsLeft || 5}s`, "error");
-      else if (error.errorType === "abuse_lock")              showNotification(`${t("failed")}. ${t("retry")} in ${error.secsLeft || 60}s.`, "error");
       else if (error.limitType  === "daily")                  showNotification(t("daily_limit_reached_tomorrow"), "error");
-      // turnstile_required returned unexpectedly (race condition) — surface a clear message
-      else if (error.errorType === "turnstile_required" || error.turnstileRequired)
-                                                              showNotification("Security verification required. Please try watching again.", "error");
       else if (error.message)                                 showNotification(`${t("error")}: ${error.message}`, "error");
       else                                                    showNotification(t("something_went_wrong"), "error");
     },
@@ -186,10 +176,10 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         window.Adsgram.init({ blockId: "41723", userId: telegramUserId || undefined })
           .show()
           .then((result) => {
-            // AdsGram can resolve the promise when a banner is destroyed or
-            // closed. A rewarded view is valid only when the SDK reports done.
-            // Never turn an early close/background interruption into a reward.
-            const completed = result?.done === true && result?.error !== true;
+            // AdsGram's documented rewarded flow resolves the promise only
+            // after the ad is completed. Some SDK builds resolve with no
+            // payload, so requiring result.done rejects valid completions.
+            const completed = result?.error !== true && result?.state !== "closed";
             console.info("AdsGram show result:", result);
             settle({ success: completed, unavailable: false });
           })
@@ -243,8 +233,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         result = await showGigaPubAd();
       } else if (card.adType === "uslads") {
         result = await showUSLAd();
-      } else if (card.adType === "monetix") {
-        result = await showMonetixAd();
       } else {
         result = { success: false, unavailable: true };
       }
@@ -252,17 +240,14 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
       if (result.unavailable) { endSession(); cancelSession(); showNotification(t("no_ad_available"), "error"); return; }
       if (!result.success)    { endSession(); cancelSession(); return; }
 
-      // AdsGram uses the native overlay/background signal. Other providers
-      // complete inside their own SDK flow and must not inherit AdsGram's
-      // foreground wait.
-      setCurrentAdStep("verifying");
+      // AdsGram must have backgrounded the Mini App at least once. There is no
+      // minimum background duration; this only waits for the user to return
+      // before the session is submitted to the server.
       if (card.adType === "adsgram") {
         await waitForForeground();
       }
+      setCurrentAdStep("verifying");
 
-      // Cloudflare Turnstile verification has been disabled app-wide, so we
-      // no longer round-trip to /api/ads/turnstile-status or wait on a
-      // challenge modal here — go straight to claiming the reward.
       const session = endSession();
       if (!sessionRewardedRef.current) {
         sessionRewardedRef.current = true;
@@ -298,7 +283,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return user?.monetagAdsWatchedToday || 0;
     if (adType === "gigapub") return user?.gigapubAdsWatchedToday || 0;
     if (adType === "uslads")  return user?.usladsAdsWatchedToday  || 0;
-    if (adType === "monetix") return user?.monetixAdsWatchedToday || 0;
     return 0;
   };
 
@@ -307,7 +291,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagAdLimit ?? 50;
     if (adType === "gigapub") return appSettings?.gigapubAdLimit ?? 50;
     if (adType === "uslads")  return appSettings?.usladsAdLimit  ?? 50;
-    if (adType === "monetix") return appSettings?.monetixAdLimit ?? 50;
     return 50;
   };
 
@@ -316,7 +299,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagRewardPerAd ?? 125;
     if (adType === "gigapub") return appSettings?.gigapubRewardPerAd ?? 125;
     if (adType === "uslads")  return appSettings?.usladsRewardPerAd  ?? 125;
-    if (adType === "monetix") return appSettings?.monetixRewardPerAd ?? 125;
     return 125;
   };
 
@@ -325,7 +307,6 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
     if (adType === "monetag") return appSettings?.monetagEnabled ?? true;
     if (adType === "gigapub") return appSettings?.gigapubEnabled ?? true;
     if (adType === "uslads")  return appSettings?.usladsEnabled  ?? true;
-    if (adType === "monetix") return appSettings?.monetixEnabled ?? true;
     return true;
   };
 
@@ -480,14 +461,12 @@ function AdWatchingSection({ user }: AdWatchingSectionProps) {
         </div>
       </div>
 
-      {/* ── Ad not counted popup (only when reward counting fails) ────────── */}
       {showFailurePopup && (
         <AdFailurePopup
           onClose={() => setShowFailurePopup(false)}
           reason="ad_not_counted"
         />
       )}
-
     </>
   );
 }
