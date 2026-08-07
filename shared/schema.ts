@@ -401,6 +401,18 @@ export const adSessions = pgTable("ad_sessions", {
   usedAt: timestamp("used_at"),
 });
 
+// AdsGram server-side reward callbacks. The callback key is unique so AdsGram
+// retries (or a callback arriving after the client-side claim) never mint a
+// second reward.
+export const adsgramRewardCallbacks = pgTable("adsgram_reward_callbacks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  callbackKey: varchar("callback_key").notNull().unique(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  sessionId: varchar("session_id").references(() => adSessions.id),
+  rewardAmount: decimal("reward_amount", { precision: 30, scale: 10 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Blocked countries for geo-restriction
 export const blockedCountries = pgTable("blocked_countries", {
   id: serial("id").primaryKey(),
