@@ -162,7 +162,12 @@ export function useAdFlow() {
             // Some TowerAds builds resolve loadAndShow before dispatching the
             // reward callback. Give that callback enough time to arrive, while
             // still recovering if the SDK silently returns without a reward.
-            setTimeout(() => settle({ success: false, unavailable: false }), 2_000);
+            setTimeout(() => {
+              if (!settled) {
+                console.warn('USL Ads: loadAndShow resolved but onRewardEarned never fired within grace window — not rewarding.');
+              }
+              settle({ success: false, unavailable: false });
+            }, 2_000);
           })
           .catch((error: any) => {
             clearTimeout(hardTimer);
