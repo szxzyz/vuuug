@@ -24,6 +24,7 @@ import {
   dailyMissions,
   missionAdClaims,
   adSessions,
+  adsgramRewardCallbacks,
   adminRoles,
   ambassadorApplications,
   ambassadors,
@@ -1714,6 +1715,155 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AdsGram server-side Reward URL callback.
+  // Configure AdsGram with:
+  // https://paidadz.xyz/api/adsgram/reward?userid=[userId]&token=YOUR_SECRET_KEY
+  //
+  // AdsGram documents userid as the guaranteed callback macro. Some dashboard
+  // versions also expose a request/event id, so accept those names when
+  // present; otherwise the recently registered AdsGram session is the
+  // idempotency key.
+  app.get('/api/adsgram/reward', async (req: any, res) => {
+    const queryValue = (value: unknown): string | undefined => {
+      if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : undefined;
+      return typeof value === 'string' ? value : undefined;
+    };
+
+    const token = queryValue(req.query?.token);
+    const configuredToken = process.env.ADSGRAM_REWARD_SECRET?.trim();
+    const tokenMatches = Boolean(
+      configuredToken &&
+      token &&
+      token.length === configuredToken.length &&
+      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(configuredToken)),
+    );
+    if (!tokenMatches) {
+      console.warn('⚠️ AdsGram reward callback rejected: invalid token');
+      return res.status(403).send('Forbidden');
+    }
+
+    const telegramId = queryValue(req.query?.userid);
+    if (!telegramId || !/^\d{5,20}$/.test(telegramId)) {
+      console.warn('⚠️ AdsGram reward callback rejected: invalid userid');
+      return res.status(400).send('Invalid userid');
+    }
+
+    try {
+      const user = await storage.getUserByTelegramId(telegramId);
+      if (!user) {
+        console.warn(`⚠️ AdsGram reward callback: user ${telegramId} not found`);
+        return res.status(404).send('User not found');
+      }
+      if (user.banned) {
+        console.warn(`⚠️ AdsGram reward callback ignored for banned user ${telegramId}`);
+        return res.status(403).send('Forbidden');
+      }
+
+      const callbackId =
+        queryValue(req.query?.callback_id) ||
+        queryValue(req.query?.callbackId) ||
+        queryValue(req.query?.request_id) ||
+        queryValue(req.query?.requestId) ||
+        queryValue(req.query?.event_id) ||
+        queryValue(req.query?.eventId) ||
+        queryValue(req.query?.id);
+      const callbackKeyFromId = callbackId ? `id:${callbackId}` : undefined;
+
+      const [existingByCallback] = callbackKeyFromId
+        ? await db.select().from(adsgramRewardCallbacks)
+            .where(eq(adsgramRewardCallbacks.callbackKey, callbackKeyFromId))
+            .limit(1)
+        : [];
+      if (existingByCallback) {
+        console.info(`ℹ️ AdsGram duplicate callback acknowledged for user ${telegramId}`);
+        return res.status(200).send('OK');
+      }
+
+      const now = Date.now();
+      const recentCutoff = new Date(now - AD_SESSION_MAX_AGE_MS);
+      const [recentSession] = await db.select().from(adSessions)
+        .where(and(
+          eq(adSessions.userId, user.id),
+          eq(adSessions.context, 'ads_watch'),
+          eq(adSessions.adType, 'adsgram'),
+          gte(adSessions.registeredAt, recentCutoff),
+        ))
+        .orderBy(desc(adSessions.registeredAt))
+        .limit(1);
+
+      const [recentCallbackForSession] = recentSession
+        ? await db.select().from(adsgramRewardCallbacks)
+            .where(eq(adsgramRewardCallbacks.sessionId, recentSession.id))
+            .limit(1)
+        : [];
+      if (recentCallbackForSession) {
+        console.info(`ℹ️ AdsGram duplicate session callback acknowledged for user ${telegramId}`);
+        return res.status(200).send('OK');
+      }
+
+      const [settings] = await db.select().from(adminSettings)
+        .where(eq(adminSettings.settingKey, 'adsgram_reward_per_ad'))
+        .limit(1);
+      const reward = parseInt(settings?.settingValue || '125', 10);
+      if (!Number.isFinite(reward) || reward < 0) {
+        console.error(`❌ AdsGram callback has invalid configured reward for user ${telegramId}`);
+        return res.status(500).send('Internal server error');
+      }
+
+      // If the client already claimed the session, the normal ad-watch flow
+      // already credited the balance. A postback is confirmation only.
+      if (recentSession?.status === 'used') {
+        console.info(`ℹ️ AdsGram callback confirmed existing client claim for user ${telegramId}`);
+        return res.status(200).send('OK');
+      }
+
+      // The callback must correlate to a server-registered AdsGram session.
+      // AdsGram documents userid, but not a universally available event ID;
+      // the session is therefore the fallback idempotency key and also
+      // prevents a valid token from minting rewards for arbitrary users.
+      if (!recentSession) {
+        console.warn(`⚠️ AdsGram callback has no matching active session for user ${telegramId}`);
+        return res.status(400).send('No active ad session');
+      }
+
+      const callbackKey = callbackKeyFromId || `session:${recentSession.id}`;
+      const [claimedSession] = await db.update(adSessions)
+        .set({ status: 'used', usedAt: new Date() })
+        .where(and(eq(adSessions.id, recentSession.id), eq(adSessions.status, 'pending')))
+        .returning({ id: adSessions.id });
+      if (!claimedSession) {
+        console.info(`ℹ️ AdsGram callback raced with client claim for user ${telegramId}`);
+        return res.status(200).send('OK');
+      }
+
+      await storage.addEarning({
+        userId: user.id,
+        amount: String(reward),
+        source: 'ad_watch',
+        description: 'AdsGram server-side reward',
+      });
+      await storage.incrementAdsWatched(user.id);
+      try {
+        await db.insert(adsgramRewardCallbacks).values({
+          callbackKey,
+          userId: user.id,
+          sessionId: claimedSession.id,
+          rewardAmount: String(reward),
+        });
+      } catch (ledgerError) {
+        console.error(`❌ AdsGram callback ledger write failed for user ${telegramId}:`, ledgerError);
+        // The session itself has already been atomically consumed, so a retry
+        // cannot mint a second reward even if the audit row write is delayed.
+      }
+
+      console.info(`✅ AdsGram reward credited: user=${telegramId} amount=${reward}`);
+      return res.status(200).send('OK');
+    } catch (error) {
+      console.error('❌ AdsGram reward callback processing failed:', error);
+      return res.status(500).send('Internal server error');
+    }
+  });
+
   // Ad watching endpoint - configurable daily limit and reward amount
   app.post('/api/ads/watch', authenticateTelegram, adWatchRateLimit, async (req: any, res) => {
     try {
@@ -1815,6 +1965,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       if (sessionRow.status !== 'pending') {
+        if (sessionRow.adType === 'adsgram' && sessionRow.status === 'used') {
+          // A server postback can atomically consume the session just before
+          // its audit row is inserted. Treat an already-consumed AdsGram
+          // session as acknowledged here; never mint a second reward.
+          return res.json({
+            success: true,
+            alreadyRewarded: true,
+            rewardPOW: 0,
+            message: 'AdsGram reward was already credited.',
+          });
+        }
         return res.status(400).json({
           message: "Session already used. Please watch a new ad.",
           errorType: 'duplicate_session',
