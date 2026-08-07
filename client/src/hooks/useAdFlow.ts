@@ -143,8 +143,8 @@ export function useAdFlow() {
   const uslCurrentSettleRef = useRef<((r: { success: boolean; unavailable: boolean }) => void) | null>(null);
 
   const showUSLAd = useCallback((): Promise<{ success: boolean; unavailable: boolean }> => {
-    return new Promise((resolve) => {
-      const ready = typeof window.TowerAds === "function";
+    return new Promise(async (resolve) => {
+      const ready = await waitForFn('TowerAds', 10_000);
       if (!ready) { resolve({ success: false, unavailable: true }); return; }
 
       let settled = false;
@@ -192,7 +192,10 @@ export function useAdFlow() {
             // only source of truth. Give it a brief grace window in case it
             // fires just after the promise settles; if it hasn't fired by then,
             // settle as not rewarded.
-            setTimeout(() => settle({ success: false, unavailable: false }), 300);
+            // Some TowerAds builds resolve loadAndShow before dispatching the
+            // reward callback. Give that callback enough time to arrive, while
+            // still recovering if the SDK silently returns without a reward.
+            setTimeout(() => settle({ success: false, unavailable: false }), 2_000);
           })
           .catch((error: any) => {
             clearTimeout(hardTimer);
